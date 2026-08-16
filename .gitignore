@@ -1,0 +1,43 @@
+.next
+node_modules
+.env
+.env.local
+dist
+coverage
+prisma/dev.db
+prisma/dev.db-journal
+.creative-storage
+.next-dev-current.out.log
+.next-dev-current.err.log
+
+# Alternative package manager artifacts — this project uses npm
+pnpm-lock.yaml
+pnpm-workspace.yaml
+yarn.lock
+bun.lockb
+
+# Stray scripts from other projects that occasionally land here
+bi14append.js
+_bi_*.js
+bi_query_*.js
+bi_*.cjs
+tmp_*.js
+tmp_*.cjs
+tmp_bi_*.mjs
+tmp_bi_*.js
+*_check*.js
+
+# TypeScript incremental build cache — never useful in source control
+tsconfig.tsbuildinfo
+
+# --- AgentsTeam agent artifacts (belong in the AgentsTeam control panel, NOT this repo) ---
+/memory/
+/qa/
+/tasks/bugs.md
+qa-smoke-dev.log
+*.tsbuildinfo
+
+docs/LEARNINGS-RENDER-DEPLOY.md
+
+# Next.js typed-routes generated artifact — auto-generated, never commit (SA-BUG-020)
+.next-verify/

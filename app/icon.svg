@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- Favicon: Hiloomy brand mark (kept in sync with public/hiloomy-mark.svg) -->
+  <rect x="9.5" y="17" width="9" height="19.5" rx="2.8" fill="#16A34A"/>
+  <rect x="17" y="24.3" width="11.2" height="5.4" fill="#16A34A"/>
+  <rect x="27.2" y="19.5" width="7.8" height="17" rx="2.2" fill="#F97316"/>
+  <path d="M31.1 10.5L38.05 21.3H24.15L31.1 10.5Z" fill="#F97316"/>
+</svg>

@@ -1,0 +1,365 @@
+# Render IaC config — defines the web service for this Next.js + Prisma app.
+#
+# Apply by either:
+#   1. Push this file to the connected GitHub repo. Render auto-detects
+#      render.yaml and creates/updates the service on every push.
+#   2. Render dashboard → New → "Blueprint" → pick this repo.
+#
+# After creation, set the secret env vars in the Render dashboard. The
+# `envVars` block below LISTS them as `sync: false` (must be set in the UI)
+# rather than committing secrets to git.
+#
+# Health check: the homepage. Render polls every 30s; service restarts
+# automatically if the URL stops returning 200s.
+
+services:
+  - type: web
+    name: shopify-analytics
+    runtime: node
+    plan: starter # 0.5 CPU / 512 MB — fine for one tenant; bump to standard for SaaS scale
+    region: frankfurt # closest to Asia/Jerusalem; switch to oregon/ohio for US tenants
+    branch: main
+    # `prisma generate` runs before `next build` so the build sees the
+    # generated client. `npx prisma db push` is intentionally NOT here —
+    # schema migrations belong in a separate step you trigger manually
+    # so a code push can't silently mutate production schema.
+    # rm -rf the cached Prisma client forces a fresh generation on every
+    # deploy. Without this, Render reuses the previous build's
+    # node_modules/.prisma and a schema change can silently ship an
+    # outdated client (db.systemConfig undefined etc.). Small extra cost
+    # (~5s per build) but eliminates an entire class of "deployed code
+    # references a model the client doesn't know about" bugs.
+    #
+    # Playwright Chromium install moved to a `postinstall` script in
+    # package.json (runs automatically as part of `npm ci`). The install
+    # is now part of the npm lifecycle — fewer moving parts in this
+    # buildCommand, no env-var path expansion surprises, and the binary
+    # is always re-downloaded by the EXACT Playwright version pinned in
+    # package-lock.json. We also pinned playwright to an exact (no-^)
+    # version in package.json so it can't silently bump and break the
+    # Chromium version pinning that lives inside the Playwright module.
+    #
+    # PLAYWRIGHT_BROWSERS_PATH (set in envVars below) still pins the
+    # install location to /opt/render/.cache/ms-playwright so the binary
+    # the postinstall hook downloads is exactly where the runtime looks
+    # for it.
+    # NODE_OPTIONS=--max-old-space-size=4096 raises the V8 heap ceiling for the
+    # `next build` step only. The production build (147 route/page entry points,
+    # React 19 + TS type-check, plus heavy deps: recharts/konva/exceljs/xlsx/
+    # pdf-parse/googleapis/archiver/aws-sdk) exceeds Node's default heap and the
+    # Render build was dying with "FATAL ERROR: Reached heap limit Allocation
+    # failed - JavaScript heap out of memory" → Build failed (SA-FIX4). Scoped to
+    # the build command (NOT envVars) on purpose: putting it in envVars would also
+    # lift the ceiling on the 512MB runtime instance, where it would remove GC
+    # back-pressure and risk a cgroup OOM-kill of `next start`. Bump to 6144/8192
+    # here if a future build still OOMs. (next.config.ts also enables
+    # experimental.webpackMemoryOptimizations to cut peak build memory.)
+    # Single-line buildCommand so it can be pasted directly into Render's
+    # UI Build Command field (multi-line YAML scripts don't always survive
+    # the UI's text field). Keep the YAML and UI commands IDENTICAL — drift
+    # between them is what caused the "Playwright Executable doesn't exist"
+    # crash to come back after we thought we'd fixed it (Render was running
+    # an older UI-set command that lacked the cache-clear + chromium pin).
+    #
+    # Order matters:
+    #   1. rm -rf node_modules/.prisma  — forces fresh Prisma client generate
+    #   2. rm -rf $PLAYWRIGHT_BROWSERS_PATH/*  — forces fresh Chromium download
+    #   3. npm ci  — also runs the `postinstall` hook in package.json which
+    #               runs `prisma generate && playwright install chromium`
+    #   4. npx playwright install chromium  — belt-and-suspenders; runs even
+    #                                          if postinstall was skipped
+    #   5. NODE_OPTIONS heap bump + next build  — large dep tree needs >4GB
+    #
+    # NOTE: NO `--with-deps` flag — that runs `sudo apt install` which fails
+    # on Render's no-sudo build user. Chromium runs fine without those libs
+    # in headless mode (the GTK/WebKit deps are only needed for non-headless
+    # or for Firefox/WebKit which we don't use).
+    # DANGER NOTE — DO NOT use $PLAYWRIGHT_BROWSERS_PATH directly in rm here.
+    # If the env var is unset (Render UI overrides can drop it silently), the
+    # shell expands `rm -rf $PLAYWRIGHT_BROWSERS_PATH/*` to `rm -rf /*` which
+    # attempts to wipe the entire root filesystem. Render's read-only mounts
+    # prevent the destruction, but the build still emits thousands of "cannot
+    # remove" errors. ALWAYS hardcode the cache path here.
+    # With PLAYWRIGHT_BROWSERS_PATH=0 the Chromium binary installs INSIDE
+    # node_modules during `npm ci` (via the postinstall hook) — no separate
+    # cache to wipe, no env-var expansion risk. Simpler buildCommand.
+    buildCommand: npm ci && NODE_OPTIONS=--max-old-space-size=4096 npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeploy: true
+
+    envVars:
+      # ─── Runtime-managed (Render sets these automatically) ─────────────
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+
+      # ─── Playwright (PDF renderer + Instagram public crawler) ──────────
+      # Pins BOTH the build-time `playwright install` location and the
+      # runtime browser lookup to the same on-disk path so the Chromium
+      # binary installed during the build is found when launched at runtime.
+      # This is a fixed, non-secret constant — declared with `value:` (not
+      # `sync: false`) so it is always present without manual UI entry; a
+      # forgotten value here is exactly what reintroduces the
+      # "Executable doesn't exist at /opt/render/.cache/ms-playwright/..."
+      # crash.
+      #
+      # `0` is a special value: Playwright installs browsers INSIDE
+      # node_modules/playwright-core/.local-browsers. This ships them with
+      # the deploy artifact instead of relying on Render's separate cache.
+      # Tradeoffs:
+      #   + Bulletproof — what's in node_modules is what runs. Zero
+      #     cache-vs-runtime path drift. No "Executable doesn't exist"
+      #     crashes after Playwright version bumps.
+      #   - Adds ~200MB to node_modules (Chromium binary). Slower
+      #     post-install + slower deploy upload.
+      # Worth it given Render's persistent-cache approach has now broken
+      # 4 times in this project. node_modules is the single source of truth.
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: "0"
+
+      # ─── Database (Supabase) ───────────────────────────────────────────
+      # Pooled connection for the app. Use Supabase's POOLED endpoint
+      # (port 6543) with ?pgbouncer=true&connection_limit=5&pool_timeout=20.
+      # connection_limit=1 starves the initial Shopify sync and triggers
+      # "Timed out fetching a new connection from the connection pool" (SA-FIX3).
+      # NOTE: lib/prisma.ts also normalises this at runtime — it raises any
+      # connection_limit below 5 and adds pool_timeout if missing — so an older
+      # ...connection_limit=1 value already set in the dashboard is corrected
+      # in-app; still prefer fixing it here for clarity.
+      - key: DATABASE_URL
+        sync: false
+      # Direct connection for migrations only (`prisma db push`). Use the
+      # Supabase DIRECT endpoint (port 5432).
+      - key: DIRECT_URL
+        sync: false
+
+      # ─── App URL — required for OAuth callbacks + cron self-ping ───────
+      # Set this to your Render service URL: https://shopify-analytics.onrender.com
+      # (or your custom domain if you've mapped one).
+      - key: APP_URL
+        sync: false
+      # Browser-exposed copy of APP_URL. The Settings → Shopify OAuth card
+      # renders the callback URL from NEXT_PUBLIC_APP_URL (only NEXT_PUBLIC_*
+      # vars reach the client bundle). Set it to the same value as APP_URL.
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+
+      # ─── Supabase Auth (Phase 1) ───────────────────────────────────────
+      # NEXT_PUBLIC_* keys are sent to the browser; server-only keys aren't.
+      # Get these from Supabase Dashboard → Project Settings → API.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+
+      # ─── Stripe Billing (Phase 2) ──────────────────────────────────────
+      # Master switch. Off by default — the app runs without billing
+      # (every signed-in org treated as paying customer on the Agency
+      # tier, no trial banner / paywall). Flip to "true" once Stripe is
+      # fully configured below.
+      - key: BILLING_ENABLED
+        value: "false"
+      # Get from Stripe Dashboard → Developers → API keys. Use test keys
+      # for dev (sk_test_...), live keys for production (sk_live_...).
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # Per-plan price IDs (Stripe Dashboard → Products → each price has
+      # an ID like price_1AbCdEf...). Set the ones you've created; null
+      # entries gracefully disable that plan/currency/interval combo.
+      - key: STRIPE_PRICE_STARTER_ILS_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_STARTER_ILS_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_STARTER_USD_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_STARTER_USD_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_GROWTH_ILS_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_GROWTH_ILS_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_GROWTH_USD_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_GROWTH_USD_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_AGENCY_ILS_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_AGENCY_ILS_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_AGENCY_USD_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_AGENCY_USD_ANNUAL
+        sync: false
+
+      # ─── Shopify ───────────────────────────────────────────────────────
+      - key: SHOPIFY_CREDENTIALS_ENCRYPTION_KEY
+        generateValue: true # Render auto-generates a strong random value on first deploy
+      - key: SHOPIFY_ADMIN_API_VERSION
+        value: "2026-01"
+      - key: SHOPIFY_WEBHOOK_SECRET
+        sync: false
+      - key: SHOPIFY_CLIENTID
+        sync: false
+      - key: SHOPIFY_CLIENT_SECRET
+        sync: false
+      # write_discounts backs affiliate coupon creation. This env var fully
+      # REPLACES the code's DEFAULT_SCOPES — keep the two lists in sync.
+      - key: SHOPIFY_OAUTH_SCOPES
+        value: "read_products,read_orders,read_customers,read_inventory,read_customer_journey,write_discounts"
+
+      # ─── Google Search Console (DATA-01) ───────────────────────────────
+      # OAuth app credentials from Google Cloud Console → APIs & Services →
+      # Credentials → OAuth 2.0 Client ID (Web application). Authorized
+      # redirect URI must be <APP_URL>/api/gsc/oauth/callback. Secrets — set
+      # in the Render dashboard, never commit values here.
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+
+      # ─── Meta Ads ──────────────────────────────────────────────────────
+      - key: META_ADS_CLIENT_ID
+        sync: false
+      - key: META_ADS_CLIENT_SECRET
+        sync: false
+      - key: META_ADS_BRAND_RULES
+        sync: false
+
+      # ─── Reports (Resend + OpenAI) ─────────────────────────────────────
+      - key: RESEND_API_KEY
+        sync: false
+      - key: REPORT_FROM_EMAIL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # ─── Creative Studio AI providers (optional, set what you use) ─────
+      - key: REPLICATE_API_TOKEN
+        sync: false
+      - key: HIGGSFIELD_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # Per-org daily cap on creative generation jobs (SA-MED-05). Every
+      # provider call costs money; the runner rejects an org's jobs once it
+      # has run this many in a UTC day ("Daily creative job limit reached").
+      # Default 10 if unset. Raise for high-volume orgs; lower to throttle spend.
+      - key: CREATIVE_MAX_JOBS_PER_DAY
+        value: "10"
+
+      # ─── Creative Studio storage (R2 / S3 for production) ──────────────
+      # In production the "local" backend won't survive container restarts —
+      # set CREATIVE_STORAGE_BACKEND="s3" (or "r2") and fill in the rest.
+      - key: CREATIVE_STORAGE_BACKEND
+        value: s3
+      - key: CREATIVE_BUCKET
+        sync: false
+      - key: CREATIVE_S3_ENDPOINT
+        sync: false
+      - key: CREATIVE_S3_REGION
+        value: auto
+      - key: CREATIVE_S3_ACCESS_KEY_ID
+        sync: false
+      - key: CREATIVE_S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: CREATIVE_WORKER_SECRET
+        generateValue: true
+
+      # ─── Cron auth (CRIT-07) ───────────────────────────────────────────
+      # Shared secret that gates every /api/cron/* route (middleware.ts).
+      # When set, requests must carry a matching `x-cron-secret` header; the
+      # in-process self-fetch crons attach it automatically. REQUIRED in
+      # production — without it, anyone on the internet can trigger a full
+      # sync / email blast. Generate any long random string.
+      - key: CRON_SECRET
+        generateValue: true
+
+      # ─── Background crons (all ON by default in production via cron-util)
+      # Leaving these unset means they run automatically because NODE_ENV=production.
+      # Use *_DISABLED=1 in the dashboard if you ever need to kill one quickly.
+      # Data-refresh cron: 2h default. Override here to dial up/down per
+      # store load (e.g. "3600000" for hourly on a high-volume tenant).
+      - key: DATA_REFRESH_CRON_MS
+        value: "7200000"
+      # Meta Ads token expiry check: daily at 09:00–11:00 UTC. Raises in-app
+      # alerts and sends email notifications when a MetaAdsConnection token is
+      # NULL or within 7 days of expiry. Disable with META_ADS_TOKEN_CHECK_CRON_DISABLED=1.
+      - key: META_ADS_TOKEN_CHECK_CRON_MS
+        value: "3600000"
+      # ─── Daily digest → Telegram ──────────────────────────────────────────
+      # Morning PDF report sent at ~08:00 Asia/Jerusalem to the owner's Telegram.
+      # Get TELEGRAM_BOT_TOKEN from @BotFather; TELEGRAM_CHAT_ID from @userinfobot.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+
+      # ─── RivalSweeper (competitor intelligence) ───────────────────────
+      # Real API (apilayer.rivalsweeper.com, OAuth2 client-credentials).
+      # Set RIVALSWEEPER_KEY_ID (rsk_...) + RIVALSWEEPER_KEY_SECRET (rss_...)
+      # in the dashboard, then REMOVE RIVALSWEEPER_MOCK (or set "false") to
+      # go live. With mock on, deterministic demo signals keep the pipeline
+      # exercisable without spending API quota.
+      - key: RIVALSWEEPER_MOCK
+        value: "true"
+      - key: RIVALSWEEPER_API_URL
+        sync: false
+      - key: RIVALSWEEPER_KEY_ID
+        sync: false
+      - key: RIVALSWEEPER_KEY_SECRET
+        sync: false
+
+      # ─── Module visibility (MVP packaging) ────────────────────────────
+      # Comma-separated sidebar modules to hide (disable, don't delete).
+      # Valid slugs: portfolio, marketing-planner, creative, affiliate-portal,
+      # weekly-summary, creator-flow, sales-summary, product-follow-ups, alerts.
+      # Unset = full nav. See lib/server/module-flags.ts.
+      # - key: DISABLED_MODULES
+      #   value: "creative,creator-flow,product-follow-ups"
+
+      # ─── Optional cron / provider tuning overrides ─────────────────────
+      # All of the following have safe in-code defaults — set only to override.
+      # Cron intervals (ms) and self-ping URLs: SHOPIFY_SYNC_CRON_MS,
+      #   SHOPIFY_SYNC_CRON_URL, CREATIVE_JOB_CRON_MS, CREATIVE_JOB_CRON_URL,
+      #   WEEKLY_REPORT_CRON_MS, WEEKLY_REPORT_CRON_URL, DATA_REFRESH_CRON_URL,
+      #   OUTCOME_MEASUREMENT_CRON_MS, OUTCOME_MEASUREMENT_CRON_URL,
+      #   DAILY_REPORT_CRON_MS, DAILY_REPORT_CRON_URL,
+      #   SHOPIFY_SYNC_STALE_THRESHOLD_MIN, ENABLE_SHOPIFY_SYNC_CRON.
+      # Creative provider/model overrides: CREATIVE_MAX_JOBS_PER_DAY (see below),
+      #   CREATIVE_IMAGE_MODEL_DEFAULT, CREATIVE_IMAGE_MODEL_FAST,
+      #   CREATIVE_VIDEO_MODEL_DEFAULT, CREATIVE_VIDEO_ENABLED,
+      #   CREATIVE_MAX_VIDEO_BATCH, CREATIVE_BATCH_QUALITY,
+      #   CREATIVE_PROVIDER_CONCURRENCY, CREATIVE_STORAGE_LOCAL_DIR,
+      #   OPENAI_API_BASE_URL, OPENAI_ORG_ID, OPENAI_IMAGE_MODEL,
+      #   OPENAI_IMAGE_QUALITY, GEMINI_API_BASE_URL, NANOBANANA_MODEL,
+      #   HIGGSFIELD_API_BASE_URL, HIGGSFIELD_IMAGE_MODEL, HIGGSFIELD_VIDEO_MODEL.
+      # Other optional: FLASHY_ACCOUNT_IDS_JSON (multi-account override of
+      #   FLASHY_ACCOUNT_ID), GROWTH_AGENT_PRODUCT_CRAWLER_DEFAULT_URLS,
+      #   GROWTH_AGENT_PRODUCT_CRAWLER_USER_AGENT.
+
+      # ─── Flashy (optional) ─────────────────────────────────────────────
+      - key: FLASHY_ACCOUNT_ID
+        sync: false
+
+      # ─── Observability (Phase 4) ───────────────────────────────────────
+      # Sentry DSN — server-side and edge. NEXT_PUBLIC_SENTRY_DSN is the
+      # browser variant (same DSN, different env var because only NEXT_PUBLIC_*
+      # is exposed to the browser bundle).
+      - key: SENTRY_DSN
+        sync: false
+      - key: NEXT_PUBLIC_SENTRY_DSN
+        sync: false
+      # Plausible — domain name + script URL (defaults to plausible.io).
+      # Self-hosted Plausible: override NEXT_PUBLIC_PLAUSIBLE_SCRIPT.
+      - key: NEXT_PUBLIC_PLAUSIBLE_DOMAIN
+        sync: false
+      - key: NEXT_PUBLIC_PLAUSIBLE_SCRIPT
+        sync: false

@@ -1,0 +1,394 @@
+
+> shopify-profit-ops-system@0.1.0 dev
+> next dev --hostname 127.0.0.1 --port 3000
+
+   ▲ Next.js 15.5.14
+   - Local:        http://127.0.0.1:3000
+   - Network:      http://127.0.0.1:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 17.3s
+ ○ Compiling / ...
+ ✓ Compiled / in 4s (1752 modules)
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+ GET / 200 in 13646ms
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+ GET / 200 in 8451ms
+ ○ Compiling /settings ...
+ ✓ Compiled /settings in 1463ms (1791 modules)
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findUnique()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findUnique()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findUnique()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findUnique()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findUnique()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+prisma:error 
+Invalid `prisma.store.findUnique()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+ GET /settings 200 in 8183ms
+ GET /settings 200 in 10718ms
+ ○ Compiling /api/shopify/connection/test ...
+ ✓ Compiled /api/shopify/connection/test in 6.5s (1811 modules)
+ POST /api/shopify/connection/test 401 in 7125ms
+ ✓ Compiled /api/shopify/sync/status in 261ms (1813 modules)
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+ GET /api/shopify/sync/status 200 in 4419ms
+ POST /api/shopify/connection/test 401 in 357ms
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+ GET /api/shopify/sync/status 200 in 4180ms
+ POST /api/shopify/connection/test 401 in 266ms
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+ GET /api/shopify/sync/status 200 in 4083ms
+ POST /api/shopify/connection/test 200 in 603ms
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+ GET /api/shopify/sync/status 200 in 4112ms
+ ○ Compiling /api/shopify/connection/save ...
+ ✓ Compiled /api/shopify/connection/save in 642ms (1815 modules)
+prisma:error 
+Invalid `prisma.store.upsert()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+ POST /api/shopify/connection/save 500 in 5414ms
+prisma:error 
+Invalid `prisma.store.findFirst()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+ GET /api/shopify/sync/status 200 in 4233ms
+ GET / 200 in 4017ms
+ GET /settings 200 in 841ms
+ POST /api/shopify/connection/test 401 in 279ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 23ms
+ POST /api/shopify/connection/test 200 in 598ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 22ms
+ ✓ Compiled /api/shopify/sync/initial in 395ms (1815 modules)
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 25ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 26ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 22ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 28ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 23ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 24ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 41ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 24ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 24ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 21ms
+ POST /api/shopify/sync/initial 200 in 50793ms
+ GET /settings 200 in 360ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 123ms
+ GET / 200 in 540ms
+ GET /settings 200 in 49ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 20ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 21ms
+ ○ Compiling /weekly-summary ...
+ ✓ Compiled /weekly-summary in 2.4s (1827 modules)
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 38ms
+ GET /weekly-summary 200 in 5958ms
+ GET /settings 200 in 84ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 39ms
+ GET /weekly-summary 200 in 3417ms
+ GET /weekly-summary 200 in 4542ms
+ ○ Compiling /affiliate-portal ...
+ GET /weekly-summary 200 in 3590ms
+ ✓ Compiled /affiliate-portal in 3.8s (1849 modules)
+ GET /settings 200 in 3610ms
+ GET /affiliate-portal 200 in 4348ms
+ ✓ Compiled /api/shopify/sync/status in 108ms (1075 modules)
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 298ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 42ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 40ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 20ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 21ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 22ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 23ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 58ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 66ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 22ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 26ms
+ GET /settings 200 in 450ms
+ GET /affiliate-portal 200 in 99ms
+ ○ Compiling /api/affiliate-portal/sync-attribution ...
+ ✓ Compiled /api/affiliate-portal/sync-attribution in 1646ms (1872 modules)
+ ○ Compiling /affiliate-portal/affiliates ...
+ ✓ Compiled /affiliate-portal/affiliates in 1364ms (1884 modules)
+ GET /affiliate-portal/affiliates 200 in 1857ms
+ POST /api/affiliate-portal/sync-attribution 200 in 8317ms
+ GET /affiliate-portal/affiliates 200 in 324ms
+ GET /weekly-summary 200 in 3301ms
+ ○ Compiling /marketing-planner ...
+ ✓ Compiled /marketing-planner in 1535ms (1892 modules)
+ GET /marketing-planner 200 in 1720ms
+ ○ Compiling /api/marketing-planner/data-readiness ...
+ ✓ Compiled /api/marketing-planner/data-readiness in 1916ms (2692 modules)
+ ○ Compiling /api/marketing-planner/generate ...
+ POST /api/marketing-planner/data-readiness 200 in 7365ms
+ POST /api/marketing-planner/data-readiness 200 in 7450ms
+ ✓ Compiled /api/marketing-planner/generate in 1686ms (2665 modules)
+ POST /api/marketing-planner/generate 200 in 7325ms
+ GET /settings 200 in 501ms
+ GET /settings 200 in 301ms
+ ○ Compiling /api/shopify/sync/status ...
+ ✓ Compiled /api/shopify/sync/status in 1512ms (1065 modules)
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 1785ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 20ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 21ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 20ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 20ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 41ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 23ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 25ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 21ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 27ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 23ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 20ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 24ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 22ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 22ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 19ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 24ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 21ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 20ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 19ms
+ GET /api/shopify/sync/status?storeId=cmojkfeyn0020nb1wzpx623q9 200 in 21ms

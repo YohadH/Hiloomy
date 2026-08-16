@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 220 23% 97%;
+  --foreground: 221 39% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 221 39% 11%;
+  --muted: 220 16% 94%;
+  --muted-foreground: 220 13% 32%;
+  --border: 220 18% 88%;
+  --input: 220 18% 88%;
+  --ring: 217 91% 55%;
+  --primary: 222 47% 11%;
+  --primary-foreground: 0 0% 98%;
+  --accent: 214 32% 92%;
+  --accent-foreground: 221 39% 11%;
+  --success: 142 47% 38%;
+  --success-foreground: 144 70% 97%;
+  --warning: 35 92% 48%;
+  --warning-foreground: 26 83% 14%;
+  --danger: 0 72% 50%;
+  --danger-foreground: 0 0% 98%;
+  --font-sans: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.dark {
+  --background: 222 33% 8%;
+  --foreground: 210 20% 96%;
+  --card: 222 27% 10%;
+  --card-foreground: 210 20% 96%;
+  --muted: 222 21% 15%;
+  --muted-foreground: 215 18% 75%;
+  --border: 221 18% 21%;
+  --input: 221 18% 21%;
+  --ring: 217 91% 60%;
+  --primary: 210 20% 98%;
+  --primary-foreground: 222 33% 8%;
+  --accent: 222 19% 18%;
+  --accent-foreground: 210 20% 96%;
+  --success: 142 58% 52%;
+  --success-foreground: 144 70% 97%;
+  --warning: 36 91% 62%;
+  --warning-foreground: 26 83% 14%;
+  --danger: 0 84% 65%;
+  --danger-foreground: 0 0% 98%;
+}
+
+* {
+  @apply border-border;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  font-family: var(--font-sans);
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.96)),
+    radial-gradient(circle at top, rgba(226, 232, 240, 0.9), transparent 48%);
+}
+
+.dark body {
+  background-image: linear-gradient(to bottom, rgba(2, 6, 23, 0.9), rgba(2, 6, 23, 1)),
+    radial-gradient(circle at top, rgba(59, 130, 246, 0.14), transparent 38%);
+}
+
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: hsl(var(--ring) / 0.25);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+  background-clip: padding-box;
+}
+
+/* Make recharts text inherit theme contrast */
+.recharts-text,
+.recharts-cartesian-axis-tick-value tspan {
+  fill: hsl(var(--muted-foreground));
+}
+
+.recharts-default-tooltip {
+  border-radius: 0.75rem !important;
+  border: 1px solid hsl(var(--border)) !important;
+  background: hsl(var(--card)) !important;
+  color: hsl(var(--foreground)) !important;
+  box-shadow: 0 18px 45px -24px rgba(15, 23, 42, 0.28) !important;
+}
+
+/* ─── Mobile responsiveness helpers ─────────────────────────────────────
+   `.scroll-fade-end` gives a subtle right-edge fade on horizontally
+   scrollable containers (tables, tab strips). Touch users get a visual
+   hint that there's more content off-screen. */
+.scroll-fade-end {
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent 100%);
+}
+@media (min-width: 640px) {
+  /* On larger screens we don't need the hint because the table usually
+     fits, and the fade can make actual content look cut off. */
+  .scroll-fade-end {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
+/* Mobile-only momentum scrolling for tables nested in cards. iOS Safari
+   default is fine but Android needs this for smoother feel. */
+.table-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Prevent the date <input> on iOS from rendering a tiny tappable area. */
+@supports (-webkit-touch-callout: none) {
+  input[type="date"] {
+    min-height: 40px;
+  }
+}

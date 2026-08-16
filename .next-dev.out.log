@@ -1,0 +1,63 @@
+
+> shopify-profit-ops-system@0.1.0 dev
+> next dev
+
+   ▲ Next.js 15.5.14
+   - Local:        http://localhost:3000
+   - Network:      http://10.100.102.2:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 4.3s
+ ○ Compiling / ...
+ ✓ Compiled / in 3.1s (1752 modules)
+ GET / 200 in 3940ms
+ GET / 200 in 9207ms
+ ○ Compiling /affiliate-portal ...
+ ✓ Compiled /affiliate-portal in 7.4s (1809 modules)
+ ✓ Compiled in 696ms (800 modules)
+ GET /affiliate-portal 200 in 8448ms
+ GET /affiliate-portal 200 in 637ms
+ GET /affiliate-portal 200 in 394ms
+ GET /affiliate-portal 200 in 227ms
+ GET /affiliate-portal 200 in 201ms
+ GET /affiliate-portal 200 in 242ms
+ ○ Compiling /affiliate-portal/content ...
+ ✓ Compiled /affiliate-portal/content in 1101ms (1801 modules)
+ GET /affiliate-portal/content 200 in 1415ms
+ ○ Compiling /weekly-summary ...
+ ✓ Compiled /weekly-summary in 1687ms (1823 modules)
+ GET /weekly-summary 200 in 33666ms
+ GET /weekly-summary 200 in 15185ms
+ GET /weekly-summary 200 in 14307ms
+ GET /weekly-summary 200 in 25504ms
+ GET /weekly-summary 200 in 25094ms
+ GET /weekly-summary 200 in 14634ms
+ GET /affiliate-portal/content 200 in 534ms
+ GET /weekly-summary 200 in 7333ms
+ ○ Compiling /marketing-planner ...
+ ✓ Compiled /marketing-planner in 1913ms (1833 modules)
+ GET /marketing-planner 200 in 2304ms
+ ○ Compiling /api/marketing-planner/data-readiness ...
+ ✓ Compiled /api/marketing-planner/data-readiness in 3s (2662 modules)
+ POST /api/marketing-planner/data-readiness 200 in 6552ms
+ POST /api/marketing-planner/data-readiness 200 in 7532ms
+ POST /api/marketing-planner/data-readiness 200 in 21179ms
+ ○ Compiling /api/marketing-planner/generate ...
+ ✓ Compiled /api/marketing-planner/generate in 1271ms (2655 modules)
+ POST /api/marketing-planner/generate 200 in 6870ms
+ ○ Compiling /growth-agent ...
+ ✓ Compiled /growth-agent in 2.7s (1877 modules)
+ GET /growth-agent 200 in 3679ms
+ GET /growth-agent 200 in 551ms
+ GET / 200 in 1781ms
+ GET / 200 in 1535ms
+ GET / 200 in 1771ms
+ GET / 200 in 1271ms
+ GET / 200 in 1223ms
+ GET / 200 in 2248ms
+ GET / 200 in 1532ms
+ GET / 200 in 1726ms
+ ○ Compiling /retention ...
+ ✓ Compiled /retention in 2.6s (1882 modules)
+ GET /retention 200 in 8638ms

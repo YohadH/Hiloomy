@@ -1,0 +1,19 @@
+
+> shopify-profit-ops-system@0.1.0 dev
+> next dev --hostname 127.0.0.1
+
+   ▲ Next.js 15.5.14
+   - Local:        http://127.0.0.1:3000
+   - Network:      http://127.0.0.1:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 2.5s
+ ○ Compiling /settings ...
+ ✓ Compiled /settings in 2.5s (738 modules)
+ GET /settings 200 in 3821ms
+ ○ Compiling /api/meta-ads/connection/status ...
+ ✓ Compiled /api/meta-ads/connection/status in 809ms (758 modules)
+ GET /api/meta-ads/connection/status 200 in 929ms
+ GET /api/meta-ads/connection/status 200 in 22ms
+[?25h

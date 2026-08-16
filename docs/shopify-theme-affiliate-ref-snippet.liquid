@@ -1,0 +1,41 @@
+{% comment %}
+  Affiliate / agent referral tracking snippet
+  ===========================================
+
+  WHAT THIS IS
+  ------------
+  Drop this snippet into your Shopify theme (e.g. paste into theme.liquid before
+  </body>, or include it from a snippet) to load the storefront affiliate
+  tracking script. The script captures the `ref` and `agent_click_id` URL
+  parameters set by the app's affiliate redirect, persists them (localStorage +
+  a first-party cookie that survives Safari ITP), and writes them onto the
+  Shopify cart note_attributes so the order webhook can attribute the sale.
+
+  REQUIRED METAFIELD — custom.growth_agent_app_url
+  ------------------------------------------------
+  This snippet reads `shop.metafields.custom.growth_agent_app_url` to know the
+  base URL of the analytics app (where affiliate-ref-tracking.js is served).
+  That metafield MUST be set on the shop, or the <script src> resolves to an
+  empty/invalid URL and tracking will silently not load.
+
+  Set the value to the app's base URL, e.g.
+      https://shopifyappanalytics.onrender.com
+  (no trailing slash). The script path "/shopify/affiliate-ref-tracking.js" is
+  appended automatically below.
+
+  HOW TO SET IT (Shopify Admin)
+  -----------------------------
+  1. Shopify Admin → Settings → Custom data → Shop (under "Metafields").
+  2. Add definition with:
+       - Namespace and key: custom.growth_agent_app_url
+       - Type: URL
+  3. Save the definition, then set the value for your shop to the app base URL
+     (e.g. https://shopifyappanalytics.onrender.com).
+
+  After saving, reload the storefront and confirm the network tab shows
+  /shopify/affiliate-ref-tracking.js loading from your app URL.
+{% endcomment %}
+<script>
+  window.AFFILIATE_TRACKING_APP_URL = '{{ shop.metafields.custom.growth_agent_app_url | escape }}';
+</script>
+<script src="{{ shop.metafields.custom.growth_agent_app_url }}/shopify/affiliate-ref-tracking.js" defer></script>
