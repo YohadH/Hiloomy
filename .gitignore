@@ -41,3 +41,6 @@ docs/LEARNINGS-RENDER-DEPLOY.md
 
 # Next.js typed-routes generated artifact — auto-generated, never commit (SA-BUG-020)
 .next-verify/
+
+# Local dev server logs
+*.log
