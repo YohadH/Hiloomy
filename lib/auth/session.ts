@@ -106,13 +106,35 @@ export async function getAuthContext(): Promise<AuthContext> {
   } | null;
 
   if (!dbUser) {
-    // Not yet provisioned. ensureUserProvisioned() will run on the next
-    // authenticated route; for now we hand back the auth identity only.
-    return {
-      ...blank,
-      authUserId: user.id,
-      email: user.email ?? null
-    };
+    // Not yet provisioned. This happens when the session was created
+    // without passing through /api/auth/callback — e.g. password sign-in
+    // (signInWithPassword sets the session client-side) or a cookie
+    // carried over from another domain. Without a User row every API
+    // route that checks auth.userId returns 401 "Unauthorized", so
+    // lazy-provision right here. ensureUserProvisioned is idempotent.
+    try {
+      const provisioned = await ensureUserProvisioned({
+        id: user.id,
+        email: user.email
+      });
+      return {
+        authUserId: user.id,
+        email: user.email ?? null,
+        userId: provisioned.userId,
+        locale: "he",
+        orgId: provisioned.orgId,
+        role: "owner",
+        storeId: null
+      };
+    } catch {
+      // Provisioning failed (e.g. read-only DB) — fall back to the
+      // auth-identity-only context rather than breaking the request.
+      return {
+        ...blank,
+        authUserId: user.id,
+        email: user.email ?? null
+      };
+    }
   }
 
   const jar = await cookies();
