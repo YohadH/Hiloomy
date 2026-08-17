@@ -44,3 +44,4 @@ docs/LEARNINGS-RENDER-DEPLOY.md
 
 # Local dev server logs
 *.log
+scripts/migrate-supabase.ps1

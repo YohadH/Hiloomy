@@ -18,17 +18,24 @@ import { getDb } from "@/lib/server/db";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const next = url.searchParams.get("next") ?? "/";
+  // Behind Render's proxy `request.url` carries the INTERNAL origin
+  // (http://localhost:10000), so absolute redirects built from it leak the
+  // internal address to the browser. Always anchor redirects on APP_URL.
+  const base = (process.env.APP_URL ?? url.origin).replace(/\/$/, "");
+  // Only ever redirect to a same-site path — `next` is attacker-visible
+  // input, so an absolute URL here would be an open redirect.
+  const rawNext = url.searchParams.get("next") ?? "/";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
   if (!code) {
-    return NextResponse.redirect(new URL("/signin?error=missing_code", url));
+    return NextResponse.redirect(new URL("/signin?error=missing_code", base));
   }
 
   const supabase = await createRouteHandlerSupabaseClient();
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
   if (exchangeError) {
     return NextResponse.redirect(
-      new URL(`/signin?error=${encodeURIComponent(exchangeError.message)}`, url)
+      new URL(`/signin?error=${encodeURIComponent(exchangeError.message)}`, base)
     );
   }
 
@@ -74,5 +81,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(new URL(next, url));
+  return NextResponse.redirect(new URL(next, base));
 }
