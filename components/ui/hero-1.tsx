@@ -69,7 +69,7 @@ const Hero1 = () => {
                 <Paperclip className="w-5 h-5 text-gray-400" />
               </button>
               <button type="button" className="p-2 rounded-full hover:bg-[#2a1f3d] transition-all">
-                <Sparkles className="w-5 h-5 text-purple-400" />
+                <Sparkles className="w-5 h-5 text-green-400" />
               </button>
               <input
                 type="text"

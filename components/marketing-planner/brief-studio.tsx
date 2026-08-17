@@ -1357,8 +1357,8 @@ export function MarketingBriefStudio({ storeId }: { storeId: string }) {
                             key={opt.value}
                             className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
                               checked
-                                ? "border-violet-400 bg-violet-50 text-violet-700"
-                                : "border-border bg-background text-muted-foreground hover:border-violet-300"
+                                ? "border-green-400 bg-green-50 text-green-700"
+                                : "border-border bg-background text-muted-foreground hover:border-green-300"
                             }`}
                           >
                             <input
@@ -1452,7 +1452,7 @@ export function MarketingBriefStudio({ storeId }: { storeId: string }) {
               ) : null}
               <Badge>{getFocusLabel(focusMode)}</Badge>
               {secondaryFocuses.map((f) => (
-                <Badge key={f} className="border-violet-200 bg-violet-50 text-violet-700">{getFocusLabel(f)} (משני)</Badge>
+                <Badge key={f} className="border-green-200 bg-green-50 text-green-700">{getFocusLabel(f)} (משני)</Badge>
               ))}
               <Badge>{getExecutionLabel(executionMode)}</Badge>
             </div>

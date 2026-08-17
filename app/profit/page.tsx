@@ -174,7 +174,7 @@ export default async function ProfitPage() {
                   })()}
                   dataKey="estimatedProfit"
                   xKey="collection"
-                  color="#0080FF"
+                  color="#F97316"
                   format="currency"
                   currency={currency}
                   valueLabel={locale === "he" ? "רווח משוער" : "Estimated profit"}

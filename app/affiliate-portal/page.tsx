@@ -381,7 +381,7 @@ export default async function AffiliatePortalDashboardPage() {
                 <CardTitle className="text-base">{t.activeProgram}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="rounded-xl border border-indigo-200/60 bg-indigo-50/40 p-4">
+                <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/40 p-4">
                   <p className="text-lg font-semibold">{dashboard.program.name}</p>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {formatNumber(dashboard.program.affiliates)} {t.affiliatesWord} ·{" "}

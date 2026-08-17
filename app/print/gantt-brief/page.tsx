@@ -223,7 +223,7 @@ export default async function GanttBriefPrintPage({
             font-size: 10px;
             padding: 2px 8px;
             border-radius: 9999px;
-            background: #eef2ff;
+            background: #F0FDF4;
             color: #3730a3;
             font-weight: 600;
           }

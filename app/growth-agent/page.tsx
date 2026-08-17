@@ -236,7 +236,7 @@ export default async function GrowthAgentOverviewPage() {
                     {overview.provenance.lastSnapshotSource ?? (locale === "he" ? "אין תמונת מצב עדיין" : "No snapshot yet")}
                   </p>
                 </div>
-                <p className="rounded-lg bg-indigo-500/5 px-3 py-2 text-indigo-700">
+                <p className="rounded-lg bg-emerald-500/5 px-3 py-2 text-emerald-700">
                   {locale === "he"
                     ? "הסוכן נעול לחנות המחוברת שמוצגת למעלה. פעולות רצות רק עבור אותה חנות אם הן מותרות, מחוברות, מעל סף הביטחון ובתוך המגבלות שהגדרתם."
                     : "This agent is locked to the connected store shown above. Actions only run for that store when they are allowed, connected, above confidence threshold, and inside your guardrails."}

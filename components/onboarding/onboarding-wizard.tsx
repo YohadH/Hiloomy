@@ -112,12 +112,12 @@ export function OnboardingWizard({
     >
       <div className="w-full max-w-xl">
         {step === "welcome" ? (
-          <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50/40 to-indigo-50/40 p-8 shadow-sm">
+          <div className="rounded-2xl border border-green-200 bg-gradient-to-br from-green-50/40 to-emerald-50/40 p-8 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-violet-200 text-violet-700">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-green-200 text-green-700">
                 <Sparkles className="h-4 w-4" aria-hidden />
               </span>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-violet-700">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-green-700">
                 {t.welcome.kicker}
               </span>
             </div>
@@ -128,7 +128,7 @@ export function OnboardingWizard({
               <p className="font-semibold mb-2">{t.welcome.ttwc}</p>
               <ul className="space-y-1.5 text-muted-foreground">
                 <li className="flex items-start gap-2">
-                  <ShoppingBag className="h-3.5 w-3.5 mt-0.5 text-violet-600" aria-hidden />
+                  <ShoppingBag className="h-3.5 w-3.5 mt-0.5 text-green-600" aria-hidden />
                   {t.welcome.ttwc1}
                 </li>
                 <li className="flex items-start gap-2">
@@ -145,7 +145,7 @@ export function OnboardingWizard({
             <button
               type="button"
               onClick={() => setStep("connect")}
-              className="mt-6 w-full inline-flex items-center justify-center gap-2 rounded-md bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-800"
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 rounded-md bg-green-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-800"
             >
               {t.welcome.cta}
             </button>
@@ -175,7 +175,7 @@ export function OnboardingWizard({
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-300"
+                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-300"
               />
               <p className="mt-1 text-[11px] text-muted-foreground">{t.connect.note}</p>
             </label>
@@ -199,7 +199,7 @@ export function OnboardingWizard({
                 type="button"
                 onClick={handleConnect}
                 disabled={loading || !shopDomain.trim()}
-                className="order-1 sm:order-2 sm:ms-auto inline-flex items-center justify-center gap-2 rounded-md bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-800 disabled:opacity-60"
+                className="order-1 sm:order-2 sm:ms-auto inline-flex items-center justify-center gap-2 rounded-md bg-green-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-800 disabled:opacity-60"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
                 {loading ? t.connect.ctaLoading : t.connect.cta}

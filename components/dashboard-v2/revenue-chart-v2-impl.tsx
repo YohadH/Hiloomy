@@ -14,7 +14,7 @@ import { formatCurrency } from "@/lib/utils";
 
 /**
  * Light-canvas revenue + estimated profit area chart.
- * Indigo (#5E6AD2) for revenue, blue (#0080FF) for profit — the accent palette
+ * Indigo (#16A34A) for revenue, blue (#F97316) for profit — the accent palette
  * the user liked, applied to a clean light background.
  */
 export function RevenueChartV2({
@@ -30,12 +30,12 @@ export function RevenueChartV2({
         <AreaChart data={data} margin={{ left: 8, right: 16, top: 16, bottom: 0 }}>
           <defs>
             <linearGradient id="ov2-revenue-light" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#5E6AD2" stopOpacity={0.35} />
-              <stop offset="100%" stopColor="#5E6AD2" stopOpacity={0.02} />
+              <stop offset="0%" stopColor="#16A34A" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="#16A34A" stopOpacity={0.02} />
             </linearGradient>
             <linearGradient id="ov2-profit-light" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#0080FF" stopOpacity={0.28} />
-              <stop offset="100%" stopColor="#0080FF" stopOpacity={0.02} />
+              <stop offset="0%" stopColor="#F97316" stopOpacity={0.28} />
+              <stop offset="100%" stopColor="#F97316" stopOpacity={0.02} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -56,7 +56,7 @@ export function RevenueChartV2({
             }
           />
           <Tooltip
-            cursor={{ stroke: "#5E6AD2", strokeWidth: 1, strokeDasharray: "4 4" }}
+            cursor={{ stroke: "#16A34A", strokeWidth: 1, strokeDasharray: "4 4" }}
             contentStyle={{
               background: "hsl(var(--card))",
               border: "1px solid hsl(var(--border))",
@@ -73,14 +73,14 @@ export function RevenueChartV2({
           <Area
             type="monotone"
             dataKey="revenue"
-            stroke="#5E6AD2"
+            stroke="#16A34A"
             strokeWidth={2.2}
             fill="url(#ov2-revenue-light)"
           />
           <Area
             type="monotone"
             dataKey="estimatedProfit"
-            stroke="#0080FF"
+            stroke="#F97316"
             strokeWidth={2.2}
             fill="url(#ov2-profit-light)"
           />

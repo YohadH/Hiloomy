@@ -33,7 +33,7 @@ export default async function TrialExpiredPage() {
         };
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 py-12 bg-gradient-to-br from-violet-50 via-background to-indigo-50">
+    <main className="min-h-screen flex items-center justify-center px-4 py-12 bg-gradient-to-br from-green-50 via-background to-emerald-50">
       <div className="max-w-md w-full rounded-2xl bg-card border border-border p-8 shadow-lg text-center">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-100 text-amber-700 mb-4">
           <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="2">
@@ -46,7 +46,7 @@ export default async function TrialExpiredPage() {
         <p className="mt-2 text-sm text-muted-foreground">{t.body}</p>
         <Link
           href={"/billing" as never}
-          className="mt-6 inline-block w-full rounded-md bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-800"
+          className="mt-6 inline-block w-full rounded-md bg-green-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-800"
         >
           {t.cta}
         </Link>

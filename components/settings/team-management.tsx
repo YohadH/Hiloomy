@@ -340,7 +340,7 @@ export function TeamManagement({
               type="button"
               onClick={handleInvite}
               disabled={submitting || !inviteEmail.trim()}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-60"
             >
               {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
               {submitting ? t.sending : t.sendInvite}

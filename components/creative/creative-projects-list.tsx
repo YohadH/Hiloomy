@@ -139,7 +139,7 @@ export function CreativeProjectsList({
       {projects.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <Sparkles className="h-10 w-10 text-indigo-500" aria-hidden />
+            <Sparkles className="h-10 w-10 text-emerald-500" aria-hidden />
             <h3 className="text-base font-semibold">
               {isHe ? "אין עדיין פרויקטים" : "No projects yet"}
             </h3>

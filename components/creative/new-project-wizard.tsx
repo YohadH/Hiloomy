@@ -432,11 +432,11 @@ export function NewProjectWizard({
                   className={cn(
                     "flex h-full flex-col items-start gap-2 rounded-2xl border p-4 text-start transition-colors",
                     selected
-                      ? "border-indigo-500 bg-indigo-50/50 ring-2 ring-indigo-200"
-                      : "border-border hover:border-indigo-300 hover:bg-muted/30"
+                      ? "border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-200"
+                      : "border-border hover:border-emerald-300 hover:bg-muted/30"
                   )}
                 >
-                  <Icon className={cn("h-6 w-6", selected ? "text-indigo-600" : "text-muted-foreground")} aria-hidden />
+                  <Icon className={cn("h-6 w-6", selected ? "text-emerald-600" : "text-muted-foreground")} aria-hidden />
                   <p className="text-sm font-semibold">{isHe ? choice.labelHe : choice.labelEn}</p>
                   <p className="text-xs leading-5 text-muted-foreground">
                     {isHe ? choice.blurbHe : choice.blurbEn}
@@ -458,7 +458,7 @@ export function NewProjectWizard({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-6 py-10 text-center hover:border-indigo-400 hover:bg-indigo-50/30">
+          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-6 py-10 text-center hover:border-emerald-400 hover:bg-emerald-50/30">
             <Upload className="h-6 w-6 text-muted-foreground" aria-hidden />
             <p className="text-sm font-medium">
               {isHe ? "לחצו לבחירה או גררו לכאן" : "Click to choose or drop files here"}
@@ -491,7 +491,7 @@ export function NewProjectWizard({
                       key={src}
                       className={cn(
                         "flex items-start gap-3 rounded-2xl border p-3",
-                        isProduct ? "border-indigo-500 bg-indigo-50/40" : "border-border"
+                        isProduct ? "border-emerald-500 bg-emerald-50/40" : "border-border"
                       )}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -508,8 +508,8 @@ export function NewProjectWizard({
                             className={cn(
                               "h-7 rounded-full border px-2.5 text-[11px] font-semibold transition-colors",
                               isProduct
-                                ? "border-indigo-500 bg-indigo-600 text-white"
-                                : "border-border bg-background text-muted-foreground hover:border-indigo-300"
+                                ? "border-emerald-500 bg-emerald-600 text-white"
+                                : "border-border bg-background text-muted-foreground hover:border-emerald-300"
                             )}
                           >
                             {isHe ? "מוצר" : "Product"}
@@ -675,8 +675,8 @@ export function NewProjectWizard({
                     className={cn(
                       "rounded-2xl border p-3 text-start transition-colors",
                       selected
-                        ? "border-indigo-500 bg-indigo-50/60 ring-2 ring-indigo-200"
-                        : "border-border hover:border-indigo-300"
+                        ? "border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-200"
+                        : "border-border hover:border-emerald-300"
                     )}
                   >
                     <p className="text-xs font-semibold">{isHe ? opt.labelHe : opt.labelEn}</p>
@@ -693,7 +693,7 @@ export function NewProjectWizard({
               agent rewrites the prompt before generation based on the
               product/tone/brand-notes fields, then the template wraps it
               with the stable style notes. */}
-          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border p-3 text-sm hover:border-indigo-300">
+          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border p-3 text-sm hover:border-emerald-300">
             <input
               type="checkbox"
               checked={useAgentPrompt}
@@ -717,7 +717,7 @@ export function NewProjectWizard({
               <button
                 type="button"
                 onClick={togglePreview}
-                className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900"
+                className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-700 hover:text-emerald-900"
               >
                 <span>{previewOpen ? "▾" : "▸"}</span>
                 {isHe
@@ -801,8 +801,8 @@ export function NewProjectWizard({
                     )}
                   </div>
                 ) : null}
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-800">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
                     {isHe
                       ? previewAgentText
                         ? "הטקסט המלא שיישלח למודל (כולל פלט הסוכן):"
@@ -881,8 +881,8 @@ export function NewProjectWizard({
                     className={cn(
                       "flex h-full flex-col gap-2 rounded-2xl border p-3 text-start transition-colors",
                       isSelected && !disabled
-                        ? "border-indigo-500 bg-indigo-50/50 ring-2 ring-indigo-200"
-                        : "border-border hover:border-indigo-300 hover:bg-muted/30",
+                        ? "border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-200"
+                        : "border-border hover:border-emerald-300 hover:bg-muted/30",
                       !status.configured && "opacity-90",
                       disabled && "cursor-not-allowed opacity-50 hover:border-border hover:bg-transparent"
                     )}
@@ -969,8 +969,8 @@ export function NewProjectWizard({
                       className={cn(
                         "h-9 rounded-xl border px-3 text-sm font-semibold transition-colors",
                         targetCount === preset
-                          ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                          : "border-border bg-background hover:border-indigo-300"
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                          : "border-border bg-background hover:border-emerald-300"
                       )}
                     >
                       {preset}

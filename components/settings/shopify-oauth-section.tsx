@@ -132,9 +132,9 @@ export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
   else if (config?.hasEnvFallback.clientSecret) credentialsSource.push("Secret (env var)");
 
   return (
-    <div className="space-y-4 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50/40 to-indigo-50/40 p-5">
+    <div className="space-y-4 rounded-2xl border border-green-200 bg-gradient-to-br from-green-50/40 to-emerald-50/40 p-5">
       <div className="flex items-start gap-3">
-        <div className="rounded-lg bg-violet-100 p-2 text-violet-700">
+        <div className="rounded-lg bg-green-100 p-2 text-green-700">
           <KeyRound className="h-5 w-5" aria-hidden />
         </div>
         <div className="flex-1">
@@ -190,13 +190,13 @@ export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          className="w-full sm:flex-1 min-w-0 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+          className="w-full sm:flex-1 min-w-0 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
         />
         <button
           type="button"
           onClick={handleInstall}
           disabled={!credentialsReady}
-          className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-green-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {t.install}
           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
@@ -226,7 +226,7 @@ export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
               placeholder={t.clientIdPlaceholder}
               value={clientIdInput}
               onChange={(e) => setClientIdInput(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
             />
           </label>
 
@@ -239,7 +239,7 @@ export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
               placeholder="shpss_..."
               value={clientSecretInput}
               onChange={(e) => setClientSecretInput(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
             />
           </label>
 

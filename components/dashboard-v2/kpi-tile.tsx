@@ -99,7 +99,7 @@ export function KpiTile({
   const inner = (
     <CardContent className="p-5">
       <div className="flex items-start justify-between gap-3">
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
           <Icon className="h-4 w-4" aria-hidden />
         </span>
         {hasChange ? (
@@ -129,7 +129,7 @@ export function KpiTile({
         <p className="mt-2 text-[11px] leading-4 text-muted-foreground">{hint}</p>
       ) : null}
       {href ? (
-        <p className="mt-2 text-[10px] font-medium text-indigo-500 uppercase tracking-wide">
+        <p className="mt-2 text-[10px] font-medium text-emerald-500 uppercase tracking-wide">
           פירוט &rarr;
         </p>
       ) : null}
@@ -139,7 +139,7 @@ export function KpiTile({
   if (href) {
     return (
       <Link href={href as Parameters<typeof Link>[0]["href"]} className="group block">
-        <Card className="transition-shadow hover:shadow-lg group-hover:border-indigo-200">
+        <Card className="transition-shadow hover:shadow-lg group-hover:border-emerald-200">
           {inner}
         </Card>
       </Link>
@@ -188,7 +188,7 @@ export function StatTile({
     <Card className="transition-shadow hover:shadow-lg">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-2">
-          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
             <Icon className="h-4 w-4" aria-hidden />
           </span>
           {badge ? (

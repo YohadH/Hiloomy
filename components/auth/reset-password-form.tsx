@@ -62,7 +62,7 @@ export function ResetPasswordForm() {
         <p className="text-center text-sm text-muted-foreground">{t.successBody}</p>
         <a
           href={`/signin?lang=${locale}`}
-          className="mt-6 block w-full text-center rounded-md bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-800"
+          className="mt-6 block w-full text-center rounded-md bg-green-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-800"
         >
           {t.goToSignin}
         </a>
@@ -130,7 +130,7 @@ export function ResetPasswordForm() {
         <button
           type="submit"
           disabled={submitting || !password || !confirm}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-800 disabled:opacity-60"
+          className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-green-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-800 disabled:opacity-60"
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           {submitting ? t.submitting : t.submit}

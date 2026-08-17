@@ -93,7 +93,7 @@ export function WeeklyReportRecipientsManager({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <Mail className="h-3.5 w-3.5 text-indigo-600" aria-hidden />
+        <Mail className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
         <p className="text-sm font-semibold">
           {isHe ? "נמענים לדוח השבועי" : "Weekly report recipients"}
         </p>

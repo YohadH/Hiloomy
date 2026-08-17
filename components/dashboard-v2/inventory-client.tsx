@@ -60,7 +60,7 @@ const ACTION_CHIPS: Array<{
     icon: Package,
     labelHe: "להגדיל ייצור",
     labelEn: "Scale production",
-    colorClass: "bg-violet-500/10 text-violet-800 border-violet-300"
+    colorClass: "bg-green-500/10 text-green-800 border-green-300"
   }
 ];
 
@@ -267,8 +267,8 @@ function FilterStatCard({
       className={cn(
         "group w-full rounded-xl border text-start transition-all",
         isActive
-          ? "border-indigo-400 shadow-md ring-2 ring-indigo-200"
-          : "border-border hover:border-indigo-200 hover:shadow-sm"
+          ? "border-emerald-400 shadow-md ring-2 ring-emerald-200"
+          : "border-border hover:border-emerald-200 hover:shadow-sm"
       )}
     >
       <CardContent className="p-5">
@@ -282,7 +282,7 @@ function FilterStatCard({
             <Icon className="h-4 w-4" aria-hidden />
           </span>
           {isActive ? (
-            <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
               מסנן
             </span>
           ) : null}
@@ -491,7 +491,7 @@ export function InventoryClient({
           <button
             type="button"
             onClick={() => setFilterFlag(null)}
-            className="mt-2 text-xs font-medium text-indigo-600 underline-offset-2 hover:underline"
+            className="mt-2 text-xs font-medium text-emerald-600 underline-offset-2 hover:underline"
           >
             {locale === "he" ? "ביטול סינון" : "Clear filter"}
           </button>
@@ -508,7 +508,7 @@ export function InventoryClient({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={locale === "he" ? "חיפוש מוצר..." : "Search products..."}
-            className="h-9 w-full rounded-lg border border-input bg-background pe-3 ps-9 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            className="h-9 w-full rounded-lg border border-input bg-background pe-3 ps-9 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
             dir={locale === "he" ? "rtl" : "ltr"}
           />
         </div>
@@ -529,7 +529,7 @@ export function InventoryClient({
               className={cn(
                 "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                 sortKey === btn.key
-                  ? "bg-white shadow-sm text-indigo-700 dark:bg-background"
+                  ? "bg-white shadow-sm text-emerald-700 dark:bg-background"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >

@@ -56,7 +56,7 @@ function cellShade(rate: number | null): {
 
   // Mid range 5%–25%: indigo ramp (same hue as rest of the dashboard)
   const t = (rate - 0.05) / 0.20; // 0 at 5%, 1 at 25%
-  // Light end #eef2ff → strong end #6366f1
+  // Light end #F0FDF4 → strong end #16A34A
   const r = Math.round(238 - (238 - 99) * t);
   const g = Math.round(242 - (242 - 102) * t);
   const b = Math.round(255 - (255 - 241) * t);
@@ -153,7 +153,7 @@ export function CohortHeatmap({
           {lang("נמוך מאוד (<5%)", "Very low (<5%)")}
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-6 rounded-sm" style={{ background: "#eef2ff" }} />
+          <span className="inline-block h-3 w-6 rounded-sm" style={{ background: "#F0FDF4" }} />
           {lang("בינוני", "Mid")}
         </span>
         <span className="flex items-center gap-1">

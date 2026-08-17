@@ -14,7 +14,7 @@ export function SectionHead({
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="space-y-1">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-600">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-600">
           {eyebrow}
         </p>
         <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h2>
@@ -26,7 +26,7 @@ export function SectionHead({
         <Link
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           href={cta.href as any}
-          className="text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-500"
+          className="text-sm font-semibold text-emerald-600 transition-colors hover:text-emerald-500"
         >
           {cta.label}
         </Link>
@@ -46,7 +46,7 @@ export function PageHead({
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-600">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-600">
         {eyebrow}
       </p>
       <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>

@@ -186,7 +186,7 @@ export function CreativeProjectDetailView({
                 <div className="space-y-3">
                   {product ? (
                     <div className="space-y-1.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                         {isHe ? "מוצר" : "Product"}
                       </p>
                       {product.fileUrl ? (
@@ -194,7 +194,7 @@ export function CreativeProjectDetailView({
                         <img
                           src={product.fileUrl}
                           alt="product"
-                          className="w-full rounded-xl object-cover ring-2 ring-indigo-200"
+                          className="w-full rounded-xl object-cover ring-2 ring-emerald-200"
                         />
                       ) : null}
                     </div>
@@ -254,8 +254,8 @@ export function CreativeProjectDetailView({
             ) : null}
 
             {project.brief?.customPrompt ? (
-              <div className="space-y-1.5 rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+              <div className="space-y-1.5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                   {isHe ? "הפרומפט שלכם" : "Your prompt"}
                 </p>
                 <p className="whitespace-pre-wrap text-xs leading-5 text-slate-900">

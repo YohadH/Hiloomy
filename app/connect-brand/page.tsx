@@ -20,7 +20,7 @@ export default async function ConnectBrandPage() {
     : { title: "Connect a new brand", back: "← Back to dashboard" };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-violet-50/30 via-background to-indigo-50/30">
+    <main className="min-h-screen bg-gradient-to-br from-green-50/30 via-background to-emerald-50/30">
       <div className="mx-auto max-w-3xl px-4 py-6">
         <a href="/" className="text-xs text-muted-foreground hover:text-foreground">
           {t.back}

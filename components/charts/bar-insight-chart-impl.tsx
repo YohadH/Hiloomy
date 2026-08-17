@@ -14,7 +14,7 @@ export function BarInsightChart<T extends object>({
   data,
   dataKey,
   xKey,
-  color = "#5E6AD2",
+  color = "#16A34A",
   format = "number",
   currency = "USD",
   valueLabel

@@ -195,7 +195,7 @@ export default async function SettingsPage({
                 <Card>
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600">
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-green-500/10 text-green-600">
                         <Building2 className="h-3.5 w-3.5" aria-hidden />
                       </span>
                       <CardTitle className="text-base">
@@ -218,28 +218,28 @@ export default async function SettingsPage({
                             : `${orgSummary.stores} brands · ${orgSummary.members} members · ${orgSummary.plan} plan`}
                         </p>
                       </div>
-                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold capitalize text-violet-700">
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold capitalize text-green-700">
                         {orgSummary.role}
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Link
                         href={"/settings/organization" as never}
-                        className="inline-flex items-center rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition-colors hover:border-violet-500"
+                        className="inline-flex items-center rounded-lg border border-green-300 bg-white px-3 py-1.5 text-xs font-semibold text-green-700 transition-colors hover:border-green-500"
                       >
                         {locale === "he" ? "ניהול צוות והזמנות" : "Manage team & invites"}
                       </Link>
                       {orgSummary.stores >= 2 ? (
                         <Link
                           href={"/portfolio" as never}
-                          className="inline-flex items-center rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-violet-300 hover:text-foreground"
+                          className="inline-flex items-center rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-green-300 hover:text-foreground"
                         >
                           {locale === "he" ? "דשבורד כל המותגים" : "All-brands dashboard"}
                         </Link>
                       ) : null}
                       <Link
                         href={"/connect-brand" as never}
-                        className="inline-flex items-center rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-violet-300 hover:text-foreground"
+                        className="inline-flex items-center rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-green-300 hover:text-foreground"
                       >
                         {locale === "he" ? "+ חיבור מותג נוסף" : "+ Connect another brand"}
                       </Link>
@@ -251,7 +251,7 @@ export default async function SettingsPage({
               <Card>
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
                       <Globe className="h-3.5 w-3.5" aria-hidden />
                     </span>
                     <CardTitle className="text-base">{dictionary.settings.languageTitle}</CardTitle>
@@ -272,7 +272,7 @@ export default async function SettingsPage({
               <Card>
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
                       <Settings2 className="h-3.5 w-3.5" aria-hidden />
                     </span>
                     <CardTitle className="text-base">{dictionary.settings.reportingTitle}</CardTitle>
@@ -318,7 +318,7 @@ export default async function SettingsPage({
               <Card>
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
                       <Wrench className="h-3.5 w-3.5" aria-hidden />
                     </span>
                     <CardTitle className="text-base">{dictionary.settings.futureTitle}</CardTitle>

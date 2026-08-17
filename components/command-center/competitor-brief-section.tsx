@@ -17,7 +17,7 @@ function ActionItem({
 }) {
   const chip =
     accent === "indigo"
-      ? "bg-indigo-600 text-white"
+      ? "bg-emerald-600 text-white"
       : "bg-muted text-foreground";
   return (
     <li className="flex items-start gap-2 text-sm leading-6">
@@ -97,9 +97,9 @@ export function CompetitorBriefSection({
 
       {/* Prescriptions: today / this week */}
       <div className="grid gap-3 lg:grid-cols-2">
-        <Card className="border-indigo-200 bg-indigo-50/40">
+        <Card className="border-emerald-200 bg-emerald-50/40">
           <CardContent className="p-4">
-            <p className="flex items-center gap-2 text-sm font-bold text-indigo-900">
+            <p className="flex items-center gap-2 text-sm font-bold text-emerald-900">
               <Zap className="h-4 w-4" aria-hidden />
               {lang("לעשות באתר היום", "Do on the site today")}
             </p>

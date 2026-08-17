@@ -67,7 +67,7 @@ export function AccountMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 text-white text-xs font-bold shadow-sm hover:shadow-md transition-shadow"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-green-600 to-emerald-600 text-white text-xs font-bold shadow-sm hover:shadow-md transition-shadow"
         title={email}
       >
         {initials}

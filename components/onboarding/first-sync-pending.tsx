@@ -88,14 +88,14 @@ export function FirstSyncPending({
       dir={locale === "he" ? "rtl" : "ltr"}
       className="min-h-[50vh] flex items-center justify-center px-4"
     >
-      <div className="w-full max-w-md rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50/40 to-indigo-50/40 p-8 text-center shadow-sm">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-violet-100 text-violet-700 mb-4">
+      <div className="w-full max-w-md rounded-2xl border border-green-200 bg-gradient-to-br from-green-50/40 to-emerald-50/40 p-8 text-center shadow-sm">
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-100 text-green-700 mb-4">
           <Sparkles className="h-6 w-6 animate-pulse" aria-hidden />
         </div>
         <h2 className="text-xl font-bold tracking-tight">{t.title}</h2>
         <p className="mt-2 text-sm text-muted-foreground">{t.body}</p>
 
-        <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-card px-3 py-1 text-xs text-violet-800">
+        <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-green-200 bg-card px-3 py-1 text-xs text-green-800">
           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
           {minutes > 0 ? `${minutes}:${String(seconds).padStart(2, "0")}` : `${seconds}s`}
         </div>

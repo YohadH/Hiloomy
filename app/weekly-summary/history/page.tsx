@@ -89,7 +89,7 @@ export default async function WeeklyReportsHistoryPage() {
             <td className="py-2 text-end">
               <a
                 href={`/api/weekly-summary/history/${r.id}/pdf`}
-                className="text-xs font-semibold text-indigo-700 hover:text-indigo-900"
+                className="text-xs font-semibold text-emerald-700 hover:text-emerald-900"
               >
                 {t.download}
               </a>

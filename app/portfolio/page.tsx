@@ -114,7 +114,7 @@ export default async function PortfolioPage() {
           <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
             <Building2 className="h-10 w-10 text-muted-foreground" aria-hidden />
             <p className="max-w-md text-sm text-muted-foreground">{t.noBrands}</p>
-            <Link href={"/connect-brand" as never} className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+            <Link href={"/connect-brand" as never} className="text-sm font-medium text-emerald-600 hover:text-emerald-700">
               {t.connectAnother}
             </Link>
           </CardContent>
@@ -157,7 +157,7 @@ export default async function PortfolioPage() {
               <p className="text-sm text-muted-foreground">{t.oneBrand}</p>
               <Link
                 href={"/connect-brand" as never}
-                className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                className="text-sm font-medium text-emerald-600 hover:text-emerald-700"
               >
                 {t.connectAnother}
               </Link>
@@ -316,7 +316,7 @@ function BrandStoryCard({
           <div className="flex items-center gap-2">
             <p className="text-base font-semibold text-foreground">{story.storeName}</p>
             {story.isDemo ? (
-              <span className="inline-flex items-center rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-800">
+              <span className="inline-flex items-center rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-800">
                 {isHe ? "נתוני הדגמה" : "Demo data"}
               </span>
             ) : null}
@@ -381,7 +381,7 @@ function BrandStoryCard({
           ) : null}
           {mixLine ? (
             <li className="flex items-start gap-2">
-              <TrendingUp className="mt-1 h-4 w-4 shrink-0 text-indigo-600" aria-hidden />
+              <TrendingUp className="mt-1 h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
               <span>{mixLine}</span>
             </li>
           ) : (

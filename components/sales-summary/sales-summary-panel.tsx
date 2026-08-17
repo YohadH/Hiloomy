@@ -264,14 +264,14 @@ function getStrings(locale: PanelLocale) {
         channelMix: isHe ? (
           <>
             חלקה של ההכנסה מהמוצר בכל ערוץ.
-            <strong className="text-indigo-300"> סגול</strong> = אונליין (Shopify),
+            <strong className="text-emerald-300"> סגול</strong> = אונליין (Shopify),
             <strong className="text-amber-300"> כתום</strong> = אופליין (קובץ שהועלה).
             סוכם ל100% עבור מוצרים עם מכירות.
           </>
         ) : (
           <>
             Share of this product's revenue from each channel.
-            <strong className="text-indigo-300"> Indigo</strong> = Online (Shopify),
+            <strong className="text-emerald-300"> Indigo</strong> = Online (Shopify),
             <strong className="text-amber-300"> amber</strong> = Offline (uploaded file).
             Sums to 100% for products with sales.
           </>
@@ -555,7 +555,7 @@ export function SalesSummaryPanel({
                 {t.upload.hint}
               </p>
               {autoDetected ? (
-                <p className="text-xs text-indigo-600">
+                <p className="text-xs text-emerald-600">
                   {t.upload.detectedFrom} {autoDetected.sheetTitle ?? "—"}
                   {autoDetected.month && autoDetected.year ? ` → ${periodLabel(autoDetected.year, autoDetected.month, locale)}` : ""}
                 </p>
@@ -600,7 +600,7 @@ export function SalesSummaryPanel({
                     <li key={imp.id}>
                       <div
                         className={`flex items-center justify-between rounded-xl border px-3 py-2 text-sm transition-colors ${
-                          active ? "border-indigo-500 bg-indigo-500/5" : "border-border hover:bg-accent/40"
+                          active ? "border-emerald-500 bg-emerald-500/5" : "border-border hover:bg-accent/40"
                         }`}
                       >
                         <button type="button" className="flex flex-1 items-center gap-2 text-start" onClick={() => setSelectedId(imp.id)}>
@@ -668,7 +668,7 @@ function SummaryView({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-600">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-600">
             {periodLabel(imp.periodYear, imp.periodMonth, locale)}
           </p>
           <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">{t.summary.bottomLine}</h2>
@@ -693,13 +693,13 @@ function SummaryView({
         </a>
       </div>
 
-      <div className="rounded-2xl border border-indigo-200/60 bg-gradient-to-r from-indigo-50/80 via-white to-sky-50/60 p-5 shadow-soft sm:p-6">
+      <div className="rounded-2xl border border-emerald-200/60 bg-gradient-to-r from-emerald-50/80 via-white to-sky-50/60 p-5 shadow-soft sm:p-6">
         <div className="flex flex-wrap items-start gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500 text-white shadow-sm">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
             <Sparkles className="h-5 w-5" aria-hidden />
           </div>
           <div className="flex-1 space-y-1.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-600">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-600">
               {t.summary.agentEyebrow}
             </p>
             <h3 className="text-lg font-semibold leading-snug sm:text-xl">{narrative.headline}</h3>
@@ -928,7 +928,7 @@ function HeroesCard({
 }) {
   const toneClasses = tone === "amber"
     ? "bg-amber-500/10 text-amber-700"
-    : "bg-indigo-500/10 text-indigo-700";
+    : "bg-emerald-500/10 text-emerald-700";
 
   return (
     <Card>
@@ -976,7 +976,7 @@ function ChannelMixBar({ online, offline, totalSales, t }: { online: number; off
   return (
     <div className="space-y-1">
       <div className="flex h-2 w-32 overflow-hidden rounded-full bg-muted">
-        <div className="bg-indigo-500" style={{ width: `${online}%` }} aria-label={`Online ${online.toFixed(0)}%`} />
+        <div className="bg-emerald-500" style={{ width: `${online}%` }} aria-label={`Online ${online.toFixed(0)}%`} />
         <div className="bg-amber-500" style={{ width: `${offline}%` }} aria-label={`Offline ${offline.toFixed(0)}%`} />
       </div>
       <div className="flex w-32 justify-between text-[10px] text-muted-foreground">
@@ -1051,7 +1051,7 @@ function AffiliateHaloCard({ halo, currency, t }: { halo: AffiliateHaloSummary; 
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-fuchsia-500/10 text-fuchsia-700">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500/10 text-orange-700">
             <Megaphone className="h-3.5 w-3.5" />
           </span>
           {t.halo.title}
@@ -1184,7 +1184,7 @@ function KpiCard({
   tone: "indigo" | "amber" | "emerald";
 }) {
   const toneClasses: Record<typeof tone, string> = {
-    indigo: "bg-indigo-500/10 text-indigo-700",
+    indigo: "bg-emerald-500/10 text-emerald-700",
     amber: "bg-amber-500/10 text-amber-700",
     emerald: "bg-emerald-500/10 text-emerald-700"
   };

@@ -114,7 +114,7 @@ export function SignupForm() {
               placeholder={t.emailPlaceholder}
               autoComplete="email"
               autoCapitalize="none"
-              className="w-full ps-9 pe-3 py-2.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+              className="w-full ps-9 pe-3 py-2.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
               required
             />
           </div>
@@ -130,7 +130,7 @@ export function SignupForm() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t.passwordPlaceholder}
               autoComplete="new-password"
-              className="w-full ps-9 pe-3 py-2.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+              className="w-full ps-9 pe-3 py-2.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
               required
               minLength={8}
             />
@@ -148,7 +148,7 @@ export function SignupForm() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-800 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-green-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           {submitting ? t.submitting : t.submit}

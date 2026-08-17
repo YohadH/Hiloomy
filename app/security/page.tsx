@@ -114,10 +114,10 @@ export default async function SecurityPage() {
   return (
     <main
       dir={isHe ? "rtl" : "ltr"}
-      className="min-h-screen bg-gradient-to-br from-violet-50/30 via-background to-indigo-50/30"
+      className="min-h-screen bg-gradient-to-br from-green-50/30 via-background to-emerald-50/30"
     >
       <div className="mx-auto max-w-3xl px-4 py-12 sm:py-20">
-        <p className="text-xs font-semibold uppercase tracking-wider text-violet-700">
+        <p className="text-xs font-semibold uppercase tracking-wider text-green-700">
           {t.kicker}
         </p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{t.title}</h1>
@@ -132,7 +132,7 @@ export default async function SecurityPage() {
                 className="rounded-2xl border border-border bg-card p-5 sm:p-6"
               >
                 <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-violet-100 p-2 text-violet-700 shrink-0">
+                  <div className="rounded-lg bg-green-100 p-2 text-green-700 shrink-0">
                     <Icon className="h-5 w-5" aria-hidden />
                   </div>
                   <div>
@@ -147,8 +147,8 @@ export default async function SecurityPage() {
           })}
         </div>
 
-        <div className="mt-12 rounded-2xl border border-violet-200 bg-violet-50/50 p-5 sm:p-6">
-          <p className="text-sm text-violet-900">{t.contact}</p>
+        <div className="mt-12 rounded-2xl border border-green-200 bg-green-50/50 p-5 sm:p-6">
+          <p className="text-sm text-green-900">{t.contact}</p>
         </div>
       </div>
     </main>

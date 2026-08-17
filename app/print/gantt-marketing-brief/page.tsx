@@ -173,7 +173,7 @@ export default async function MarketingBriefPrintPage({
             margin-top: 14px;
             padding: 12px 14px;
             background: #f8fafc;
-            border-inline-start: 4px solid #4f46e5;
+            border-inline-start: 4px solid #15803D;
             font-size: 13px;
             line-height: 1.7;
             color: #1e293b;
@@ -186,7 +186,7 @@ export default async function MarketingBriefPrintPage({
             margin-top: 14px;
           }
           .kpi {
-            background: #eef2ff;
+            background: #F0FDF4;
             color: #3730a3;
             padding: 6px 12px;
             border-radius: 999px;
@@ -297,7 +297,7 @@ export default async function MarketingBriefPrintPage({
             letter-spacing: 1px;
           }
           .offer-url { font-size: 11px; margin: 4px 0; word-break: break-all; }
-          .offer-url a { color: #4f46e5; }
+          .offer-url a { color: #15803D; }
           .offer-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
           .chip {
             display: inline-block;

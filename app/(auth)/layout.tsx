@@ -7,7 +7,7 @@ import { HiloomyLogo } from "@/components/ui/logo";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-background to-indigo-50 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-background to-emerald-50 flex flex-col">
       <header className="px-6 py-5">
         <a href="/" className="inline-flex items-center">
           <HiloomyLogo />

@@ -154,7 +154,7 @@ function TextOverlayShape({
           y={yPx - overlay.fontSizePx * 0.8 - 8}
           width={widthPx + 16}
           height={overlay.fontSizePx * 2.6}
-          stroke="#6366f1"
+          stroke="#16A34A"
           strokeWidth={1.5}
           dash={[6, 4]}
           listening={false}
@@ -224,7 +224,7 @@ function ImageOverlayShape({
           y={yPx - 4}
           width={widthPx + 8}
           height={heightPx + 8}
-          stroke="#6366f1"
+          stroke="#16A34A"
           strokeWidth={1.5}
           dash={[6, 4]}
           listening={false}

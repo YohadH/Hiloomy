@@ -40,7 +40,7 @@ export function TrialBanner({
   const Icon = urgent ? AlertTriangle : Clock;
   const colors = urgent
     ? "border-amber-300 bg-amber-50 text-amber-900"
-    : "border-violet-200 bg-violet-50/60 text-violet-900";
+    : "border-green-200 bg-green-50/60 text-green-900";
 
   return (
     <div
@@ -58,7 +58,7 @@ export function TrialBanner({
       </div>
       <Link
         href={"/billing" as never}
-        className="rounded-md bg-violet-700 px-3 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-violet-800"
+        className="rounded-md bg-green-700 px-3 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-green-800"
       >
         {t.upgrade}
       </Link>

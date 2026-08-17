@@ -519,7 +519,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
           </div>
           <label
             className={cn(
-              "inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/40 px-3 py-2 text-sm font-semibold text-indigo-700 hover:border-indigo-400",
+              "inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 px-3 py-2 text-sm font-semibold text-emerald-700 hover:border-emerald-400",
               uploading && "pointer-events-none opacity-50"
             )}
           >
@@ -602,10 +602,10 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
       {sheet && !loadingSheet ? (
         <>
           {/* ── Parsed range banner — visual sanity check ──────────── */}
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-sm">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 text-sm">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="font-semibold text-indigo-900">📅 טווח הגאנט:</span>
-              <span className="font-mono text-indigo-800">
+              <span className="font-semibold text-emerald-900">📅 טווח הגאנט:</span>
+              <span className="font-mono text-emerald-800">
                 {sheet.rangeStart
                   ? new Date(sheet.rangeStart).toLocaleDateString("he-IL", {
                       day: "2-digit",
@@ -642,7 +642,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
           <div className="rounded-2xl border border-border bg-card p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-violet-600" aria-hidden />
+                <Sparkles className="h-4 w-4 text-green-600" aria-hidden />
                 <h3 className="text-base font-semibold">תובנות מסוכן BI</h3>
                 {insightsGeneratedAt ? (
                   <span className="text-[11px] text-muted-foreground">
@@ -658,7 +658,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 type="button"
                 onClick={handleRunInsights}
                 disabled={insightsLoading}
-                className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
               >
                 {insightsLoading ? (
                   <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
@@ -699,7 +699,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                                 key={d}
                                 type="button"
                                 onClick={() => setSelectedDay(d)}
-                                className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-50"
+                                className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-50"
                               >
                                 {d}
                               </button>
@@ -740,11 +740,11 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
           </div>
 
           {/* ── Marketing brief generator (BIG CTA) ──────────────────── */}
-          <div className="rounded-2xl border border-fuchsia-200 bg-gradient-to-br from-pink-50 via-white to-amber-50 p-5">
+          <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-pink-50 via-white to-amber-50 p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-fuchsia-600" aria-hidden />
+                  <FileText className="h-4 w-4 text-orange-600" aria-hidden />
                   <h3 className="text-base font-semibold">בריף שיווקי חודשי</h3>
                 </div>
                 <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
@@ -764,7 +764,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 type="button"
                 onClick={() => handleGenerateBrief(!briefReady ? false : true)}
                 disabled={briefGenerating}
-                className="inline-flex items-center gap-2 rounded-xl bg-fuchsia-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-fuchsia-700 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-orange-700 disabled:opacity-50"
               >
                 {briefGenerating ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -777,7 +777,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 type="button"
                 onClick={handleDownloadBriefPdf}
                 disabled={downloadingBriefPdf || briefGenerating}
-                className="inline-flex items-center gap-2 rounded-xl border border-fuchsia-300 bg-white px-4 py-2 text-sm font-semibold text-fuchsia-700 hover:border-fuchsia-500 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-orange-300 bg-white px-4 py-2 text-sm font-semibold text-orange-700 hover:border-orange-500 disabled:opacity-50"
               >
                 {downloadingBriefPdf ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -790,7 +790,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 href={`/print/gantt-marketing-brief?sheetId=${selectedSheetId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-2 text-sm text-muted-foreground hover:border-fuchsia-300"
+                className="inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-2 text-sm text-muted-foreground hover:border-orange-300"
               >
                 תצוגה מקדימה בדפדפן
               </a>
@@ -823,7 +823,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                       type="button"
                       onClick={() => handleDownloadRolePdf(role)}
                       disabled={downloadingRole === role}
-                      className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-1.5 text-sm hover:border-indigo-300 disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-1.5 text-sm hover:border-emerald-300 disabled:opacity-50"
                     >
                       {downloadingRole === role ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -853,7 +853,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                   type="button"
                   onClick={() => handleDownloadRolePdf("")}
                   disabled={downloadingRole === ""}
-                  className="inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-background px-3 py-1.5 text-sm text-muted-foreground hover:border-indigo-300"
+                  className="inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-background px-3 py-1.5 text-sm text-muted-foreground hover:border-emerald-300"
                 >
                   {downloadingRole === "" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -869,7 +869,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
           {/* ── Calendar grid ────────────────────────────────────────── */}
           <div className="rounded-2xl border border-border bg-card p-5">
             <div className="mb-3 flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-indigo-600" aria-hidden />
+              <Calendar className="h-4 w-4 text-emerald-600" aria-hidden />
               <h3 className="text-base font-semibold">לוח שנה</h3>
               <span className="text-xs text-muted-foreground">
                 {calendarDays.length} ימים, {sheet.rows.length} משימות. לחצו על יום
@@ -909,14 +909,14 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                     className={cn(
                       "flex h-20 flex-col rounded-lg border p-1.5 text-start transition-colors",
                       selected
-                        ? "border-indigo-500 bg-indigo-50/60 ring-2 ring-indigo-200"
+                        ? "border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-200"
                         : tasks.length > 0
-                          ? "border-border bg-white hover:border-indigo-300"
-                          : "border-dashed border-border bg-muted/20 hover:border-indigo-300"
+                          ? "border-border bg-white hover:border-emerald-300"
+                          : "border-dashed border-border bg-muted/20 hover:border-emerald-300"
                     )}
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className={cn("text-[11px] font-bold", selected ? "text-indigo-700" : "text-foreground")}>
+                      <span className={cn("text-[11px] font-bold", selected ? "text-emerald-700" : "text-foreground")}>
                         {fmtDayLabel(d)}
                       </span>
                       {uniqueCategories.length > 0 ? (
@@ -932,7 +932,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                       ) : null}
                     </div>
                     {tasks.length > 0 ? (
-                      <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                      <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
                         {tasks.length}
                       </span>
                     ) : null}
@@ -968,7 +968,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                       d.setUTCDate(d.getUTCDate() - 1);
                       setSelectedDay(dayKey(d));
                     }}
-                    className="rounded-lg border border-border p-1.5 hover:border-indigo-300"
+                    className="rounded-lg border border-border p-1.5 hover:border-emerald-300"
                     title="יום קודם"
                   >
                     <ChevronRight className="h-4 w-4" aria-hidden />
@@ -991,7 +991,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                       d.setUTCDate(d.getUTCDate() + 1);
                       setSelectedDay(dayKey(d));
                     }}
-                    className="rounded-lg border border-border p-1.5 hover:border-indigo-300"
+                    className="rounded-lg border border-border p-1.5 hover:border-emerald-300"
                     title="יום הבא"
                   >
                     <ChevronLeft className="h-4 w-4" aria-hidden />
@@ -1073,7 +1073,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                                     "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-50",
                                     executed
                                       ? "border border-emerald-300 bg-white text-emerald-700"
-                                      : "bg-indigo-600 text-white hover:bg-indigo-700"
+                                      : "bg-emerald-600 text-white hover:bg-emerald-700"
                                   )}
                                 >
                                   {executingRowId === row.id ? (

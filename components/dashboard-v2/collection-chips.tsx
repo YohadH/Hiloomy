@@ -35,7 +35,7 @@ export function CollectionChips({
       ))}
       {overflow.length > 0 ? (
         <span className="group/tip relative inline-flex">
-          <span className="inline-flex cursor-help items-center rounded-full bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+          <span className="inline-flex cursor-help items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
             +{overflow.length} more
           </span>
           <span

@@ -148,7 +148,7 @@ export function OrganizationSettingsForm({
             disabled={!canEdit}
             className={`rounded-md border px-3 py-2 text-sm font-medium ${
               locale === "he"
-                ? "border-violet-500 bg-violet-50 text-violet-900"
+                ? "border-green-500 bg-green-50 text-green-900"
                 : "border-border bg-background hover:bg-muted/60"
             } disabled:cursor-not-allowed`}
           >
@@ -160,7 +160,7 @@ export function OrganizationSettingsForm({
             disabled={!canEdit}
             className={`rounded-md border px-3 py-2 text-sm font-medium ${
               locale === "en"
-                ? "border-violet-500 bg-violet-50 text-violet-900"
+                ? "border-green-500 bg-green-50 text-green-900"
                 : "border-border bg-background hover:bg-muted/60"
             } disabled:cursor-not-allowed`}
           >
@@ -184,7 +184,7 @@ export function OrganizationSettingsForm({
         type="button"
         onClick={handleSave}
         disabled={saving || !canEdit}
-        className="inline-flex items-center gap-2 rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-800 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="inline-flex items-center gap-2 rounded-md bg-green-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
         {saving ? t.saving : t.save}

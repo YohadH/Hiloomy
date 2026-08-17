@@ -8,7 +8,7 @@
 export type EmailLocale = "he" | "en";
 
 const BRAND = "Hiloomy";
-const BRAND_COLOR = "#5E6AD2";
+const BRAND_COLOR = "#16A34A";
 
 interface EmailShell {
   title: string;

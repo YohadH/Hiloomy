@@ -166,7 +166,7 @@ export function CommandCenterAlertCard({
           <button
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-800"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:text-emerald-800"
           >
             {expanded ? (
               <>

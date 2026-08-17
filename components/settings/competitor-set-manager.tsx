@@ -104,7 +104,7 @@ export function CompetitorSetManager({ isHe }: { isHe: boolean }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <Radar className="h-3.5 w-3.5 text-indigo-600" aria-hidden />
+        <Radar className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
         <p className="text-sm font-semibold">{isHe ? "המתחרים שלי" : "My competitors"}</p>
         <span className="text-[11px] text-muted-foreground">
           {activeCount}/{MAX_ACTIVE}

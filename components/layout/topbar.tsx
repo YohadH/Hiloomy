@@ -69,7 +69,7 @@ export async function Topbar({
           </Badge>
           {store.isDemo ? (
             <span
-              className="inline-flex items-center whitespace-nowrap rounded-full border border-violet-300 bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-800"
+              className="inline-flex items-center whitespace-nowrap rounded-full border border-green-300 bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-800"
               title={
                 locale === "he"
                   ? "חנות הדגמה — כל הנתונים סינתטיים"

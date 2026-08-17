@@ -37,7 +37,7 @@ const FONT_PRESETS = [
   "Times New Roman, serif",
   "Courier New, monospace"
 ];
-const COLOR_PRESETS = ["#ffffff", "#0f172a", "#dc2626", "#f59e0b", "#10b981", "#6366f1"];
+const COLOR_PRESETS = ["#ffffff", "#0f172a", "#dc2626", "#f59e0b", "#10b981", "#16A34A"];
 
 function makeOverlayId(): string {
   return `ov_${Math.random().toString(36).slice(2, 10)}`;
@@ -245,7 +245,7 @@ export function VideoEditor({
             <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2 font-semibold">
-                  <Scissors className="h-4 w-4 text-indigo-600" aria-hidden />
+                  <Scissors className="h-4 w-4 text-emerald-600" aria-hidden />
                   {isHe ? "חיתוך" : "Trim"}
                 </div>
                 <div className="font-mono text-xs text-muted-foreground">
@@ -381,8 +381,8 @@ export function VideoEditor({
                       className={cn(
                         "w-full truncate rounded-xl border px-3 py-2 text-start text-xs",
                         selectedId === overlay.id
-                          ? "border-indigo-500 bg-indigo-50 text-indigo-900"
-                          : "border-border hover:border-indigo-300"
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                          : "border-border hover:border-emerald-300"
                       )}
                     >
                       {overlay.text || (isHe ? "(ריק)" : "(empty)")}
@@ -445,8 +445,8 @@ export function VideoEditor({
                         className={cn(
                           "flex h-8 flex-1 items-center justify-center rounded-lg border",
                           selectedOverlay.align === value
-                            ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                            : "border-border hover:border-indigo-300"
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                            : "border-border hover:border-emerald-300"
                         )}
                       >
                         <Icon className="h-4 w-4" aria-hidden />
@@ -465,7 +465,7 @@ export function VideoEditor({
                         onClick={() => updateSelected({ color: c })}
                         className={cn(
                           "h-7 w-7 rounded-full ring-2 ring-offset-2",
-                          selectedOverlay.color === c ? "ring-indigo-500" : "ring-transparent"
+                          selectedOverlay.color === c ? "ring-emerald-500" : "ring-transparent"
                         )}
                         style={{ backgroundColor: c }}
                         aria-label={c}
@@ -539,7 +539,7 @@ function TrimSlider({
     <div className="relative h-10 select-none">
       <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-slate-200" />
       <div
-        className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-indigo-500"
+        className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-emerald-500"
         style={{ left: `${startPct}%`, right: `${100 - endPct}%` }}
       />
       <input
@@ -579,7 +579,7 @@ function TrimSlider({
           height: 18px;
           width: 18px;
           border-radius: 999px;
-          background: #4f46e5;
+          background: #15803D;
           border: 2px solid white;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
           pointer-events: auto;
@@ -588,7 +588,7 @@ function TrimSlider({
           height: 18px;
           width: 18px;
           border-radius: 999px;
-          background: #4f46e5;
+          background: #15803D;
           border: 2px solid white;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
           pointer-events: auto;
@@ -627,7 +627,7 @@ function OverlayShape({
           y={yPx - previewFontSize * 0.8 - 8}
           width={widthPx + 16}
           height={previewFontSize * 2.6}
-          stroke="#6366f1"
+          stroke="#16A34A"
           strokeWidth={1.5}
           dash={[6, 4]}
           listening={false}

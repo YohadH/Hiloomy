@@ -63,7 +63,7 @@ const COLOR_PALETTE = [
   "#ffffff", "#f1f5f9", "#cbd5e1", "#64748b", "#334155", "#0f172a",
   "#000000", "#fef3c7", "#fde68a", "#f59e0b", "#d97706", "#92400e",
   "#fee2e2", "#fca5a5", "#ef4444", "#dc2626", "#7f1d1d", "#fce7f3",
-  "#f472b6", "#db2777", "#86efac", "#10b981", "#0e7490", "#6366f1"
+  "#f472b6", "#db2777", "#86efac", "#10b981", "#0e7490", "#16A34A"
 ];
 
 function makeOverlayId(): string {
@@ -325,8 +325,8 @@ export function ImageEditor({
                       className={cn(
                         "flex w-full items-center gap-2 truncate rounded-xl border px-3 py-2 text-start text-xs",
                         selectedId === overlay.id
-                          ? "border-indigo-500 bg-indigo-50 text-indigo-900"
-                          : "border-border hover:border-indigo-300"
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                          : "border-border hover:border-emerald-300"
                       )}
                     >
                       {isImageOverlay(overlay) ? (
@@ -443,8 +443,8 @@ function TextOverlayControls({
               className={cn(
                 "flex h-8 flex-1 items-center justify-center rounded-lg border",
                 overlay.align === value
-                  ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                  : "border-border hover:border-indigo-300"
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                  : "border-border hover:border-emerald-300"
               )}
             >
               <Icon className="h-4 w-4" aria-hidden />
@@ -591,7 +591,7 @@ function ColorRow({
             onClick={() => onChange(c)}
             className={cn(
               "aspect-square w-full rounded-md ring-1 ring-border",
-              value.toLowerCase() === c.toLowerCase() ? "ring-2 ring-indigo-500 ring-offset-1" : ""
+              value.toLowerCase() === c.toLowerCase() ? "ring-2 ring-emerald-500 ring-offset-1" : ""
             )}
             style={{ backgroundColor: c }}
             aria-label={c}

@@ -57,8 +57,8 @@ export function RetentionLineChartV2({
         <AreaChart data={chartData} margin={{ left: 8, right: 16, top: 16, bottom: 0 }}>
           <defs>
             <linearGradient id="ov2-retention" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#5E6AD2" stopOpacity={0.32} />
-              <stop offset="100%" stopColor="#5E6AD2" stopOpacity={0.02} />
+              <stop offset="0%" stopColor="#16A34A" stopOpacity={0.32} />
+              <stop offset="100%" stopColor="#16A34A" stopOpacity={0.02} />
             </linearGradient>
             <linearGradient id="ov2-retention-prev" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#94a3b8" stopOpacity={0.20} />
@@ -81,7 +81,7 @@ export function RetentionLineChartV2({
             tickFormatter={(value: number) => `${value.toFixed(0)}%`}
           />
           <Tooltip
-            cursor={{ stroke: "#5E6AD2", strokeWidth: 1, strokeDasharray: "4 4" }}
+            cursor={{ stroke: "#16A34A", strokeWidth: 1, strokeDasharray: "4 4" }}
             contentStyle={{
               background: "hsl(var(--card))",
               border: "1px solid hsl(var(--border))",
@@ -121,7 +121,7 @@ export function RetentionLineChartV2({
           <Area
             type="monotone"
             dataKey="returningCustomerRate"
-            stroke="#5E6AD2"
+            stroke="#16A34A"
             strokeWidth={2.2}
             fill="url(#ov2-retention)"
             dot={false}

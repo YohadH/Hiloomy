@@ -75,7 +75,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
         "היי! אני אנליסט הBI של החנות. שאלו אותי כל דבר על המכירות, הקמפיינים או המתחרים — למשל: ״מה היה השבוע הכי חזק החודש?״ תשובה יכולה לקחת עד שתי דקות.",
         "Hi! I'm the store's BI analyst. Ask me anything about sales, campaigns or competitors. Answers can take up to two minutes."
       ),
-      accent: "bg-indigo-600"
+      accent: "bg-emerald-600"
     },
     support: {
       title: lang("שירות לקוחות", "Customer support"),
@@ -222,7 +222,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
             }}
             rows={1}
             placeholder={lang("כתבו הודעה…", "Type a message…")}
-            className="max-h-28 min-h-[38px] flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            className="max-h-28 min-h-[38px] flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-emerald-400"
           />
           <button
             type="submit"
@@ -274,7 +274,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
         onClick={() => setOpen((v) => !v)}
         className={cn(
           "inline-flex h-14 w-14 items-center justify-center rounded-full text-white shadow-2xl transition-transform hover:scale-105",
-          open ? "bg-slate-700" : "bg-indigo-600"
+          open ? "bg-slate-700" : "bg-emerald-600"
         )}
         aria-label={lang("פתיחת צ'אט", "Open chat")}
         aria-expanded={open}
@@ -294,7 +294,7 @@ function Bubble({ role, text, isHe }: { role: "user" | "agent"; text: string; is
         className={cn(
           "max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-6 shadow-sm",
           isUser
-            ? "bg-indigo-600 text-white rounded-ee-md"
+            ? "bg-emerald-600 text-white rounded-ee-md"
             : "bg-card border border-border text-foreground rounded-es-md"
         )}
         dir={isHe ? "rtl" : "ltr"}

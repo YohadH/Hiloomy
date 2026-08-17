@@ -30,7 +30,7 @@ import { saasStrings, type UiLocale } from "@/lib/i18n/saas-strings";
 //     (one per category, stacked vertically). Click target = the chart day.
 //   - Rich tooltip on hover showing all four sections.
 //
-// Indigo (#5E6AD2) for revenue, blue (#0080FF) for profit — the accent
+// Indigo (#16A34A) for revenue, blue (#F97316) for profit — the accent
 // palette the user liked.
 
 type EnrichedRowBase = DailyMetric & { context?: DailyTrendContextItem };
@@ -65,7 +65,7 @@ function CustomTooltip({
         </p>
         <div className="mt-1 flex items-baseline gap-3">
           <span className="text-sm">
-            <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#5E6AD2" }} />{" "}
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#16A34A" }} />{" "}
             {t.revenue}:{" "}
             <strong className="text-foreground">
               {formatCurrency(row.revenue ?? 0, currency)}
@@ -73,7 +73,7 @@ function CustomTooltip({
           </span>
         </div>
         <div className="text-sm">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#0080FF" }} />{" "}
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#F97316" }} />{" "}
           {t.profit}:{" "}
           <strong className="text-foreground">
             {formatCurrency(row.estimatedProfit ?? 0, currency)}
@@ -246,12 +246,12 @@ export function EnrichedRevenueChart({
           <AreaChart data={enrichedData} margin={{ left: 8, right: 16, top: 24, bottom: 0 }}>
             <defs>
               <linearGradient id="erc-revenue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#5E6AD2" stopOpacity={0.35} />
-                <stop offset="100%" stopColor="#5E6AD2" stopOpacity={0.02} />
+                <stop offset="0%" stopColor="#16A34A" stopOpacity={0.35} />
+                <stop offset="100%" stopColor="#16A34A" stopOpacity={0.02} />
               </linearGradient>
               <linearGradient id="erc-profit" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#0080FF" stopOpacity={0.28} />
-                <stop offset="100%" stopColor="#0080FF" stopOpacity={0.02} />
+                <stop offset="0%" stopColor="#F97316" stopOpacity={0.28} />
+                <stop offset="100%" stopColor="#F97316" stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -272,20 +272,20 @@ export function EnrichedRevenueChart({
               }
             />
             <Tooltip
-              cursor={{ stroke: "#5E6AD2", strokeWidth: 1, strokeDasharray: "4 4" }}
+              cursor={{ stroke: "#16A34A", strokeWidth: 1, strokeDasharray: "4 4" }}
               content={(props: any) => <CustomTooltip {...props} currency={currency} locale={locale} />}
             />
             <Area
               type="monotone"
               dataKey="revenue"
-              stroke="#5E6AD2"
+              stroke="#16A34A"
               strokeWidth={2.2}
               fill="url(#erc-revenue)"
             />
             <Area
               type="monotone"
               dataKey="estimatedProfit"
-              stroke="#0080FF"
+              stroke="#F97316"
               strokeWidth={2.2}
               fill="url(#erc-profit)"
             />

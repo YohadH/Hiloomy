@@ -250,7 +250,7 @@ export default async function RetentionPage() {
                   data={retention.secondOrderProducts}
                   dataKey="orders"
                   xKey="title"
-                  color="#0080FF"
+                  color="#F97316"
                   format="number"
                   valueLabel={locale === "he" ? "הזמנות שניות" : "Second orders"}
                 />
@@ -258,10 +258,10 @@ export default async function RetentionPage() {
             </Card>
           </div>
           {autoConclusion ? (
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-4 py-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
-              <p className="text-sm font-medium text-indigo-800 dark:text-indigo-300">
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 px-4 py-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+              <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
                 {locale === "he" ? "סיכום אוטומטי" : "Auto insight"}&ensp;
-                <span className="font-normal text-indigo-700 dark:text-indigo-400">{autoConclusion}</span>
+                <span className="font-normal text-emerald-700 dark:text-emerald-400">{autoConclusion}</span>
               </p>
             </div>
           ) : null}

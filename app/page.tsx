@@ -81,7 +81,7 @@ export default async function CommandCenterPage() {
   if (onboarding.needsOnboarding) {
     const auth = await getAuthContext();
     return (
-      <main className="min-h-screen bg-gradient-to-br from-violet-50/30 via-background to-indigo-50/30">
+      <main className="min-h-screen bg-gradient-to-br from-green-50/30 via-background to-emerald-50/30">
         <OnboardingWizard
           email={auth.email ?? ""}
           pendingShopDomain={onboarding.pendingShopDomain}
@@ -344,11 +344,11 @@ export default async function CommandCenterPage() {
                 </CardTitle>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#5E6AD2" }} />
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#16A34A" }} />
                     {lang("הכנסה", "Revenue")}
                   </span>
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#0080FF" }} />
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#F97316" }} />
                     {lang("רווח", "Profit")}
                   </span>
                 </div>
@@ -524,8 +524,8 @@ function BusinessSummaryBlock({
         : lang("אין התראות קריטיות", "No critical alerts");
 
   return (
-    <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-5 py-4">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-500">
+    <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-500">
         {lang("סיכום עסקי", "Business snapshot")}
       </p>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-1">

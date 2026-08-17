@@ -33,13 +33,13 @@ export function NarrativeBanner({
         : "bg-muted text-muted-foreground";
 
   return (
-    <div className="rounded-2xl border border-indigo-200/60 bg-gradient-to-r from-indigo-50/80 via-white to-sky-50/60 p-5 shadow-soft sm:p-6">
+    <div className="rounded-2xl border border-emerald-200/60 bg-gradient-to-r from-emerald-50/80 via-white to-sky-50/60 p-5 shadow-soft sm:p-6">
       <div className="flex flex-wrap items-start gap-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500 text-white shadow-sm">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
           <Sparkles className="h-5 w-5" aria-hidden />
         </div>
         <div className="flex-1 space-y-1.5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-600">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-600">
             {eyebrow}
           </p>
           <h2 className="text-lg font-semibold leading-snug text-foreground sm:text-xl">

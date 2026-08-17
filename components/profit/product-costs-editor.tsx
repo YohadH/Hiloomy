@@ -256,7 +256,7 @@ export function ProductCostsEditor({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t("חיפוש מוצר / מק\"ט", "Search product / SKU")}
-                className="h-8 w-48 rounded-lg border border-border bg-background ps-8 pe-2 text-xs outline-none focus:ring-2 focus:ring-indigo-200"
+                className="h-8 w-48 rounded-lg border border-border bg-background ps-8 pe-2 text-xs outline-none focus:ring-2 focus:ring-emerald-200"
               />
             </div>
           </div>
@@ -332,7 +332,7 @@ export function ProductCostsEditor({
                                 ? `≈ ${r.estimatedCost} (${t("משוער", "est.")})`
                                 : t("עלות", "cost")
                             }
-                            className="h-8 w-24 rounded-lg border border-border bg-background px-2 text-xs tabular-nums outline-none focus:ring-2 focus:ring-indigo-200"
+                            className="h-8 w-24 rounded-lg border border-border bg-background px-2 text-xs tabular-nums outline-none focus:ring-2 focus:ring-emerald-200"
                           />
                           {!r.hasOverride ? (
                             <span className="rounded-full border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-600">

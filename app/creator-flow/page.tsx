@@ -183,7 +183,7 @@ export default async function CreatorFlowPage() {
                   dataKey="views"
                   xKey="caption"
                   format="number"
-                  color="#0080FF"
+                  color="#F97316"
                   valueLabel={isHe ? "צפיות" : "Views"}
                 />
               </CardContent>

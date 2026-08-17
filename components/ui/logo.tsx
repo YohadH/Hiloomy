@@ -13,10 +13,10 @@ export function HiloomyMark({ className }: { className?: string }) {
       aria-hidden="true"
       className={cn("h-8 w-8 shrink-0", className)}
     >
-      <rect x="9.5" y="17" width="9" height="19.5" rx="2.8" fill="#16A34A" />
-      <rect x="17" y="24.3" width="11.2" height="5.4" fill="#16A34A" />
-      <rect x="27.2" y="19.5" width="7.8" height="17" rx="2.2" fill="#F97316" />
-      <path d="M31.1 10.5L38.05 21.3H24.15L31.1 10.5Z" fill="#F97316" />
+      <rect x="11.5" y="17" width="6.2" height="19.5" rx="2.8" fill="#16A34A" />
+      <rect x="16.5" y="24.5" width="11.5" height="4.4" fill="#16A34A" />
+      <rect x="27.5" y="18.2" width="6.2" height="18.3" rx="2.6" fill="#F97316" />
+      <path d="M30.6 10.2L37.6 18.8H23.6L30.6 10.2Z" fill="#F97316" />
     </svg>
   );
 }

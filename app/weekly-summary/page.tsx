@@ -432,7 +432,7 @@ export default async function WeeklySummaryPage() {
               <Card key={section.title}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
                       <Sparkles className="h-3.5 w-3.5" aria-hidden />
                     </span>
                     <CardTitle className="text-base">{section.title}</CardTitle>

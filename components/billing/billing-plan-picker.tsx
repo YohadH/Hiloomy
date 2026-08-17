@@ -68,14 +68,14 @@ export function BillingPlanPicker({
         <button
           type="button"
           onClick={() => setInterval("monthly")}
-          className={`rounded-full px-4 py-1.5 ${interval === "monthly" ? "bg-violet-700 text-white" : "text-muted-foreground"}`}
+          className={`rounded-full px-4 py-1.5 ${interval === "monthly" ? "bg-green-700 text-white" : "text-muted-foreground"}`}
         >
           {t.monthly}
         </button>
         <button
           type="button"
           onClick={() => setInterval("annual")}
-          className={`rounded-full px-4 py-1.5 ${interval === "annual" ? "bg-violet-700 text-white" : "text-muted-foreground"}`}
+          className={`rounded-full px-4 py-1.5 ${interval === "annual" ? "bg-green-700 text-white" : "text-muted-foreground"}`}
         >
           {t.annual}
         </button>
@@ -96,7 +96,7 @@ export function BillingPlanPicker({
               key={plan.id}
               className={`rounded-2xl border p-6 ${
                 plan.id === "growth"
-                  ? "border-violet-500 shadow-lg shadow-violet-100 bg-gradient-to-br from-violet-50/40 to-card"
+                  ? "border-green-500 shadow-lg shadow-green-100 bg-gradient-to-br from-green-50/40 to-card"
                   : "border-border bg-card"
               }`}
             >
@@ -127,7 +127,7 @@ export function BillingPlanPicker({
                   disabled={submitting === plan.id}
                   className={`mt-6 w-full inline-flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-semibold shadow-sm ${
                     plan.id === "growth"
-                      ? "bg-violet-700 text-white hover:bg-violet-800"
+                      ? "bg-green-700 text-white hover:bg-green-800"
                       : "bg-foreground text-background hover:opacity-90"
                   } disabled:opacity-60`}
                 >

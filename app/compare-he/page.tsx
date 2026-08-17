@@ -282,7 +282,7 @@ export default function CompareHePage() {
     <div
       dir="rtl"
       lang="he"
-      className="min-h-screen bg-gradient-to-br from-violet-50/30 via-background to-indigo-50/30"
+      className="min-h-screen bg-gradient-to-br from-green-50/30 via-background to-emerald-50/30"
     >
       {/* Nav */}
       <header className="border-b border-border/40 bg-background/60 backdrop-blur sticky top-0 z-10">
@@ -292,7 +292,7 @@ export default function CompareHePage() {
           </a>
           <a
             href="/signup"
-            className="inline-flex items-center gap-1.5 rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-800"
+            className="inline-flex items-center gap-1.5 rounded-md bg-green-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-800"
           >
             ניסיון 14 יום חינם
             <ArrowRight className="h-4 w-4 rotate-180" aria-hidden />
@@ -302,7 +302,7 @@ export default function CompareHePage() {
 
       {/* Hero */}
       <section className="mx-auto max-w-4xl px-4 sm:px-6 pt-14 sm:pt-20 pb-10 text-center">
-        <p className="text-xs font-semibold uppercase tracking-wider text-violet-700">
+        <p className="text-xs font-semibold uppercase tracking-wider text-green-700">
           כלי אנליטיקס לחנויות Shopify ישראליות
         </p>
         <h1 className="mt-3 text-3xl sm:text-5xl font-bold tracking-tight">
@@ -333,13 +333,13 @@ export default function CompareHePage() {
                     key={col.key}
                     className={`py-3 px-2 text-center font-semibold text-xs sm:text-sm ${
                       col.highlight
-                        ? "text-violet-700 bg-violet-50/60"
+                        ? "text-green-700 bg-green-50/60"
                         : "text-slate-600"
                     }`}
                   >
                     {col.label}
                     {col.highlight && (
-                      <span className="ms-1 inline-block rounded-full bg-violet-700 text-white text-[10px] px-1.5 py-0.5 font-bold align-middle">
+                      <span className="ms-1 inline-block rounded-full bg-green-700 text-white text-[10px] px-1.5 py-0.5 font-bold align-middle">
                         ★
                       </span>
                     )}
@@ -361,7 +361,7 @@ export default function CompareHePage() {
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      className={col.highlight ? "bg-violet-50/40" : ""}
+                      className={col.highlight ? "bg-green-50/40" : ""}
                     >
                       <Cell value={row[col.key]} highlight={col.highlight} />
                     </td>
@@ -428,14 +428,14 @@ export default function CompareHePage() {
 
                 {/* Differentiators */}
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 mb-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-green-600 mb-2">
                     היכן Hiloomy שונה
                   </p>
                   <ul className="space-y-1.5">
                     {comp.differentiators.map((d) => (
-                      <li key={d} className="flex items-start gap-2 text-sm text-violet-900">
+                      <li key={d} className="flex items-start gap-2 text-sm text-green-900">
                         <span
-                          className="mt-1 h-2 w-2 rounded-full bg-violet-500 shrink-0"
+                          className="mt-1 h-2 w-2 rounded-full bg-green-500 shrink-0"
                           aria-hidden
                         />
                         {d}
@@ -464,7 +464,7 @@ export default function CompareHePage() {
               className="rounded-2xl border border-border bg-card p-5"
             >
               <div className="flex items-start gap-4">
-                <div className="shrink-0 flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-700 font-bold text-base">
+                <div className="shrink-0 flex h-9 w-9 items-center justify-center rounded-xl bg-green-100 text-green-700 font-bold text-base">
                   {feat.num}
                 </div>
                 <div>
@@ -501,22 +501,22 @@ export default function CompareHePage() {
 
       {/* CTA */}
       <section className="mx-auto max-w-4xl px-4 sm:px-6 py-12">
-        <div className="rounded-3xl bg-gradient-to-br from-violet-600 to-indigo-600 p-10 sm:p-14 text-center text-white shadow-2xl">
+        <div className="rounded-3xl bg-gradient-to-br from-green-600 to-emerald-600 p-10 sm:p-14 text-center text-white shadow-2xl">
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
             נסו 14 יום בחינם — ללא כרטיס אשראי
           </h2>
-          <p className="mt-3 text-sm sm:text-base text-violet-100 leading-7">
+          <p className="mt-3 text-sm sm:text-base text-green-100 leading-7">
             חיבור הShopify לוקח פחות מ10 דקות. הסיכום הראשון בעברית מגיע תוך שבוע.
             שאלות? המייסד זמין לשיחה ישירה — לא תמיכה דרך טיקטים.
           </p>
           <a
             href="https://shopifyappanalytics.onrender.com/signup"
-            className="mt-6 inline-flex items-center gap-2 rounded-md bg-white px-6 py-3 text-sm font-semibold text-violet-700 shadow-md hover:bg-violet-50"
+            className="mt-6 inline-flex items-center gap-2 rounded-md bg-white px-6 py-3 text-sm font-semibold text-green-700 shadow-md hover:bg-green-50"
           >
             התחילו ניסיון חינם
             <ArrowRight className="h-4 w-4 rotate-180" aria-hidden />
           </a>
-          <p className="mt-3 text-xs text-violet-200">
+          <p className="mt-3 text-xs text-green-200">
             ללא כרטיס אשראי · ביטול בכל רגע
           </p>
         </div>

@@ -140,7 +140,7 @@ export function PortfolioBrandTable({
                     {row.storeName}
                     {row.isDemo ? (
                       <span
-                        className="ms-2 inline-flex items-center rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-800 align-middle"
+                        className="ms-2 inline-flex items-center rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-800 align-middle"
                         title={isHe ? "חנות הדגמה — נתונים סינתטיים" : "Demo store — synthetic data"}
                       >
                         {isHe ? "נתוני הדגמה" : "Demo data"}

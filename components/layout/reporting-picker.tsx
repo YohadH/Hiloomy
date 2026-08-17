@@ -397,15 +397,15 @@ export function ReportingPicker(props: ReportingPickerProps) {
             role="progressbar"
             aria-label={loadingLabel}
             aria-busy="true"
-            className="pointer-events-none fixed inset-x-0 top-0 z-[9999] h-1 overflow-hidden bg-indigo-100"
+            className="pointer-events-none fixed inset-x-0 top-0 z-[9999] h-1 overflow-hidden bg-emerald-100"
           >
             <div
-              className="h-full w-1/3 bg-indigo-600"
+              className="h-full w-1/3 bg-emerald-600"
               style={{ animation: "pwr-progress 1.4s ease-in-out infinite" }}
             />
           </div>
           <div className="pointer-events-none fixed inset-x-0 top-1 z-[9998] flex justify-center">
-            <span className="rounded-b-md bg-indigo-600 px-3 py-1 text-xs font-medium text-white shadow-md">
+            <span className="rounded-b-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white shadow-md">
               <Loader2 className="me-1.5 inline h-3 w-3 animate-spin" aria-hidden />
               {loadingLabel}
             </span>

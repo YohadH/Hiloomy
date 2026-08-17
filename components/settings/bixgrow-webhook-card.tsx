@@ -66,7 +66,7 @@ export function BixGrowWebhookCard({
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="flex items-start gap-3">
-        <div className="rounded-lg bg-violet-50 p-2 text-violet-700">
+        <div className="rounded-lg bg-green-50 p-2 text-green-700">
           <Webhook className="h-5 w-5" aria-hidden />
         </div>
         <div className="flex-1">
@@ -90,7 +90,7 @@ export function BixGrowWebhookCard({
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              className="min-w-0 w-full sm:flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+              className="min-w-0 w-full sm:flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
             />
             <button
               type="button"
