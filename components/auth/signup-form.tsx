@@ -164,7 +164,7 @@ export function SignupForm() {
 
       <div className="mt-6 pt-6 border-t border-border/70 text-center text-sm text-muted-foreground">
         {t.alreadyHaveAccount}{" "}
-        <a href={`/signin?lang=${locale}`} className="text-foreground font-medium hover:underline">
+        <a href={`/login?lang=${locale}`} className="text-foreground font-medium hover:underline">
           {t.signinLink}
         </a>
       </div>

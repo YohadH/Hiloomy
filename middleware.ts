@@ -38,12 +38,12 @@ import { createMiddlewareSupabaseClient } from "@/lib/auth/supabase-server";
 // edge-compatible first.
 export const runtime = "nodejs";
 
-// Note: "/" is intentionally NOT public — that's the Command Center
-// dashboard. When the marketing site lands (Phase 4) we'll either move
-// the dashboard to `/app` or host the marketing site on a separate
-// subdomain. Until then anonymous "/" hits get bounced to /signin.
+// Note: "/" serves two audiences — anonymous visitors get the marketing
+// landing (internally rewritten to /welcome, URL stays hiloomy.com/),
+// signed-in users get the Command Center dashboard.
 const PUBLIC_PATHS = new Set([
   "/signin",
+  "/login",
   "/signup",
   "/forgot-password",
   "/reset-password",
@@ -163,9 +163,9 @@ export async function middleware(req: NextRequest) {
 
   // Public routes — let everything through.
   if (isPublic(pathname)) {
-    // Bonus: signed-in users hitting /signin or /signup should be sent
-    // home instead of seeing the form again.
-    if (user && (pathname === "/signin" || pathname === "/signup")) {
+    // Bonus: signed-in users hitting /signin, /login or /signup should be
+    // sent home instead of seeing the form again.
+    if (user && (pathname === "/signin" || pathname === "/login" || pathname === "/signup")) {
       const home = req.nextUrl.clone();
       home.pathname = "/";
       home.search = "";
@@ -174,10 +174,19 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
+  // Anonymous visitors on the root get the marketing landing, served
+  // in-place (rewrite, not redirect) so the URL stays hiloomy.com/.
+  // Query params (e.g. ?lang=en) pass through to the landing page.
+  if (!user && pathname === "/") {
+    const landing = req.nextUrl.clone();
+    landing.pathname = "/welcome";
+    return NextResponse.rewrite(landing, { request: { headers: requestHeaders } });
+  }
+
   // Protected routes — gate behind auth.
   if (!user) {
     const signin = req.nextUrl.clone();
-    signin.pathname = "/signin";
+    signin.pathname = "/login";
     signin.search = `?next=${encodeURIComponent(pathname + search)}`;
     return NextResponse.redirect(signin);
   }

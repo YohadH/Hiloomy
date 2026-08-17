@@ -419,7 +419,7 @@ export default async function WelcomePage({
               {t.nav.switchLabel}
             </a>
             <a
-              href={`/signin?lang=${locale}`}
+              href={`/login?lang=${locale}`}
               className="hidden text-sm font-medium sm:block"
               style={{ color: "rgba(27,67,50,.72)" }}
             >
