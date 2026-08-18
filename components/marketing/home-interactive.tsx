@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Menu, X } from "lucide-react";
 
 // Interactive sections of the marketing landing (/welcome), implementing
 // the "financial broadsheet" redesign: a sticky three-layer scroll story,
@@ -11,6 +12,123 @@ const INK = "#201E1D";
 const GREEN = "#14512C";
 const ORANGE = "#D1731F";
 const DIM = "#605D5D";
+
+/* ── Mobile nav drawer ─────────────────────────────────────────────── */
+
+export function MobileNav({
+  links,
+  switchHref,
+  switchLabel,
+  primaryHref,
+  primaryLabel,
+  secondaryHref,
+  secondaryLabel,
+  menuLabel,
+  logo
+}: {
+  links: Array<{ href: string; label: string }>;
+  switchHref: string;
+  switchLabel: string;
+  primaryHref: string;
+  primaryLabel: string;
+  secondaryHref: string;
+  secondaryLabel: string;
+  menuLabel: string;
+  logo: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  // Lock body scroll while the drawer is open.
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  return (
+    <div className="md:hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={menuLabel}
+        aria-expanded={open}
+        className="rounded-lg p-2 transition-colors hover:bg-black/5"
+        style={{ color: INK }}
+      >
+        <Menu className="h-6 w-6" aria-hidden />
+      </button>
+
+      {/* Overlay + top drawer */}
+      <div
+        className="fixed inset-0 z-50 transition-opacity duration-300"
+        style={{
+          backgroundColor: "rgba(32,30,29,.35)",
+          opacity: open ? 1 : 0,
+          pointerEvents: open ? "auto" : "none"
+        }}
+        onClick={() => setOpen(false)}
+      >
+        <div
+          className="mx-3 mt-3 rounded-2xl bg-white p-5 shadow-2xl transition-transform duration-300"
+          style={{ transform: open ? "translateY(0)" : "translateY(-14px)" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between">
+            {logo}
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              className="rounded-lg p-2 transition-colors hover:bg-black/5"
+              style={{ color: DIM }}
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+          </div>
+
+          <nav className="mt-3">
+            {links.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                onClick={() => setOpen(false)}
+                className="block border-b py-3.5 text-base font-bold"
+                style={{ borderColor: "rgba(32,30,29,.1)", color: INK }}
+              >
+                {link.label}
+              </a>
+            ))}
+            <a
+              href={switchHref}
+              className="block py-3.5 text-sm font-bold uppercase tracking-widest"
+              style={{ color: ORANGE }}
+            >
+              {switchLabel}
+            </a>
+          </nav>
+
+          <div className="mt-2 space-y-2.5">
+            <a
+              href={primaryHref}
+              className="block rounded-full py-3.5 text-center text-sm font-bold text-white"
+              style={{ backgroundColor: GREEN }}
+            >
+              {primaryLabel}
+            </a>
+            <a
+              href={secondaryHref}
+              className="block rounded-full border py-3.5 text-center text-sm font-bold"
+              style={{ borderColor: "rgba(20,81,44,.4)", color: GREEN }}
+            >
+              {secondaryLabel}
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ── Layers scrollytelling ─────────────────────────────────────────── */
 

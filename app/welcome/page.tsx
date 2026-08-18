@@ -6,6 +6,7 @@ import {
   LayersScroller,
   FeaturesGrid,
   PricingPlans,
+  MobileNav,
   type LayerItem,
   type FeatureItem,
   type PlanItem
@@ -342,18 +343,6 @@ export default async function WelcomePage({
         }
       `}</style>
 
-      {/* ── Dateline strip (broadsheet masthead) ─────────────────────── */}
-      <div className="border-b" style={{ borderColor: HAIR }}>
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-2 text-[11px] sm:px-10" style={{ color: DIM }}>
-          <span className="truncate font-bold">{t.dateline.brand}</span>
-          <span className="hidden items-center gap-1.5 sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#1C6B3A" }} />
-            {t.dateline.tag}
-          </span>
-          <span className="hidden sm:block">{t.dateline.meta}</span>
-        </div>
-      </div>
-
       {/* ── Nav ──────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 border-b backdrop-blur-md" style={{ borderColor: HAIR, backgroundColor: "rgba(247,247,246,.88)" }}>
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-10">
@@ -366,7 +355,7 @@ export default async function WelcomePage({
             <a href="#pricing" className="transition-colors hover:text-[#201E1D]">{t.nav.pricing}</a>
             <a href="/security" className="transition-colors hover:text-[#201E1D]">{t.nav.security}</a>
           </nav>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="hidden items-center gap-3 md:flex">
             <a
               href={`/welcome?lang=${otherLocale}`}
               className="rounded-full border px-2.5 py-1 text-xs font-bold transition-colors hover:bg-white"
@@ -374,17 +363,34 @@ export default async function WelcomePage({
             >
               {t.nav.switchLabel}
             </a>
-            <a href={`/login?lang=${locale}`} className="hidden text-sm font-bold sm:block" style={{ color: DIM }}>
+            <a href={`/login?lang=${locale}`} className="text-sm font-bold" style={{ color: DIM }}>
               {t.nav.login}
             </a>
             <a
               href={signupHref}
-              className="rounded-full px-4 py-2 text-xs font-bold text-white transition-transform hover:-translate-y-0.5 sm:text-sm"
+              className="rounded-full px-4 py-2 text-sm font-bold text-white transition-transform hover:-translate-y-0.5"
               style={{ backgroundColor: GREEN }}
             >
               {t.nav.cta}
             </a>
           </div>
+          <MobileNav
+            links={[
+              { href: "#features", label: t.nav.features },
+              { href: "#layers", label: t.nav.how },
+              { href: "#pricing", label: t.nav.pricing },
+              { href: "/security", label: t.nav.security }
+            ]}
+            switchHref={`/welcome?lang=${otherLocale}`}
+            switchLabel={t.footer.switchLong}
+            primaryHref={signupHref}
+            primaryLabel={t.pricing.cta}
+            secondaryHref={`/login?lang=${locale}`}
+            secondaryLabel={t.nav.login}
+            menuLabel={isHe ? "תפריט" : "Menu"}
+            logo={<HiloomyLogo />}
+          />
+
         </div>
       </header>
 
