@@ -389,6 +389,7 @@ export default async function WelcomePage({
             secondaryLabel={t.nav.login}
             menuLabel={isHe ? "תפריט" : "Menu"}
             logo={<HiloomyLogo />}
+            dir={dir}
           />
 
         </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Menu, X } from "lucide-react";
 
 // Interactive sections of the marketing landing (/welcome), implementing
@@ -24,7 +25,8 @@ export function MobileNav({
   secondaryHref,
   secondaryLabel,
   menuLabel,
-  logo
+  logo,
+  dir
 }: {
   links: Array<{ href: string; label: string }>;
   switchHref: string;
@@ -35,8 +37,13 @@ export function MobileNav({
   secondaryLabel: string;
   menuLabel: string;
   logo: ReactNode;
+  /** Applied to the sheet directly — the portal escapes the page's dir wrapper. */
+  dir: "rtl" | "ltr";
 }) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   // Lock body scroll while the drawer is open.
   useEffect(() => {
@@ -45,6 +52,72 @@ export function MobileNav({
       document.body.style.overflow = "";
     };
   }, [open]);
+
+  // The sheet is portaled to <body>: the sticky header uses backdrop-blur,
+  // which turns it into the containing block for fixed-position children —
+  // rendered inline, "fixed inset-0" would only fill the header bar.
+  const sheet = (
+    <div
+        dir={dir}
+        className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-white transition-all duration-300"
+        style={{
+          opacity: open ? 1 : 0,
+          transform: open ? "translateY(0)" : "translateY(-16px)",
+          pointerEvents: open ? "auto" : "none"
+        }}
+      >
+        <div className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "rgba(32,30,29,.08)" }}>
+          {logo}
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close"
+            className="rounded-lg p-2 transition-colors hover:bg-black/5"
+            style={{ color: DIM }}
+          >
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
+
+        <nav className="px-6">
+          {links.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              onClick={() => setOpen(false)}
+              className="block border-b py-4 text-base font-medium"
+              style={{ borderColor: "rgba(32,30,29,.08)", color: INK }}
+            >
+              {link.label}
+            </a>
+          ))}
+          <a
+            href={switchHref}
+            className="block py-4 text-sm font-bold uppercase tracking-widest"
+            style={{ color: ORANGE }}
+          >
+            {switchLabel}
+          </a>
+        </nav>
+
+        <div className="space-y-3 px-6 pb-8 pt-2">
+          <a
+            href={primaryHref}
+            className="block rounded-full py-3.5 text-center text-sm font-bold text-white"
+            style={{ backgroundColor: GREEN }}
+          >
+            {primaryLabel}
+          </a>
+          <a
+            href={secondaryHref}
+            className="block rounded-full border py-3.5 text-center text-sm font-bold"
+            style={{ borderColor: "rgba(20,81,44,.4)", color: GREEN }}
+          >
+            {secondaryLabel}
+          </a>
+        </div>
+      </div>
+  );
 
   return (
     <div className="md:hidden">
@@ -58,74 +131,7 @@ export function MobileNav({
       >
         <Menu className="h-6 w-6" aria-hidden />
       </button>
-
-      {/* Overlay + top drawer */}
-      <div
-        className="fixed inset-0 z-50 transition-opacity duration-300"
-        style={{
-          backgroundColor: "rgba(32,30,29,.35)",
-          opacity: open ? 1 : 0,
-          pointerEvents: open ? "auto" : "none"
-        }}
-        onClick={() => setOpen(false)}
-      >
-        <div
-          className="mx-3 mt-3 rounded-2xl bg-white p-5 shadow-2xl transition-transform duration-300"
-          style={{ transform: open ? "translateY(0)" : "translateY(-14px)" }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between">
-            {logo}
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label="Close"
-              className="rounded-lg p-2 transition-colors hover:bg-black/5"
-              style={{ color: DIM }}
-            >
-              <X className="h-5 w-5" aria-hidden />
-            </button>
-          </div>
-
-          <nav className="mt-3">
-            {links.map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                onClick={() => setOpen(false)}
-                className="block border-b py-3.5 text-base font-bold"
-                style={{ borderColor: "rgba(32,30,29,.1)", color: INK }}
-              >
-                {link.label}
-              </a>
-            ))}
-            <a
-              href={switchHref}
-              className="block py-3.5 text-sm font-bold uppercase tracking-widest"
-              style={{ color: ORANGE }}
-            >
-              {switchLabel}
-            </a>
-          </nav>
-
-          <div className="mt-2 space-y-2.5">
-            <a
-              href={primaryHref}
-              className="block rounded-full py-3.5 text-center text-sm font-bold text-white"
-              style={{ backgroundColor: GREEN }}
-            >
-              {primaryLabel}
-            </a>
-            <a
-              href={secondaryHref}
-              className="block rounded-full border py-3.5 text-center text-sm font-bold"
-              style={{ borderColor: "rgba(20,81,44,.4)", color: GREEN }}
-            >
-              {secondaryLabel}
-            </a>
-          </div>
-        </div>
-      </div>
+      {mounted ? createPortal(sheet, document.body) : null}
     </div>
   );
 }
