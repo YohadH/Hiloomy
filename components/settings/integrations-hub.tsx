@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
-import { X, Settings2, Plug } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { X, Plug } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Integrations hub — Lebesgue-style connector grid in Hiloomy's brand.
@@ -222,17 +223,28 @@ export function IntegrationsHub({
   requestEmail?: string;
 }) {
   const [openId, setOpenId] = useState<string | null>(initialOpen ?? null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   const open = useCallback((id: string) => {
     setOpenId((current) => (current === id ? null : id));
-    // Scroll the detail panel into view after it renders.
-    requestAnimationFrame(() => {
-      panelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
   }, []);
 
   const openItem = openId ? items.find((i) => i.id === openId) : null;
+
+  // Modal plumbing: lock body scroll and close on Escape while open.
+  useEffect(() => {
+    document.body.style.overflow = openItem ? "hidden" : "";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenId(null);
+    };
+    if (openItem) window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [openItem]);
 
   return (
     <div className="space-y-4">
@@ -330,39 +342,45 @@ export function IntegrationsHub({
         </div>
       ))}
 
-      {/* Detail panel — the full connection manager for the open tile. */}
-      {openItem && panels[openItem.id] ? (
-        <div
-          ref={panelRef}
-          className="rounded-2xl border border-green-300 bg-card shadow-md"
-        >
-          <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-            <div className="flex items-center gap-3">
-              <IntegrationGlyph id={openItem.id} />
-              <div>
-                <p className="text-sm font-bold">{openItem.name}</p>
-                <StatusPill status={openItem.status} isHe={isHe} />
-              </div>
-            </div>
-            <button
-              type="button"
+      {/* Detail modal — the full connection manager for the open tile,
+          portaled to <body> so page layout/stacking can't clip it. */}
+      {mounted && openItem && panels[openItem.id]
+        ? createPortal(
+            <div
+              dir={isHe ? "rtl" : "ltr"}
+              className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-6"
               onClick={() => setOpenId(null)}
-              className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label={isHe ? "סגירה" : "Close"}
+              role="dialog"
+              aria-modal="true"
+              aria-label={openItem.name}
             >
-              <X className="h-4 w-4" aria-hidden />
-            </button>
-          </div>
-          <div className="p-4 sm:p-5">{panels[openItem.id]}</div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
-          <Settings2 className="h-3.5 w-3.5" aria-hidden />
-          {isHe
-            ? "לחצו על חיבור או ניהול בכרטיס כדי לפתוח את מסך ההגדרה המלא שלו כאן."
-            : "Click Connect or Manage on a tile to open its full setup panel here."}
-        </div>
-      )}
+              <div
+                className="flex max-h-[92vh] w-full max-w-3xl flex-col rounded-t-2xl bg-card shadow-2xl sm:max-h-[85vh] sm:rounded-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <IntegrationGlyph id={openItem.id} />
+                    <div>
+                      <p className="text-sm font-bold">{openItem.name}</p>
+                      <StatusPill status={openItem.status} isHe={isHe} />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(null)}
+                    className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label={isHe ? "סגירה" : "Close"}
+                  >
+                    <X className="h-4 w-4" aria-hidden />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">{panels[openItem.id]}</div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }
