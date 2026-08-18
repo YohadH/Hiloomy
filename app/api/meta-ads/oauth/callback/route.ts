@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getAuthContext } from "@/lib/auth/session";
 import { saveMetaAdsConnection } from "@/lib/services/meta-ads-service";
 import { toErrorMessage } from "@/lib/server/errors";
-import { META_OAUTH_STATE_COOKIE, META_OAUTH_STORE_COOKIE } from "../start/route";
+import { META_OAUTH_STATE_COOKIE, META_OAUTH_STORE_COOKIE } from "@/lib/meta-oauth";
 
 // One-click Meta Ads connect — step 2: Facebook redirects back here with a
 // code. Exchange it for a long-lived user token, auto-pick the ad account

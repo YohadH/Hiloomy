@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { getAuthContext } from "@/lib/auth/session";
 import { toErrorMessage } from "@/lib/server/errors";
+import { META_OAUTH_STATE_COOKIE, META_OAUTH_STORE_COOKIE } from "@/lib/meta-oauth";
 
 // One-click Meta Ads connect — step 1: redirect to Facebook's OAuth dialog.
 //
@@ -13,9 +14,6 @@ import { toErrorMessage } from "@/lib/server/errors";
 // target store id ride in short-lived httpOnly cookies.
 
 export const dynamic = "force-dynamic";
-
-export const META_OAUTH_STATE_COOKIE = "hl_meta_oauth_state";
-export const META_OAUTH_STORE_COOKIE = "hl_meta_oauth_store";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
