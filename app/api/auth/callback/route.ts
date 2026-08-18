@@ -24,8 +24,8 @@ export async function GET(request: Request) {
   const base = (process.env.APP_URL ?? url.origin).replace(/\/$/, "");
   // Only ever redirect to a same-site path — `next` is attacker-visible
   // input, so an absolute URL here would be an open redirect.
-  const rawNext = url.searchParams.get("next") ?? "/";
-  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+  const rawNext = url.searchParams.get("next") ?? "/dashboard";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
 
   if (!code) {
     return NextResponse.redirect(new URL("/signin?error=missing_code", base));

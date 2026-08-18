@@ -1,366 +1,304 @@
-import { Frank_Ruhl_Libre, Assistant } from "next/font/google";
+import { Suez_One, Alef } from "next/font/google";
 import { getAppLocale, isValidLocale, type AppLocale } from "@/lib/i18n";
 import { PLANS } from "@/lib/billing/plans";
 import { HiloomyLogo, HiloomyMark } from "@/components/ui/logo";
 import {
-  ArrowUpRight,
-  ArrowRight,
-  ArrowLeft,
-  Check,
-  ShieldCheck
-} from "lucide-react";
+  LayersScroller,
+  FeaturesGrid,
+  PricingPlans,
+  type LayerItem,
+  type FeatureItem,
+  type PlanItem
+} from "@/components/marketing/home-interactive";
 
-// Public marketing landing at /welcome.
-// Bilingual (he default, ?lang= override), works without auth, links to /signup.
-// Brand system: "the ledger" — cream paper, deep forest-green ink, orange
-// up-arrow accents (mirrors the Hiloomy logomark). Server-rendered, no client JS.
+// Public marketing landing. Served at "/" for anonymous visitors (middleware
+// rewrite) and directly at /welcome. Bilingual (he default, ?lang= override).
+// Design: "the financial broadsheet" — off-white paper, deep green ink,
+// terracotta accents, Suez One display + Alef body, a dateline strip, a
+// sticky three-layer scroll story, an accordion feature grid, a marquee,
+// pricing with a currency toggle, and a dark-green closing band.
 
-const displayFont = Frank_Ruhl_Libre({
+const displayFont = Suez_One({
   subsets: ["latin", "hebrew"],
-  weight: ["500", "700", "900"],
+  weight: "400",
   variable: "--font-hl-display"
 });
 
-const bodyFont = Assistant({
+const bodyFont = Alef({
   subsets: ["latin", "hebrew"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "700"],
   variable: "--font-hl-body"
 });
 
-// Brand tokens (from the logo): forest ink, leaf green, signal orange, paper.
-const INK = "#1B4332";
-const INK_DEEP = "#122E22";
-const LEAF = "#16A34A";
-const ORANGE = "#F97316";
-const PAPER = "#FAF6EC";
+const INK = "#201E1D";
+const GREEN = "#14512C";
+const GREEN_DARK = "#12341F";
+const ORANGE = "#D1731F";
+const PAPER = "#F7F7F6";
+const DIM = "#605D5D";
+const HAIR = "rgba(32,30,29,.12)";
+
+const BARS = [38, 46, 41, 55, 49, 62, 58, 71, 66, 78, 74, 88, 82, 96];
 
 export const metadata = {
-  title: "Hiloomy — Profit analytics & growth reports for Shopify",
+  title: "Hiloomy — Profit command center for Shopify brands",
   description:
-    "True profit after costs, proactive alerts with recommended actions, weekly growth reports, affiliate management and marketing planning — one command center for Shopify brands. ניתוח רווח, התראות ודוחות שבועיים למותגי Shopify."
+    "Revenue is the headline. Profit is the story. Hiloomy joins Shopify, Meta Ads, Instagram and your affiliates into one database and hands back the number that stays in the bank. ההכנסות זה כותרת. הרווח זה הסיפור."
 };
-
-type Copy = ReturnType<typeof getCopy>;
 
 function getCopy(isHe: boolean) {
   return isHe
     ? {
-        nav: {
-          features: "יכולות",
-          how: "איך זה עובד",
-          pricing: "מחירים",
-          security: "אבטחה",
-          signin: "התחברות",
-          signup: "פתיחת חשבון",
-          switchLabel: "English"
-        },
+        nav: { features: "יכולות", how: "איך זה עובד", pricing: "מחירים", security: "אבטחה", login: "התחברות", cta: "צרו משתמש", switchLabel: "EN" },
+        dateline: { brand: "Hiloomy · מרכז הפיקוד למותגי Shopify", tag: "רענון כל שעתיים", meta: "גרסה 2026" },
         hero: {
-          eyebrow: "מרכז הפיקוד למותגי Shopify",
-          titleA: "לראות מה באמת מרוויח.",
-          titleB: "לדעת בדיוק מה לעשות.",
-          subtitle:
-            "Hiloomy מסנכרן את Shopify, Meta Ads, אינסטגרם ותוכנית השותפים למסד נתונים אחד — ומחזיר לכם רווח אמיתי אחרי עלויות, התראות עם פעולה מומלצת, ודוח צמיחה שבועי שמגיע ישר למייל.",
-          ctaPrimary: "התחילו 14 ימי ניסיון",
-          ctaSecondary: "איך זה עובד",
-          noCC: "ללא כרטיס אשראי · ביטול בכל רגע · חיבור ב־30 שניות"
+          title: "ההכנסות זה כותרת. הרווח זה הסיפור.",
+          body: "Hiloomy מחבר את Shopify, Meta Ads, אינסטגרם ותוכנית השותפים למסד נתונים אחד, מוריד את כל העלויות, ומחזיר לכם את המספר שנשאר בבנק — עם התראה שמגיעה עם פעולה ודוח שבועי שמסביר מה קרה.",
+          fine: "ללא כרטיס אשראי · חיבור ב־30 שניות · הרשאות קריאה בלבד",
+          ctaSecondary: "איך זה בנוי"
         },
         mock: {
-          cardLabel: "רווח תרומה · 30 ימים",
+          profitLabel: "רווח תרומה · 30 ימים",
           accuracy: "דיוק גבוה",
           profit: "₪116,181",
-          profitRate: "(62% מההכנסה)",
-          kpis: [
+          share: "62% מההכנסה",
+          rows: [
             ["הכנסות", "₪187,118"],
             ["הנחות", "−₪12,404"],
-            ["החזרים", "−₪3,720"]
+            ["החזרים", "−₪3,720"],
+            ["עלות מוצרים", "−₪54,813"]
           ],
-          alertTag: "התראה · גבוהה",
+          alertLabel: "התראה",
+          alertPriority: "עדיפות גבוהה",
           alertTitle: "מוצר הדגל ייגמר בעוד 6 ימים",
-          alertAction: "פעולה: להזמין 120 יח׳ היום",
-          reportChip: "דוח שבועי נשלח · ראשון 08:00"
+          alertAction: "פעולה: להזמין 120 יחידות היום",
+          alertLoop: "התוצאה תימדד ותדווח בעוד 7 ימים"
         },
-        proof: [
-          ["6", "מקורות נתונים מסונכרנים"],
-          ["2 שעות", "קצב רענון הנתונים"],
-          ["7 ימים", "מדידת תוצאה לכל פעולה"],
-          ["14 יום", "ניסיון חינם, בלי כרטיס"]
-        ],
-        featuresTitle: "מה Hiloomy עושה בפועל",
-        featuresSubtitle:
-          "לא עוד דשבורד שמתאר נתונים. כל מסך עונה על שתי שאלות: מה קורה — ומה עושים עם זה.",
-        features: [
-          {
-            num: "01",
-            title: "רווח אמיתי, לא הכנסות ראווה",
-            body:
-              "הכנסות − הנחות − החזרים − עלות מוצרים − עמלות שותפים = הרווח שנשאר בבנק. לכל מספר מוצמדת תווית דיוק, כדי שתדעו על מה אפשר לסמוך.",
-            points: [
-              "רווח תרומה חי לכל חלון זמן, עם פירוט לפי מוצר וקולקציה",
-              "עלויות מוצר (COGS) לכל מוצר בנפרד או בהעלאת CSV אחת",
-              "ייבוא מכירות אופליין מאקסל למיזוג הכנסות מחוץ לShopify"
-            ]
-          },
-          {
-            num: "02",
-            title: "התראות שמגיעות עם פעולה",
-            body:
-              "המערכת סורקת את הנתונים כל סנכרון: ירידת מכירות, קפיצה בהחזרים, מלאי שנגמר למוצר מוביל, קמפיין שקרס. כל התראה כוללת פעולה מומלצת — וכמה ימים אחרי שביצעתם, המערכת מודדת אם זה עבד.",
-            points: [
-              "עדיפות גבוהה = לטפל היום, בינונית = לתכנון השבועי",
-              "פעולה מומלצת קונקרטית על כל כרטיס התראה",
-              "לולאה סגורה: ✅ מה עבד / ❌ מה לא — נמדד ומדווח חזרה"
-            ]
-          },
-          {
-            num: "03",
-            title: "דוח צמיחה שבועי למייל",
-            body:
-              "כל שבוע נשלח PDF מעוצב: מה השתנה, אילו דגלים אדומים נפתחו, ומה לעשות בשבוע הקרוב. כולל פרשנות BI על המספרים וסיכום שבועי של קמפייני Meta.",
-            points: [
-              "סיכום מנהלים בעברית — קריא בשתי דקות",
-              "דגלים אדומים עם פעולות מסודרות לפי סדר עדיפות",
-              "נשלח אוטומטית במייל, בלי להיכנס לאף מערכת"
-            ]
-          },
-          {
-            num: "04",
-            title: "ניהול תוכנית שותפים מלא",
-            body:
-              "מנהל השותפים יוצר קופונים ישירות בShopify, עוקב אחרי כל המרה בשלושה מסלולי ייחוס, ומנהל את כל מחזור התשלומים — בלי גיליונות אקסל צדדיים.",
-            points: [
-              "יצירת קופונים בודדים או בכמות ישירות בחנות",
-              "ייחוס בשלוש שכבות: לינק ייעודי, קוד קופון וייבוא היסטוריה",
-              "זרימת תשלומים: אישור → סומן כשולם, עם יתרה לכל שותף"
-            ]
-          },
-          {
-            num: "05",
-            title: "מתכנן שיווק וברִיף חודשי",
-            body:
-              "מעלים את קובץ האקסל של לוח השיווק — והמערכת מזהה כל משימה, בונה גאנט, ומפיקה את הבריף החודשי של הצוות כPDF בעברית, כולל ביקורת הנחות אוטומטית.",
-            points: [
-              "זיהוי אוטומטי: הנחות, באנרים, סרטונים, אימיילים ופוסטים",
-              "בריף חודשי PDF בפורמט של הצוות + גרסה לכל תפקיד",
-              "ביקורת הנחות: קודים כפולים, התנגשויות עם קופוני שותפים"
-            ]
-          },
-          {
-            num: "06",
-            title: "שימור לקוחות שמצטבר לרווח",
-            body:
-              "מי חוזר לקנות, כמה מהר, ובזכות איזה מוצר. שכבת השימור מפרקת את ההתנהגות של הזמנה ראשונה מול שנייה כדי שתדעו איפה ה־LTV באמת נבנה.",
-            points: [
-              "שיעור רכישה חוזרת ושיעור הזמנה שנייה לאורך זמן",
-              "זמן ממוצע בין הזמנה ראשונה לשנייה",
-              "המוצרים שמביאים לקוחות מול המוצרים שמחזירים אותם"
-            ]
-          }
-        ],
-        integrationsTitle: "מתחבר למה שכבר יש לכם",
-        integrations: [
-          "Shopify",
-          "Meta Ads",
-          "Instagram",
-          "Google Search Console",
-          "אימייל (דוחות)",
-          "Excel / CSV"
-        ],
-        howTitle: "שלושה צעדים, בלי צוות דאטה",
-        how: [
-          {
-            step: "1",
-            title: "פותחים חשבון",
-            body: "הרשמה עם אימייל — 30 שניות, בלי כרטיס אשראי."
-          },
-          {
-            step: "2",
-            title: "מחברים את Shopify",
-            body: "חיבור מאובטח בלחיצה, בהרשאות קריאה בלבד. הנתונים נשארים שלכם."
-          },
-          {
-            step: "3",
-            title: "מקבלים החלטות",
-            body: "הנתונים מתרעננים כל שעתיים, ההתראות עולות לבד, והדוח מגיע כל שבוע."
-          }
-        ],
-        pricingTitle: "מחיר פשוט, בלי הפתעות",
-        pricingSubtitle: "14 ימי ניסיון חינם על כל מסלול. ללא כרטיס אשראי. ביטול בכל רגע.",
-        perMonth: "/ חודש",
-        recommended: "הכי פופולרי",
-        planCta: "התחילו ניסיון חינם",
-        securityTitle: "הנתונים שלכם, בכספת",
-        securityBody:
-          "טוקנים של Shopify מוצפנים במנוחה (AES-256-GCM) ולא עוזבים את השרת. כל לקוח מבודד לחלוטין ברמת מסד הנתונים, ההרשאות לחנות הן קריאה בלבד, ואפשר להתנתק ולמחוק הכל בכל רגע.",
-        securityCta: "לעמוד האבטחה המלא",
-        finalTitle: "מוכנים לראות את המספרים האמיתיים?",
-        finalSubtitle: "30 שניות להירשם · דקה לחבר את Shopify · 14 ימים לבדוק הכל",
-        finalCta: "פתחו חשבון בחינם",
+        layers: {
+          kicker: "שלוש שכבות",
+          title: "נתונים נכנסים. אותות עולים. צמיחה יוצאת."
+        },
+        features: {
+          kicker: "מה זה עושה בפועל",
+          title: "שש יכולות. כל אחת עונה על שתי שאלות: מה קורה, ומה עושים."
+        },
+        integrations: {
+          kicker: "מתחבר למה שכבר יש לכם",
+          title: "בלי מיפוי דאטה, בלי צוות אינטגרציה, בלי מחסן נתונים נפרד."
+        },
+        pricing: { kicker: "מחירים", title: "14 ימי ניסיון. בלי כרטיס.", popular: "הכי פופולרי", perMonth: "/ חודש", cta: "התחילו בחינם" },
+        security: {
+          kicker: "אבטחה",
+          title: "הנתונים שלכם, בכספת.",
+          body: "טוקנים של Shopify מוצפנים במנוחה ולא עוזבים את השרת. כל לקוח מבודד ברמת מסד הנתונים, ההרשאות לחנות הן קריאה בלבד, ואפשר להתנתק ולמחוק הכל בכל רגע."
+        },
+        final: {
+          title: "תראו את המספרים האמיתיים תוך דקה.",
+          body: "30 שניות להירשם, דקה לחבר את Shopify, 14 ימים לבדוק את הכל בלי התחייבות.",
+          stats: [
+            ["30 שנ׳", "להרשמה"],
+            ["6", "מקורות מסונכרנים"],
+            ["14 יום", "ניסיון חינם"]
+          ] as Array<[string, string]>
+        },
         footer: {
-          rights: "© 2026 Brandzp Ltd. כל הזכויות שמורות.",
+          product: "מוצר",
+          company: "חברה",
           privacy: "פרטיות",
           terms: "תנאי שימוש",
-          security: "אבטחה"
+          legal: "© 2026 Brandzp Ltd. כל הזכויות שמורות.",
+          switchLong: "Switch to English"
         }
       }
     : {
-        nav: {
-          features: "Capabilities",
-          how: "How it works",
-          pricing: "Pricing",
-          security: "Security",
-          signin: "Sign in",
-          signup: "Start free",
-          switchLabel: "עברית"
-        },
+        nav: { features: "Features", how: "How it works", pricing: "Pricing", security: "Security", login: "Log in", cta: "Create account", switchLabel: "עב" },
+        dateline: { brand: "Hiloomy · Command center for Shopify brands", tag: "Refreshed every two hours", meta: "Edition 2026" },
         hero: {
-          eyebrow: "The command center for Shopify brands",
-          titleA: "See what actually earns.",
-          titleB: "Know exactly what to do.",
-          subtitle:
-            "Hiloomy syncs Shopify, Meta Ads, Instagram and your affiliate program into one database — and hands you back true profit after costs, alerts with a recommended action, and a weekly growth report straight to your inbox.",
-          ctaPrimary: "Start 14-day free trial",
-          ctaSecondary: "See how it works",
-          noCC: "No credit card · Cancel anytime · Connects in 30 seconds"
+          title: "Revenue is the headline. Profit is the story.",
+          body: "Hiloomy joins Shopify, Meta Ads, Instagram and your affiliate program into one database, subtracts every real cost, and hands back the number that actually stays in the bank — with alerts that arrive carrying an action and a weekly report that explains the week.",
+          fine: "No credit card · Connect in 30 seconds · Read-only scopes",
+          ctaSecondary: "How it's built"
         },
         mock: {
-          cardLabel: "Contribution margin · 30 days",
-          accuracy: "HIGH accuracy",
+          profitLabel: "Contribution profit · 30 days",
+          accuracy: "High accuracy",
           profit: "₪116,181",
-          profitRate: "(62% of revenue)",
-          kpis: [
+          share: "62% of revenue",
+          rows: [
             ["Revenue", "₪187,118"],
             ["Discounts", "−₪12,404"],
-            ["Refunds", "−₪3,720"]
+            ["Refunds", "−₪3,720"],
+            ["Cost of goods", "−₪54,813"]
           ],
-          alertTag: "Alert · High",
-          alertTitle: "Hero product out of stock in 6 days",
-          alertAction: "Action: reorder 120 units today",
-          reportChip: "Weekly report sent · Sun 08:00"
+          alertLabel: "Alert",
+          alertPriority: "High priority",
+          alertTitle: "Your flagship product runs out in 6 days",
+          alertAction: "Action: order 120 units today",
+          alertLoop: "Outcome measured and reported back in 7 days"
         },
-        proof: [
-          ["6", "data sources unified"],
-          ["2 hrs", "data refresh cadence"],
-          ["7 days", "outcome check on every action"],
-          ["14 days", "free trial, no card"]
-        ],
-        featuresTitle: "What Hiloomy actually does",
-        featuresSubtitle:
-          "Not another dashboard that describes data. Every screen answers two questions: what's happening — and what to do about it.",
-        features: [
-          {
-            num: "01",
-            title: "True profit, not vanity revenue",
-            body:
-              "Revenue − discounts − refunds − product costs − affiliate commissions = the profit that reaches your bank. Every number carries an accuracy badge, so you know exactly what to trust.",
-            points: [
-              "Live contribution margin for any window, broken down by product and collection",
-              "Product costs (COGS) per product or via a single CSV upload",
-              "Offline sales import from Excel to blend non-Shopify revenue"
-            ]
-          },
-          {
-            num: "02",
-            title: "Alerts that arrive with an action",
-            body:
-              "Every sync, the engine scans for trouble: revenue drops, refund spikes, hero products running out of stock, collapsing ad campaigns. Each alert ships with a recommended action — and days after you act, Hiloomy measures whether it worked.",
-            points: [
-              "High priority = handle today, medium = fold into weekly planning",
-              "A concrete suggested action on every alert card",
-              "Closed loop: ✅ what worked / ❌ what didn't — measured and reported back"
-            ]
-          },
-          {
-            num: "03",
-            title: "A weekly growth report in your inbox",
-            body:
-              "Every week, a designed PDF lands in your email: what changed, which red flags opened, and what to do next week. Includes BI commentary on the numbers and a weekly Meta Ads summary.",
-            points: [
-              "An executive summary you can read in two minutes",
-              "Red flags with actions, ordered by priority",
-              "Delivered automatically by email — no logging into anything"
-            ]
-          },
-          {
-            num: "04",
-            title: "Full affiliate program management",
-            body:
-              "The affiliate manager creates coupons directly in Shopify, tracks every conversion through three attribution paths, and runs the entire payout cycle — no side spreadsheets.",
-            points: [
-              "Create single or bulk coupons right inside your store",
-              "Three-layer attribution: tracked links, coupon codes, and history imports",
-              "Payout workflow: approve → mark paid, with a balance per affiliate"
-            ]
-          },
-          {
-            num: "05",
-            title: "Marketing planner & monthly brief",
-            body:
-              "Upload your team's Excel marketing calendar — Hiloomy classifies every task, builds a Gantt view, and generates the team's monthly brief as a PDF, with an automatic discount audit included.",
-            points: [
-              "Auto-classifies discounts, banners, videos, emails and posts",
-              "Monthly brief PDF in your team's exact format + per-role versions",
-              "Discount audit: duplicate codes, collisions with affiliate coupons"
-            ]
-          },
-          {
-            num: "06",
-            title: "Retention that compounds into profit",
-            body:
-              "Who comes back, how fast, and thanks to which product. The retention layer separates first-order from second-order behavior so you can see where lifetime value is really built.",
-            points: [
-              "Repeat purchase rate and second-order rate over time",
-              "Average time between first and second order",
-              "The products that acquire customers vs. the ones that bring them back"
-            ]
-          }
-        ],
-        integrationsTitle: "Connects to what you already run",
-        integrations: [
-          "Shopify",
-          "Meta Ads",
-          "Instagram",
-          "Google Search Console",
-          "Email (reports)",
-          "Excel / CSV"
-        ],
-        howTitle: "Three steps, no data team",
-        how: [
-          {
-            step: "1",
-            title: "Open an account",
-            body: "Sign up with your email — 30 seconds, no credit card."
-          },
-          {
-            step: "2",
-            title: "Connect Shopify",
-            body: "One-click secure connection with read-only scopes. Your data stays yours."
-          },
-          {
-            step: "3",
-            title: "Make decisions",
-            body: "Data refreshes every 2 hours, alerts surface themselves, the report arrives weekly."
-          }
-        ],
-        pricingTitle: "Simple pricing, no surprises",
-        pricingSubtitle: "14-day free trial on every plan. No credit card. Cancel anytime.",
-        perMonth: "/ month",
-        recommended: "Most popular",
-        planCta: "Start free trial",
-        securityTitle: "Your data, in a vault",
-        securityBody:
-          "Shopify tokens are encrypted at rest (AES-256-GCM) and never leave the server. Every customer is fully isolated at the database level, store permissions are read-only, and you can disconnect and delete everything at any time.",
-        securityCta: "Read the full security page",
-        finalTitle: "Ready to see your real numbers?",
-        finalSubtitle: "30 seconds to sign up · a minute to connect Shopify · 14 days to test everything",
-        finalCta: "Open a free account",
+        layers: { kicker: "Three layers", title: "Data in. Signals up. Growth out." },
+        features: {
+          kicker: "What it actually does",
+          title: "Six capabilities. Each answers two questions: what happened, and what to do."
+        },
+        integrations: {
+          kicker: "Connects to what you already run",
+          title: "No data mapping, no integration team, no separate warehouse to pay for."
+        },
+        pricing: { kicker: "Pricing", title: "14-day trial. No card.", popular: "Most popular", perMonth: "/ month", cta: "Get started free" },
+        security: {
+          kicker: "Security",
+          title: "Your data, in the vault.",
+          body: "Shopify tokens are encrypted at rest and never leave the server. Every customer is isolated at the database level, store scopes are read-only, and you can disconnect and delete everything at any moment."
+        },
+        final: {
+          title: "See your real numbers within the minute.",
+          body: "30 seconds to sign up, a minute to connect Shopify, 14 days to test all of it with nothing committed.",
+          stats: [
+            ["30 sec", "to sign up"],
+            ["6", "sources synced"],
+            ["14 days", "free trial"]
+          ] as Array<[string, string]>
+        },
         footer: {
-          rights: "© 2026 Brandzp Ltd. All rights reserved.",
+          product: "Product",
+          company: "Company",
           privacy: "Privacy",
           terms: "Terms",
-          security: "Security"
+          legal: "© 2026 Brandzp Ltd. All rights reserved.",
+          switchLong: "עברו לעברית"
         }
       };
 }
+
+function getLayers(isHe: boolean): LayerItem[] {
+  return isHe
+    ? [
+        {
+          num: "01",
+          name: "שכבת הנתונים",
+          blurb: "Shopify, Meta Ads, אינסטגרם ו־Search Console מסונכרנים למסד אחד, כל שעתיים.",
+          panelKicker: "סנכרון · לפני 14 דקות",
+          panelTitle: "שש מקורות, לוח זמנים אחד, בלי גיליונות באמצע.",
+          rows: [
+            { k: "מקורות מחוברים", v: "6" },
+            { k: "קצב רענון", v: "2 שעות" },
+            { k: "הזמנות מסונכרנות", v: "38,204" },
+            { k: "פערי נתונים", v: "0" }
+          ],
+          panelNote: "מכירות אופליין נכנסות מאקסל ומתמזגות עם ההכנסות מהחנות."
+        },
+        {
+          num: "02",
+          name: "שכבת האותות",
+          blurb: "כל סנכרון נסרק: ירידת מכירות, קפיצה בהחזרים, מלאי שנגמר, קמפיין שקרס.",
+          panelKicker: "התראות · השבוע",
+          panelTitle: "כל התראה מגיעה עם פעולה מומלצת אחת, לא עם גרף.",
+          rows: [
+            { k: "התראות פתוחות", v: "4" },
+            { k: "עדיפות גבוהה", v: "1" },
+            { k: "פעולות שבוצעו", v: "11" },
+            { k: "עבדו בפועל", v: "8" }
+          ],
+          panelNote: "אחרי שביצעתם, המערכת מודדת שבעה ימים ומדווחת אם זה עבד."
+        },
+        {
+          num: "03",
+          name: "שכבת הצמיחה",
+          blurb: "שותפים, שימור לקוחות ותכנון חודשי — במקום אחד, עם הרווח בקצה.",
+          panelKicker: "צמיחה · 30 ימים",
+          panelTitle: "מי מביא לקוחות, מי מחזיר אותם, ומה זה שווה בסוף.",
+          rows: [
+            { k: "רכישה חוזרת", v: "31%" },
+            { k: "זמן להזמנה שנייה", v: "24 ימים" },
+            { k: "שותפים פעילים", v: "18" },
+            { k: "לתשלום", v: "₪9,340" }
+          ],
+          panelNote: "ייחוס בשלוש שכבות: לינק ייעודי, קוד קופון וייבוא היסטוריה."
+        }
+      ]
+    : [
+        {
+          num: "01",
+          name: "Data layer",
+          blurb: "Shopify, Meta Ads, Instagram and Search Console synced into one database every two hours.",
+          panelKicker: "Synced · 14 minutes ago",
+          panelTitle: "Six sources, one clock, no spreadsheet in the middle.",
+          rows: [
+            { k: "Connected sources", v: "6" },
+            { k: "Refresh rate", v: "2 hours" },
+            { k: "Orders synced", v: "38,204" },
+            { k: "Data gaps", v: "0" }
+          ],
+          panelNote: "Offline sales arrive from Excel and merge with store revenue."
+        },
+        {
+          num: "02",
+          name: "Signal layer",
+          blurb: "Every sync is scanned: sales dips, refund spikes, stock running out, a campaign collapsing.",
+          panelKicker: "Alerts · this week",
+          panelTitle: "Every alert arrives with one recommended action, not a chart.",
+          rows: [
+            { k: "Open alerts", v: "4" },
+            { k: "High priority", v: "1" },
+            { k: "Actions taken", v: "11" },
+            { k: "Actually worked", v: "8" }
+          ],
+          panelNote: "After you act, Hiloomy measures seven days and reports whether it worked."
+        },
+        {
+          num: "03",
+          name: "Growth layer",
+          blurb: "Affiliates, retention and monthly planning in one place, with profit at the end of each.",
+          panelKicker: "Growth · 30 days",
+          panelTitle: "Who brings customers, who brings them back, what it's worth.",
+          rows: [
+            { k: "Repeat purchase", v: "31%" },
+            { k: "Time to 2nd order", v: "24 days" },
+            { k: "Active affiliates", v: "18" },
+            { k: "Due to pay", v: "₪9,340" }
+          ],
+          panelNote: "Three-track attribution: dedicated link, coupon code, history import."
+        }
+      ];
+}
+
+function getFeatures(isHe: boolean): FeatureItem[] {
+  return isHe
+    ? [
+        { num: "01", title: "רווח אמיתי, לא הכנסות ראווה", body: "הכנסות פחות הנחות, החזרים, עלות מוצרים ועמלות שותפים. לכל מספר תווית דיוק.", points: ["רווח תרומה חי לכל חלון זמן", "COGS לכל מוצר או בהעלאת CSV אחת", "ייבוא מכירות אופליין מאקסל"] },
+        { num: "02", title: "התראות שמגיעות עם פעולה", body: "עדיפות גבוהה זה לטפל היום. בינונית זה לתכנון השבועי. בלי רשימת אזהרות שאף אחד לא קורא.", points: ["פעולה קונקרטית על כל כרטיס", "לולאה סגורה: מה עבד ומה לא", "מדידה שבעה ימים אחרי הביצוע"] },
+        { num: "03", title: "דוח צמיחה שבועי למייל", body: "PDF מעוצב בעברית: מה השתנה, אילו דגלים אדומים נפתחו, ומה לעשות בשבוע הקרוב.", points: ["סיכום מנהלים קריא בשתי דקות", "דגלים אדומים לפי סדר עדיפות", "נשלח לבד, בלי להיכנס לאף מערכת"] },
+        { num: "04", title: "ניהול תוכנית שותפים מלא", body: "קופונים נוצרים ישירות בShopify, ההמרות נספרות בשלושה מסלולי ייחוס, והתשלומים מנוהלים בפנים.", points: ["יצירת קופונים בודדים או בכמות", "ייחוס: לינק, קוד וייבוא היסטוריה", "אישור ← סומן כשולם, עם יתרה"] },
+        { num: "05", title: "מתכנן שיווק וברִיף חודשי", body: "מעלים את לוח השיווק באקסל, המערכת מזהה כל משימה ובונה גאנט ובריף חודשי.", points: ["זיהוי הנחות, באנרים, סרטונים ואימיילים", "בריף PDF + גרסה לכל תפקיד", "ביקורת הנחות: קודים כפולים והתנגשויות"] },
+        { num: "06", title: "שימור שמצטבר לרווח", body: "מי חוזר לקנות, כמה מהר, ובזכות איזה מוצר. שם ה־LTV נבנה באמת.", points: ["שיעור רכישה חוזרת לאורך זמן", "זמן ממוצע בין הזמנה ראשונה לשנייה", "מוצרים שמביאים מול מוצרים שמחזירים"] }
+      ]
+    : [
+        { num: "01", title: "Real profit, not vanity revenue", body: "Revenue minus discounts, refunds, cost of goods and affiliate commission. Every figure carries an accuracy label.", points: ["Live contribution profit for any window", "COGS per product or one CSV upload", "Offline sales imported from Excel"] },
+        { num: "02", title: "Alerts that arrive with an action", body: "High priority means handle it today. Medium goes to the weekly plan. No wall of warnings nobody reads.", points: ["A concrete action on every card", "Closed loop: what worked, what didn't", "Measured seven days after you act"] },
+        { num: "03", title: "A weekly growth report by email", body: "A designed PDF: what changed, which red flags opened, and what to do in the coming week.", points: ["Executive summary readable in two minutes", "Red flags ordered by priority", "Sent automatically, no login needed"] },
+        { num: "04", title: "Full affiliate program management", body: "Coupons created straight in Shopify, conversions counted across three attribution tracks, payouts handled inside.", points: ["Single or bulk coupon creation", "Link, code and history-import attribution", "Approve → marked paid, with balances"] },
+        { num: "05", title: "Marketing planner and monthly brief", body: "Upload the marketing calendar as Excel; Hiloomy reads every task, builds the Gantt and produces the brief.", points: ["Detects discounts, banners, videos, emails", "PDF brief plus a version per role", "Discount audit: duplicates and clashes"] },
+        { num: "06", title: "Retention that compounds into profit", body: "Who comes back, how fast, and because of which product. That's where LTV is really built.", points: ["Repeat purchase rate over time", "Average gap between 1st and 2nd order", "Products that acquire vs. products that return"] }
+      ];
+}
+
+const SECURITY_ITEMS = {
+  he: [
+    { title: "AES-256-GCM", body: "טוקנים מוצפנים במנוחה, לא עוזבים את השרת." },
+    { title: "קריאה בלבד", body: "ההרשאות לחנות לא מאפשרות שינוי נתונים." },
+    { title: "בידוד לקוחות", body: "הפרדה מלאה ברמת מסד הנתונים." },
+    { title: "מחיקה מלאה", body: "התנתקות ומחיקת הכל בכל רגע." }
+  ],
+  en: [
+    { title: "AES-256-GCM", body: "Tokens encrypted at rest, never leaving the server." },
+    { title: "Read-only", body: "Store scopes cannot modify your data." },
+    { title: "Tenant isolation", body: "Full separation at the database level." },
+    { title: "Delete everything", body: "Disconnect and wipe at any moment." }
+  ]
+};
+
+const MARQUEE = ["Shopify", "Meta Ads", "Instagram", "Google Search Console", "Excel / CSV", "Email reports"];
 
 export default async function WelcomePage({
   searchParams
@@ -369,14 +307,23 @@ export default async function WelcomePage({
 }) {
   const sp = await searchParams;
   const cookieLocale = await getAppLocale();
-  const locale: AppLocale =
-    sp.lang && isValidLocale(sp.lang) ? sp.lang : cookieLocale;
+  const locale: AppLocale = sp.lang && isValidLocale(sp.lang) ? sp.lang : cookieLocale;
   const isHe = locale === "he";
   const dir = isHe ? "rtl" : "ltr";
   const t = getCopy(isHe);
+  const layers = getLayers(isHe);
+  const features = getFeatures(isHe);
+  const securityItems = SECURITY_ITEMS[isHe ? "he" : "en"];
   const otherLocale: AppLocale = isHe ? "en" : "he";
-  const Arrow = isHe ? ArrowLeft : ArrowRight;
-  const plans = [PLANS.starter, PLANS.growth, PLANS.agency];
+  const signupHref = `/signup?lang=${locale}`;
+
+  const plans: PlanItem[] = [PLANS.starter, PLANS.growth, PLANS.agency].map((plan) => ({
+    name: plan.name[isHe ? "he" : "en"],
+    blurb: plan.description[isHe ? "he" : "en"],
+    points: plan.features[isHe ? "he" : "en"].slice(0, 4),
+    priceIls: `₪${plan.display.monthly.ILS}`,
+    priceUsd: `$${plan.display.monthly.USD}`
+  }));
 
   return (
     <div
@@ -385,190 +332,254 @@ export default async function WelcomePage({
       className={`${displayFont.variable} ${bodyFont.variable} min-h-screen [font-family:var(--font-hl-body)]`}
       style={{ backgroundColor: PAPER, color: INK }}
     >
-      {/* Page-scoped motion + texture. CSS only, respects reduced motion. */}
       <style>{`
+        @keyframes hl-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
         @keyframes hl-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
         .hl-rise { opacity: 0; animation: hl-rise .7s cubic-bezier(.2,.7,.3,1) forwards; }
-        @media (prefers-reduced-motion: reduce) { .hl-rise { animation: none; opacity: 1; } }
-        .hl-paper { background-image: radial-gradient(circle at 15% 0%, rgba(22,163,74,.07), transparent 42%), radial-gradient(circle at 90% 12%, rgba(249,115,22,.06), transparent 38%); }
-        .hl-rule { background-image: linear-gradient(to bottom, rgba(27,67,50,.14) 1px, transparent 1px); background-size: 100% 100%; }
+        @media (prefers-reduced-motion: reduce) {
+          .hl-rise { animation: none; opacity: 1; }
+          .hl-marquee-track { animation: none !important; }
+        }
       `}</style>
 
-      {/* ── Nav ─────────────────────────────────────────────────────── */}
-      <header
-        className="sticky top-0 z-40 border-b backdrop-blur-md"
-        style={{ borderColor: "rgba(27,67,50,.12)", backgroundColor: "rgba(250,246,236,.85)" }}
-      >
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
+      {/* ── Dateline strip (broadsheet masthead) ─────────────────────── */}
+      <div className="border-b" style={{ borderColor: HAIR }}>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-2 text-[11px] sm:px-10" style={{ color: DIM }}>
+          <span className="truncate font-bold">{t.dateline.brand}</span>
+          <span className="hidden items-center gap-1.5 sm:inline-flex">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#1C6B3A" }} />
+            {t.dateline.tag}
+          </span>
+          <span className="hidden sm:block">{t.dateline.meta}</span>
+        </div>
+      </div>
+
+      {/* ── Nav ──────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 border-b backdrop-blur-md" style={{ borderColor: HAIR, backgroundColor: "rgba(247,247,246,.88)" }}>
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-10">
           <a href={`/welcome?lang=${locale}`} className="inline-flex items-center">
             <HiloomyLogo />
           </a>
-          <nav className="hidden items-center gap-7 text-sm font-medium md:flex" style={{ color: "rgba(27,67,50,.72)" }}>
-            <a href="#features" className="transition-colors hover:text-[#1B4332]">{t.nav.features}</a>
-            <a href="#how" className="transition-colors hover:text-[#1B4332]">{t.nav.how}</a>
-            <a href="#pricing" className="transition-colors hover:text-[#1B4332]">{t.nav.pricing}</a>
-            <a href="/security" className="transition-colors hover:text-[#1B4332]">{t.nav.security}</a>
+          <nav className="hidden items-center gap-7 text-sm font-bold md:flex" style={{ color: DIM }}>
+            <a href="#features" className="transition-colors hover:text-[#201E1D]">{t.nav.features}</a>
+            <a href="#layers" className="transition-colors hover:text-[#201E1D]">{t.nav.how}</a>
+            <a href="#pricing" className="transition-colors hover:text-[#201E1D]">{t.nav.pricing}</a>
+            <a href="/security" className="transition-colors hover:text-[#201E1D]">{t.nav.security}</a>
           </nav>
           <div className="flex items-center gap-2 sm:gap-3">
             <a
               href={`/welcome?lang=${otherLocale}`}
-              className="rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors hover:bg-white"
-              style={{ borderColor: "rgba(27,67,50,.25)", color: INK }}
-              aria-label={t.nav.switchLabel}
+              className="rounded-full border px-2.5 py-1 text-xs font-bold transition-colors hover:bg-white"
+              style={{ borderColor: "rgba(32,30,29,.25)", color: INK }}
             >
               {t.nav.switchLabel}
             </a>
-            <a
-              href={`/login?lang=${locale}`}
-              className="hidden text-sm font-medium sm:block"
-              style={{ color: "rgba(27,67,50,.72)" }}
-            >
-              {t.nav.signin}
+            <a href={`/login?lang=${locale}`} className="hidden text-sm font-bold sm:block" style={{ color: DIM }}>
+              {t.nav.login}
             </a>
             <a
-              href={`/signup?lang=${locale}`}
-              className="rounded-full px-4 py-2 text-xs font-bold text-white shadow-sm transition-transform hover:-translate-y-0.5 sm:text-sm"
-              style={{ backgroundColor: INK }}
+              href={signupHref}
+              className="rounded-full px-4 py-2 text-xs font-bold text-white transition-transform hover:-translate-y-0.5 sm:text-sm"
+              style={{ backgroundColor: GREEN }}
             >
-              {t.nav.signup}
+              {t.nav.cta}
             </a>
           </div>
         </div>
       </header>
 
       {/* ── Hero ─────────────────────────────────────────────────────── */}
-      <section className="hl-paper relative overflow-hidden">
-        <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 pb-20 pt-14 sm:px-6 sm:pt-20 lg:grid-cols-[1.05fr_.95fr] lg:gap-8">
-          <div>
-            <p
-              className="hl-rise inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-widest"
-              style={{ borderColor: "rgba(249,115,22,.4)", color: ORANGE, animationDelay: ".05s" }}
+      <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-12 sm:px-10 sm:pt-16 lg:grid-cols-[1.05fr_.95fr]">
+        <div>
+          <h1
+            className="hl-rise text-[2.6rem] font-normal leading-[0.98] tracking-tight [font-family:var(--font-hl-display)] [text-wrap:balance] sm:text-6xl"
+            style={{ animationDelay: ".08s", letterSpacing: "-0.02em" }}
+          >
+            {t.hero.title}
+          </h1>
+          <p className="hl-rise mt-7 max-w-xl text-lg leading-relaxed [text-wrap:pretty]" style={{ color: "rgba(32,30,29,.8)", animationDelay: ".18s" }}>
+            {t.hero.body}
+          </p>
+          <div className="hl-rise mt-9 flex flex-wrap items-center gap-3.5" style={{ animationDelay: ".28s" }}>
+            <a
+              href={signupHref}
+              className="rounded-full px-7 py-3.5 text-sm font-bold text-white shadow-lg transition-transform hover:-translate-y-0.5"
+              style={{ backgroundColor: GREEN, boxShadow: "0 14px 30px -12px rgba(20,81,44,.5)" }}
             >
-              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-              {t.hero.eyebrow}
-            </p>
-            <h1
-              className="hl-rise mt-5 text-4xl font-black leading-[1.08] tracking-tight [font-family:var(--font-hl-display)] [text-wrap:balance] sm:text-[3.4rem]"
-              style={{ animationDelay: ".15s" }}
+              {t.nav.cta}
+            </a>
+            <a
+              href="#layers"
+              className="rounded-full border px-7 py-3.5 text-sm font-bold transition-colors hover:bg-white"
+              style={{ borderColor: "rgba(32,30,29,.3)", color: INK }}
             >
-              {t.hero.titleA}
-              <br />
-              <span style={{ color: LEAF }}>{t.hero.titleB}</span>
-            </h1>
-            <p
-              className="hl-rise mt-6 max-w-xl text-base leading-relaxed sm:text-lg"
-              style={{ color: "rgba(27,67,50,.78)", animationDelay: ".25s" }}
-            >
-              {t.hero.subtitle}
-            </p>
-            <div className="hl-rise mt-8 flex flex-col gap-3 sm:flex-row sm:items-center" style={{ animationDelay: ".35s" }}>
-              <a
-                href={`/signup?lang=${locale}`}
-                className="inline-flex items-center justify-center gap-2 rounded-full px-7 py-3.5 text-sm font-bold text-white shadow-lg transition-transform hover:-translate-y-0.5"
-                style={{ backgroundColor: ORANGE, boxShadow: "0 10px 24px -8px rgba(249,115,22,.55)" }}
-              >
-                {t.hero.ctaPrimary}
-                <Arrow className="h-4 w-4" aria-hidden />
-              </a>
-              <a
-                href="#how"
-                className="inline-flex items-center justify-center gap-2 rounded-full border px-7 py-3.5 text-sm font-semibold transition-colors hover:bg-white"
-                style={{ borderColor: "rgba(27,67,50,.3)", color: INK }}
-              >
-                {t.hero.ctaSecondary}
-              </a>
-            </div>
-            <p className="hl-rise mt-4 text-xs" style={{ color: "rgba(27,67,50,.55)", animationDelay: ".45s" }}>
-              {t.hero.noCC}
-            </p>
+              {t.hero.ctaSecondary}
+            </a>
           </div>
-
-          {/* Product mock — pure CSS, localized */}
-          <div className="hl-rise relative mx-auto w-full max-w-md lg:max-w-none" style={{ animationDelay: ".3s" }}>
-            <div
-              className="relative rounded-3xl border bg-white p-6 shadow-2xl"
-              style={{ borderColor: "rgba(27,67,50,.12)", boxShadow: "0 30px 60px -20px rgba(27,67,50,.25)" }}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "rgba(27,67,50,.55)" }}>
-                  {t.mock.cardLabel}
-                </p>
-                <span
-                  className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-                  style={{ backgroundColor: "rgba(22,163,74,.12)", color: "#15803D" }}
-                >
-                  {t.mock.accuracy}
-                </span>
-              </div>
-              <p className="mt-3 text-4xl font-black [font-family:var(--font-hl-display)]" style={{ color: INK }}>
-                {t.mock.profit}{" "}
-                <span className="text-sm font-semibold" style={{ color: "rgba(27,67,50,.5)" }}>
-                  {t.mock.profitRate}
-                </span>
-              </p>
-              {/* mini bar chart */}
-              <div className="mt-5 flex h-24 items-end gap-1.5" aria-hidden>
-                {[38, 52, 44, 61, 47, 70, 58, 82, 66, 100, 74, 88].map((h, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 rounded-t-sm"
-                    style={{
-                      height: `${h}%`,
-                      backgroundColor: i === 9 ? ORANGE : "rgba(22,163,74,.75)"
-                    }}
-                  />
-                ))}
-              </div>
-              <div className="mt-5 grid grid-cols-3 gap-2 border-t pt-4" style={{ borderColor: "rgba(27,67,50,.1)" }}>
-                {t.mock.kpis.map(([label, value]) => (
-                  <div key={label}>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "rgba(27,67,50,.5)" }}>
-                      {label}
-                    </p>
-                    <p className="mt-0.5 text-sm font-bold" style={{ color: INK }}>
-                      {value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* floating alert card */}
-            <div
-              className="absolute -top-6 -end-3 w-56 rotate-2 rounded-2xl border bg-white p-4 shadow-xl sm:-end-8"
-              style={{ borderColor: "rgba(249,115,22,.35)" }}
-            >
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
-                {t.mock.alertTag}
-              </p>
-              <p className="mt-1 text-xs font-bold leading-snug" style={{ color: INK }}>
-                {t.mock.alertTitle}
-              </p>
-              <p className="mt-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold" style={{ backgroundColor: "rgba(249,115,22,.1)", color: "#C2540A" }}>
-                {t.mock.alertAction}
-              </p>
-            </div>
-
-            {/* floating report chip */}
-            <div
-              className="absolute -bottom-5 start-6 -rotate-1 rounded-full border bg-white px-4 py-2 text-xs font-semibold shadow-lg"
-              style={{ borderColor: "rgba(22,163,74,.35)", color: "#15803D" }}
-            >
-              ✓ {t.mock.reportChip}
-            </div>
-          </div>
+          <p className="hl-rise mt-4 text-xs" style={{ color: DIM, animationDelay: ".38s" }}>
+            {t.hero.fine}
+          </p>
         </div>
 
-        {/* proof strip */}
-        <div className="border-y" style={{ borderColor: "rgba(27,67,50,.12)", backgroundColor: "rgba(255,255,255,.5)" }}>
-          <div className="mx-auto grid max-w-6xl grid-cols-2 gap-px px-4 sm:px-6 md:grid-cols-4">
-            {t.proof.map(([big, small], i) => (
-              <div key={i} className="py-6 text-center md:py-7">
-                <p className="text-2xl font-black [font-family:var(--font-hl-display)]" style={{ color: i % 2 ? LEAF : ORANGE }}>
-                  {big}
+        {/* Product mock */}
+        <div className="hl-rise mx-auto w-full max-w-md space-y-4 lg:max-w-none" style={{ animationDelay: ".22s" }}>
+          <div className="rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: HAIR, boxShadow: "0 30px 70px -28px rgba(18,52,31,.35)" }}>
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: DIM }}>
+                {t.mock.profitLabel}
+              </p>
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ backgroundColor: "#D8EFE1", color: GREEN }}>
+                {t.mock.accuracy}
+              </span>
+            </div>
+            <p className="mt-3 text-4xl font-normal tabular-nums [font-family:var(--font-hl-display)]" style={{ color: INK }}>
+              {t.mock.profit}{" "}
+              <span className="text-sm" style={{ color: DIM }}>
+                {t.mock.share}
+              </span>
+            </p>
+            <div className="mt-5 flex h-20 items-end gap-1" aria-hidden>
+              {BARS.map((h, i) => (
+                <div
+                  key={i}
+                  className="flex-1 rounded-t-[3px]"
+                  style={{ height: `${h}%`, backgroundColor: i === BARS.length - 3 ? ORANGE : "#7CC79A" }}
+                />
+              ))}
+            </div>
+            <div className="mt-5 space-y-2 border-t pt-4" style={{ borderColor: HAIR }}>
+              {t.mock.rows.map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between text-sm">
+                  <span style={{ color: DIM }}>{k}</span>
+                  <span className="font-bold tabular-nums" dir="ltr">
+                    {v}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border bg-white p-5 shadow-lg" style={{ borderColor: "rgba(209,115,31,.4)" }}>
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
+              <span style={{ color: ORANGE }}>{t.mock.alertLabel}</span>
+              <span className="rounded-full px-2 py-0.5" style={{ backgroundColor: "#FBE3D0", color: "#A8521A" }}>
+                {t.mock.alertPriority}
+              </span>
+            </div>
+            <p className="mt-2 text-base font-bold" style={{ color: INK }}>
+              {t.mock.alertTitle}
+            </p>
+            <p className="mt-2 rounded-lg px-3 py-2 text-sm font-bold" style={{ backgroundColor: "#FBE3D0", color: "#A8521A" }}>
+              {t.mock.alertAction}
+            </p>
+            <p className="mt-2 text-xs" style={{ color: DIM }}>
+              ↻ {t.mock.alertLoop}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Layers scroll story ──────────────────────────────────────── */}
+      <section id="layers" className="scroll-mt-16 border-t pt-16 sm:pt-20" style={{ borderColor: HAIR }}>
+        <div className="mx-auto max-w-6xl px-5 sm:px-10">
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
+            {t.layers.kicker}
+          </p>
+          <h2
+            className="mt-3.5 max-w-2xl text-3xl font-normal leading-[1.04] [font-family:var(--font-hl-display)] sm:text-5xl"
+            style={{ letterSpacing: "-0.02em" }}
+          >
+            {t.layers.title}
+          </h2>
+        </div>
+        <LayersScroller layers={layers} />
+      </section>
+
+      {/* ── Features accordion grid ──────────────────────────────────── */}
+      <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-5 py-20 sm:px-10 sm:py-24">
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
+          {t.features.kicker}
+        </p>
+        <h2
+          className="mt-3.5 max-w-2xl text-3xl font-normal leading-[1.04] [font-family:var(--font-hl-display)] sm:text-[2.6rem]"
+          style={{ letterSpacing: "-0.02em" }}
+        >
+          {t.features.title}
+        </h2>
+        <FeaturesGrid features={features} />
+      </section>
+
+      {/* ── Integrations marquee ─────────────────────────────────────── */}
+      <section className="border-y py-14 text-center" style={{ borderColor: HAIR, backgroundColor: "#EEF6F1" }}>
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
+          {t.integrations.kicker}
+        </p>
+        <h2 className="mx-auto mt-3.5 max-w-2xl px-5 text-2xl font-normal leading-tight [font-family:var(--font-hl-display)] sm:text-3xl">
+          {t.integrations.title}
+        </h2>
+        <div
+          dir="ltr"
+          className="mt-10 overflow-hidden"
+          style={{
+            maskImage: "linear-gradient(to right, transparent, #000 8%, #000 92%, transparent)",
+            WebkitMaskImage: "linear-gradient(to right, transparent, #000 8%, #000 92%, transparent)"
+          }}
+        >
+          <div className="hl-marquee-track flex w-max gap-3" style={{ animation: "hl-marquee 26s linear infinite" }}>
+            {[...MARQUEE, ...MARQUEE].map((name, i) => (
+              <span
+                key={`${name}-${i}`}
+                className="rounded-full border bg-white px-6 py-3 text-sm font-bold"
+                style={{ borderColor: HAIR, color: INK }}
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Pricing ──────────────────────────────────────────────────── */}
+      <section id="pricing" className="mx-auto max-w-6xl scroll-mt-16 px-5 py-20 text-center sm:px-10 sm:py-24">
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
+          {t.pricing.kicker}
+        </p>
+        <h2 className="mt-3.5 text-3xl font-normal [font-family:var(--font-hl-display)] sm:text-5xl" style={{ letterSpacing: "-0.02em" }}>
+          {t.pricing.title}
+        </h2>
+        <div className="text-start">
+          <PricingPlans
+            plans={plans}
+            isHe={isHe}
+            labels={{ popular: t.pricing.popular, perMonth: t.pricing.perMonth, cta: t.pricing.cta }}
+            signupHref={signupHref}
+          />
+        </div>
+      </section>
+
+      {/* ── Security ─────────────────────────────────────────────────── */}
+      <section className="border-t py-16 sm:py-20" style={{ borderColor: HAIR }}>
+        <div className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-10 lg:grid-cols-[1fr_1.2fr]">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
+              {t.security.kicker}
+            </p>
+            <h2 className="mt-3.5 text-3xl font-normal [font-family:var(--font-hl-display)] sm:text-4xl">{t.security.title}</h2>
+            <p className="mt-4 max-w-md text-sm leading-relaxed" style={{ color: DIM }}>
+              {t.security.body}{" "}
+              <a href="/security" className="font-bold underline underline-offset-2" style={{ color: GREEN }}>
+                →
+              </a>
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-px" style={{ backgroundColor: HAIR }}>
+            {securityItems.map((item) => (
+              <div key={item.title} className="p-6" style={{ backgroundColor: PAPER }}>
+                <p className="text-base font-bold [font-family:var(--font-hl-display)]" style={{ color: GREEN }}>
+                  {item.title}
                 </p>
-                <p className="mt-1 text-xs font-medium" style={{ color: "rgba(27,67,50,.6)" }}>
-                  {small}
+                <p className="mt-1.5 text-xs leading-5" style={{ color: DIM }}>
+                  {item.body}
                 </p>
               </div>
             ))}
@@ -576,227 +587,89 @@ export default async function WelcomePage({
         </div>
       </section>
 
-      {/* ── Capabilities (the ledger) ────────────────────────────────── */}
-      <section id="features" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6 sm:py-24">
-        <div className="max-w-2xl">
-          <h2 className="text-3xl font-black tracking-tight [font-family:var(--font-hl-display)] sm:text-4xl">
-            {t.featuresTitle}
-          </h2>
-          <p className="mt-3 text-base leading-relaxed" style={{ color: "rgba(27,67,50,.7)" }}>
-            {t.featuresSubtitle}
-          </p>
-        </div>
-
-        <div className="mt-12 border-t" style={{ borderColor: "rgba(27,67,50,.15)" }}>
-          {t.features.map((f) => (
-            <article
-              key={f.num}
-              className="group grid gap-4 border-b py-8 transition-colors hover:bg-white/60 sm:py-10 lg:grid-cols-[80px_1fr_1.1fr] lg:gap-10"
-              style={{ borderColor: "rgba(27,67,50,.12)" }}
+      {/* ── Final CTA band ───────────────────────────────────────────── */}
+      <section className="px-5 py-20 sm:px-10 sm:py-28" style={{ backgroundColor: GREEN_DARK }}>
+        <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[1.2fr_.8fr]">
+          <div>
+            <h2
+              className="max-w-xl text-4xl font-normal leading-[1.0] text-white [font-family:var(--font-hl-display)] sm:text-6xl"
+              style={{ letterSpacing: "-0.025em" }}
             >
-              <p
-                className="text-3xl font-black [font-family:var(--font-hl-display)] lg:pt-1"
-                style={{ color: "rgba(249,115,22,.85)" }}
+              {t.final.title}
+            </h2>
+            <p className="mt-6 max-w-lg text-lg leading-relaxed" style={{ color: "rgba(255,255,255,.78)" }}>
+              {t.final.body}
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3.5">
+              <a
+                href={signupHref}
+                className="rounded-full px-8 py-4 text-sm font-bold transition-transform hover:-translate-y-0.5"
+                style={{ backgroundColor: "#fff", color: GREEN_DARK }}
               >
-                {f.num}
-              </p>
-              <div>
-                <h3 className="text-xl font-bold tracking-tight [font-family:var(--font-hl-display)] sm:text-2xl">
-                  {f.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed sm:text-[15px]" style={{ color: "rgba(27,67,50,.72)" }}>
-                  {f.body}
+                {t.nav.cta}
+              </a>
+              <a
+                href={`/login?lang=${locale}`}
+                className="rounded-full border px-8 py-4 text-sm font-bold text-white transition-colors hover:bg-white/10"
+                style={{ borderColor: "rgba(255,255,255,.35)" }}
+              >
+                {t.nav.login}
+              </a>
+            </div>
+          </div>
+          <div className="space-y-6 border-s ps-10 max-lg:border-s-0 max-lg:ps-0" style={{ borderColor: "rgba(255,255,255,.15)" }}>
+            {t.final.stats.map(([v, k]) => (
+              <div key={k}>
+                <p className="text-4xl font-normal text-white [font-family:var(--font-hl-display)]">{v}</p>
+                <p className="mt-1 text-sm" style={{ color: "rgba(255,255,255,.6)" }}>
+                  {k}
                 </p>
               </div>
-              <ul className="space-y-2.5 lg:pt-1">
-                {f.points.map((p) => (
-                  <li key={p} className="flex items-start gap-2.5 text-sm" style={{ color: "rgba(27,67,50,.85)" }}>
-                    <span
-                      className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-                      style={{ backgroundColor: "rgba(22,163,74,.12)" }}
-                    >
-                      <Check className="h-3 w-3" style={{ color: "#15803D" }} aria-hidden />
-                    </span>
-                    <span>{p}</span>
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Integrations strip ───────────────────────────────────────── */}
-      <section className="border-y" style={{ borderColor: "rgba(27,67,50,.12)", backgroundColor: "rgba(255,255,255,.55)" }}>
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-3 px-4 py-8 sm:px-6">
-          <p className="w-full text-center text-[11px] font-bold uppercase tracking-widest sm:w-auto" style={{ color: "rgba(27,67,50,.5)" }}>
-            {t.integrationsTitle}
-          </p>
-          {t.integrations.map((name) => (
-            <span key={name} className="text-sm font-bold" style={{ color: "rgba(27,67,50,.75)" }}>
-              {name}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      {/* ── How it works ─────────────────────────────────────────────── */}
-      <section id="how" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6 sm:py-24">
-        <h2 className="text-center text-3xl font-black tracking-tight [font-family:var(--font-hl-display)] sm:text-4xl">
-          {t.howTitle}
-        </h2>
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
-          {t.how.map((s) => (
-            <div
-              key={s.step}
-              className="relative rounded-3xl border bg-white p-7 shadow-sm transition-transform hover:-translate-y-1"
-              style={{ borderColor: "rgba(27,67,50,.12)" }}
-            >
-              <span
-                className="flex h-10 w-10 items-center justify-center rounded-full text-base font-black text-white [font-family:var(--font-hl-display)]"
-                style={{ backgroundColor: LEAF }}
-              >
-                {s.step}
-              </span>
-              <h3 className="mt-4 text-lg font-bold [font-family:var(--font-hl-display)]">{s.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "rgba(27,67,50,.7)" }}>
-                {s.body}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Pricing ──────────────────────────────────────────────────── */}
-      <section id="pricing" className="scroll-mt-20 border-t px-4 py-20 sm:px-6 sm:py-24" style={{ borderColor: "rgba(27,67,50,.12)" }}>
-        <div className="mx-auto max-w-6xl">
-          <div className="text-center">
-            <h2 className="text-3xl font-black tracking-tight [font-family:var(--font-hl-display)] sm:text-4xl">
-              {t.pricingTitle}
-            </h2>
-            <p className="mt-3 text-sm" style={{ color: "rgba(27,67,50,.65)" }}>
-              {t.pricingSubtitle}
-            </p>
+            ))}
           </div>
-          <div className="mt-12 grid gap-5 md:grid-cols-3 md:items-stretch">
-            {plans.map((plan, idx) => {
-              const highlighted = idx === 1;
-              return (
-                <div
-                  key={plan.id}
-                  className={`relative flex flex-col rounded-3xl border p-7 ${highlighted ? "shadow-2xl md:-my-3" : "bg-white shadow-sm"}`}
-                  style={
-                    highlighted
-                      ? { backgroundColor: INK_DEEP, borderColor: INK_DEEP, color: "#F3F8F4" }
-                      : { borderColor: "rgba(27,67,50,.14)" }
-                  }
-                >
-                  {highlighted ? (
-                    <span
-                      className="absolute -top-3 start-7 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white"
-                      style={{ backgroundColor: ORANGE }}
-                    >
-                      {t.recommended}
-                    </span>
-                  ) : null}
-                  <h3 className="text-xl font-black [font-family:var(--font-hl-display)]">
-                    {plan.name[isHe ? "he" : "en"]}
-                  </h3>
-                  <p className="mt-1 text-xs" style={{ color: highlighted ? "rgba(243,248,244,.65)" : "rgba(27,67,50,.6)" }}>
-                    {plan.description[isHe ? "he" : "en"]}
-                  </p>
-                  <div className="mt-5 flex items-baseline gap-1.5">
-                    <span className="text-4xl font-black [font-family:var(--font-hl-display)]">
-                      {isHe ? `₪${plan.display.monthly.ILS}` : `$${plan.display.monthly.USD}`}
-                    </span>
-                    <span className="text-xs" style={{ color: highlighted ? "rgba(243,248,244,.6)" : "rgba(27,67,50,.55)" }}>
-                      {t.perMonth}
-                    </span>
-                  </div>
-                  <ul className="mt-6 flex-1 space-y-2.5 text-sm">
-                    {plan.features[isHe ? "he" : "en"].slice(0, 6).map((feat) => (
-                      <li key={feat} className="flex items-start gap-2">
-                        <Check
-                          className="mt-0.5 h-4 w-4 shrink-0"
-                          style={{ color: highlighted ? "#4ADE80" : "#15803D" }}
-                          aria-hidden
-                        />
-                        <span>{feat}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <a
-                    href={`/signup?lang=${locale}`}
-                    className="mt-7 block rounded-full py-3 text-center text-sm font-bold transition-transform hover:-translate-y-0.5"
-                    style={
-                      highlighted
-                        ? { backgroundColor: ORANGE, color: "#fff", boxShadow: "0 10px 22px -8px rgba(249,115,22,.6)" }
-                        : { backgroundColor: INK, color: "#fff" }
-                    }
-                  >
-                    {t.planCta}
-                  </a>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Security band ────────────────────────────────────────────── */}
-      <section className="border-t px-4 py-14 sm:px-6" style={{ borderColor: "rgba(27,67,50,.12)", backgroundColor: "rgba(255,255,255,.55)" }}>
-        <div className="mx-auto flex max-w-4xl flex-col items-center gap-5 text-center sm:flex-row sm:text-start">
-          <span
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl"
-            style={{ backgroundColor: "rgba(22,163,74,.12)" }}
-          >
-            <ShieldCheck className="h-7 w-7" style={{ color: "#15803D" }} aria-hidden />
-          </span>
-          <div>
-            <h2 className="text-xl font-black [font-family:var(--font-hl-display)]">{t.securityTitle}</h2>
-            <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "rgba(27,67,50,.72)" }}>
-              {t.securityBody}{" "}
-              <a href="/security" className="font-bold underline underline-offset-2" style={{ color: "#15803D" }}>
-                {t.securityCta}
-              </a>
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Final CTA ────────────────────────────────────────────────── */}
-      <section className="px-4 py-20 sm:px-6 sm:py-24" style={{ backgroundColor: INK_DEEP }}>
-        <div className="mx-auto max-w-3xl text-center">
-          <HiloomyMark className="mx-auto h-12 w-12" />
-          <h2 className="mt-5 text-3xl font-black tracking-tight text-white [font-family:var(--font-hl-display)] sm:text-4xl">
-            {t.finalTitle}
-          </h2>
-          <p className="mt-3 text-sm sm:text-base" style={{ color: "rgba(243,248,244,.7)" }}>
-            {t.finalSubtitle}
-          </p>
-          <a
-            href={`/signup?lang=${locale}`}
-            className="mt-8 inline-flex items-center gap-2 rounded-full px-8 py-4 text-sm font-bold text-white shadow-xl transition-transform hover:-translate-y-0.5"
-            style={{ backgroundColor: ORANGE, boxShadow: "0 14px 30px -10px rgba(249,115,22,.65)" }}
-          >
-            {t.finalCta}
-            <Arrow className="h-4 w-4" aria-hidden />
-          </a>
         </div>
       </section>
 
       {/* ── Footer ───────────────────────────────────────────────────── */}
-      <footer style={{ backgroundColor: INK_DEEP, borderTop: "1px solid rgba(243,248,244,.12)" }}>
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-7 text-xs sm:flex-row sm:px-6" style={{ color: "rgba(243,248,244,.55)" }}>
-          <p>{t.footer.rights}</p>
-          <nav className="flex items-center gap-5">
-            <a href="/privacy" className="transition-colors hover:text-white">{t.footer.privacy}</a>
-            <a href="/terms" className="transition-colors hover:text-white">{t.footer.terms}</a>
-            <a href="/security" className="transition-colors hover:text-white">{t.footer.security}</a>
-            <a href={`/welcome?lang=${otherLocale}`} className="font-semibold transition-colors hover:text-white">
-              {t.nav.switchLabel}
+      <footer style={{ backgroundColor: GREEN_DARK, borderTop: "1px solid rgba(255,255,255,.12)" }}>
+        <div className="mx-auto grid max-w-6xl gap-10 px-5 py-12 sm:grid-cols-[1.4fr_1fr_1fr] sm:px-10">
+          <div>
+            <HiloomyLogo textClassName="text-white" />
+            <p className="mt-3 max-w-xs text-xs leading-5" style={{ color: "rgba(255,255,255,.55)" }}>
+              {t.dateline.brand}
+            </p>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,.45)" }}>
+              {t.footer.product}
+            </p>
+            <div className="mt-3 space-y-2 text-sm" style={{ color: "rgba(255,255,255,.75)" }}>
+              <a href="#features" className="block hover:text-white">{t.nav.features}</a>
+              <a href="#pricing" className="block hover:text-white">{t.nav.pricing}</a>
+              <a href="/security" className="block hover:text-white">{t.nav.security}</a>
+            </div>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,.45)" }}>
+              {t.footer.company}
+            </p>
+            <div className="mt-3 space-y-2 text-sm" style={{ color: "rgba(255,255,255,.75)" }}>
+              <a href="/privacy" className="block hover:text-white">{t.footer.privacy}</a>
+              <a href="/terms" className="block hover:text-white">{t.footer.terms}</a>
+              <a href={`/login?lang=${locale}`} className="block hover:text-white">{t.nav.login}</a>
+            </div>
+          </div>
+        </div>
+        <div className="border-t" style={{ borderColor: "rgba(255,255,255,.12)" }}>
+          <div
+            className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-5 py-5 text-xs sm:flex-row sm:px-10"
+            style={{ color: "rgba(255,255,255,.5)" }}
+          >
+            <p>{t.footer.legal}</p>
+            <a href={`/welcome?lang=${otherLocale}`} className="font-bold hover:text-white">
+              {t.footer.switchLong}
             </a>
-          </nav>
+          </div>
         </div>
       </footer>
     </div>

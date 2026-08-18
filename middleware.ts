@@ -164,20 +164,27 @@ export async function middleware(req: NextRequest) {
   // Public routes — let everything through.
   if (isPublic(pathname)) {
     // Bonus: signed-in users hitting /signin, /login or /signup should be
-    // sent home instead of seeing the form again.
+    // sent to the app instead of seeing the form again.
     if (user && (pathname === "/signin" || pathname === "/login" || pathname === "/signup")) {
       const home = req.nextUrl.clone();
-      home.pathname = "/";
+      home.pathname = "/dashboard";
       home.search = "";
       return NextResponse.redirect(home);
     }
     return res;
   }
 
-  // Anonymous visitors on the root get the marketing landing, served
-  // in-place (rewrite, not redirect) so the URL stays hiloomy.com/.
+  // The root splits by audience: anonymous visitors get the marketing
+  // landing served in-place (rewrite, so the URL stays hiloomy.com/),
+  // signed-in users are sent to the Command Center at /dashboard.
   // Query params (e.g. ?lang=en) pass through to the landing page.
-  if (!user && pathname === "/") {
+  if (pathname === "/") {
+    if (user) {
+      const app = req.nextUrl.clone();
+      app.pathname = "/dashboard";
+      app.search = "";
+      return NextResponse.redirect(app);
+    }
     const landing = req.nextUrl.clone();
     landing.pathname = "/welcome";
     return NextResponse.rewrite(landing, { request: { headers: requestHeaders } });

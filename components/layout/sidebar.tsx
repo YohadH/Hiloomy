@@ -81,7 +81,7 @@ function getNavigation(
           ]
         : []),
       {
-        href: "/",
+        href: "/dashboard",
         label: isHe ? "מרכז פיקוד" : "Command Center",
         icon: LayoutDashboard
       },
