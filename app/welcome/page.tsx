@@ -50,7 +50,7 @@ export const metadata = {
 function getCopy(isHe: boolean) {
   return isHe
     ? {
-        nav: { features: "יכולות", how: "איך זה עובד", pricing: "מחירים", security: "אבטחה", login: "התחברות", cta: "צרו משתמש", switchLabel: "EN" },
+        nav: { features: "יכולות", how: "איך זה עובד", report: "הדוח השבועי", pricing: "מחירים", security: "אבטחה", login: "התחברות", cta: "צרו משתמש", switchLabel: "EN" },
         dateline: { brand: "Hiloomy · מרכז הפיקוד למותגי Shopify", tag: "רענון כל שעתיים", meta: "גרסה 2026" },
         hero: {
           title: "ההכנסות זה כותרת. הרווח זה הסיפור.",
@@ -112,7 +112,7 @@ function getCopy(isHe: boolean) {
         }
       }
     : {
-        nav: { features: "Features", how: "How it works", pricing: "Pricing", security: "Security", login: "Log in", cta: "Create account", switchLabel: "עב" },
+        nav: { features: "Features", how: "How it works", report: "Weekly report", pricing: "Pricing", security: "Security", login: "Log in", cta: "Create account", switchLabel: "עב" },
         dateline: { brand: "Hiloomy · Command center for Shopify brands", tag: "Refreshed every two hours", meta: "Edition 2026" },
         hero: {
           title: "Revenue is the headline. Profit is the story.",
@@ -352,6 +352,7 @@ export default async function WelcomePage({
           <nav className="hidden items-center gap-7 text-sm font-bold md:flex" style={{ color: DIM }}>
             <a href="#features" className="transition-colors hover:text-[#201E1D]">{t.nav.features}</a>
             <a href="#layers" className="transition-colors hover:text-[#201E1D]">{t.nav.how}</a>
+            <a href={`/weekly-report?lang=${locale}`} className="transition-colors hover:text-[#201E1D]">{t.nav.report}</a>
             <a href="#pricing" className="transition-colors hover:text-[#201E1D]">{t.nav.pricing}</a>
             <a href="/security" className="transition-colors hover:text-[#201E1D]">{t.nav.security}</a>
           </nav>
@@ -378,6 +379,7 @@ export default async function WelcomePage({
             links={[
               { href: "#features", label: t.nav.features },
               { href: "#layers", label: t.nav.how },
+              { href: `/weekly-report?lang=${locale}`, label: t.nav.report },
               { href: "#pricing", label: t.nav.pricing },
               { href: "/security", label: t.nav.security }
             ]}
@@ -652,6 +654,7 @@ export default async function WelcomePage({
             </p>
             <div className="mt-3 space-y-2 text-sm" style={{ color: "rgba(255,255,255,.75)" }}>
               <a href="#features" className="block hover:text-white">{t.nav.features}</a>
+              <a href={`/weekly-report?lang=${locale}`} className="block hover:text-white">{t.nav.report}</a>
               <a href="#pricing" className="block hover:text-white">{t.nav.pricing}</a>
               <a href="/security" className="block hover:text-white">{t.nav.security}</a>
             </div>

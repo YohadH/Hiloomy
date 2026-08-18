@@ -52,6 +52,8 @@ const PUBLIC_PATHS = new Set([
   "/security",
   // Public marketing landing — pre-signup.
   "/welcome",
+  // Public sample of the weekly report, linked from the landing nav.
+  "/weekly-report",
   // /accept-invite handles its own auth gate — it redirects to /signin
   // with the right `next` if the user isn't signed in. Treat as public.
   "/accept-invite",
