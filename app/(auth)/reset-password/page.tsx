@@ -1,5 +1,7 @@
 import { ResetPasswordForm } from "@/components/auth/reset-password-form";
+import { getAppLocale } from "@/lib/i18n";
 
-export default function ResetPasswordPage() {
-  return <ResetPasswordForm />;
+export default async function ResetPasswordPage() {
+  const defaultLocale = await getAppLocale();
+  return <ResetPasswordForm defaultLocale={defaultLocale} />;
 }

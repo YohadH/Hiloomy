@@ -60,7 +60,8 @@ function ActionItem({
 const TIER_LABEL: Record<string, { he: string; en: string; cls: string }> = {
   "luxury-import": { he: "יוקרה מיובאת", en: "Luxury import", cls: "bg-slate-100 text-slate-700 border-slate-300" },
   "mid-niche": { he: "ביניים", en: "Mid niche", cls: "bg-amber-50 text-amber-800 border-amber-300" },
-  "budget-dupe": { he: "חיקויי בשמים", en: "Budget dupes", cls: "bg-rose-50 text-rose-800 border-rose-300" }
+  "budget-dupe": { he: "חיקויי בשמים", en: "Budget dupes", cls: "bg-rose-50 text-rose-800 border-rose-300" },
+  tracked: { he: "במעקב", en: "Tracked", cls: "bg-emerald-50 text-emerald-800 border-emerald-300" }
 };
 
 export function CompetitorBriefSection({

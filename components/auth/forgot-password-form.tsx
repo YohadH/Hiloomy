@@ -6,9 +6,11 @@ import { Loader2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/auth/supabase-browser";
 import { authStrings, type AuthLocale } from "./auth-strings";
 
-export function ForgotPasswordForm() {
+export function ForgotPasswordForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
   const searchParams = useSearchParams();
-  const initialLocale: AuthLocale = (searchParams.get("lang") === "en" ? "en" : "he");
+  const langParam = searchParams.get("lang");
+  const initialLocale: AuthLocale =
+    langParam === "en" || langParam === "he" ? langParam : defaultLocale ?? "he";
   const [locale, setLocale] = useState<AuthLocale>(initialLocale);
   const dir = locale === "he" ? "rtl" : "ltr";
   const t = authStrings[locale].forgot;
@@ -21,6 +23,9 @@ export function ForgotPasswordForm() {
   useEffect(() => {
     document.documentElement.dir = dir;
     document.documentElement.lang = locale;
+    // Keep the choice after navigation: mirror it into the app-locale
+    // cookie (same one middleware/getAppLocale read).
+    document.cookie = `app-locale=${locale};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax`;
   }, [dir, locale]);
 
   const handleSubmit = async (e: React.FormEvent) => {

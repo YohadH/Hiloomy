@@ -7,10 +7,12 @@ import { getBrowserSupabase } from "@/lib/auth/supabase-browser";
 import { authStrings, type AuthLocale } from "./auth-strings";
 import { GoogleSignInButton } from "./google-signin-button";
 
-export function SigninForm() {
+export function SigninForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialLocale: AuthLocale = (searchParams.get("lang") === "en" ? "en" : "he");
+  const langParam = searchParams.get("lang");
+  const initialLocale: AuthLocale =
+    langParam === "en" || langParam === "he" ? langParam : defaultLocale ?? "he";
   const [locale, setLocale] = useState<AuthLocale>(initialLocale);
   const dir = locale === "he" ? "rtl" : "ltr";
   const t = authStrings[locale].signin;
@@ -23,6 +25,9 @@ export function SigninForm() {
   useEffect(() => {
     document.documentElement.dir = dir;
     document.documentElement.lang = locale;
+    // Keep the choice after navigation: mirror it into the app-locale
+    // cookie (same one middleware/getAppLocale read).
+    document.cookie = `app-locale=${locale};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax`;
   }, [dir, locale]);
 
   const handleSubmit = async (e: React.FormEvent) => {

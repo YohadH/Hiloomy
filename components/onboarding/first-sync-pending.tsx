@@ -68,9 +68,16 @@ export function FirstSyncPending({
     setSyncing(true);
     setError(null);
     try {
-      const res = await fetch("/api/cron/refresh-all", { method: "POST" });
+      // The cron endpoint is locked behind CRON_SECRET (browser calls get
+      // 401 "Unauthorized" by design) — manual sync goes through the
+      // user-authorized initial-sync route for this store instead.
+      const res = await fetch("/api/shopify/sync/initial", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId })
+      });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+      if (!res.ok || body?.ok === false) throw new Error(body?.error ?? `${res.status}`);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed.");

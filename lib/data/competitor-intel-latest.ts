@@ -10,7 +10,7 @@
 
 export interface CompetitorIntelEntry {
   name: string;
-  tier: "luxury-import" | "mid-niche" | "budget-dupe";
+  tier: "luxury-import" | "mid-niche" | "budget-dupe" | "tracked";
   // What they are doing right now (Hebrew, one line).
   move: string;
   // What it means for Incense Parfums (Hebrew, one line).

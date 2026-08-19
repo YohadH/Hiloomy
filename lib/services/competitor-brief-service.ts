@@ -73,8 +73,164 @@ function isValidAnswer(answer: BiBriefAnswer | null | undefined): answer is BiBr
 // One background generation at a time per process.
 let biRefreshInFlight = false;
 
-export async function getCompetitorBrief(storeId?: string): Promise<CompetitorBrief> {
-  const intel = COMPETITOR_INTEL_LATEST;
+// ── Live intel (RivalSweeper snapshots, per store) ──────────────────────
+//
+// Replaces the static research file with the store's OWN competitor set +
+// the latest CompetitorSnapshot rows the 2-hour refresh cron upserts via
+// syncCompetitorSignals. The static COMPETITOR_INTEL_LATEST remains only
+// as a legacy fallback for calls without a storeId.
+
+async function buildLiveIntel(
+  storeId: string,
+  locale: "he" | "en"
+): Promise<CompetitorIntel | null> {
+  const isHe = locale === "he";
+  const t = (he: string, en: string) => (isHe ? he : en);
+  const db = getDb() as any;
+  if (!db?.competitor || !db?.competitorSnapshot) return null;
+
+  const competitors = (await db.competitor.findMany({
+    where: { storeId, status: "active" },
+    select: { id: true, name: true, domain: true }
+  })) as Array<{ id: string; name: string; domain: string }>;
+  if (competitors.length === 0) return null;
+
+  const since = new Date(Date.now() - 14 * 86_400_000);
+  const snaps = (await db.competitorSnapshot.findMany({
+    where: { storeId, snapshotDate: { gte: since } },
+    orderBy: { snapshotDate: "desc" },
+    select: {
+      competitorId: true,
+      snapshotDate: true,
+      activePromoCount: true,
+      maxDiscountPct: true,
+      freeShippingThreshold: true,
+      homepageMessage: true
+    }
+  })) as Array<{
+    competitorId: string;
+    snapshotDate: Date;
+    activePromoCount: number;
+    maxDiscountPct: unknown;
+    freeShippingThreshold: unknown;
+    homepageMessage: string | null;
+  }>;
+  if (snaps.length === 0) return null;
+
+  const num = (v: unknown) => (v == null ? null : Number(v));
+  const byCompetitor = new Map<string, typeof snaps>();
+  for (const s of snaps) {
+    const list = byCompetitor.get(s.competitorId) ?? [];
+    list.push(s);
+    byCompetitor.set(s.competitorId, list);
+  }
+
+  let latestDate = "";
+  const entries: CompetitorIntel["competitors"] = [];
+  const todayActions: string[] = [];
+  const weekActions: string[] = [];
+
+  for (const competitor of competitors) {
+    const rows = byCompetitor.get(competitor.id) ?? [];
+    if (rows.length === 0) continue;
+    const latest = rows[0];
+    const prev = rows.find(
+      (r) => r.snapshotDate.getTime() !== latest.snapshotDate.getTime()
+    );
+    const dateStr = latest.snapshotDate.toISOString().slice(0, 10);
+    if (dateStr > latestDate) latestDate = dateStr;
+
+    const pct = num(latest.maxDiscountPct);
+    const ship = num(latest.freeShippingThreshold);
+    const moveParts: string[] = [];
+    moveParts.push(
+      latest.activePromoCount > 0
+        ? t(`${latest.activePromoCount} מבצעים פעילים באתר`, `${latest.activePromoCount} active promos on site`)
+        : t("אין מבצעים פעילים באתר", "No active promos on site")
+    );
+    if (pct != null && pct > 0) moveParts.push(t(`הנחה עד ${Math.round(pct)}%`, `Discounts up to ${Math.round(pct)}%`));
+    if (ship != null && ship > 0) moveParts.push(t(`משלוח חינם מעל ₪${Math.round(ship)}`, `Free shipping over ₪${Math.round(ship)}`));
+    if (latest.homepageMessage) moveParts.push(t(`בעמוד הבית: "${latest.homepageMessage}"`, `Homepage: "${latest.homepageMessage}"`));
+
+    // Week-over-week read: this is where the intel becomes an action.
+    let implication = t("ללא שינוי מהותי מול הבדיקה הקודמת.", "No material change since the previous check.");
+    const prevPromos = prev?.activePromoCount ?? null;
+    const prevPct = prev ? num(prev.maxDiscountPct) : null;
+    if (prev && prevPromos === 0 && latest.activePromoCount > 0) {
+      implication = t(
+        "פתחו מבצע חדש מאז הבדיקה הקודמת — שווה לבדוק אם הוא נוגע בקטגוריות שלכם.",
+        "Opened a new promo since the previous check — worth verifying it doesn't touch your categories."
+      );
+      todayActions.push(
+        t(
+          `לבדוק את המבצע החדש אצל ${competitor.name} (${competitor.domain}) ולוודא שאין התנגשות עם התמחור שלכם.`,
+          `Review the new promo at ${competitor.name} (${competitor.domain}) and make sure it doesn't clash with your pricing.`
+        )
+      );
+    } else if (prev && prevPct != null && pct != null && pct > prevPct) {
+      implication = t(
+        `העמיקו את ההנחה (מ־${Math.round(prevPct)}% ל־${Math.round(pct)}%) — לחץ מחיר מתגבר.`,
+        `Deepened the discount (${Math.round(prevPct)}% → ${Math.round(pct)}%) — price pressure is building.`
+      );
+      todayActions.push(
+        t(
+          `${competitor.name} העמיקו הנחה ל־${Math.round(pct)}% — לא להגיב במחיר לפני בדיקת המרווח.`,
+          `${competitor.name} deepened their discount to ${Math.round(pct)}% — don't respond on price before checking your margin.`
+        )
+      );
+    } else if (latest.activePromoCount > 0) {
+      implication = t("מריצים מבצע פעיל — לעקוב אם הוא הופך לקבוע.", "Running an active promo — watch whether it becomes permanent.");
+    }
+
+    entries.push({
+      name: competitor.name,
+      tier: "tracked",
+      move: moveParts.join(" · "),
+      implication
+    });
+  }
+  if (entries.length === 0) return null;
+
+  if (todayActions.length === 0) {
+    todayActions.push(
+      t(
+        "לעבור על הודעות עמוד הבית של המתחרים ולוודא שההצעה שלכם עדיין בולטת.",
+        "Scan competitor homepage messages and make sure your own offer still stands out."
+      )
+    );
+  }
+  weekActions.push(
+    t(
+      "להשוות את רצפת ההנחות שלכם מול ההנחה המקסימלית שנצפתה אצל המתחרים השבוע.",
+      "Compare your discount floor against the deepest competitor discount observed this week."
+    ),
+    t(
+      "לסמן מבצע מתחרה אחד שנמשך מעל שבועיים — כנראה הפך לקבוע ושווה תגובה מתוכננת.",
+      "Flag one competitor promo running for over two weeks — it's probably permanent and deserves a planned response."
+    )
+  );
+
+  return {
+    version: `live-${latestDate}-${locale}`,
+    generatedAt: latestDate,
+    storeContext: "",
+    competitors: entries,
+    influencerNote: "",
+    suggestedActions: { today: todayActions, thisWeek: weekActions }
+  };
+}
+
+export async function getCompetitorBrief(
+  storeId?: string,
+  locale: "he" | "en" = "he"
+): Promise<CompetitorBrief | null> {
+  // Per-store live intel first (refreshed by the 2-hour sync cron); the
+  // static research file only serves legacy storeless calls. A store with
+  // no competitor set (or no snapshots yet) gets NULL — the dashboard
+  // hides the section rather than showing another brand's intel.
+  const live = storeId ? await buildLiveIntel(storeId, locale).catch(() => null) : null;
+  const intel = live ?? (storeId ? null : COMPETITOR_INTEL_LATEST);
+  if (!intel) return null;
   const base: Omit<CompetitorBrief, "source" | "today" | "thisWeek"> = {
     intelVersion: intel.version,
     generatedAt: intel.generatedAt,
@@ -92,7 +248,7 @@ export async function getCompetitorBrief(storeId?: string): Promise<CompetitorBr
   // blocks this render) and serve the fallback meanwhile.
   if (isBiAgentConfigured() && !biRefreshInFlight) {
     biRefreshInFlight = true;
-    void generateBiBrief(intel, storeId)
+    void generateBiBrief(intel, storeId, locale)
       .catch((err) =>
         console.warn(
           "[competitor-brief] background BI generation failed:",
@@ -226,8 +382,10 @@ async function buildLiveFacts(storeId: string): Promise<string> {
 // cache explicitly (the dashboard only ever kicks it in the background).
 export async function generateBiBrief(
   intel: CompetitorIntel = COMPETITOR_INTEL_LATEST,
-  storeId?: string
+  storeId?: string,
+  locale: "he" | "en" = "he"
 ): Promise<BiBriefAnswer | null> {
+  const answerLang = locale === "he" ? "ענה בעברית בלבד." : "Answer in English only — every field in English.";
   const liveFacts = storeId ? await buildLiveFacts(storeId).catch(() => "") : "";
   const question =
     `אתה אנליסט BI למותג איקומרס. לפניך (א) נתוני אמת חיים מהחנות ו(ב) תמונת מודיעין ` +

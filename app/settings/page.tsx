@@ -262,6 +262,7 @@ export default async function SettingsPage({
         initialConnection={connectionSummary}
         initialSyncStatus={syncStatus}
         labels={dictionary.settings.shopify}
+        locale={locale}
       />
     ),
     meta: (

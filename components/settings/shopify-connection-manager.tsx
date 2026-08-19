@@ -101,11 +101,13 @@ interface ShopifyLabels {
 export function ShopifyConnectionManager({
   initialConnection,
   initialSyncStatus,
-  labels
+  labels,
+  locale = "he"
 }: {
   initialConnection: ShopifyConnectionSummary | null;
   initialSyncStatus: SyncStatusPayload;
   labels: ShopifyLabels;
+  locale?: "he" | "en";
 }) {
   const [shopDomain, setShopDomain] = useState(initialConnection?.shopDomain ?? "");
   const [adminAccessToken, setAdminAccessToken] = useState("");
@@ -205,7 +207,7 @@ export function ShopifyConnectionManager({
               domain and click Install; Shopify hands us a real token via
               callback. The paste-token form below stays available as a
               fallback (or for stores using a Custom App). */}
-          <ShopifyOauthSection />
+          <ShopifyOauthSection locale={locale} />
 
           <div className="rounded-md border border-border bg-slate-50/50 px-3 py-2 text-[11px] text-slate-700">
             <strong>OR</strong> paste a Custom App Admin API access token below (starts with{" "}

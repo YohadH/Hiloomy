@@ -4,6 +4,7 @@ import { GanttStudio } from "@/components/gantt/gantt-studio";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { getDb } from "@/lib/server/db";
+import { getAppLocale } from "@/lib/i18n";
 
 export const metadata = {
   title: "Marketing Planner"
@@ -18,6 +19,8 @@ export const dynamic = "force-dynamic";
 // future rescue; simply not routed to.
 
 export default async function MarketingPlannerPage() {
+  const locale = await getAppLocale();
+  const isHe = locale === "he";
   const chrome = await getAppChromeData();
   const storeId = await resolveActiveStoreId();
   const db = getDb();
@@ -65,8 +68,12 @@ export default async function MarketingPlannerPage() {
       <div className="space-y-6 text-end" dir="rtl">
         <SectionHeading
           eyebrow="Marketing Planner"
-          title="גאנט שיווקי אינטראקטיבי"
-          description="העלאת גאנט חודשי, ניתוח אוטומטי על ידי סוכן BI, בריף PDF לכל תפקיד, ולחיצה על יום בלוח כדי לראות את המשימות ולפתוח אותן בכלי המתאים (קופון, סטודיו קריאייטיב ועוד)."
+          title={isHe ? "גאנט שיווקי אינטראקטיבי" : "Interactive marketing Gantt"}
+          description={
+            isHe
+              ? "העלאת גאנט חודשי, ניתוח אוטומטי על ידי סוכן BI, בריף PDF לכל תפקיד, ולחיצה על יום בלוח כדי לראות את המשימות ולפתוח אותן בכלי המתאים (קופון, סטודיו קריאייטיב ועוד)."
+              : "Upload the monthly marketing calendar, get automatic BI analysis, a PDF brief per role, and click any day to see its tasks and open them in the right tool (coupon, creative studio and more)."
+          }
         />
         <GanttStudio initialSheets={initialSheets} />
       </div>

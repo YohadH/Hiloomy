@@ -37,6 +37,7 @@ import { CheckCircle2, XCircle, MinusCircle } from "lucide-react";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
+import { getDb } from "@/lib/server/db";
 
 /** Priority badge labels and colors, matching Hebrew UX convention. */
 type PriorityLevel = "critical" | "important" | "low";
@@ -97,19 +98,26 @@ export default async function CommandCenterPage() {
     resolveActiveStoreId()
   ]);
 
-  // Second-stage onboarding: store is connected but first sync hasn't
-  // returned any orders yet. Render a polling pending screen instead of
-  // a confusing empty dashboard.
-  const totalRevenue = overview.kpis.reduce(
-    (sum, kpi) => sum + (typeof kpi.value === "number" ? kpi.value : 0),
-    0
-  );
-  if (totalRevenue === 0 && storeId && onboarding.brandCount > 0 && onboarding.connectedBrandCount > 0) {
-    return (
-      <AppShell store={chrome.store} controls={chrome.controls}>
-        <FirstSyncPending storeId={storeId} locale={isHe ? "he" : "en"} />
-      </AppShell>
-    );
+  // Second-stage onboarding: store is connected but the FIRST sync hasn't
+  // completed yet. Gate on actual sync state, never on revenue — a store
+  // with zero sales in the selected window (fresh dev store, quiet week)
+  // must still get its real dashboard, otherwise it looks stuck forever
+  // on "pulling your data" even though the sync finished fine.
+  if (storeId && onboarding.connectedBrandCount > 0) {
+    const connection = (await getDb()
+      .shopifyConnection.findUnique({
+        where: { storeId },
+        select: { lastSyncAt: true, syncStatus: true }
+      })
+      .catch(() => null)) as { lastSyncAt: Date | null; syncStatus: string } | null;
+    const neverSynced = !!connection && connection.lastSyncAt === null;
+    if (neverSynced) {
+      return (
+        <AppShell store={chrome.store} controls={chrome.controls}>
+          <FirstSyncPending storeId={storeId} locale={isHe ? "he" : "en"} />
+        </AppShell>
+      );
+    }
   }
 
   // Run forward-looking detection engines BEFORE reading the alerts table
@@ -173,7 +181,7 @@ export default async function CommandCenterPage() {
   // campaign ROAS, open alerts) into the prompt so actions name real things.
   // Cached 24h; falls back to the intel's own action list when the BI agent
   // is unreachable, so the section always renders.
-  const competitorBrief = await getCompetitorBrief(storeId ?? undefined).catch(() => null);
+  const competitorBrief = await getCompetitorBrief(storeId ?? undefined, isHe ? "he" : "en").catch(() => null);
 
   // Contribution margin for the same window the controls have selected.
   // This is the "money snapshot" anchor — explicit accuracy label, no
