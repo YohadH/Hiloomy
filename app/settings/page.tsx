@@ -171,28 +171,18 @@ export default async function SettingsPage({
       status: "soon"
     },
     {
-      id: "gsc",
-      name: "Google Search Console",
+      id: "google",
+      name: "Google",
       category: lang("אנליטיקס", "Analytics"),
       description: lang(
-        "נתוני חיפוש אורגני — שאילתות, קליקים ודירוגים בדוח השבועי.",
-        "Organic search data — queries, clicks and rankings in the weekly report."
+        "חיבור אחד לשירותי Google: נתוני חיפוש מSearch Console עכשיו, GA4 בקרוב.",
+        "One connection for Google services: Search Console data now, GA4 coming soon."
       ),
       status: gscConnection
         ? gscConnection.status === "error"
           ? "attention"
           : "connected"
         : "not_connected"
-    },
-    {
-      id: "ga4",
-      name: "Google Analytics 4",
-      category: lang("אנליטיקס", "Analytics"),
-      description: lang(
-        "אירועי אתר והתנהגות גולשים להעשרת ייחוס המכירות.",
-        "Site events and visitor behavior to enrich sales attribution."
-      ),
-      status: "soon"
     },
     {
       id: "instagram",
@@ -274,7 +264,8 @@ export default async function SettingsPage({
       />
     ),
     instagram: <CreatorConnectionsManager labels={dictionary.creator} />,
-    gsc: (
+    google: (
+      <div className="space-y-4">
       <GscConnectionManager
         storeId={chrome.store.id}
         initialConnection={
@@ -292,6 +283,13 @@ export default async function SettingsPage({
         gscConnected={gscConnected}
         gscError={gscError}
       />
+      <p className="rounded-xl border border-dashed border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+        {lang(
+          "בקרוב באותו חיבור: Google Analytics 4 — אירועי אתר והמרות לכל מוצר.",
+          "Coming to this same connection: Google Analytics 4 — site events and per-product conversion."
+        )}
+      </p>
+      </div>
     ),
     bixgrow: (
       <BixGrowWebhookCard
@@ -306,7 +304,7 @@ export default async function SettingsPage({
   // Auto-open the relevant modal: OAuth round-trips land back here with
   // query params; otherwise an unconnected store is the top priority.
   const initialOpen =
-    metaOauthResult ? "meta" : gscConnected || gscError ? "gsc" : !isConnected ? "shopify" : null;
+    metaOauthResult ? "meta" : gscConnected || gscError ? "google" : !isConnected ? "shopify" : null;
 
   // ── Sub-navigation model ───────────────────────────────────────────
   const navItems: SettingsNavItem[] = [

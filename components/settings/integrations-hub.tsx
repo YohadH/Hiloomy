@@ -69,6 +69,7 @@ function IntegrationGlyph({ id }: { id: string }) {
           </svg>
         </span>
       );
+    case "google":
     case "gsc":
       return (
         <span className={GLYPH_BOX}>
