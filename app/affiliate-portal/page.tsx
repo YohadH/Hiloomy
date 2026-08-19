@@ -11,6 +11,10 @@ import { AffiliateTrendChart } from "@/components/charts/affiliate-trend-chart";
 import { DataTable } from "@/components/shared/data-table";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getAffiliatePortalDashboard } from "@/lib/services/affiliate-portal-service";
+import {
+  classifyUnclassifiedAttributions,
+  getCommissionLeakageSummary
+} from "@/lib/services/affiliate-leakage-service";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
 
@@ -268,6 +272,22 @@ export default async function AffiliatePortalDashboardPage() {
   const totals = dashboard.totals;
   const currency = chrome.store.currency;
 
+  // Commission-leakage summary for the selected window. Classification is
+  // idempotent + set-based, so running it on page load keeps fresh
+  // conversions labeled without a background job.
+  const leakage = await (async () => {
+    try {
+      await classifyUnclassifiedAttributions(chrome.store.id);
+      return await getCommissionLeakageSummary({
+        storeId: chrome.store.id,
+        start: new Date(`${chrome.controls.startDate}T00:00:00Z`),
+        end: new Date(`${chrome.controls.endDate}T23:59:59Z`)
+      });
+    } catch {
+      return null;
+    }
+  })();
+
   const tone = totals.totalSales > 0 ? "up" : "neutral";
   const conversion =
     totals.totalClicks > 0 ? ((totals.totalOrders / totals.totalClicks) * 100).toFixed(1) : "0.0";
@@ -332,6 +352,90 @@ export default async function AffiliatePortalDashboardPage() {
             />
           </div>
         </section>
+
+        {leakage && leakage.newCustomer.conversions + leakage.returningCustomer.conversions > 0 ? (
+          <section className="space-y-3">
+            <SectionHead
+              eyebrow={isHe ? "דליפת עמלות" : "Commission leakage"}
+              title={isHe ? "על מי אתם משלמים עמלה — לקוח חדש או קיים?" : "Who are you paying commission for — new or existing customers?"}
+              hint={
+                isHe
+                  ? "עמלה על לקוח שכבר קנה קודם היא עלות שכדאי לבחון — אולי מגיעה לה מדרגת עמלה נמוכה יותר."
+                  : "Commission on a customer who already bought before is a cost worth reviewing — it may deserve a lower rate."
+              }
+            />
+            <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
+              <Card className={leakage.leakageRate > 0.3 ? "border-orange-300 bg-orange-50/40" : "border-border"}>
+                <CardContent className="p-5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {isHe ? "עמלות על לקוחות חוזרים בחלון הנבחר" : "Commission paid on returning customers in this window"}
+                    </p>
+                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700">
+                      {(leakage.leakageRate * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <p className="mt-2 text-3xl font-bold text-foreground">
+                    {formatCurrency(leakage.returningCustomer.commission, currency)}
+                  </p>
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3 text-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground">{isHe ? "לקוחות חדשים" : "New customers"}</p>
+                      <p className="font-semibold text-green-700">
+                        {formatCurrency(leakage.newCustomer.commission, currency)}
+                        <span className="ms-1 text-xs font-normal text-muted-foreground">
+                          · {formatNumber(leakage.newCustomer.conversions)} {isHe ? "המרות" : "conversions"}
+                        </span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">{isHe ? "לקוחות חוזרים" : "Returning customers"}</p>
+                      <p className="font-semibold text-orange-700">
+                        {formatCurrency(leakage.returningCustomer.commission, currency)}
+                        <span className="ms-1 text-xs font-normal text-muted-foreground">
+                          · {formatNumber(leakage.returningCustomer.conversions)} {isHe ? "המרות" : "conversions"}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  {leakage.unclassified.conversions > 0 ? (
+                    <p className="mt-3 text-[11px] text-muted-foreground">
+                      {isHe
+                        ? `${formatNumber(leakage.unclassified.conversions)} המרות ללא הזמנת Shopify מקושרת — לא סווגו.`
+                        : `${formatNumber(leakage.unclassified.conversions)} conversions have no linked Shopify order — left unclassified.`}
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {isHe ? "הכי הרבה עמלה על לקוחות חוזרים" : "Most commission on returning customers"}
+                  </p>
+                  {leakage.topLeakyAffiliates.length > 0 ? (
+                    <ul className="mt-3 space-y-2">
+                      {leakage.topLeakyAffiliates.map((a) => (
+                        <li key={a.affiliateMemberId} className="flex items-center justify-between gap-2 border-b border-border/70 pb-2 text-sm last:border-0">
+                          <span className="truncate font-medium">{a.name}</span>
+                          <span className="shrink-0 font-semibold text-orange-700">
+                            {formatCurrency(a.returningCommission, currency)}
+                            <span className="ms-1 text-xs font-normal text-muted-foreground">
+                              · {formatNumber(a.returningConversions)}
+                            </span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      {isHe ? "אין עמלות על לקוחות חוזרים בחלון הזה — מצוין." : "No returning-customer commission in this window — excellent."}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+        ) : null}
 
         {insights.length > 0 ? (
           <section className="space-y-3">

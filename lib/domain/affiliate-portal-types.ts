@@ -88,6 +88,10 @@ export interface AffiliateConversion {
   sourceUrl: string;
   contentTitle?: string | null;
   couponCode?: string | null;
+  // Commission-leakage enrichment: was the attributed order the customer's
+  // first ("new") or did the brand already own them ("returning")?
+  customerType?: "new" | "returning" | null;
+  daysSincePrevOrder?: number | null;
 }
 
 export interface AffiliatePayout {

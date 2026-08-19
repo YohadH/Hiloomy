@@ -90,6 +90,31 @@ export default async function ConversionsPage() {
                 <span className="text-muted-foreground">—</span>
               )
           },
+          {
+            key: "customerType",
+            label: isHe ? "לקוח" : "Customer",
+            render: (row) =>
+              row.customerType === "new" ? (
+                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+                  {isHe ? "חדש" : "New"}
+                </span>
+              ) : row.customerType === "returning" ? (
+                <span
+                  className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-700"
+                  title={
+                    row.daysSincePrevOrder != null
+                      ? isHe
+                        ? `${row.daysSincePrevOrder} ימים מההזמנה הקודמת`
+                        : `${row.daysSincePrevOrder} days since previous order`
+                      : undefined
+                  }
+                >
+                  {isHe ? "חוזר" : "Returning"}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )
+          },
           { key: "total", label: t.total, render: (row) => formatCurrency(row.total, chrome.store.currency) },
           { key: "commission", label: t.commission, render: (row) => formatCurrency(row.commission, chrome.store.currency) },
           { key: "status", label: t.status },

@@ -386,6 +386,8 @@ async function loadConversionsFromDb(): Promise<AffiliateConversion[]> {
         contentTitle: true,
         salesAmount: true,
         commissionAmount: true,
+        customerType: true,
+        daysSincePrevOrder: true,
         occurredAt: true,
         affiliateMember: {
           select: {
@@ -421,7 +423,9 @@ async function loadConversionsFromDb(): Promise<AffiliateConversion[]> {
       trackingBy: row.trackingMethod ? String(row.trackingMethod).replaceAll("_", " ") : row.sourceType ?? "Link",
       sourceUrl: normalizeSourceLabel(row.sourceUrl, null, row.trackingMethod),
       contentTitle: row.contentTitle ?? null,
-      couponCode: row.couponCode ?? row.affiliateMember?.couponCode ?? null
+      couponCode: row.couponCode ?? row.affiliateMember?.couponCode ?? null,
+      customerType: row.customerType ?? null,
+      daysSincePrevOrder: row.daysSincePrevOrder ?? null
     })) as AffiliateConversion[];
   } catch {
     return [];

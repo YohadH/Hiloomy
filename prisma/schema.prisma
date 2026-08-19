@@ -1076,6 +1076,16 @@ model AffiliateAttribution {
   // Explicit "this row was entered by hand" flag so the UI can filter
   // manual vs synced conversions (BixGrow webhook / Shopify sync).
   manualEntry         Boolean         @default(false)
+  // ─── Customer-origin enrichment (commission-leakage engine) ──────
+  // "new"       — the attributed order is this customer's first known order.
+  // "returning" — the customer had at least one earlier order (i.e. the
+  //               affiliate was credited for a customer the brand already
+  //               owned — potential commission leakage).
+  // null        — unclassified: no linked order/customer yet, or the
+  //               classifier hasn't run since the row appeared.
+  customerType        String?
+  // Days between the customer's previous order and the attributed one.
+  daysSincePrevOrder  Int?
   occurredAt          DateTime        @default(now())
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
@@ -1092,6 +1102,7 @@ model AffiliateAttribution {
   // Payout dashboard filters by { storeId, payoutStatus } — the
   // "Approved" pile is the payout queue.
   @@index([storeId, payoutStatus])
+  @@index([storeId, customerType])
 }
 
 model AgentSettings {

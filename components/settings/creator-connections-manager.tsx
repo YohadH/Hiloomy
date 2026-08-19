@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function CreatorConnectionsManager({
-  labels
+  labels,
+  showCrawler = false
 }: {
+  showCrawler?: boolean;
   labels: {
     instagramConnectionTitle: string;
     instagramConnectionDescription: string;
@@ -159,6 +161,9 @@ export function CreatorConnectionsManager({
         </CardContent>
       </Card>
 
+      {/* Public crawler — an internal/ops tool, intentionally hidden on the
+          merchant-facing settings page (showCrawler stays false there). */}
+      {showCrawler ? (
       <Card>
         <CardHeader>
           <CardTitle>Public Instagram crawler</CardTitle>
@@ -181,6 +186,7 @@ export function CreatorConnectionsManager({
           </Button>
         </CardContent>
       </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
