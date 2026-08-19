@@ -139,6 +139,18 @@ export async function middleware(req: NextRequest) {
   requestHeaders.set("x-pathname", req.nextUrl.pathname);
   const res = NextResponse.next({ request: { headers: requestHeaders } });
 
+  // Persist an explicit ?lang= choice into the app-locale cookie so the
+  // language chosen on the landing page follows the user into signup,
+  // onboarding and the app (value mirrors APP_LOCALE_COOKIE in lib/i18n).
+  const langParam = req.nextUrl.searchParams.get("lang");
+  if (langParam === "he" || langParam === "en") {
+    res.cookies.set("app-locale", langParam, {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365
+    });
+  }
+
   // Local-QA auth bypass — same triple lock as lib/auth/session.ts
   // (non-production + DEV_QA_BYPASS_TOKEN set + matching cookie). Lets the
   // local Playwright harness reach authenticated pages without Supabase.
@@ -189,7 +201,17 @@ export async function middleware(req: NextRequest) {
     }
     const landing = req.nextUrl.clone();
     landing.pathname = "/welcome";
-    return NextResponse.rewrite(landing, { request: { headers: requestHeaders } });
+    const rewrite = NextResponse.rewrite(landing, { request: { headers: requestHeaders } });
+    // The ?lang= cookie above was set on `res`, which this branch discards —
+    // re-apply it so hiloomy.com/?lang=en also persists the choice.
+    if (langParam === "he" || langParam === "en") {
+      rewrite.cookies.set("app-locale", langParam, {
+        path: "/",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 365
+      });
+    }
+    return rewrite;
   }
 
   // Protected routes — gate behind auth.
