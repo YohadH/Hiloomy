@@ -118,6 +118,12 @@ Every engine follows the house rule: it must answer **what happened AND what to 
 - **Build:** second implementation of the same commerce-adapter interface — the abstraction cost is paid once in track B.
 - **Effort:** M-L (1-2 weeks once the adapter exists). **Phase 4, after Woo.**
 
+### D. Locale by origin (landing + app)
+- **What:** first-time visitors get Hebrew or English automatically from where they come from — no manual switch needed. Hebrew for Israeli visitors, English for everyone else; the manual toggle always wins afterwards.
+- **Today:** locale is a cookie that defaults to Hebrew everywhere; the landing supports ?lang= overrides.
+- **Build:** on first request (no locale cookie yet), read the Accept-Language header (he -> Hebrew, otherwise English), optionally confirmed by IP country (Render provides geo headers); set the cookie; user choice via the existing switcher overrides permanently. Applies to the landing, the app shell, auth screens and transactional emails.
+- **Effort:** S (1 day). **Phase: anytime — no dependencies.**
+
 *Order rationale: API first (small, closes a plan promise, no schema risk) -> Woo (biggest market, forces the adapter abstraction) -> Wix (cheap second adapter, IL wedge).*
 
 ---

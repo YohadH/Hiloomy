@@ -208,9 +208,22 @@ export function OnboardingWizard({
           </div>
         )}
 
-        <p className="mt-4 text-center text-[11px] text-muted-foreground">
-          {email}
-        </p>
+        <div className="mt-4 flex flex-col items-center gap-1.5 text-center text-[11px] text-muted-foreground">
+          <p>{email}</p>
+          {/* Escape hatches — a signed-in user stuck on onboarding (e.g. a
+              reviewer or someone exploring) can leave without connecting. */}
+          <div className="flex items-center gap-3">
+            <a href={`/welcome?lang=${locale}`} className="underline underline-offset-2 hover:text-foreground">
+              {locale === "he" ? "→ חזרה לעמוד הבית" : "→ Back to the home page"}
+            </a>
+            <span aria-hidden>·</span>
+            <form action="/api/auth/signout" method="post" className="inline">
+              <button type="submit" className="underline underline-offset-2 hover:text-foreground">
+                {locale === "he" ? "התנתקות" : "Sign out"}
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   );
