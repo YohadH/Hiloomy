@@ -52,10 +52,17 @@ export function HiloomyLogo({
 }) {
   // dir="ltr" pins the lockup order on RTL pages — a brand logo never
   // mirrors ([mark]iloomy. must not become .ymooli[mark]).
+  //
+  // Accessibility/crawlers: the visible text is only "iloomy." (the mark IS
+  // the H), which made Google's brand verification read the site name as
+  // "iloomy". The sr-only text carries the real name; the visual pieces are
+  // aria-hidden so screen readers don't announce "Hiloomy iloomy".
   return (
-    <span dir="ltr" className={cn("inline-flex items-end", className)}>
+    <span dir="ltr" aria-label="Hiloomy" className={cn("inline-flex items-end", className)}>
+      <span className="sr-only">Hiloomy</span>
       <HiloomyMarkTight className={cn("h-[1.7em] w-auto", markClassName)} />
       <span
+        aria-hidden="true"
         className={cn(
           "text-lg font-bold leading-none tracking-tight text-[#1B4332] dark:text-foreground",
           textClassName

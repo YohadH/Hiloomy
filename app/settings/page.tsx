@@ -9,7 +9,7 @@ import { WeeklyReportRecipientsManager } from "@/components/settings/weekly-repo
 import { CompetitorSetManager } from "@/components/settings/competitor-set-manager";
 import { GscConnectionManager } from "@/components/settings/gsc-connection-manager";
 import { IntegrationsHub, type IntegrationItem } from "@/components/settings/integrations-hub";
-import { SettingsNav, type SettingsNavItem } from "@/components/settings/settings-nav";
+import { SettingsTabs, type SettingsNavItem } from "@/components/settings/settings-nav";
 import { BixGrowWebhookCard } from "@/components/settings/bixgrow-webhook-card";
 import {
   SetupHealthSection,
@@ -331,11 +331,13 @@ export default async function SettingsPage({
           description={dictionary.settings.description}
         />
 
-        <div className="lg:flex lg:items-start lg:gap-8">
-          <SettingsNav items={navItems} isHe={isHe} />
-
-          <div className="min-w-0 flex-1 space-y-10 lg:mt-0 mt-4">
-            <section id="setup-health" className="scroll-mt-24 space-y-3">
+        <SettingsTabs
+          items={navItems}
+          isHe={isHe}
+          initialTab={initialOpen ? "integrations" : undefined}
+          panels={{
+            "setup-health": (
+              <div className="space-y-3">
               <SectionHead
                 eyebrow={lang("סקירה", "Overview")}
                 title={lang("סטטוס הגדרה וביטחון בנתונים", "Setup status & data confidence")}
@@ -351,9 +353,11 @@ export default async function SettingsPage({
                   {lang("סטטוס ההגדרה יופיע אחרי חיבור החנות.", "Setup status appears once the store is connected.")}
                 </p>
               )}
-            </section>
+            </div>
+            ),
 
-            <section id="integrations" className="scroll-mt-24 space-y-3">
+            "integrations": (
+              <div className="space-y-3">
               <SectionHead
                 eyebrow={lang("חיבורים", "Connections")}
                 title={lang("אינטגרציות", "Integrations")}
@@ -369,9 +373,11 @@ export default async function SettingsPage({
                 initialOpen={initialOpen}
                 requestEmail="support@hiloomy.com"
               />
-            </section>
+            </div>
+            ),
 
-            <section id="reporting" className="scroll-mt-24 space-y-3">
+            "reporting": (
+              <div className="space-y-3">
               <SectionHead
                 eyebrow={lang("דוחות", "Reporting")}
                 title={dictionary.settings.reportingTitle}
@@ -392,31 +398,41 @@ export default async function SettingsPage({
                   [dictionary.settings.compareToPreviousPeriod, dictionary.settings.enabled]
                 ]}
               />
-            </section>
+            </div>
+            ),
 
-            <section id="weekly-report" className="scroll-mt-24 space-y-3">
+            "weekly-report": (
+              <div className="space-y-3">
               <Card>
                 <CardContent className="pt-6">
                   <WeeklyReportRecipientsManager isHe={isHe} />
                 </CardContent>
               </Card>
-            </section>
+            </div>
+            ),
 
-            <section id="competitors" className="scroll-mt-24 space-y-3">
+            "competitors": (
+              <div className="space-y-3">
               <Card>
                 <CardContent className="pt-6">
                   <CompetitorSetManager isHe={isHe} />
                 </CardContent>
               </Card>
-            </section>
+            </div>
+            ),
 
-            {orgSummary ? (
-              <section id="organization" className="scroll-mt-24 space-y-3">
-                <OrganizationSection org={orgSummary} isHe={isHe} />
-              </section>
-            ) : null}
+            ...(orgSummary
+              ? {
+                  organization: (
+                    <div className="space-y-3">
+                      <OrganizationSection org={orgSummary} isHe={isHe} />
+                    </div>
+                  )
+                }
+              : {}),
 
-            <section id="language" className="scroll-mt-24 space-y-3">
+            "language": (
+              <div className="space-y-3">
               <LanguageSection dictionary={dictionary}>
                 <LanguageSwitcher
                   locale={locale}
@@ -426,13 +442,16 @@ export default async function SettingsPage({
                   }}
                 />
               </LanguageSection>
-            </section>
+            </div>
+            ),
 
-            <section id="roadmap" className="scroll-mt-24 space-y-3">
+            "roadmap": (
+              <div className="space-y-3">
               <RoadmapSection dictionary={dictionary} isHe={isHe} />
-            </section>
-          </div>
-        </div>
+            </div>
+            )
+          }}
+        />
       </div>
     </AppShell>
   );

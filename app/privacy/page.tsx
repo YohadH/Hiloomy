@@ -1,233 +1,224 @@
-// Privacy Policy — tailored for an analytics SaaS that ingests Shopify
-// orders, Meta Ads insights, and Instagram creator metrics on behalf of a
-// merchant who installed the app.
+// Privacy Policy — Hiloomy (operated by Brandzp Ltd).
 //
-// IMPORTANT: this is a working starting point that satisfies Meta's app
-// review URL validation. Have a lawyer review before scaling beyond
-// pilot customers. Update the [COMPANY] / [JURISDICTION] placeholders
-// with your real legal entity name and registered jurisdiction.
+// Written to satisfy Shopify App Store review, Meta app review, and Google
+// OAuth verification (Google API Services User Data Policy / Limited Use).
+// The competitor-intelligence section is deliberately explicit: competitor
+// insights come ONLY from publicly available sources; merchant store data
+// is never shared with the competitor-monitoring provider and never used
+// as intelligence for anyone else.
+//
+// Have a lawyer review before scaling beyond pilot customers.
 
 export const metadata = {
-  title: "Privacy Policy",
+  title: "Hiloomy — Privacy Policy",
   description:
-    "How we collect, use, store, and protect data when you use our Shopify analytics app."
+    "How Hiloomy collects, uses, stores, and protects data when you use our Shopify profit analytics app."
 };
 
-export default function PrivacyPolicyPage() {
-  const lastUpdated = "2026-06-08";
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12 text-sm leading-7 text-slate-800">
-      <h1 className="text-3xl font-bold tracking-tight">Privacy Policy</h1>
+    <section className="mt-8 space-y-3">
+      <h2 className="text-xl font-semibold">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+export default function PrivacyPolicyPage() {
+  const lastUpdated = "2026-08-20";
+  return (
+    <main dir="ltr" className="mx-auto max-w-3xl px-6 py-12 text-sm leading-7 text-slate-800">
+      <h1 className="text-3xl font-bold tracking-tight">Hiloomy — Privacy Policy</h1>
       <p className="mt-1 text-xs text-slate-500">Last updated: {lastUpdated}</p>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">1. Who we are</h2>
+      <Section title="1. Who we are">
         <p>
-          This app (the &quot;Service&quot;) is operated by Brandzp Ltd
-          (&quot;we&quot;, &quot;us&quot;). We provide an analytics dashboard
-          for Shopify store owners (the &quot;Merchant&quot;). The Merchant
-          connects their Shopify store, Meta Ads account, Instagram account,
-          and affiliate platform to our Service, and we surface metrics back
-          to them.
+          <strong>Hiloomy</strong> (the &quot;Service&quot;, available at{" "}
+          <a className="text-sky-700 underline" href="https://www.hiloomy.com">
+            www.hiloomy.com
+          </a>
+          ) is a profit-analytics and growth-reporting application for Shopify
+          brands, operated by <strong>Brandzp Ltd</strong> (&quot;we&quot;,
+          &quot;us&quot;), a company registered in Israel. A merchant (the
+          &quot;Merchant&quot;) connects their Shopify store and, optionally,
+          marketing accounts; Hiloomy computes profit, retention, alerts, and a
+          weekly report from that data and shows it back to the Merchant only.
         </p>
         <p>
-          You can reach us at{" "}
+          Contact:{" "}
           <a className="text-sky-700 underline" href="mailto:yohad@brandzp.co.il">
             yohad@brandzp.co.il
           </a>
-          .
         </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">2. What data we collect</h2>
+      <Section title="2. What data we collect">
+        <p>When a Merchant connects their accounts, we receive and store:</p>
+        <ul className="list-disc space-y-1 ps-6">
+          <li>
+            <strong>Shopify data (read-only):</strong> orders, line items,
+            customers, products, inventory, refunds, and discount usage, plus
+            shop metadata. Our Shopify access is read-only, with one exception:
+            the optional affiliate module can create discount codes in the
+            Merchant&apos;s store when the Merchant explicitly requests it
+            (write_discounts scope).
+          </li>
+          <li>
+            <strong>Meta Ads data (optional):</strong> campaign- and ad-level
+            performance metrics and creative metadata from the Merchant&apos;s
+            own ad account. We do not collect personal data of people who see
+            the Merchant&apos;s ads.
+          </li>
+          <li>
+            <strong>Instagram data (optional):</strong> the Merchant&apos;s own
+            professional-account media and engagement metrics.
+          </li>
+          <li>
+            <strong>Google Search Console data (optional):</strong> aggregated
+            search performance for the Merchant&apos;s own verified site —
+            queries, clicks, impressions, and positions. See section 4 for our
+            Google data commitments.
+          </li>
+          <li>
+            <strong>Affiliate data (optional):</strong> affiliate names, contact
+            details the Merchant provides, coupon codes, tracked-link clicks,
+            and attributed orders.
+          </li>
+          <li>
+            <strong>Account data:</strong> the Merchant&apos;s login email,
+            organization and team-member details, and preferences.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="3. How we use data">
+        <ul className="list-disc space-y-1 ps-6">
+          <li>To compute the Merchant&apos;s own analytics: profit, contribution margin, retention, alerts, and reports.</li>
+          <li>To generate and email the Merchant&apos;s weekly growth report.</li>
+          <li>To operate the Merchant&apos;s affiliate program (attribution, commissions, payout bookkeeping).</li>
+          <li>To provide support and maintain the security of the Service.</li>
+        </ul>
         <p>
-          When a Merchant connects their accounts, we receive and store the
-          following categories of data:
+          <strong>We never sell data.</strong> We never use one Merchant&apos;s
+          data to benefit another Merchant, to build cross-merchant benchmarks,
+          or to train models. Each Merchant&apos;s data is isolated at the
+          database level and visible only to their own team.
+        </p>
+      </Section>
+
+      <Section title="4. Google user data (Google API Services)">
+        <p>
+          When the Merchant connects Google Search Console, Hiloomy accesses
+          only read-only search-performance data for the Merchant&apos;s own
+          verified property. Hiloomy&apos;s use of information received from
+          Google APIs adheres to the{" "}
+          <a
+            className="text-sky-700 underline"
+            href="https://developers.google.com/terms/api-services-user-data-policy"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Google API Services User Data Policy
+          </a>
+          , including the Limited Use requirements. Specifically: Google data is
+          used only to display the Merchant&apos;s own search analytics inside
+          Hiloomy and in their weekly report; it is never transferred to third
+          parties, never used for advertising, and never read by humans except
+          with the Merchant&apos;s explicit consent for support, for security, or
+          to comply with law. Disconnecting Google in Settings revokes our
+          access and deletes stored Google tokens.
+        </p>
+      </Section>
+
+      <Section title="5. Competitor insights — public sources only">
+        <p>
+          Hiloomy can show the Merchant what their competitors are doing
+          (promotions, discounts, homepage messages). This intelligence is
+          compiled <strong>exclusively from publicly available information</strong>{" "}
+          on the competitors&apos; own public websites, collected via our
+          monitoring provider (RivalSweeper).
         </p>
         <ul className="list-disc space-y-1 ps-6">
           <li>
-            <strong>Shopify data:</strong> orders, line items, customers,
-            products, refunds, discount codes, fulfilment events, and shop
-            metadata.
+            <strong>We never send any Merchant store data to the competitor-monitoring
+            provider.</strong> The only information shared with it is the list of
+            public competitor domains the Merchant chose to track.
           </li>
           <li>
-            <strong>Meta Ads data:</strong> campaign and ad-level performance
-            metrics, ad creative metadata, ad account information. We do not
-            collect or store any personal data of end-users of the
-            Merchant&apos;s ads.
+            <strong>Your store is never anyone else&apos;s &quot;competitor
+            intelligence&quot;.</strong> Hiloomy does not use, expose, or derive
+            insights from one Merchant&apos;s private store data for any other
+            customer — ever.
           </li>
           <li>
-            <strong>Instagram data:</strong> public posts and engagement
-            metrics from Instagram creator accounts that the Merchant has
-            connected.
-          </li>
-          <li>
-            <strong>Affiliate data:</strong> affiliate names, contact
-            emails, coupon codes, and order attribution records uploaded by
-            the Merchant or received via partner webhooks (e.g. BixGrow).
-          </li>
-          <li>
-            <strong>Authentication tokens:</strong> OAuth access tokens for
-            the platforms above, encrypted at rest using AES-GCM.
+            Competitor insights shown in Hiloomy contain no personal data — only
+            public promotional signals.
           </li>
         </ul>
-        <p>
-          We do not run trackers or analytics on the Service that observe
-          the Merchant&apos;s end-customers.
-        </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">3. How we use it</h2>
+      <Section title="6. Where data is stored and how it is protected">
         <ul className="list-disc space-y-1 ps-6">
-          <li>To display analytics dashboards to the Merchant.</li>
+          <li>Data is hosted in the EU (database: Supabase, Frankfurt; application: Render).</li>
+          <li>Access tokens and API secrets are encrypted at rest (AES-256-GCM) and never leave the server.</li>
+          <li>Every customer is isolated at the database level; internal access is restricted and logged.</li>
+          <li>All traffic is encrypted in transit (TLS).</li>
+        </ul>
+      </Section>
+
+      <Section title="7. Sharing and subprocessors">
+        <p>We share data only with the processors needed to run the Service:</p>
+        <ul className="list-disc space-y-1 ps-6">
+          <li>Supabase (database and authentication, EU)</li>
+          <li>Render (application hosting)</li>
+          <li>Resend (transactional email — weekly reports, notifications)</li>
+          <li>Shopify, Meta, and Google — only as the Merchant&apos;s connected sources, under their own terms</li>
+          <li>RivalSweeper — receives only public competitor domains to monitor (see section 5)</li>
+        </ul>
+        <p>We do not sell or rent data to anyone.</p>
+      </Section>
+
+      <Section title="8. Retention and deletion">
+        <ul className="list-disc space-y-1 ps-6">
+          <li>Data is retained while the Merchant&apos;s account is active.</li>
           <li>
-            To generate weekly performance reports (PDF + email) for the
-            Merchant.
+            Disconnecting a source in Settings stops collection and deletes its
+            stored tokens. Uninstalling the Shopify app revokes our store access
+            immediately.
           </li>
           <li>
-            To run anomaly detection (e.g. flagging products about to run
-            out of stock) and surface recommendations.
+            On account deletion request (email us), we delete the
+            Merchant&apos;s data within 30 days, except records we must keep by
+            law.
           </li>
           <li>
-            To compute aggregated industry benchmarks. Benchmarks never
-            expose any individual Merchant&apos;s data.
+            We honor Shopify&apos;s GDPR webhooks (customer data request,
+            customer redact, shop redact) automatically, and Meta&apos;s data
+            deletion callback.
           </li>
         </ul>
-        <p>
-          We never sell data. We never share data with third parties for
-          their own marketing purposes.
-        </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">4. Where it lives</h2>
+      <Section title="9. Your rights">
         <p>
-          Data is stored in Supabase (managed PostgreSQL), hosted in the EU
-          (Frankfurt region). Application servers run on Render. Email
-          delivery uses Resend. We do not transfer Merchant data to other
-          third-party services beyond the providers explicitly listed in
-          this policy.
-        </p>
-      </section>
-
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">4a. Competitor intelligence (RivalSweeper)</h2>
-        <p>
-          The app can display competitive-intelligence signals (public promotions,
-          advertising activity, and press mentions of competitor websites) supplied
-          by RivalSweeper, a third-party data provider. This integration is strictly
-          one-directional: the only information we send RivalSweeper is the list of
-          competitor <em>domain names</em> the Merchant chose to monitor — public
-          website addresses, not personal data. No store data, order data, customer
-          data, or any other Merchant information is ever transmitted to
-          RivalSweeper or any other data provider.
-        </p>
-      </section>
-
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">5. How long we keep it</h2>
-        <p>
-          We retain data for as long as the Merchant maintains an active
-          connection. When the Merchant uninstalls the Shopify app, access
-          credentials are revoked immediately, and upon receiving
-          Shopify&apos;s <code className="rounded bg-slate-100 px-1">shop/redact</code>{" "}
-          notice (sent ~48 hours after uninstall) all store data — orders,
-          customers, products, and derived analytics — is permanently deleted.
-          Customer-level redaction requests
-          (<code className="rounded bg-slate-100 px-1">customers/redact</code>) are
-          honored by deleting that customer&apos;s personal data while retaining
-          anonymous financial records, and data-access requests
-          (<code className="rounded bg-slate-100 px-1">customers/data_request</code>)
-          are logged and fulfilled with the Merchant. For other integrations
-          (e.g. Meta Ads), tokens are deleted within 7 days of disconnection
-          and the underlying data within 90 days, unless the Merchant
-          requests earlier deletion.
-        </p>
-        <p>
-          We retain backups for up to 30 days, after which they are
-          purged.
-        </p>
-      </section>
-
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">6. Your rights</h2>
-        <p>
-          You may request access to, correction of, or deletion of any
-          personal data we hold about you by emailing{" "}
+          Depending on your jurisdiction (including GDPR where applicable), you
+          may request access, correction, export, or deletion of your personal
+          data by emailing{" "}
           <a className="text-sky-700 underline" href="mailto:yohad@brandzp.co.il">
             yohad@brandzp.co.il
           </a>
-          . We will respond within 30 days.
+          . End customers of a Merchant&apos;s store should direct requests to
+          the Merchant, who controls that data; we assist the Merchant as
+          processor.
         </p>
-        <p>
-          If you are a Facebook user and want us to delete data we received
-          via the Meta Ads connection, you can also use Facebook&apos;s data
-          deletion flow, which automatically triggers our endpoint at{" "}
-          <code className="rounded bg-slate-100 px-1">
-            /api/meta/data-deletion
-          </code>
-          . See section 9 below.
-        </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">7. Security</h2>
+      <Section title="10. Changes">
         <p>
-          All third-party access tokens are encrypted at rest using AES-GCM
-          with a 256-bit key. All network connections use TLS 1.2 or
-          higher. Database access is restricted to the application server
-          and a small set of named administrators. We log access to
-          sensitive operations.
+          We may update this policy as the Service evolves. Material changes are
+          announced in-app or by email, and the date above is updated.
         </p>
-      </section>
-
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">8. Children</h2>
-        <p>
-          The Service is intended for use by businesses. We do not
-          knowingly collect personal data from individuals under 16.
-        </p>
-      </section>
-
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">
-          9. Meta / Facebook data deletion
-        </h2>
-        <p>
-          We comply with the Meta Platform Terms requirement to provide a
-          User Data Deletion mechanism. Submit a deletion request via
-          Facebook&apos;s account settings; Facebook will POST a signed
-          request to our endpoint at{" "}
-          <code className="rounded bg-slate-100 px-1">
-            /api/meta/data-deletion
-          </code>
-          . We respond with a unique confirmation code and a status URL you
-          can use to track completion. Deletion of stored Meta data
-          completes within 7 days.
-        </p>
-      </section>
-
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">10. Changes</h2>
-        <p>
-          We may update this policy from time to time. The &quot;Last
-          updated&quot; date at the top reflects the most recent revision.
-          Material changes will be announced via email to the Merchant
-          contact on file.
-        </p>
-      </section>
-
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">11. Contact</h2>
-        <p>
-          Brandzp Ltd · Gil Yam, Herzliya, Israel ·{" "}
-          <a className="text-sky-700 underline" href="mailto:yohad@brandzp.co.il">
-            yohad@brandzp.co.il
-          </a>
-        </p>
-      </section>
+      </Section>
     </main>
   );
 }

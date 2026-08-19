@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-// Settings sub-navigation — a sticky rail (desktop) / horizontal chip bar
-// (mobile) that jumps between the page's sections by anchor. A scrollspy
-// (IntersectionObserver) highlights the section currently in view.
+// Settings tabs — the side rail is a real selector: each nav item shows its
+// OWN panel in the content area (single route, no reload). Panels stay
+// mounted (CSS-hidden) so switching is instant and client state survives.
+// The active tab syncs with the URL hash, so #integrations deep-links and
+// OAuth round-trips land on the right panel.
 
 export interface SettingsNavItem {
   id: string;
@@ -14,39 +16,54 @@ export interface SettingsNavItem {
   group?: string;
 }
 
-export function SettingsNav({ items, isHe }: { items: SettingsNavItem[]; isHe: boolean }) {
-  const [activeId, setActiveId] = useState<string>(items[0]?.id ?? "");
+export function SettingsTabs({
+  items,
+  panels,
+  initialTab,
+  isHe
+}: {
+  items: SettingsNavItem[];
+  panels: Record<string, ReactNode>;
+  /** Server-suggested starting tab (e.g. "integrations" after an OAuth return). */
+  initialTab?: string;
+  isHe: boolean;
+}) {
+  const fallback = items[0]?.id ?? "";
+  const [active, setActive] = useState<string>(
+    initialTab && items.some((i) => i.id === initialTab) ? initialTab : fallback
+  );
 
+  // A URL hash wins over the server suggestion (deep links, back/forward).
   useEffect(() => {
-    const sections = items
-      .map((i) => document.getElementById(i.id))
-      .filter((el): el is HTMLElement => !!el);
-    if (sections.length === 0) return;
+    const applyHash = () => {
+      const hash = window.location.hash.replace(/^#/, "");
+      if (hash && items.some((i) => i.id === hash)) setActive(hash);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Pick the top-most visible section.
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActiveId(visible[0].target.id);
-      },
-      { rootMargin: "-80px 0px -60% 0px", threshold: 0 }
-    );
-    sections.forEach((s) => observer.observe(s));
-    return () => observer.disconnect();
-  }, [items]);
+  const select = (id: string) => {
+    setActive(id);
+    // replaceState keeps history clean (no back-button spam) while making
+    // the current tab linkable.
+    window.history.replaceState(null, "", `#${id}`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
-  const link = (item: SettingsNavItem, mobile: boolean) => (
-    <a
+  const button = (item: SettingsNavItem, mobile: boolean) => (
+    <button
       key={`${mobile ? "m" : "d"}-${item.id}`}
-      href={`#${item.id}`}
-      onClick={() => setActiveId(item.id)}
+      type="button"
+      onClick={() => select(item.id)}
+      aria-current={active === item.id ? "page" : undefined}
       className={cn(
         mobile
           ? "shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors"
-          : "block rounded-lg px-3 py-2 text-sm font-medium transition-colors border-s-2",
-        activeId === item.id
+          : "block w-full rounded-lg px-3 py-2 text-start text-sm font-medium transition-colors border-s-2",
+        active === item.id
           ? mobile
             ? "border-green-600 bg-green-600 text-white"
             : "border-green-600 bg-green-50 text-green-800"
@@ -56,20 +73,20 @@ export function SettingsNav({ items, isHe }: { items: SettingsNavItem[]; isHe: b
       )}
     >
       {item.label}
-    </a>
+    </button>
   );
 
   return (
-    <>
-      {/* Mobile: horizontal scrollable chips under the page header. */}
+    <div className="lg:flex lg:items-start lg:gap-8">
+      {/* Mobile: horizontal scrollable chips. */}
       <nav
         aria-label={isHe ? "ניווט הגדרות" : "Settings navigation"}
         className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:hidden [scrollbar-width:none]"
       >
-        {items.map((i) => link(i, true))}
+        {items.map((i) => button(i, true))}
       </nav>
 
-      {/* Desktop: sticky side rail. */}
+      {/* Desktop: sticky side rail with group headers. */}
       <nav
         aria-label={isHe ? "ניווט הגדרות" : "Settings navigation"}
         className="sticky top-24 hidden max-h-[calc(100vh-8rem)] w-52 shrink-0 space-y-0.5 overflow-y-auto lg:block"
@@ -81,10 +98,19 @@ export function SettingsNav({ items, isHe }: { items: SettingsNavItem[]; isHe: b
                 {item.group}
               </p>
             ) : null}
-            {link(item, false)}
+            {button(item, false)}
           </div>
         ))}
       </nav>
-    </>
+
+      {/* Panels — all mounted, only the active one visible. */}
+      <div className="mt-4 min-w-0 flex-1 lg:mt-0">
+        {items.map((item) => (
+          <div key={item.id} className={active === item.id ? "" : "hidden"}>
+            {panels[item.id] ?? null}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

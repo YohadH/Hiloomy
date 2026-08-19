@@ -1,162 +1,134 @@
-// Terms of Service — starting point for an analytics SaaS that ingests
-// data on the Merchant's behalf. Satisfies Meta's app review URL check.
+// Terms of Service — Hiloomy (operated by Brandzp Ltd).
 //
-// IMPORTANT: have counsel review before customers beyond your pilot. Adjust
-// the entity name + jurisdiction to your real registration.
+// Satisfies Shopify App Store, Meta, and Google review URL checks. Have
+// counsel review before customers beyond the pilot.
 
 export const metadata = {
-  title: "Terms of Service",
-  description:
-    "Terms governing your use of the Shopify analytics app."
+  title: "Hiloomy — Terms of Service",
+  description: "Terms governing your use of Hiloomy, the Shopify profit analytics app."
 };
 
-export default function TermsOfServicePage() {
-  const lastUpdated = "2026-06-08";
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12 text-sm leading-7 text-slate-800">
-      <h1 className="text-3xl font-bold tracking-tight">Terms of Service</h1>
+    <section className="mt-8 space-y-3">
+      <h2 className="text-xl font-semibold">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+export default function TermsOfServicePage() {
+  const lastUpdated = "2026-08-20";
+  return (
+    <main dir="ltr" className="mx-auto max-w-3xl px-6 py-12 text-sm leading-7 text-slate-800">
+      <h1 className="text-3xl font-bold tracking-tight">Hiloomy — Terms of Service</h1>
       <p className="mt-1 text-xs text-slate-500">Last updated: {lastUpdated}</p>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">1. Acceptance</h2>
+      <Section title="1. Acceptance">
         <p>
-          By installing or using this application (the &quot;Service&quot;),
-          you agree to be bound by these Terms. The Service is operated by
-          Brandzp Ltd, registered in Israel (&quot;we&quot;, &quot;us&quot;).
+          By creating an account, installing the Shopify app, or using{" "}
+          <strong>Hiloomy</strong> (the &quot;Service&quot;, at www.hiloomy.com),
+          you agree to these Terms. The Service is operated by Brandzp Ltd,
+          registered in Israel (&quot;we&quot;, &quot;us&quot;).
         </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">2. What we provide</h2>
+      <Section title="2. What Hiloomy provides">
         <p>
-          The Service is a Shopify-integrated analytics platform. It
-          connects to your Shopify store, Meta Ads account, Instagram
-          account, and affiliate platforms (via your authorization), and
-          surfaces aggregated performance metrics, reports, and
-          recommendations.
+          Hiloomy is a profit-analytics and growth-reporting platform for
+          Shopify brands. With your authorization it connects to your Shopify
+          store and, optionally, your Meta Ads, Instagram, and Google Search
+          Console accounts, and computes profit, retention, alerts, weekly
+          reports, affiliate-program tracking, and competitor insights (from
+          public sources only — see our Privacy Policy).
         </p>
         <p>
-          We do not guarantee that any specific metric, recommendation, or
-          report will produce a particular business outcome.
+          Analytics, alerts, and recommendations are decision support, not
+          financial advice. We do not guarantee that any metric, recommendation,
+          or report will produce a particular business outcome, and figures such
+          as estimated profit depend on the cost inputs you configure.
         </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">3. Your obligations</h2>
+      <Section title="3. Your responsibilities">
         <ul className="list-disc space-y-1 ps-6">
-          <li>
-            You will only connect platforms that you own or are authorized
-            to administer.
-          </li>
-          <li>
-            You will not use the Service to violate the terms of any
-            connected platform (Shopify, Meta, Instagram, BixGrow, etc.).
-          </li>
-          <li>
-            You will not attempt to access data belonging to other
-            Merchants, reverse-engineer, scrape, or otherwise abuse the
-            Service.
-          </li>
-          <li>
-            You are responsible for maintaining the security of credentials
-            (e.g. user accounts) used to access the Service.
-          </li>
+          <li>Keep your login credentials secure; you are responsible for activity under your account and team.</li>
+          <li>Connect only accounts and properties you own or are authorized to connect.</li>
+          <li>Track only competitor domains you are entitled to monitor publicly.</li>
+          <li>Use the Service lawfully, including compliance with Shopify&apos;s, Meta&apos;s, and Google&apos;s terms for your connected accounts.</li>
+          <li>Do not attempt to access other customers&apos; data, probe, or disrupt the Service.</li>
         </ul>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">4. Data ownership</h2>
+      <Section title="4. Your data">
         <p>
-          You retain all rights to the data you connect to the Service
-          (orders, ads data, affiliate data, etc.). By using the Service,
-          you grant us a limited license to process that data solely to
-          provide the Service to you, including:
+          You own your store and marketing data. You grant us the limited right
+          to process it solely to provide the Service to you, as described in
+          our{" "}
+          <a className="text-sky-700 underline" href="/privacy">
+            Privacy Policy
+          </a>
+          . We never sell your data and never use it as competitive intelligence
+          for anyone else. Disconnecting a source or uninstalling the app
+          revokes our access; you may request full deletion at any time.
         </p>
-        <ul className="list-disc space-y-1 ps-6">
-          <li>Computing analytics and reports for your account.</li>
-          <li>Storing the data on our servers (see Privacy Policy).</li>
-          <li>
-            Producing aggregated, anonymized benchmarks. Benchmarks never
-            expose your data to other Merchants.
-          </li>
-        </ul>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">5. Fees and payment</h2>
+      <Section title="5. Plans, trials, and billing">
         <p>
-          Current pricing, including any free tier, is presented at sign-up
-          and at any time on our pricing page. Fees are billed in advance
-          monthly or annually as selected. Failure to pay may result in
-          suspension of the Service after a 14-day grace period.
+          Paid plans are billed as presented at checkout. Trials convert only if
+          you actively subscribe; you can cancel anytime, effective at the end
+          of the current billing period. We may change pricing with advance
+          notice; changes never apply retroactively to a paid period.
         </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">6. Termination</h2>
+      <Section title="6. Availability and changes">
         <p>
-          You may terminate your use of the Service at any time by
-          disconnecting all integrations and (if applicable) cancelling
-          your subscription. We may terminate your access if you breach
-          these Terms or use the Service in a way that risks harm to other
-          Merchants or to integrated platforms.
+          We aim for high availability but the Service is provided &quot;as
+          is&quot; and &quot;as available&quot;. We may add, change, or remove
+          features. Data syncs depend on third-party APIs (Shopify, Meta,
+          Google) whose availability we do not control.
         </p>
-        <p>
-          On termination, your data will be deleted according to the
-          schedule described in the Privacy Policy.
-        </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">7. Disclaimers</h2>
-        <p>
-          The Service is provided &quot;as is&quot; without warranties of
-          any kind. We do not guarantee uninterrupted availability or that
-          third-party platforms (Shopify, Meta, etc.) will remain
-          accessible.
-        </p>
-      </section>
-
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">
-          8. Limitation of liability
-        </h2>
+      <Section title="7. Limitation of liability">
         <p>
           To the maximum extent permitted by law, our aggregate liability
-          for any claim arising out of these Terms or the Service is
-          limited to the fees you paid in the 12 months preceding the
-          claim. We are not liable for indirect, incidental, special,
-          consequential, or punitive damages.
+          arising out of the Service is limited to the amounts you paid us in
+          the twelve months preceding the claim. We are not liable for indirect,
+          incidental, or consequential damages, including lost profits or
+          business decisions taken on the basis of analytics or
+          recommendations.
         </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">9. Governing law</h2>
+      <Section title="8. Termination">
         <p>
-          These Terms are governed by the laws of the State of Israel.
-          Disputes will be resolved in the competent courts of Tel
-          Aviv-Jaffa.
+          You may stop using the Service and uninstall at any time. We may
+          suspend or terminate accounts that materially breach these Terms,
+          with notice where practicable. Sections 4, 7, and 9 survive
+          termination.
         </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">10. Changes to these Terms</h2>
+      <Section title="9. Governing law">
         <p>
-          We may revise these Terms from time to time. Material changes
-          will be communicated via email at least 30 days in advance, and
-          will not apply retroactively.
+          These Terms are governed by the laws of the State of Israel, and the
+          competent courts of Tel Aviv have exclusive jurisdiction, without
+          prejudice to mandatory consumer protections in your place of
+          residence.
         </p>
-      </section>
+      </Section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xl font-semibold">11. Contact</h2>
+      <Section title="10. Contact">
         <p>
-          Brandzp Ltd · Gil Yam, Herzliya, Israel ·{" "}
+          Questions about these Terms:{" "}
           <a className="text-sky-700 underline" href="mailto:yohad@brandzp.co.il">
             yohad@brandzp.co.il
           </a>
         </p>
-      </section>
+      </Section>
     </main>
   );
 }
