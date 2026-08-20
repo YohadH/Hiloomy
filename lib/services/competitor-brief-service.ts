@@ -13,6 +13,8 @@
 
 import { getDb } from "@/lib/server/db";
 import { askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { fetchCompetitorActivity } from "@/lib/clients/rivalsweeper-client";
+import { normalizeDomain } from "@/lib/services/competitor-intel-service";
 import {
   COMPETITOR_INTEL_LATEST,
   type CompetitorIntel
@@ -80,6 +82,92 @@ let biRefreshInFlight = false;
 // syncCompetitorSignals. The static COMPETITOR_INTEL_LATEST remains only
 // as a legacy fallback for calls without a storeId.
 
+// Activity-based intel — the pre-snapshot fallback. Built from the live
+// RivalSweeper activity feed (ad library, homepage top links, news), which
+// fills days before the promo/coupon analyses that power snapshots.
+//
+// TENANCY GUARD: fetchCompetitorActivity is COMPANY-scoped (every domain
+// the RivalSweeper account monitors, across all stores) — so we keep only
+// the domains in THIS store's own competitor set before rendering.
+async function buildActivityIntel(
+  competitors: Array<{ id: string; name: string; domain: string }>,
+  locale: "he" | "en"
+): Promise<CompetitorIntel | null> {
+  const isHe = locale === "he";
+  const t = (he: string, en: string) => (isHe ? he : en);
+
+  const activity = await fetchCompetitorActivity({ timeoutMs: 12_000 }).catch(() => null);
+  if (!activity || activity.length === 0) return null;
+
+  const byDomain = new Map(activity.map((a) => [normalizeDomain(a.domain), a]));
+  const entries: CompetitorIntel["competitors"] = [];
+  for (const competitor of competitors) {
+    const a = byDomain.get(normalizeDomain(competitor.domain));
+    if (!a) continue;
+    const moveParts: string[] = [];
+    if (a.adsActive !== null && a.adsActive > 0) {
+      moveParts.push(
+        t(
+          `כ־${a.adsActive} מודעות פעילות בספריית המודעות`,
+          `~${a.adsActive} active ads in the ad library`
+        )
+      );
+    }
+    if (a.adHeadlines.length > 0) {
+      moveParts.push(t(`מסר מוביל: "${a.adHeadlines[0]}"`, `Top ad message: "${a.adHeadlines[0]}"`));
+    }
+    if (a.homepageLinks.length > 0) {
+      moveParts.push(
+        t(
+          `בדף הבית: ${a.homepageLinks.slice(0, 3).join(" · ")}`,
+          `Homepage highlights: ${a.homepageLinks.slice(0, 3).join(" · ")}`
+        )
+      );
+    }
+    if (a.news.length > 0) {
+      moveParts.push(t(`בחדשות: "${a.news[0].title}"`, `In the news: "${a.news[0].title}"`));
+    }
+    if (moveParts.length === 0) {
+      moveParts.push(
+        t("במעקב — הסריקה הראשונה עדיין לא הסתיימה", "Monitored — first crawl not finished yet")
+      );
+    }
+    entries.push({
+      name: competitor.name,
+      tier: "tracked",
+      move: moveParts.join(" · "),
+      implication: t(
+        "נתוני פעילות חיים (מודעות, דף בית, חדשות). ניתוח מבצעים והנחות יתווסף כשסריקות המבצעים של הספק יבשילו.",
+        "Live activity data (ads, homepage, news). Promo/discount analysis arrives once the provider's promo scans mature."
+      )
+    });
+  }
+  if (entries.length === 0) return null;
+
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    version: `live-activity-${today}-${locale}`,
+    generatedAt: today,
+    storeContext: "",
+    competitors: entries,
+    influencerNote: "",
+    suggestedActions: {
+      today: [
+        t(
+          "לסקור את המסרים הפרסומיים של המתחרים ולוודא שהבידול שלכם עדיין ברור מולם.",
+          "Scan the competitors' ad messages and make sure your differentiation still stands out."
+        )
+      ],
+      thisWeek: [
+        t(
+          "לעקוב אחרי שינויים בדפי הבית של המתחרים — קטגוריה חדשה בתפריט היא לרוב סימן להשקה.",
+          "Watch competitor homepage changes — a new menu category usually signals a launch."
+        )
+      ]
+    }
+  };
+}
+
 async function buildLiveIntel(
   storeId: string,
   locale: "he" | "en"
@@ -115,7 +203,10 @@ async function buildLiveIntel(
     freeShippingThreshold: unknown;
     homepageMessage: string | null;
   }>;
-  if (snaps.length === 0) return null;
+  // No promo snapshots yet (the provider's promo analyses fill later than
+  // its raw crawl) — fall back to live activity data (ads / homepage links
+  // / news) so the section shows real intelligence instead of hiding.
+  if (snaps.length === 0) return buildActivityIntel(competitors, locale);
 
   const num = (v: unknown) => (v == null ? null : Number(v));
   const byCompetitor = new Map<string, typeof snaps>();
