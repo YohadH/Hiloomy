@@ -64,7 +64,15 @@ const STRINGS = {
     oneClickBody: "מתחברים עם חשבון הפייסבוק שמנהל את המודעות — אנחנו כבר נמשוך את חשבון המודעות והטוקן לבד.",
     oneClickCta: "התחברות עם פייסבוק",
     oauthOkPrefix: "מחובר! חשבון המודעות שנבחר:",
-    oauthMulti: "נמצאו כמה חשבונות מודעות — בחרנו את הפעיל הראשון. אפשר להחליף בחיבור הידני למטה.",
+    oauthMulti: "נמצאו כמה חשבונות מודעות — בחרנו את הפעיל הראשון. אפשר להחליף בבחירת החשבון למטה.",
+    pickerToggle: "החלפת חשבון מודעות",
+    pickerLoading: "טוען חשבונות…",
+    pickerLabel: "בחרו את חשבון המודעות הנכון (מוצג לפי עסק):",
+    pickerApply: "החלפה לחשבון הזה",
+    pickerApplying: "מחליף…",
+    pickerSwitched: (name: string) => `חשבון המודעות הוחלף ל־${name}. מומלץ להריץ סנכרון עכשיו.`,
+    pickerInactive: "לא פעיל",
+    pickerNoBusiness: "ללא עסק",
     manualToggle: "חיבור ידני (מתקדם)",
     description:
       "שומרים טוקן גישה של Meta וחשבון מודעות בצד השרת, כדי לסנכרן מדי יום ביצועי קמפיינים, קריאייטיבים, רכישות, ROAS ועוד.",
@@ -116,7 +124,15 @@ const STRINGS = {
     oneClickBody: "Sign in with the Facebook account that manages the ads — we'll pull the ad account and token automatically.",
     oneClickCta: "Continue with Facebook",
     oauthOkPrefix: "Connected! Selected ad account:",
-    oauthMulti: "Several ad accounts were found — we picked the first active one. You can switch it in the manual section below.",
+    oauthMulti: "Several ad accounts were found — we picked the first active one. You can switch it in the account picker below.",
+    pickerToggle: "Switch ad account",
+    pickerLoading: "Loading accounts…",
+    pickerLabel: "Pick the correct ad account (shown with its business):",
+    pickerApply: "Switch to this account",
+    pickerApplying: "Switching…",
+    pickerSwitched: (name: string) => `Ad account switched to ${name}. Run a sync now.`,
+    pickerInactive: "inactive",
+    pickerNoBusiness: "no business",
     manualToggle: "Manual connection (advanced)",
     description:
       "Save a server-side Meta access token and ad account so the planner can sync daily campaign performance, creatives, purchases, ROAS and more.",
@@ -188,6 +204,31 @@ export function MetaAdsConnectionManager({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(!initialConnection && !oauthResult?.connected);
+  // Ad-account picker — lists every account the saved token can see.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerAccounts, setPickerAccounts] = useState<
+    Array<{ id: string; name: string; businessName: string | null; active: boolean; currency: string | null }> | null
+  >(null);
+  const [pickerSelection, setPickerSelection] = useState("");
+
+  async function openPicker() {
+    setPickerOpen((v) => !v);
+    if (pickerAccounts !== null) return;
+    setLoading("picker-load");
+    setError(null);
+    try {
+      const response = await fetch(`/api/meta-ads/accounts?storeId=${encodeURIComponent(storeId)}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
+      setPickerAccounts(payload.accounts ?? []);
+      setPickerSelection(payload.selectedAdAccountId ?? "");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t.requestFailed);
+      setPickerOpen(false);
+    } finally {
+      setLoading(null);
+    }
+  }
 
   async function refreshStatus() {
     const response = await fetch(`/api/meta-ads/connection/status?storeId=${encodeURIComponent(storeId)}`);
@@ -284,6 +325,62 @@ export function MetaAdsConnectionManager({
           <p className="mt-2 text-muted-foreground">{t.notConnectedHint}</p>
         )}
       </div>
+
+      {/* Ad-account picker — the sanctioned way to change the selected
+          account after OAuth (the token stays; only the selection moves). */}
+      {connection ? (
+        <div className="rounded-2xl border border-border/70">
+          <button
+            type="button"
+            onClick={() => void openPicker()}
+            className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold"
+          >
+            {t.pickerToggle}
+            <span aria-hidden>{pickerOpen ? "−" : "+"}</span>
+          </button>
+          {pickerOpen ? (
+            <div className="space-y-3 border-t border-border/70 p-4">
+              {loading === "picker-load" || pickerAccounts === null ? (
+                <p className="text-sm text-muted-foreground">{t.pickerLoading}</p>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">{t.pickerLabel}</p>
+                  <select
+                    value={pickerSelection}
+                    onChange={(event) => setPickerSelection(event.target.value)}
+                    className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
+                    dir="ltr"
+                  >
+                    {pickerAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.businessName ?? t.pickerNoBusiness} — {account.name} ({account.id})
+                        {account.active ? "" : ` · ${t.pickerInactive}`}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    disabled={loading !== null || !pickerSelection || pickerSelection === connection.adAccountId}
+                    onClick={() =>
+                      runAction("picker-apply", async () => {
+                        const response = await fetch("/api/meta-ads/accounts", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ storeId, adAccountId: pickerSelection })
+                        });
+                        const payload = await response.json();
+                        if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
+                        return t.pickerSwitched(payload.adAccountName ?? payload.adAccountId);
+                      })
+                    }
+                  >
+                    {loading === "picker-apply" ? t.pickerApplying : t.pickerApply}
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Sync controls */}
       {connection ? (
