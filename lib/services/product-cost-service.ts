@@ -282,6 +282,7 @@ export async function setProductCost(input: {
 
 const ID_HEADERS = {
   sku: ["sku", "variant_sku", "variant sku"],
+  barcode: ["barcode", "ean", "upc", "gtin"],
   handle: ["handle", "product_handle", "product handle"],
   shopifyProductId: ["product_id", "shopify_product_id", "product id", "shopify product id"],
   title: ["title", "product", "product_title", "product title", "name", "product name"]
@@ -352,11 +353,18 @@ export async function importProductCostsCsv(input: {
   }
   const idIdx = {
     sku: findHeaderIndex(headers, ID_HEADERS.sku),
+    barcode: findHeaderIndex(headers, ID_HEADERS.barcode),
     handle: findHeaderIndex(headers, ID_HEADERS.handle),
     shopifyProductId: findHeaderIndex(headers, ID_HEADERS.shopifyProductId),
     title: findHeaderIndex(headers, ID_HEADERS.title)
   };
-  if (idIdx.sku === -1 && idIdx.handle === -1 && idIdx.shopifyProductId === -1 && idIdx.title === -1) {
+  if (
+    idIdx.sku === -1 &&
+    idIdx.barcode === -1 &&
+    idIdx.handle === -1 &&
+    idIdx.shopifyProductId === -1 &&
+    idIdx.title === -1
+  ) {
     return {
       ok: false,
       totalRows: rows.length - 1,
@@ -365,7 +373,7 @@ export async function importProductCostsCsv(input: {
       cleared: 0,
       skipped: 0,
       lineItemsRecosted: 0,
-      warnings: ["No product-identifier column found. Add a sku, handle, product_id, or title column."]
+      warnings: ["No product-identifier column found. Add a sku, barcode, handle, product_id, or title column."]
     };
   }
 
@@ -377,26 +385,28 @@ export async function importProductCostsCsv(input: {
       title: true,
       handle: true,
       shopifyProductId: true,
-      variants: { select: { sku: true } }
+      variants: { select: { sku: true, barcode: true } }
     }
   })) as Array<{
     id: string;
     title: string;
     handle: string;
     shopifyProductId: string;
-    variants: Array<{ sku: string | null }>;
+    variants: Array<{ sku: string | null; barcode: string | null }>;
   }>;
 
   const byHandle = new Map<string, string>();
   const byShopifyId = new Map<string, string>();
   const byTitle = new Map<string, string>();
   const bySku = new Map<string, string>();
+  const byBarcode = new Map<string, string>();
   for (const p of products) {
     if (p.handle) byHandle.set(p.handle.trim().toLowerCase(), p.id);
     if (p.shopifyProductId) byShopifyId.set(p.shopifyProductId.trim(), p.id);
     if (p.title) byTitle.set(p.title.trim().toLowerCase(), p.id);
     for (const v of p.variants) {
       if (v.sku && v.sku.trim()) bySku.set(v.sku.trim().toLowerCase(), p.id);
+      if (v.barcode && v.barcode.trim()) byBarcode.set(v.barcode.trim(), p.id);
     }
   }
 
@@ -404,6 +414,8 @@ export async function importProductCostsCsv(input: {
   const resolveProductId = (row: string[]): string | null => {
     const sku = cell(row, idIdx.sku);
     if (sku && bySku.has(sku.toLowerCase())) return bySku.get(sku.toLowerCase())!;
+    const barcode = cell(row, idIdx.barcode);
+    if (barcode && byBarcode.has(barcode)) return byBarcode.get(barcode)!;
     const handle = cell(row, idIdx.handle);
     if (handle && byHandle.has(handle.toLowerCase())) return byHandle.get(handle.toLowerCase())!;
     const spid = cell(row, idIdx.shopifyProductId);
