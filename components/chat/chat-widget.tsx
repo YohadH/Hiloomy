@@ -113,7 +113,13 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
         const res = await fetch("/api/chat/bi", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: text, history })
+          body: JSON.stringify({
+            question: text,
+            history,
+            // Which app page the merchant is on — the analyst grounds its
+            // first insight in the section being viewed.
+            section: window.location.pathname
+          })
         });
         const contentType = res.headers.get("content-type") ?? "";
         if (res.ok && contentType.includes("text/plain") && res.body) {

@@ -49,8 +49,15 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     question?: string;
     history?: unknown;
+    section?: unknown;
   };
   const question = (body.question ?? "").trim().slice(0, 4000);
+  // App route the merchant is viewing — grounds the persona's per-section
+  // rules. Constrained to a path-looking string; never trusted beyond that.
+  const section =
+    typeof body.section === "string" && /^\/[\w\-/]{0,80}$/.test(body.section)
+      ? body.section
+      : null;
   if (!question) {
     return NextResponse.json({ ok: false, error: "question is required" }, { status: 400 });
   }
@@ -70,6 +77,7 @@ export async function POST(request: Request) {
             locale,
             question,
             history,
+            section,
             onTextDelta: (delta) => controller.enqueue(encoder.encode(delta))
           });
           if (!finalText) {

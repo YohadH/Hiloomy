@@ -21,11 +21,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getDb } from "@/lib/server/db";
 import { BI_PERSONA, buildRuntimeContext } from "@/lib/ai/bi-persona";
+import { BI_TOOL_DEFINITIONS } from "@/lib/ai/bi-tool-definitions";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
 import { buildChannelPerformanceReport } from "@/lib/services/channel-performance-engine-service";
 import { buildCohortRetention } from "@/lib/services/cohort-retention-service";
 import { listOpenAlerts } from "@/lib/services/alert-writer-service";
 import { buildCompetitorWeekSection } from "@/lib/services/competitor-intel-service";
+import { buildKpiTrend, type TrendGranularity } from "@/lib/services/kpi-trend-service";
+import { buildDiscountScorecards } from "@/lib/services/discount-scorecard-service";
+import { buildMetaAdsWeeklyReport } from "@/lib/services/meta-ads-report-service";
 
 const MODEL = process.env.BI_CHAT_MODEL || "claude-opus-5";
 const MAX_TOKENS = 16000;
@@ -50,94 +54,17 @@ export interface RunBiChatTurnInput {
   question: string;
   // Prior thread messages (oldest first), so follow-ups have context.
   history?: BiChatHistoryEntry[];
+  // App route the merchant is viewing (e.g. "/dashboard") — grounds the
+  // persona's per-section reading rules.
+  section?: string | null;
   // Called with each text delta as the model writes the visible answer.
   onTextDelta?: (delta: string) => void;
 }
 
 // ── Tools ───────────────────────────────────────────────────────────────
-// Plain JSON-Schema tool definitions (non-beta surface). Days windows are
-// bounded so a typo can't trigger a multi-year scan.
-
-const TOOL_DEFINITIONS = [
-  {
-    name: "get_profit_summary",
-    description:
-      "Profit and contribution margin for the store over a recent window: gross sales, discounts, refunds, COGS, shipping, fees, ad spend, contribution margin and units. Use for any question about revenue, profit, margin, or costs.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        days: {
-          type: "integer",
-          minimum: 1,
-          maximum: 365,
-          description: "Window length in days, ending today. Default 30."
-        }
-      },
-      required: []
-    }
-  },
-  {
-    name: "get_channel_performance",
-    description:
-      "Marketing channel and campaign performance over a recent window: revenue, orders, and attribution per channel (Meta, Google, affiliates, organic, etc.). Use for questions about campaigns, ROAS, ad channels, or where sales come from.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        days: {
-          type: "integer",
-          minimum: 1,
-          maximum: 365,
-          description: "Window length in days, ending today. Default 30."
-        }
-      },
-      required: []
-    }
-  },
-  {
-    name: "get_retention",
-    description:
-      "Monthly cohort retention: how many customers from each signup-month cohort came back and bought again. Use for questions about returning customers, retention, LTV direction, or repeat purchase behavior.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        lookback_months: {
-          type: "integer",
-          minimum: 1,
-          maximum: 24,
-          description: "How many cohort months to include. Default 12."
-        }
-      },
-      required: []
-    }
-  },
-  {
-    name: "get_open_alerts",
-    description:
-      "Open alerts awaiting the merchant's decision: stockout risks, ROAS collapses, competitor promo moves, and other detected issues, each with a recommended action. Use for 'what needs my attention' questions.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        limit: {
-          type: "integer",
-          minimum: 1,
-          maximum: 50,
-          description: "Max alerts to return, newest first. Default 20."
-        }
-      },
-      required: []
-    }
-  },
-  {
-    name: "get_competitor_week",
-    description:
-      "What the store's tracked competitors did over the last week vs the week before: active promos, discount depth, free-shipping thresholds, homepage messages, and week-over-week changes. Use for questions about competitors.",
-    input_schema: {
-      type: "object" as const,
-      properties: {},
-      required: []
-    }
-  }
-];
+// Schemas live in lib/ai/bi-tool-definitions.ts (dependency-free, so the
+// isolation tests can inspect them). Days windows are bounded so a typo
+// can't trigger a multi-year scan.
 
 function daysWindow(days: number): { start: Date; end: Date } {
   const end = new Date();
@@ -167,6 +94,64 @@ async function executeTool(
     case "get_channel_performance": {
       const { start, end } = daysWindow(int(input.days, 30, 1, 365));
       result = await buildChannelPerformanceReport({ storeId, start, end });
+      break;
+    }
+    case "get_kpi_trend": {
+      const granularity: TrendGranularity =
+        input.granularity === "day" || input.granularity === "month"
+          ? input.granularity
+          : "week";
+      result = await buildKpiTrend({
+        storeId,
+        granularity,
+        days: int(input.days, 90, 14, 730)
+      });
+      break;
+    }
+    case "get_ad_performance": {
+      const { start, end } = daysWindow(int(input.days, 30, 1, 365));
+      const [metaAds, margin] = await Promise.all([
+        buildMetaAdsWeeklyReport({ storeId, start, end }),
+        buildContributionMargin({ storeId, start, end }).catch(() => null)
+      ]);
+      result = {
+        metaAds:
+          metaAds ??
+          "Meta Ads is not connected for this store — no ad-level data available.",
+        // For margin-adjusted ROAS: multiply a row's ROAS by the blended
+        // margin rate, and only when cost coverage supports it.
+        marginContext: margin
+          ? {
+              blendedContributionMarginRate: margin.totals.contributionMarginRate,
+              costCoverage: margin.quality.costCoverage,
+              confidence: margin.quality.confidence
+            }
+          : null
+      };
+      break;
+    }
+    case "get_discount_effectiveness": {
+      const { start, end } = daysWindow(int(input.days, 60, 1, 365));
+      const [scorecards, metaAds] = await Promise.all([
+        buildDiscountScorecards({ storeId, start, end }),
+        buildMetaAdsWeeklyReport({ storeId, start, end }).catch(() => null)
+      ]);
+      // Daily ad spend across brands, for the confounding check: a
+      // discount's lift that overlaps a spend spike is not the discount's.
+      const adSpendByDate = new Map<string, number>();
+      for (const brand of metaAds?.brands ?? []) {
+        for (const day of brand.daily) {
+          adSpendByDate.set(day.date, (adSpendByDate.get(day.date) ?? 0) + day.spend);
+        }
+      }
+      result = {
+        discounts: scorecards,
+        adSpendDaily: adSpendByDate.size
+          ? [...adSpendByDate.entries()]
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([date, spend]) => ({ date, spend: Math.round(spend * 100) / 100 }))
+          : null
+      };
       break;
     }
     case "get_retention": {
@@ -219,7 +204,8 @@ export async function runBiChatTurn(input: RunBiChatTurnInput): Promise<string> 
         locale: input.locale,
         storeName: store?.name ?? null,
         currency: store?.currency ?? null,
-        todayIso: new Date().toISOString().slice(0, 10)
+        todayIso: new Date().toISOString().slice(0, 10),
+        section: input.section ?? null
       })
     }
   ];
@@ -240,7 +226,7 @@ export async function runBiChatTurn(input: RunBiChatTurnInput): Promise<string> 
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system,
-      tools: TOOL_DEFINITIONS,
+      tools: BI_TOOL_DEFINITIONS,
       messages
     });
 
