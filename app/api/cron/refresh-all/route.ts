@@ -101,6 +101,9 @@ interface PerStoreResult {
     ok: boolean;
     skipped?: boolean;
     snapshotsUpserted?: number;
+    // Domains the provider had no usable data for (monitored but not yet
+    // analyzed) — the "wired correctly, waiting on RivalSweeper" signal.
+    skippedNoData?: number;
     alertsUpserted?: number;
     error?: string;
   };
@@ -345,6 +348,7 @@ async function handler(request: Request) {
           result.competitors = {
             ok: true,
             snapshotsUpserted: compResult.snapshotsUpserted,
+            skippedNoData: compResult.skippedNoData,
             alertsUpserted: alertResult.alertsUpserted
           };
         } catch (err) {
