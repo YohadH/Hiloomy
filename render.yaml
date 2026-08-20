@@ -302,6 +302,17 @@ services:
       - key: TELEGRAM_CHAT_ID
         sync: false
 
+      # ─── Anthropic API (BI analyst chat — direct, no tunnel) ──────────
+      # When set, the chat widget's BI analyst answers via the Anthropic
+      # API with store-scoped data tools (streamed answers, seconds not
+      # minutes). Unset → falls back to the BI_AGENT_URL tunnel. Persona
+      # text lives in lib/ai/bi-persona.ts.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Optional model override for the BI chat (default claude-opus-5).
+      - key: BI_CHAT_MODEL
+        sync: false
+
       # ─── RivalSweeper (competitor intelligence) ───────────────────────
       # Real API (apilayer.rivalsweeper.com, OAuth2 client-credentials).
       # LIVE since 20/08/2026: RIVALSWEEPER_KEY_ID (rsk_...) +

@@ -53,6 +53,8 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
   const [threads, setThreads] = useState<Record<ChatKind, ChatMessage[]>>({ bi: [], support: [] });
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  // Live text of an in-flight streamed BI answer (null = not streaming).
+  const [streaming, setStreaming] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,7 +63,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [active, threads, busy]);
+  }, [active, threads, busy, streaming]);
 
   const CHATS: Record<
     ChatKind,
@@ -106,11 +108,38 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     setBusy(true);
     try {
       if (active === "bi") {
+        // Prior thread (before this question) so follow-ups keep context.
+        const history = threads.bi.slice(-12).map((m) => ({ role: m.role, text: m.text }));
         const res = await fetch("/api/chat/bi", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: text })
+          body: JSON.stringify({ question: text, history })
         });
+        const contentType = res.headers.get("content-type") ?? "";
+        if (res.ok && contentType.includes("text/plain") && res.body) {
+          // Direct-API path: the answer streams — render it as it arrives.
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let full = "";
+          setStreaming("");
+          try {
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              full += decoder.decode(value, { stream: true });
+              setStreaming(full);
+            }
+            full += decoder.decode();
+          } finally {
+            setStreaming(null);
+          }
+          pushMessage("bi", {
+            role: "agent",
+            text: full.trim() || lang("לא התקבלה תשובה — נסו שוב.", "No answer received — please try again."),
+            at: Date.now()
+          });
+          return;
+        }
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; answer?: string; error?: string };
         if (body.ok && body.answer) {
           pushMessage("bi", { role: "agent", text: body.answer, at: Date.now() });
@@ -194,11 +223,12 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
           {thread.map((m, i) => (
             <Bubble key={i} role={m.role} text={m.text} isHe={isHe} />
           ))}
-          {busy ? (
+          {streaming ? <Bubble role="agent" text={streaming} isHe={isHe} /> : null}
+          {busy && !streaming ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
               {active === "bi"
-                ? lang("האנליסט בודק בנתונים… זה יכול לקחת עד שתי דקות", "The analyst is checking the data… up to two minutes")
+                ? lang("האנליסט בודק בנתונים…", "The analyst is checking the data…")
                 : lang("שולח…", "Sending…")}
             </div>
           ) : null}
