@@ -302,6 +302,15 @@ services:
       - key: TELEGRAM_CHAT_ID
         sync: false
 
+      # ─── Meta Ads OAuth (Facebook Login for Business) ─────────────────
+      # Required for "Facebook Login for Business"-type Meta apps: the
+      # Configuration ID from the Meta app dashboard (Facebook Login for
+      # Business → Configurations). Without it the OAuth dialog shows
+      # Meta's "Feature Unavailable" screen. Classic Meta apps can leave
+      # this unset (scope-based dialog is used instead).
+      - key: META_ADS_LOGIN_CONFIG_ID
+        sync: false
+
       # ─── Anthropic API (BI analyst chat — direct, no tunnel) ──────────
       # When set, the chat widget's BI analyst answers via the Anthropic
       # API with store-scoped data tools (streamed answers, seconds not

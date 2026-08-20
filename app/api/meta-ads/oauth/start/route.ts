@@ -41,7 +41,18 @@ export async function GET(request: Request) {
     dialog.searchParams.set("client_id", clientId);
     dialog.searchParams.set("redirect_uri", redirectUri);
     dialog.searchParams.set("state", state);
-    dialog.searchParams.set("scope", "ads_read,business_management");
+    // "Facebook Login for Business" apps require a Configuration ID and
+    // reject the classic scope-based dialog with Meta's "Feature
+    // Unavailable" screen. Create the configuration in the Meta app
+    // dashboard (Facebook Login for Business → Configurations, permissions
+    // ads_read + business_management) and set its id as
+    // META_ADS_LOGIN_CONFIG_ID. Classic apps keep the scope path.
+    const configId = process.env.META_ADS_LOGIN_CONFIG_ID?.trim();
+    if (configId) {
+      dialog.searchParams.set("config_id", configId);
+    } else {
+      dialog.searchParams.set("scope", "ads_read,business_management");
+    }
     dialog.searchParams.set("response_type", "code");
 
     const response = NextResponse.redirect(dialog);
