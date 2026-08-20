@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 import { assertStoreInActiveOrg } from "@/lib/auth/guards";
 import {
+  applyReturningCommissionPolicy,
   classifyUnclassifiedAttributions,
   getCommissionLeakageSummary
 } from "@/lib/services/affiliate-leakage-service";
@@ -28,6 +29,9 @@ export async function GET(request: Request) {
     }
 
     await classifyUnclassifiedAttributions(storeId);
+    // Settle returning-customer policy pricing on freshly-classified rows
+    // so the summary reflects what will actually be paid out.
+    await applyReturningCommissionPolicy(storeId).catch(() => null);
     const summary = await getCommissionLeakageSummary({ storeId, start, end });
     return NextResponse.json({ ok: true, summary });
   } catch (error) {

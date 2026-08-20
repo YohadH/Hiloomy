@@ -369,7 +369,7 @@ export default async function SettingsPage({
                 items={integrations}
                 panels={integrationPanels}
                 initialOpen={initialOpen}
-                requestEmail="support@hiloomy.com"
+                requestEmail="yoadhakimv@gmail.com"
               />
             </div>
             ),

@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 <p>Confirmation code: <code style="background:#f1f5f9; padding:2px 6px; border-radius:4px;">${code.replace(/[^a-zA-Z0-9-]/g, "")}</code></p>
 <p><strong>Status:</strong> Completed.</p>
 <p>Any Meta-linked data we held has been removed from our active database. Backup snapshots are purged within 30 days.</p>
-<p>Questions: <a href="mailto:yohad@brandzp.co.il">yohad@brandzp.co.il</a></p>
+<p>Questions: <a href="mailto:yoadhakimv@gmail.com">yoadhakimv@gmail.com</a></p>
 </body></html>`,
     { headers: { "Content-Type": "text/html; charset=utf-8" } }
   );

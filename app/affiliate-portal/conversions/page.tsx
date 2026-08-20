@@ -116,7 +116,28 @@ export default async function ConversionsPage() {
               )
           },
           { key: "total", label: t.total, render: (row) => formatCurrency(row.total, chrome.store.currency) },
-          { key: "commission", label: t.commission, render: (row) => formatCurrency(row.commission, chrome.store.currency) },
+          {
+            key: "commission",
+            label: t.commission,
+            render: (row) => (
+              <span className="inline-flex items-center gap-1.5">
+                {formatCurrency(row.commission, chrome.store.currency)}
+                {row.appliedPolicy === "returning_zero" ? (
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                    {isHe ? "מדיניות: 0%" : "Policy: 0%"}
+                  </span>
+                ) : row.appliedPolicy === "returning_reduced" ? (
+                  <span className="inline-flex items-center rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700">
+                    {isHe ? "תעריף מופחת" : "Reduced rate"}
+                  </span>
+                ) : row.appliedPolicy === "reactivated_full" ? (
+                  <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
+                    {isHe ? "החזרת לקוח" : "Win-back"}
+                  </span>
+                ) : null}
+              </span>
+            )
+          },
           { key: "status", label: t.status },
           { key: "trackingBy", label: t.tracking },
           { key: "contentTitle", label: t.content }

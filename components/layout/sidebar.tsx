@@ -3,6 +3,7 @@
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BadgePercent,
   Bell,
   Building2,
   CalendarRange,
@@ -110,6 +111,12 @@ function getNavigation(
       }
     ],
     dashboards: [
+      {
+        href: "/discounts",
+        label: isHe ? "הנחות וקופונים" : "Discounts",
+        icon: BadgePercent,
+        module: "discounts"
+      },
       {
         href: "/weekly-summary",
         label: isHe ? "סיכום שבועי" : "Weekly summary",

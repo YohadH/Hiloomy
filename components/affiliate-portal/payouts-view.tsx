@@ -31,6 +31,9 @@ interface PayoutRow {
   approvedCount: number;
   unpaidCommission: number;
   unpaidCount: number;
+  returningUnpaidCommission: number;
+  returningUnpaidCount: number;
+  policyAdjustedCount: number;
 }
 
 interface Totals {
@@ -38,6 +41,8 @@ interface Totals {
   approvedCount: number;
   unpaidCommission: number;
   unpaidCount: number;
+  returningUnpaidCommission: number;
+  returningUnpaidCount: number;
 }
 
 function labels(locale: Locale) {
@@ -61,7 +66,16 @@ function labels(locale: Locale) {
     paidToast: (n: number, name: string) =>
       isHe ? `סומנו ${n} המרות כשולמו ל${name}` : `Marked ${n} conversions paid for ${name}`,
     noApproved: isHe ? "אין המרות מאושרות עבור השותף/ה" : "No approved conversions for this affiliate",
-    errorFallback: isHe ? "הפעולה נכשלה" : "Action failed"
+    errorFallback: isHe ? "הפעולה נכשלה" : "Action failed",
+    returningOfWhich: (amount: string) =>
+      isHe ? `מתוכן ${amount} על לקוחות חוזרים` : `of which ${amount} on returning customers`,
+    returningBanner: (amount: string) =>
+      isHe
+        ? `${amount} מהעמלות שממתינות לאישור שולמו על לקוחות שכבר קנו מהמותג.`
+        : `${amount} of the commission awaiting approval is on customers the brand already owns.`,
+    returningBannerCta: isHe ? "הגדרת מדיניות לקוח חוזר" : "Set a returning-customer policy",
+    policyAdjusted: (n: number) =>
+      isHe ? `${n} המרות הותאמו לפי מדיניות` : `${n} conversions policy-adjusted`
   };
 }
 
@@ -188,8 +202,27 @@ export function PayoutsView({ locale, currency }: { locale: Locale; currency: st
             {totals?.unpaidCount ?? 0}{" "}
             {isHe ? "המרות" : "conversions"}
           </p>
+          {totals && totals.returningUnpaidCommission > 0 ? (
+            <p className="mt-1 text-xs font-semibold text-orange-700">
+              {t.returningOfWhich(formatCurrency(totals.returningUnpaidCommission, currency))}
+            </p>
+          ) : null}
         </div>
       </div>
+
+      {totals && totals.returningUnpaidCommission > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-orange-200 bg-orange-50/60 px-4 py-3">
+          <p className="text-sm text-orange-900">
+            {t.returningBanner(formatCurrency(totals.returningUnpaidCommission, currency))}
+          </p>
+          <a
+            href="/affiliate-portal/programs#returning-policy"
+            className="text-sm font-semibold text-orange-800 underline underline-offset-2 hover:text-orange-900"
+          >
+            {t.returningBannerCta}
+          </a>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -266,6 +299,14 @@ export function PayoutsView({ locale, currency }: { locale: Locale; currency: st
                     <div className="text-xs text-slate-500">
                       {r.unpaidCount} {isHe ? "המרות" : "conv."}
                     </div>
+                    {r.returningUnpaidCommission > 0 ? (
+                      <div className="text-xs font-medium text-orange-700">
+                        {t.returningOfWhich(formatCurrency(r.returningUnpaidCommission, currency))}
+                      </div>
+                    ) : null}
+                    {r.policyAdjustedCount > 0 ? (
+                      <div className="text-[11px] text-emerald-700">{t.policyAdjusted(r.policyAdjustedCount)}</div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-end tabular-nums font-semibold text-emerald-900">
                     <div>{formatCurrency(r.approvedCommission, currency)}</div>

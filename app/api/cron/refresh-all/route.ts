@@ -10,6 +10,12 @@ import {
   syncCompetitorSignals,
   upsertCompetitorResponseAlerts
 } from "@/lib/services/competitor-intel-service";
+import {
+  applyReturningCommissionPolicy,
+  classifyUnclassifiedAttributions,
+  upsertCommissionLeakageAlert
+} from "@/lib/services/affiliate-leakage-service";
+import { upsertUnderwaterDiscountAlerts } from "@/lib/services/discount-scorecard-service";
 
 // Multi-source data refresh — the unified 2-hour cron tick.
 //
@@ -100,6 +106,14 @@ interface PerStoreResult {
   };
   affiliateReconcile?: { linked: number; deletedDuplicates: number; stillOrphan: number };
   affiliateSync?: { syncedOrders: number; error?: string };
+  affiliateLeakage?: {
+    ok: boolean;
+    classified?: number;
+    repriced?: number;
+    alertFired?: boolean;
+    error?: string;
+  };
+  discountAlerts?: { ok: boolean; fired?: number; resolved?: number; error?: string };
 }
 
 async function handler(request: Request) {
@@ -340,6 +354,48 @@ async function handler(request: Request) {
             error: err instanceof Error ? err.message : String(err)
           };
         }
+      }
+
+      // ── Affiliate commission leakage (Engine 1) ───────────────────
+      // Classify fresh conversions new/returning, settle returning-
+      // customer policy pricing on unpaid rows, and (re)evaluate the
+      // monthly "commissions going to returning customers" alert. All
+      // set-based and idempotent — cheap on every tick.
+      try {
+        const classified = await classifyUnclassifiedAttributions(store.id);
+        const policy = await applyReturningCommissionPolicy(store.id);
+        const leakageAlert = await upsertCommissionLeakageAlert(store.id);
+        result.affiliateLeakage = {
+          ok: true,
+          classified,
+          repriced: policy.repriced,
+          alertFired: leakageAlert.fired
+        };
+      } catch (err) {
+        console.error(`[refresh-all] leakage engine failed for ${store.id}:`, err);
+        result.affiliateLeakage = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err)
+        };
+      }
+
+      // ── Underwater-discount alerts (Engine 2) ─────────────────────
+      // Mid-sale margin guard: any code from the last 7 days whose
+      // orders net negative contribution margin becomes a high-priority
+      // "stop the code" alert; recovered codes sweep-resolve.
+      try {
+        const discountAlerts = await upsertUnderwaterDiscountAlerts(store.id);
+        result.discountAlerts = {
+          ok: true,
+          fired: discountAlerts.fired,
+          resolved: discountAlerts.resolved
+        };
+      } catch (err) {
+        console.error(`[refresh-all] discount alert engine failed for ${store.id}:`, err);
+        result.discountAlerts = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err)
+        };
       }
 
       return result;

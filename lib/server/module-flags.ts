@@ -7,8 +7,8 @@
 // with billing packages.
 //
 // Valid slugs (see components/layout/sidebar.tsx): portfolio,
-// marketing-planner, creative, affiliate-portal, weekly-summary,
-// creator-flow, sales-summary, product-follow-ups, alerts.
+// marketing-planner, creative, affiliate-portal, discounts,
+// weekly-summary, creator-flow, sales-summary, product-follow-ups, alerts.
 // The Command Center (/) and Settings are core and cannot be disabled.
 
 export function getDisabledModules(): string[] {

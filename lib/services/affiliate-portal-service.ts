@@ -136,7 +136,15 @@ function buildProgramPayload(store: any | null, row: any | null, affiliateRows: 
     orders: affiliateRows.reduce((sum, item) => sum + item.orders, 0),
     sales: affiliateRows.reduce((sum, item) => sum + item.sales, 0),
     signUpLink: row?.signUpLink ?? "",
-    checklist: DEFAULT_PROGRAM_CHECKLIST
+    checklist: DEFAULT_PROGRAM_CHECKLIST,
+    returningCustomerPolicy: (row?.returningCustomerPolicy === "reduced" || row?.returningCustomerPolicy === "zero"
+      ? row.returningCustomerPolicy
+      : "full") as AffiliateProgram["returningCustomerPolicy"],
+    returningCommissionRatePct:
+      row?.returningCommissionRate != null
+        ? Math.round(toNumber(row.returningCommissionRate) * 10000) / 100
+        : null,
+    reactivationWindowDays: row?.reactivationWindowDays ?? null
   };
 }
 
@@ -388,6 +396,7 @@ async function loadConversionsFromDb(): Promise<AffiliateConversion[]> {
         commissionAmount: true,
         customerType: true,
         daysSincePrevOrder: true,
+        appliedPolicy: true,
         occurredAt: true,
         affiliateMember: {
           select: {
@@ -425,7 +434,8 @@ async function loadConversionsFromDb(): Promise<AffiliateConversion[]> {
       contentTitle: row.contentTitle ?? null,
       couponCode: row.couponCode ?? row.affiliateMember?.couponCode ?? null,
       customerType: row.customerType ?? null,
-      daysSincePrevOrder: row.daysSincePrevOrder ?? null
+      daysSincePrevOrder: row.daysSincePrevOrder ?? null,
+      appliedPolicy: row.appliedPolicy ?? null
     })) as AffiliateConversion[];
   } catch {
     return [];

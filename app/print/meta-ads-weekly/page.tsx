@@ -34,6 +34,14 @@ import {
   type AffiliateDeepDiveReport
 } from "@/lib/services/affiliate-deep-dive-service";
 import {
+  getCommissionLeakageSummary,
+  type LeakageSummary
+} from "@/lib/services/affiliate-leakage-service";
+import {
+  buildDiscountScorecards,
+  type DiscountScorecardReport
+} from "@/lib/services/discount-scorecard-service";
+import {
   buildRestockHeroAlerts,
   type RestockHeroAlertReport
 } from "@/lib/services/restock-hero-alert-service";
@@ -195,19 +203,26 @@ export default async function MetaAdsWeeklyPrintPage({
   let affiliateDeepDive: AffiliateDeepDiveReport | null = null;
   let restockAlerts: RestockHeroAlertReport | null = null;
   let competitorWeek: CompetitorWeekSection | null = null;
+  let leakage: LeakageSummary | null = null;
+  let discountScorecards: DiscountScorecardReport | null = null;
   if (!storeId) {
     diagnostic = "no_store";
   } else {
     // Run all the data builds in parallel so the cumulative cost is the
     // slowest single query, not the sum of them all.
-    [report, reconciliation, channels, campaignAttribution, affiliateDeepDive, restockAlerts, competitorWeek] = await Promise.all([
+    [report, reconciliation, channels, campaignAttribution, affiliateDeepDive, restockAlerts, competitorWeek, leakage, discountScorecards] = await Promise.all([
       buildMetaAdsWeeklyReport({ storeId, start, end }),
       buildReconciliationReport({ storeId, start, end }).catch(() => null),
       buildChannelPerformanceReport({ storeId, start, end }).catch(() => null),
       buildCampaignShopifyAttribution({ storeId, start, end }).catch(() => null),
       buildAffiliateDeepDive({ storeId, start, end }).catch(() => null),
       buildRestockHeroAlerts({ storeId, start, end }).catch(() => null),
-      buildCompetitorWeekSection({ storeId, start, end }).catch(() => null)
+      buildCompetitorWeekSection({ storeId, start, end }).catch(() => null),
+      // Commission-leakage line for the affiliate page — how much of the
+      // week's commission went to customers the brand already owned.
+      getCommissionLeakageSummary({ storeId, start, end }).catch(() => null),
+      // Discount scorecards — the "marketing vs discounts" verdict table.
+      buildDiscountScorecards({ storeId, start, end }).catch(() => null)
     ]);
     if (!report) diagnostic = "no_meta_connection";
     // Closed-loop: refresh outcome measurements + read for the report. Lives
@@ -1168,6 +1183,13 @@ export default async function MetaAdsWeeklyPrintPage({
             </section>
           ) : null}
 
+          {/* Discount scorecards — the week's "marketing vs discounts"
+              verdicts. Main-flow material: a code selling at a loss is
+              exactly what the founder opens this report to catch. */}
+          {discountScorecards && discountScorecards.cards.length > 0 ? (
+            <DiscountScorecardSection report={discountScorecards} isHe={isHe} />
+          ) : null}
+
           {/* No-brand-rules note — OUTSIDE the multi-brand totals gate, because
               single-brand accounts (which skip the totals section entirely)
               are exactly the ones running without brand rules configured. */}
@@ -1211,7 +1233,7 @@ export default async function MetaAdsWeeklyPrintPage({
 
           {/* Affiliate Performance — detailed breakdown per affiliate. Appendix only. */}
           {includeAppendix && affiliateDeepDive && affiliateDeepDive.affiliates.length > 0 ? (
-            <AffiliatePerformancePage deepDive={affiliateDeepDive} isHe={isHe} />
+            <AffiliatePerformancePage deepDive={affiliateDeepDive} isHe={isHe} leakage={leakage} />
           ) : null}
 
           {!includeAppendix ? (
@@ -2815,12 +2837,94 @@ function RestockHeroActionPage({
   );
 }
 
+// Discounts section — one row per code with the profit walk and a verdict.
+// Table-styled like the campaign tables so the report reads as one system.
+function DiscountScorecardSection({
+  report,
+  isHe
+}: {
+  report: DiscountScorecardReport;
+  isHe: boolean;
+}) {
+  const lang = (he: string, en: string) => (isHe ? he : en);
+  const fmt = (v: number) => `₪${Math.round(v).toLocaleString("en-US")}`;
+  const rows = report.cards.slice(0, 8);
+  const underwater = report.cards.filter((c) => c.verdict === "stop");
+  const verdictText = (v: string) =>
+    v === "expand" ? lang("להרחיב", "Expand") : v === "stop" ? lang("לעצור", "Stop") : lang("להשאיר", "Keep");
+
+  return (
+    <section className="pwr-section">
+      <h2 className="pwr-section-title">{lang("שיווק מול הנחות — כרטיסי ביצועים", "Marketing vs discounts — scorecards")}</h2>
+      <div className="pwr-kpi-row" style={{ marginBottom: 8 }}>
+        <Tile label={lang("עלות הנחות", "Discount cost")} value={fmt(report.totalDiscountCost)} source="S" />
+        <Tile label={lang("הכנסה נטו עם קוד", "Net revenue on codes")} value={fmt(report.totalRevenue)} source="S" />
+        <Tile
+          label={lang("שוליים אחרי הנחה ועלויות", "Margin after discount & COGS")}
+          value={fmt(report.totalMargin)}
+          source="Calc"
+        />
+        <Tile
+          label={lang("נתח הזמנות עם הנחה", "Orders discounted")}
+          value={report.discountedOrderShare != null ? `${Math.round(report.discountedOrderShare * 100)}%` : "—"}
+          source="Calc"
+        />
+      </div>
+      {underwater.length > 0 ? (
+        <p className="pwr-recon-warning" style={{ marginBottom: 8 }}>
+          {lang(
+            `${underwater.length} קודים מוכרים בהפסד: ${underwater.map((c) => c.code).join(", ")} — מומלץ לעצור או להקטין אותם עכשיו.`,
+            `${underwater.length} codes are selling at a loss: ${underwater.map((c) => c.code).join(", ")} — stop or shrink them now.`
+          )}
+        </p>
+      ) : null}
+      <table className="pwr-table">
+        <thead>
+          <tr>
+            <th>{lang("קוד", "Code")}</th>
+            <th>{lang("הזמנות", "Orders")}</th>
+            <th>{lang("הכנסה נטו", "Net revenue")}</th>
+            <th>{lang("עלות הנחה", "Discount")}</th>
+            <th>{lang("שוליים", "Margin")}</th>
+            <th>{lang("לקוחות חדשים", "New customers")}</th>
+            <th>{lang("פסיקה", "Verdict")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((c) => (
+            <tr key={c.code}>
+              <td style={{ fontFamily: "monospace", fontWeight: 600 }}>{c.code}</td>
+              <td>{c.uses}</td>
+              <td>{fmt(c.revenue)}</td>
+              <td>{fmt(c.discountCost)}</td>
+              <td style={{ color: c.marginAfterDiscount < 0 ? "#b91c1c" : undefined, fontWeight: 600 }}>
+                {c.hasCostData ? fmt(c.marginAfterDiscount) : "—"}
+              </td>
+              <td>{c.newCustomerShare != null ? `${Math.round(c.newCustomerShare * 100)}%` : "—"}</td>
+              <td
+                style={{
+                  fontWeight: 700,
+                  color: c.verdict === "stop" ? "#b91c1c" : c.verdict === "expand" ? "#15803d" : "#92400e"
+                }}
+              >
+                {verdictText(c.verdict)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 function AffiliatePerformancePage({
   deepDive,
-  isHe
+  isHe,
+  leakage
 }: {
   deepDive: AffiliateDeepDiveReport;
   isHe: boolean;
+  leakage?: LeakageSummary | null;
 }) {
   const lang = (he: string, en: string) => (isHe ? he : en);
   const fmt = (v: number) => `₪${Math.round(v).toLocaleString("en-US")}`;
@@ -2878,6 +2982,20 @@ function AffiliatePerformancePage({
           {lang(
             "עמלות מוצגות כ₪0 מפני שהעמלה למשווקות לא הוגדרה בהגדרות התוכנית. הגדירו אחוז עמלה כדי לראות את הסכומים המחושבים.",
             "Commission shows as ₪0 because no commission rate is configured on the affiliate program. Set a rate in program settings to see the calculated amounts."
+          )}
+        </p>
+      ) : null}
+      {leakage && leakage.returningCustomer.commission > 0 ? (
+        // Commission-leakage line (Engine 1): how much of this window's
+        // commission was accrued on customers the brand already owned.
+        <p className="pwr-recon-warning" style={{ marginBottom: 10 }}>
+          {lang(
+            `${fmt(leakage.returningCustomer.commission)} מהעמלות בתקופה (${Math.round(
+              leakage.leakageRate * 100
+            )}%) נצברו על לקוחות חוזרים — לקוחות שהמותג כבר הכיר. שקלו תעריף מופחת ללקוח חוזר בהגדרות תוכנית השותפים.`,
+            `${fmt(leakage.returningCustomer.commission)} of this period's commission (${Math.round(
+              leakage.leakageRate * 100
+            )}%) accrued on returning customers the brand already owned. Consider a returning-customer rate in the affiliate program settings.`
           )}
         </p>
       ) : null}

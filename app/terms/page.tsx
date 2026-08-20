@@ -124,8 +124,8 @@ export default function TermsOfServicePage() {
       <Section title="10. Contact">
         <p>
           Questions about these Terms:{" "}
-          <a className="text-sky-700 underline" href="mailto:yohad@brandzp.co.il">
-            yohad@brandzp.co.il
+          <a className="text-sky-700 underline" href="mailto:yoadhakimv@gmail.com">
+            yoadhakimv@gmail.com
           </a>
         </p>
       </Section>

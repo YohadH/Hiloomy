@@ -5,6 +5,8 @@ export type CouponStatus = "active" | "inactive";
 export type CouponAssignmentMode = "single" | "bulk";
 export type CouponConnectionSource = "shopify_create" | "existing_coupon";
 
+export type ReturningCustomerPolicy = "full" | "reduced" | "zero";
+
 export interface AffiliateProgram {
   id: string;
   name: string;
@@ -15,6 +17,11 @@ export interface AffiliateProgram {
   sales: number;
   signUpLink: string;
   checklist: { id: string; title: string; done: boolean; group: string }[];
+  // Returning-customer commission policy (leakage engine). Percent form
+  // (e.g. 5 = 5%) to match defaultCommissionRate's convention.
+  returningCustomerPolicy: ReturningCustomerPolicy;
+  returningCommissionRatePct: number | null;
+  reactivationWindowDays: number | null;
 }
 
 export interface AffiliateProfile {
@@ -92,6 +99,9 @@ export interface AffiliateConversion {
   // first ("new") or did the brand already own them ("returning")?
   customerType?: "new" | "returning" | null;
   daysSincePrevOrder?: number | null;
+  // Which returning-customer commission policy adjusted this row's
+  // commission (null = base rate).
+  appliedPolicy?: "returning_reduced" | "returning_zero" | "reactivated_full" | null;
 }
 
 export interface AffiliatePayout {

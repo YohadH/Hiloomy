@@ -152,7 +152,7 @@ export async function GET() {
 <p>This URL is the data-deletion callback for the AdsData app, as required by Meta Platform Terms.</p>
 <p>When a Facebook user submits a data deletion request via Facebook's account settings, Facebook POSTs a signed request to this endpoint. We verify the signature, scrub any Meta-linked data we hold, and return a confirmation code + status URL.</p>
 <p>This page is informational only. Direct GET requests are not used for actual deletion.</p>
-<p>Contact: <a href="mailto:yohad@brandzp.co.il">yohad@brandzp.co.il</a></p>
+<p>Contact: <a href="mailto:yoadhakimv@gmail.com">yoadhakimv@gmail.com</a></p>
 </body></html>`,
     { headers: { "Content-Type": "text/html; charset=utf-8" } }
   );

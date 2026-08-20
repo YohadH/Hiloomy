@@ -58,11 +58,11 @@ export default async function SecurityPage() {
             icon: ShieldCheck,
             title: "ביקורת ועדכון",
             body:
-              "אנחנו ממשיכים להוסיף שכבות אבטחה — SAML SSO, IP whitelisting וDPA זמינים לפי בקשה בכתובת yohad@brandzp.co.il."
+              "אנחנו ממשיכים להוסיף שכבות אבטחה — SAML SSO, IP whitelisting וDPA זמינים לפי בקשה בכתובת yoadhakimv@gmail.com."
           }
         ],
         contact:
-          "שאלות אבטחה? כתבו לנו לyohad@brandzp.co.il ונחזור אליכם תוך יום עסקים."
+          "שאלות אבטחה? כתבו לנו לyoadhakimv@gmail.com ונחזור אליכם תוך יום עסקים."
       }
     : {
         kicker: "Security",
@@ -104,11 +104,11 @@ export default async function SecurityPage() {
             icon: ShieldCheck,
             title: "Audits and roadmap",
             body:
-              "We continue to add hardening layers — SAML SSO, IP whitelisting, and a DPA available on request. Email yohad@brandzp.co.il."
+              "We continue to add hardening layers — SAML SSO, IP whitelisting, and a DPA available on request. Email yoadhakimv@gmail.com."
           }
         ],
         contact:
-          "Security questions? Email us at yohad@brandzp.co.il. We respond within one business day."
+          "Security questions? Email us at yoadhakimv@gmail.com. We respond within one business day."
       };
 
   return (

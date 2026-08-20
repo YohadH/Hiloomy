@@ -12,6 +12,7 @@ import { DataTable } from "@/components/shared/data-table";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getAffiliatePortalDashboard } from "@/lib/services/affiliate-portal-service";
 import {
+  applyReturningCommissionPolicy,
   classifyUnclassifiedAttributions,
   getCommissionLeakageSummary
 } from "@/lib/services/affiliate-leakage-service";
@@ -278,6 +279,7 @@ export default async function AffiliatePortalDashboardPage() {
   const leakage = await (async () => {
     try {
       await classifyUnclassifiedAttributions(chrome.store.id);
+      await applyReturningCommissionPolicy(chrome.store.id).catch(() => null);
       return await getCommissionLeakageSummary({
         storeId: chrome.store.id,
         start: new Date(`${chrome.controls.startDate}T00:00:00Z`),

@@ -939,6 +939,19 @@ model AffiliateProgram {
   status         String            @default("active")
   commissionRate Decimal           @default(0.10) @db.Decimal(5, 4)
   signUpLink     String?
+  // ─── Returning-customer commission policy (leakage engine) ───────
+  // "full"    — returning customers earn the normal rate (default,
+  //             today's behavior).
+  // "reduced" — returning customers earn returningCommissionRate.
+  // "zero"    — no commission on returning customers.
+  returningCustomerPolicy String   @default("full")
+  // Rate for the "reduced" policy, 0.00–1.00 fraction of sale. Ignored
+  // for other policies.
+  returningCommissionRate Decimal? @db.Decimal(5, 4)
+  // Optional win-back carve-out: a returning customer whose PREVIOUS
+  // order is at least this many days old counts as re-acquired by the
+  // affiliate → the full base rate applies despite the policy.
+  reactivationWindowDays  Int?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
   store          Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -1086,6 +1099,12 @@ model AffiliateAttribution {
   customerType        String?
   // Days between the customer's previous order and the attributed one.
   daysSincePrevOrder  Int?
+  // Which returning-customer commission policy last adjusted this row:
+  // "returning_reduced" | "returning_zero" | "reactivated_full" | null
+  // (null = base rate, no policy applied). Set by the set-based repricer
+  // in affiliate-leakage-service; only "unpaid" non-manual rows are ever
+  // repriced — approved/paid amounts are locked.
+  appliedPolicy       String?
   occurredAt          DateTime        @default(now())
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt

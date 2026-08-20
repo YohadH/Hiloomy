@@ -25,9 +25,18 @@ export async function GET() {
         acc.approvedCount += row.approvedCount;
         acc.unpaidCommission += row.unpaidCommission;
         acc.unpaidCount += row.unpaidCount;
+        acc.returningUnpaidCommission += row.returningUnpaidCommission;
+        acc.returningUnpaidCount += row.returningUnpaidCount;
         return acc;
       },
-      { approvedCommission: 0, approvedCount: 0, unpaidCommission: 0, unpaidCount: 0 }
+      {
+        approvedCommission: 0,
+        approvedCount: 0,
+        unpaidCommission: 0,
+        unpaidCount: 0,
+        returningUnpaidCommission: 0,
+        returningUnpaidCount: 0
+      }
     );
     return NextResponse.json({ ok: true, summary, totals });
   } catch (error) {

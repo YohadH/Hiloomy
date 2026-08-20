@@ -119,6 +119,12 @@ export interface PayoutSummaryRow {
   approvedCount: number;
   unpaidCommission: number;
   unpaidCount: number;
+  // Commission-leakage context for the approval decision: how much of the
+  // still-owed money sits on RETURNING customers, and how many of those
+  // rows a returning-customer policy already adjusted (reduced/zeroed).
+  returningUnpaidCommission: number;
+  returningUnpaidCount: number;
+  policyAdjustedCount: number;
 }
 
 export async function getPayoutSummary(storeId: string): Promise<PayoutSummaryRow[]> {
@@ -126,7 +132,7 @@ export async function getPayoutSummary(storeId: string): Promise<PayoutSummaryRo
   const db = getDb() as any;
 
   const rows = await db.affiliateAttribution.groupBy({
-    by: ["affiliateMemberId", "payoutStatus"],
+    by: ["affiliateMemberId", "payoutStatus", "customerType", "appliedPolicy"],
     where: {
       storeId,
       payoutStatus: { in: ["approved", "unpaid"] }
@@ -135,16 +141,35 @@ export async function getPayoutSummary(storeId: string): Promise<PayoutSummaryRo
     _count: { _all: true }
   });
 
-  const byMember = new Map<string, { approved: { sum: number; count: number }; unpaid: { sum: number; count: number } }>();
+  const byMember = new Map<
+    string,
+    {
+      approved: { sum: number; count: number };
+      unpaid: { sum: number; count: number };
+      returningUnpaid: { sum: number; count: number };
+      policyAdjusted: number;
+    }
+  >();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const r of rows as any[]) {
     const bucket = byMember.get(r.affiliateMemberId) ?? {
       approved: { sum: 0, count: 0 },
-      unpaid: { sum: 0, count: 0 }
+      unpaid: { sum: 0, count: 0 },
+      returningUnpaid: { sum: 0, count: 0 },
+      policyAdjusted: 0
     };
     const key = r.payoutStatus === "approved" ? "approved" : "unpaid";
-    bucket[key].sum += Number(r._sum.commissionAmount ?? 0);
-    bucket[key].count += Number(r._count._all ?? 0);
+    const sum = Number(r._sum.commissionAmount ?? 0);
+    const count = Number(r._count._all ?? 0);
+    bucket[key].sum += sum;
+    bucket[key].count += count;
+    // "Returning" money still awaiting approval — the number the merchant
+    // should eyeball before clicking approve.
+    if (r.payoutStatus === "unpaid" && r.customerType === "returning") {
+      bucket.returningUnpaid.sum += sum;
+      bucket.returningUnpaid.count += count;
+    }
+    if (r.appliedPolicy != null) bucket.policyAdjusted += count;
     byMember.set(r.affiliateMemberId, bucket);
   }
 
@@ -176,7 +201,10 @@ export async function getPayoutSummary(storeId: string): Promise<PayoutSummaryRo
         approvedCommission: bucket.approved.sum,
         approvedCount: bucket.approved.count,
         unpaidCommission: bucket.unpaid.sum,
-        unpaidCount: bucket.unpaid.count
+        unpaidCount: bucket.unpaid.count,
+        returningUnpaidCommission: bucket.returningUnpaid.sum,
+        returningUnpaidCount: bucket.returningUnpaid.count,
+        policyAdjustedCount: bucket.policyAdjusted
       };
     })
     .sort((a, b) => b.approvedCommission - a.approvedCommission);

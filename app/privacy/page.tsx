@@ -46,8 +46,8 @@ export default function PrivacyPolicyPage() {
         </p>
         <p>
           Contact:{" "}
-          <a className="text-sky-700 underline" href="mailto:yohad@brandzp.co.il">
-            yohad@brandzp.co.il
+          <a className="text-sky-700 underline" href="mailto:yoadhakimv@gmail.com">
+            yoadhakimv@gmail.com
           </a>
         </p>
       </Section>
@@ -204,8 +204,8 @@ export default function PrivacyPolicyPage() {
           Depending on your jurisdiction (including GDPR where applicable), you
           may request access, correction, export, or deletion of your personal
           data by emailing{" "}
-          <a className="text-sky-700 underline" href="mailto:yohad@brandzp.co.il">
-            yohad@brandzp.co.il
+          <a className="text-sky-700 underline" href="mailto:yoadhakimv@gmail.com">
+            yoadhakimv@gmail.com
           </a>
           . End customers of a Merchant&apos;s store should direct requests to
           the Merchant, who controls that data; we assist the Merchant as

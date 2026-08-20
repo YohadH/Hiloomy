@@ -1,14 +1,20 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { AffiliatePortalNav } from "@/components/affiliate-portal/portal-nav";
+import { ReturningPolicyCard } from "@/components/affiliate-portal/returning-policy-card";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getAffiliatePrograms } from "@/lib/services/affiliate-portal-service";
+import { getAppLocale } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 export default async function AffiliateProgramsPage() {
-  const [chrome, programs] = await Promise.all([getAppChromeData(), getAffiliatePrograms()]);
+  const [chrome, programs, locale] = await Promise.all([
+    getAppChromeData(),
+    getAffiliatePrograms(),
+    getAppLocale()
+  ]);
   const program = programs[0];
 
   return (
@@ -58,6 +64,19 @@ export default async function AffiliateProgramsPage() {
           </CardContent>
         </Card>
 
+        <div className="space-y-4">
+          <ReturningPolicyCard
+            storeId={chrome.store.id}
+            locale={locale === "he" ? "he" : "en"}
+            baseRatePct={program.defaultCommissionRate}
+            initialPolicy={program.returningCustomerPolicy}
+            initialReturningRatePct={program.returningCommissionRatePct}
+            initialReactivationWindowDays={program.reactivationWindowDays}
+          />
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
         <Card>
           <CardHeader>
             <CardTitle>Store embeds and blocks</CardTitle>
