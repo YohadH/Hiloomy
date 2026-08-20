@@ -96,7 +96,13 @@ function requireCronSecret(req: NextRequest): NextResponse | null {
   const expected = process.env.CRON_SECRET?.trim();
   if (!expected) return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); // fail-closed: deny when CRON_SECRET is not configured
 
-  const provided = req.headers.get("x-cron-secret")?.trim();
+  // Header is the primary channel (schedulers, curl). The ?cron_secret=
+  // query param is a browser-trigger convenience — note the tradeoff: URLs
+  // land in browser history and access logs, so rotate the secret if such
+  // a link ever leaks.
+  const provided =
+    req.headers.get("x-cron-secret")?.trim() ||
+    req.nextUrl.searchParams.get("cron_secret")?.trim();
   if (provided && provided === expected) return null; // authorized
 
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
