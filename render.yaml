@@ -304,12 +304,12 @@ services:
 
       # ─── RivalSweeper (competitor intelligence) ───────────────────────
       # Real API (apilayer.rivalsweeper.com, OAuth2 client-credentials).
-      # Set RIVALSWEEPER_KEY_ID (rsk_...) + RIVALSWEEPER_KEY_SECRET (rss_...)
-      # in the dashboard, then REMOVE RIVALSWEEPER_MOCK (or set "false") to
-      # go live. With mock on, deterministic demo signals keep the pipeline
-      # exercisable without spending API quota.
+      # LIVE since 20/08/2026: RIVALSWEEPER_KEY_ID (rsk_...) +
+      # RIVALSWEEPER_KEY_SECRET (rss_...) are set in the dashboard and mock
+      # mode is off. Set RIVALSWEEPER_MOCK="true" to fall back to
+      # deterministic demo signals (no API quota spent).
       - key: RIVALSWEEPER_MOCK
-        value: "true"
+        value: "false"
       - key: RIVALSWEEPER_API_URL
         sync: false
       - key: RIVALSWEEPER_KEY_ID
