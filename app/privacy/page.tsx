@@ -1,4 +1,4 @@
-// Privacy Policy — Hiloomy (operated by Brandzp Ltd).
+// Privacy Policy — Hiloomy.
 //
 // Written to satisfy Shopify App Store review, Meta app review, and Google
 // OAuth verification (Google API Services User Data Policy / Limited Use).
@@ -38,8 +38,7 @@ export default function PrivacyPolicyPage() {
             www.hiloomy.com
           </a>
           ) is a profit-analytics and growth-reporting application for Shopify
-          brands, operated by <strong>Brandzp Ltd</strong> (&quot;we&quot;,
-          &quot;us&quot;), a company registered in Israel. A merchant (the
+          brands (&quot;we&quot;, &quot;us&quot;). A merchant (the
           &quot;Merchant&quot;) connects their Shopify store and, optionally,
           marketing accounts; Hiloomy computes profit, retention, alerts, and a
           weekly report from that data and shows it back to the Merchant only.
