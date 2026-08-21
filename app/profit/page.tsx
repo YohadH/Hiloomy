@@ -6,9 +6,11 @@ import { PageHead, SectionHead } from "@/components/dashboard-v2/section-head";
 import { StyledTable } from "@/components/dashboard-v2/styled-table";
 import { BarInsightChart } from "@/components/charts/bar-insight-chart";
 import { CollectionChips } from "@/components/dashboard-v2/collection-chips";
+import { CollectionRhythmHeatmap } from "@/components/profit/collection-rhythm-heatmap";
 import { DataTable } from "@/components/shared/data-table";
 import { getAppChromeData, getProfitAnalyticsPayload } from "@/lib/services/analytics-service";
 import { buildChannelCacReport } from "@/lib/services/channel-cac-service";
+import { buildCollectionRhythm } from "@/lib/services/collection-rhythm-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { getAppLocale, getDictionary } from "@/lib/i18n";
@@ -30,6 +32,11 @@ export default async function ProfitPage() {
         start: new Date(`${chrome.controls.startDate}T00:00:00Z`),
         end: new Date(`${chrome.controls.endDate}T23:59:59Z`)
       }).catch(() => null)
+    : null;
+  // Collection rhythm — rolling 12 weeks regardless of the page's date
+  // controls: a weekday pattern needs weeks of sampling to mean anything.
+  const collectionRhythm = storeId
+    ? await buildCollectionRhythm({ storeId }).catch(() => null)
     : null;
 
   // Narrative
@@ -474,6 +481,22 @@ export default async function ProfitPage() {
             </div>
           </div>
         </section>
+
+        {/* Collection rhythm — which collection sells on which day */}
+        {collectionRhythm && collectionRhythm.rows.length > 0 ? (
+          <section className="space-y-3">
+            <SectionHead
+              eyebrow={locale === "he" ? "קצב שבועי" : "Weekly rhythm"}
+              title={locale === "he" ? "איזו קולקציה מוכרת באיזה יום" : "Which collection sells on which day"}
+              hint={
+                locale === "he"
+                  ? "מפת חום של הכנסות לפי קולקציה ויום בשבוע — כדי לתזמן מבצעים, פוסטים ובאנרים ליום החזק של כל קולקציה."
+                  : "Revenue heatmap by collection and weekday — schedule promos, posts and banners on each collection's strongest day."
+              }
+            />
+            <CollectionRhythmHeatmap report={collectionRhythm} currency={currency} isHe={locale === "he"} />
+          </section>
+        ) : null}
 
         {/* Bundle / refund placeholders */}
         <section className="space-y-3">
