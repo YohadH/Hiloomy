@@ -4,12 +4,21 @@ import { getDb } from "@/lib/server/db";
 import { resolveOrCreateBaseStore } from "@/lib/services/creator-admin-service";
 
 function getInstagramOauthConfig() {
-  const clientId = process.env.META_ADS_CLIENT_ID?.trim();
-  const clientSecret = process.env.META_ADS_CLIENT_SECRET?.trim();
+  // "Instagram API with Instagram Login" issues its OWN app id/secret (the
+  // Instagram product inside the Meta app dashboard) — distinct from the
+  // Meta app credentials. Prefer the dedicated vars; fall back to the Meta
+  // ones for setups where they happen to match.
+  const clientId = (process.env.INSTAGRAM_CLIENT_ID ?? process.env.META_ADS_CLIENT_ID)?.trim();
+  const clientSecret = (
+    process.env.INSTAGRAM_CLIENT_SECRET ?? process.env.META_ADS_CLIENT_SECRET
+  )?.trim();
   const appUrl = process.env.APP_URL?.trim();
 
   if (!clientId || !clientSecret || !appUrl) {
-    throw new AppError("Missing META_ADS_CLIENT_ID, META_ADS_CLIENT_SECRET, or APP_URL for Instagram OAuth.", 500);
+    throw new AppError(
+      "Missing INSTAGRAM_CLIENT_ID / INSTAGRAM_CLIENT_SECRET (or META_ADS_* fallbacks) or APP_URL for Instagram OAuth.",
+      500
+    );
   }
 
   const redirectUri = `${appUrl.replace(/\/$/, "")}/api/creator/instagram/oauth/callback`;
@@ -21,7 +30,10 @@ export function getInstagramOauthStartUrl() {
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: "user_profile,user_media",
+    // Instagram API with Instagram Login (the post-Basic-Display platform;
+    // Basic Display's user_profile/user_media scopes died Dec 2024).
+    // Requires the IG account to be a professional (business/creator) one.
+    scope: "instagram_business_basic",
     response_type: "code"
   });
 
@@ -57,8 +69,29 @@ export async function exchangeInstagramCodeForToken(code: string) {
     throw new AppError("Instagram OAuth exchange did not return an access token.", 502, payload);
   }
 
+  // The code exchange returns a SHORT-lived token (~1h). Upgrade to the
+  // 60-day long-lived token so the background sync survives; fall back to
+  // the short token if the upgrade fails (better a degraded connect than
+  // none — the UI still shows the connection and the founder can retry).
+  const shortToken = String(payload.access_token);
+  let accessToken = shortToken;
+  try {
+    const { clientSecret } = getInstagramOauthConfig();
+    const longUrl = new URL("https://graph.instagram.com/access_token");
+    longUrl.searchParams.set("grant_type", "ig_exchange_token");
+    longUrl.searchParams.set("client_secret", clientSecret);
+    longUrl.searchParams.set("access_token", shortToken);
+    const longRes = await fetch(longUrl, { cache: "no-store" });
+    const longPayload = await longRes.json().catch(() => ({}));
+    if (longRes.ok && longPayload?.access_token) {
+      accessToken = String(longPayload.access_token);
+    }
+  } catch {
+    // keep the short-lived token
+  }
+
   return {
-    accessToken: String(payload.access_token),
+    accessToken,
     userId: payload.user_id ? String(payload.user_id) : null
   };
 }

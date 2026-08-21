@@ -311,6 +311,16 @@ services:
       - key: META_ADS_LOGIN_CONFIG_ID
         sync: false
 
+      # ─── Instagram (Instagram API with Instagram Login) ───────────────
+      # The Instagram product inside the Meta app issues its OWN app id +
+      # secret (App Dashboard → Instagram → API setup with Instagram login).
+      # Unset → falls back to META_ADS_CLIENT_ID/SECRET, which only works
+      # if those happen to match the Instagram product credentials.
+      - key: INSTAGRAM_CLIENT_ID
+        sync: false
+      - key: INSTAGRAM_CLIENT_SECRET
+        sync: false
+
       # ─── Anthropic API (BI analyst chat — direct, no tunnel) ──────────
       # When set, the chat widget's BI analyst answers via the Anthropic
       # API with store-scoped data tools (streamed answers, seconds not
