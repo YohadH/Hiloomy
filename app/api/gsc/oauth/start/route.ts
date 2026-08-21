@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createRouteHandlerSupabaseClient } from "@/lib/auth/supabase-server";
+import { requireSessionStoreId } from "@/lib/auth/require-store";
 import { getGscOAuthUrl } from "@/lib/services/gsc-service";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 
@@ -29,12 +30,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const storeId = url.searchParams.get("storeId")?.trim();
-    if (!storeId) {
-      return NextResponse.json({ error: "storeId query parameter is required." }, { status: 400 });
+    // Multi-tenant: the connection targets the SESSION's active store; a
+    // mismatched storeId in the query is rejected, never honored.
+    const session = await requireSessionStoreId(url.searchParams.get("storeId"));
+    if (!session) {
+      return NextResponse.json({ error: "Store not resolved for this session." }, { status: 403 });
     }
 
-    const consentUrl = getGscOAuthUrl(storeId);
+    const consentUrl = getGscOAuthUrl(session.storeId);
     return NextResponse.redirect(consentUrl);
   } catch (error) {
     const status = error instanceof AppError ? error.statusCode : 500;
