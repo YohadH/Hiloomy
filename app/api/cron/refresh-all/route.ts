@@ -17,6 +17,7 @@ import {
   upsertCommissionLeakageAlert
 } from "@/lib/services/affiliate-leakage-service";
 import { upsertUnderwaterDiscountAlerts } from "@/lib/services/discount-scorecard-service";
+import { upsertReturnRateAlerts } from "@/lib/services/returns-intelligence-service";
 
 // Multi-source data refresh — the unified 2-hour cron tick.
 //
@@ -119,6 +120,7 @@ interface PerStoreResult {
     error?: string;
   };
   discountAlerts?: { ok: boolean; fired?: number; resolved?: number; error?: string };
+  returnAlerts?: { ok: boolean; fired?: number; resolved?: number; error?: string };
 }
 
 async function handler(request: Request) {
@@ -437,6 +439,25 @@ async function handler(request: Request) {
       } catch (err) {
         console.error(`[refresh-all] discount alert engine failed for ${store.id}:`, err);
         result.discountAlerts = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err)
+        };
+      }
+
+      // ── Return-rate alerts (Engine 3) ─────────────────────────────
+      // Products returning ≥2× the store average (60d rolling window)
+      // become "fix the size chart / pull from ads" alerts; recovered
+      // products sweep-resolve.
+      try {
+        const returnAlerts = await upsertReturnRateAlerts(store.id);
+        result.returnAlerts = {
+          ok: true,
+          fired: returnAlerts.fired,
+          resolved: returnAlerts.resolved
+        };
+      } catch (err) {
+        console.error(`[refresh-all] returns alert engine failed for ${store.id}:`, err);
+        result.returnAlerts = {
           ok: false,
           error: err instanceof Error ? err.message : String(err)
         };

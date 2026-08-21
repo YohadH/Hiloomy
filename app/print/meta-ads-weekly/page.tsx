@@ -42,6 +42,11 @@ import {
   type DiscountScorecardReport
 } from "@/lib/services/discount-scorecard-service";
 import {
+  buildReturnsIntelligence,
+  extractReturnRisks,
+  type ReturnsIntelligenceReport
+} from "@/lib/services/returns-intelligence-service";
+import {
   buildRestockHeroAlerts,
   type RestockHeroAlertReport
 } from "@/lib/services/restock-hero-alert-service";
@@ -205,12 +210,13 @@ export default async function MetaAdsWeeklyPrintPage({
   let competitorWeek: CompetitorWeekSection | null = null;
   let leakage: LeakageSummary | null = null;
   let discountScorecards: DiscountScorecardReport | null = null;
+  let returnsIntel: ReturnsIntelligenceReport | null = null;
   if (!storeId) {
     diagnostic = "no_store";
   } else {
     // Run all the data builds in parallel so the cumulative cost is the
     // slowest single query, not the sum of them all.
-    [report, reconciliation, channels, campaignAttribution, affiliateDeepDive, restockAlerts, competitorWeek, leakage, discountScorecards] = await Promise.all([
+    [report, reconciliation, channels, campaignAttribution, affiliateDeepDive, restockAlerts, competitorWeek, leakage, discountScorecards, returnsIntel] = await Promise.all([
       buildMetaAdsWeeklyReport({ storeId, start, end }),
       buildReconciliationReport({ storeId, start, end }).catch(() => null),
       buildChannelPerformanceReport({ storeId, start, end }).catch(() => null),
@@ -222,7 +228,14 @@ export default async function MetaAdsWeeklyPrintPage({
       // week's commission went to customers the brand already owned.
       getCommissionLeakageSummary({ storeId, start, end }).catch(() => null),
       // Discount scorecards — the "marketing vs discounts" verdict table.
-      buildDiscountScorecards({ storeId, start, end }).catch(() => null)
+      buildDiscountScorecards({ storeId, start, end }).catch(() => null),
+      // Returns intelligence — worst-returner line + the ROAS × returns
+      // guard on scale recommendations. 60d window (returns lag orders).
+      buildReturnsIntelligence({
+        storeId,
+        start: new Date(end.getTime() - 60 * 86_400_000),
+        end
+      }).catch(() => null)
     ]);
     if (!report) diagnostic = "no_meta_connection";
     // Closed-loop: refresh outcome measurements + read for the report. Lives
@@ -334,7 +347,8 @@ export default async function MetaAdsWeeklyPrintPage({
       const results = await Promise.all(
         brandsToGenerate.map((brand) =>
           generateBrandInsights(brand, report!.dateRange, isHe ? "he" : "en", {
-            prior: priorByBrand.get(brand.name) ?? null
+            prior: priorByBrand.get(brand.name) ?? null,
+            returnRisks: returnsIntel ? extractReturnRisks(returnsIntel) : null
           }).then((insights) => [brand.name, insights] as const)
         )
       );
@@ -1188,6 +1202,24 @@ export default async function MetaAdsWeeklyPrintPage({
               exactly what the founder opens this report to catch. */}
           {discountScorecards && discountScorecards.cards.length > 0 ? (
             <DiscountScorecardSection report={discountScorecards} isHe={isHe} />
+          ) : null}
+
+          {/* Returns line (Engine 3) — the worst returner of the trailing
+              60 days, with the store-average anchor and a concrete action. */}
+          {returnsIntel && returnsIntel.worst.length > 0 && returnsIntel.worst[0].returnRate >= 0.08 ? (
+            <p className="pwr-recon-warning" style={{ marginBottom: 10 }}>
+              {(() => {
+                const w = returnsIntel.worst[0];
+                const pct = Math.round(w.returnRate * 100);
+                const avg = Math.round(returnsIntel.storeAvgReturnRate * 100);
+                const skew = w.skewedVariant;
+                return isHe
+                  ? `החזרות: "${w.title}" מוביל עם ${pct}% (ממוצע חנות ${avg}%) — ₪${Math.round(w.refundedAmount).toLocaleString("en-US")} הוחזרו ב־60 יום.` +
+                      (skew ? ` הבעיה מרוכזת בוריאנט "${skew.title}" (${Math.round(skew.returnRate * 100)}%) — בדקו את טבלת המידות.` : " בדקו תיאור/מידות לפני תקציב נוסף.")
+                  : `Returns: "${w.title}" leads at ${pct}% (store average ${avg}%) — ₪${Math.round(w.refundedAmount).toLocaleString("en-US")} refunded over 60 days.` +
+                      (skew ? ` Concentrated in variant "${skew.title}" (${Math.round(skew.returnRate * 100)}%) — check the size chart.` : " Review sizing/description before more ad budget.");
+              })()}
+            </p>
           ) : null}
 
           {/* No-brand-rules note — OUTSIDE the multi-brand totals gate, because

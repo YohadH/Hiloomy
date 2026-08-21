@@ -511,8 +511,18 @@ export default async function ProfitPage() {
                 </div>
                 <p className="text-sm text-muted-foreground">{dictionary.profit.refundDescription}</p>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm leading-6 text-muted-foreground">{dictionary.profit.refundTodo}</p>
+              <CardContent className="space-y-3">
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {locale === "he"
+                    ? "אילו מוצרים חוזרים הכי הרבה, איזה וריאנט חריג, וכמה כסף זה עולה — עכשיו כמסך מלא."
+                    : "Which products come back the most, which variant is the outlier, and what it costs — now a full screen."}
+                </p>
+                <a
+                  href="/profit/returns"
+                  className="inline-flex items-center rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800"
+                >
+                  {locale === "he" ? "לניתוח ההחזרות ←" : "Open returns analysis →"}
+                </a>
               </CardContent>
             </Card>
           </div>
