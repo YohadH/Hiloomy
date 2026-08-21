@@ -46,3 +46,6 @@ docs/LEARNINGS-RENDER-DEPLOY.md
 *.log
 scripts/migrate-supabase.ps1
 cogs-import.csv
+
+# One-shot local diagnostic/repair scripts
+tmp-*.ts
