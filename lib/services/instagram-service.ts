@@ -121,13 +121,18 @@ async function fetchInstagramMedia(accessToken: string) {
   return response.json();
 }
 
-export async function saveInstagramConnection(accessToken: string) {
+export async function saveInstagramConnection(accessToken: string, storeId?: string | null) {
   const token = accessToken.trim();
   if (!token) throw new AppError("Instagram access token is required.");
   const db = getDb();
   if (!db) throw new AppError("Database client is not available.", 500);
 
-  const store = await resolveOrCreateBaseStore();
+  // Multi-tenant: attach the connection to the SIGNED-IN merchant's store
+  // (passed by the routes from the session). The base-store fallback only
+  // remains for legacy single-tenant callers with no session store.
+  const store = storeId?.trim()
+    ? await db.store.findUnique({ where: { id: storeId.trim() }, select: { id: true } })
+    : await resolveOrCreateBaseStore();
   if (!store) throw new AppError("Unable to resolve a store for Instagram settings.", 500);
 
   const profile = await fetchInstagramProfile(token);

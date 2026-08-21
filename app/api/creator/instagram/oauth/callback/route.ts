@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { exchangeInstagramCodeForToken, saveInstagramConnection } from "@/lib/services/instagram-service";
 import { toErrorMessage } from "@/lib/server/errors";
+import { getAuthContext } from "@/lib/auth/session";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -13,8 +14,14 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Multi-tenant: the connection belongs to the store active in the
+    // session that started the OAuth dance — never a global default.
+    const auth = await getAuthContext();
+    if (!auth.userId) {
+      return NextResponse.redirect(`${appUrl}/login?next=${encodeURIComponent("/settings")}`);
+    }
     const token = await exchangeInstagramCodeForToken(code);
-    await saveInstagramConnection(token.accessToken);
+    await saveInstagramConnection(token.accessToken, auth.storeId);
     return NextResponse.redirect(`${appUrl}/settings?instagram=connected`);
   } catch (error) {
     return NextResponse.redirect(`${appUrl}/settings?instagram_error=${encodeURIComponent(toErrorMessage(error))}`);
