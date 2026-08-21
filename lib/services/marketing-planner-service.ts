@@ -29,6 +29,7 @@ import { saveMarketingPlannerLearnings } from "@/lib/services/marketing-planner-
 import { buildMarketingPlannerInfluencerIntelligence } from "@/lib/services/marketing-planner-influencer-service";
 import { getActiveShopifyCodeDiscountRules, type ShopifyPlannerDiscountRule } from "@/lib/services/marketing-planner-shopify-service";
 import { buildMarketingPlannerMetaAds } from "@/lib/services/meta-ads-service";
+import { buildCollectionRhythm, WEEKDAY_LABELS } from "@/lib/services/collection-rhythm-service";
 
 const BASE_ROW_LABELS = [
   "ימים מיוחדים",
@@ -2119,7 +2120,11 @@ function buildInsights(
   customerVoice: MarketingPlannerCustomerVoice | null,
   influencerIntelligence: MarketingPlannerInfluencerIntelligence | null,
   metaAds: MarketingPlannerMetaAds | null,
-  discountDiagnostics: MarketingPlannerDiscountDiagnostic[]
+  discountDiagnostics: MarketingPlannerDiscountDiagnostic[],
+  // Collection-rhythm scheduling suggestion (Engine 4) — computed by the
+  // async caller (needs storeId + a DB pass); prepended so the day-based
+  // placement advice survives the recommendations cap.
+  rhythmRecommendation: MarketingRecommendation | null = null
 ): MarketingPlannerInsights {
   const calendarCheck = buildCalendarCheck(campaigns, specialDays);
   const issues = [
@@ -2135,6 +2140,7 @@ function buildInsights(
       .map((item) => `${item.title}: ${item.detail}`)
   ].slice(0, 8);
   const recommendations = [
+    ...(rhythmRecommendation ? [rhythmRecommendation] : []),
     ...buildPreviousMonthRecommendations(baseline, campaigns),
     ...buildCustomerVoiceRecommendations(customerVoice, focusMode),
     ...buildInfluencerRecommendations(influencerIntelligence, focusMode, campaigns),
@@ -2628,6 +2634,25 @@ export async function generateMarketingPlannerWorkbook(
   }
   const discountDiagnostics = buildDiscountDiagnostics(campaigns, activeDiscountRules, plannerFocus, previousMonthBaseline);
   const discountProposals = buildDiscountProposals(campaigns, activeDiscountRules, plannerFocus);
+  // Collection-rhythm scheduling suggestion (Engine 4) — "schedule this
+  // collection's push on its strongest weekday", from the trailing 12
+  // weeks of per-collection weekday revenue.
+  let rhythmRecommendation: MarketingRecommendation | null = null;
+  if (storeScope.connected && storeScope.storeId) {
+    try {
+      const rhythm = await buildCollectionRhythm({ storeId: storeScope.storeId });
+      if (rhythm.recommendation) {
+        rhythmRecommendation = {
+          impact: "Med",
+          recommendation: rhythm.recommendation.he,
+          why: `בנתוני ${rhythm.weeks} השבועות האחרונים ליום ${WEEKDAY_LABELS.he[rhythm.recommendation.weekday]} יש פער מכירות מובהק (+${Math.round(rhythm.recommendation.lift * 100)}%) בקולקציה הזו — תזמון הקידום ליום החזק ממקסם את אותו תקציב.`,
+          ganttPlacement: `אתר / סושיאל / ניוזלטר של "${rhythm.recommendation.collectionTitle}" — ביום ${WEEKDAY_LABELS.he[rhythm.recommendation.weekday]} בשבוע הקידום.`
+        };
+      }
+    } catch {
+      rhythmRecommendation = null;
+    }
+  }
   const localeProbe = [
     combinedBriefText,
     sheetName,
@@ -2690,7 +2715,8 @@ export async function generateMarketingPlannerWorkbook(
       customerVoice,
       influencerIntelligence,
       metaAds,
-      discountDiagnostics
+      discountDiagnostics,
+      rhythmRecommendation
     ),
     unplacedItems: allUnplacedItems,
     rowLabels,

@@ -46,6 +46,7 @@ import {
   extractReturnRisks,
   type ReturnsIntelligenceReport
 } from "@/lib/services/returns-intelligence-service";
+import { buildCollectionRhythm } from "@/lib/services/collection-rhythm-service";
 import {
   buildRestockHeroAlerts,
   type RestockHeroAlertReport
@@ -211,6 +212,7 @@ export default async function MetaAdsWeeklyPrintPage({
   let leakage: LeakageSummary | null = null;
   let discountScorecards: DiscountScorecardReport | null = null;
   let returnsIntel: ReturnsIntelligenceReport | null = null;
+  let rhythmLine: { he: string; en: string } | null = null;
   if (!storeId) {
     diagnostic = "no_store";
   } else {
@@ -237,6 +239,11 @@ export default async function MetaAdsWeeklyPrintPage({
         end
       }).catch(() => null)
     ]);
+    // Collection-rhythm scheduling line (Engine 4) — one concrete
+    // "schedule collection X on day Y" recommendation when significant.
+    rhythmLine = await buildCollectionRhythm({ storeId, end })
+      .then((r) => (r.recommendation ? { he: r.recommendation.he, en: r.recommendation.en } : null))
+      .catch(() => null);
     if (!report) diagnostic = "no_meta_connection";
     // Closed-loop: refresh outcome measurements + read for the report. Lives
     // here so the PDF shows the same loop the founder sees on the Command
@@ -1219,6 +1226,13 @@ export default async function MetaAdsWeeklyPrintPage({
                   : `Returns: "${w.title}" leads at ${pct}% (store average ${avg}%) — ₪${Math.round(w.refundedAmount).toLocaleString("en-US")} refunded over 60 days.` +
                       (skew ? ` Concentrated in variant "${skew.title}" (${Math.round(skew.returnRate * 100)}%) — check the size chart.` : " Review sizing/description before more ad budget.");
               })()}
+            </p>
+          ) : null}
+
+          {/* Collection-rhythm scheduling recommendation (Engine 4). */}
+          {rhythmLine ? (
+            <p className="pwr-recon-warning pwr-recon-warning-info" style={{ marginBottom: 10 }}>
+              📅 {isHe ? rhythmLine.he : rhythmLine.en}
             </p>
           ) : null}
 

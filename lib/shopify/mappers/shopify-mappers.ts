@@ -195,6 +195,18 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
   );
   const prorateOrderTax = taxesIncluded && sumLineTax <= 0 && orderTotalTax > 0 && sumOriginalTotal > 0;
 
+  // Shipping net of VAT (SA reconciliation, 2026-08-21): for tax-inclusive
+  // stores `totalShippingPriceSet` embeds VAT, but Shopify Analytics'
+  // "Shipping charges" is net of tax. The shipping VAT is whatever part of
+  // the order's tax the product lines don't account for. Only computable
+  // when real per-line taxLines exist (the prorate path smears all order
+  // tax across product lines).
+  if (taxesIncluded && sumLineTax > 0) {
+    const shippingInclusive = Number(mappedOrder.totalShipping ?? 0);
+    const shippingTax = Math.min(Math.max(orderTotalTax - sumLineTax, 0), shippingInclusive);
+    mappedOrder.totalShipping = roundCurrency(shippingInclusive - shippingTax);
+  }
+
   const mappedLineItems = lineItems.flatMap((lineItem: any) => {
     const shopifyLineItemId = stripGid(lineItem.id);
     if (shopifyLineItemId && seenLineItemIds.has(shopifyLineItemId)) {
@@ -230,20 +242,52 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
       : taxFromLines;
 
     // Strip tax so persisted amounts match Shopify's "Gross sales" definition.
-    const lineSubtotal = stripTax(originalTotal, taxAmount);
-    // Ex-tax discounted total: remove the same tax proportion the gross had so
-    // estimated cost / profit isn't computed off a tax-inclusive base.
+    //
+    // RATE-based, not subtraction (SA reconciliation, 2026-08-21): the
+    // collected `taxAmount` is VAT on the DISCOUNTED amount, so subtracting
+    // it from the PRE-discount `originalTotal` under-strips every
+    // discounted line — gross and discounts both ran ~VAT-of-the-discount
+    // high vs Shopify Analytics (₪25k over 90 days on Incense). Derive the
+    // line's actual tax rate from what was charged and divide every
+    // tax-inclusive amount by (1 + rate) — exactly how Shopify computes its
+    // net-of-tax Gross sales for tax-inclusive stores.
     const discountedInclusive = roundCurrency(Math.max(0, originalTotal - totalLineDiscount));
+    const discountedNetBase = discountedInclusive - taxAmount;
+    const taxRate =
+      taxesIncluded && taxAmount > 0 && discountedNetBase > 0.01
+        ? taxAmount / discountedNetBase
+        : 0;
+    const netFactor = 1 / (1 + taxRate);
+    const lineSubtotal =
+      taxesIncluded && taxRate > 0
+        ? roundCurrency(originalTotal * netFactor)
+        : stripTax(originalTotal, taxAmount);
     const discountedTotal =
-      taxesIncluded && originalTotal > 0
-        ? roundCurrency(discountedInclusive * (lineSubtotal / originalTotal))
-        : discountedInclusive;
+      taxesIncluded && taxRate > 0
+        ? roundCurrency(discountedInclusive * netFactor)
+        : taxesIncluded && originalTotal > 0
+          ? roundCurrency(discountedInclusive * (lineSubtotal / originalTotal))
+          : discountedInclusive;
+    const lineDiscountNet =
+      taxesIncluded && taxRate > 0
+        ? roundCurrency(totalLineDiscount * netFactor)
+        : taxesIncluded
+          ? roundCurrency(Math.max(0, totalLineDiscount - (totalLineDiscount > 0 && originalTotal > 0 ? (totalLineDiscount / originalTotal) * taxAmount : 0)))
+          : roundCurrency(totalLineDiscount);
     const originalUnitPriceRaw = amount(lineItem.originalUnitPriceSet?.shopMoney);
     const discountedUnitPriceRaw = amount(lineItem.discountedUnitPriceSet?.shopMoney);
     const quantity = Number(lineItem.quantity ?? 0);
     const unitTax = quantity > 0 ? taxAmount / quantity : 0;
-    const originalUnitPrice = taxesIncluded ? roundCurrency(Math.max(0, originalUnitPriceRaw - unitTax)) : originalUnitPriceRaw;
-    const discountedUnitPrice = taxesIncluded ? roundCurrency(Math.max(0, discountedUnitPriceRaw - unitTax)) : discountedUnitPriceRaw;
+    const originalUnitPrice = taxesIncluded
+      ? taxRate > 0
+        ? roundCurrency(originalUnitPriceRaw * netFactor)
+        : roundCurrency(Math.max(0, originalUnitPriceRaw - unitTax))
+      : originalUnitPriceRaw;
+    const discountedUnitPrice = taxesIncluded
+      ? taxRate > 0
+        ? roundCurrency(discountedUnitPriceRaw * netFactor)
+        : roundCurrency(Math.max(0, discountedUnitPriceRaw - unitTax))
+      : discountedUnitPriceRaw;
     const estimatedCostAmount = roundCurrency(discountedTotal * defaultCostRatio);
 
     const refundForLine = shopifyLineItemId ? refundedByLine.get(lineItem.id) : undefined;
@@ -262,9 +306,7 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
       originalUnitPrice,
       discountedUnitPrice,
       lineSubtotal,
-      lineDiscountAmount: taxesIncluded
-        ? roundCurrency(Math.max(0, totalLineDiscount - (totalLineDiscount > 0 ? (totalLineDiscount / originalTotal) * taxAmount : 0)))
-        : roundCurrency(totalLineDiscount),
+      lineDiscountAmount: lineDiscountNet,
       taxAmount: roundCurrency(taxAmount),
       refundedQuantity,
       refundedSubtotal,
