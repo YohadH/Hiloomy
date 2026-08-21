@@ -276,6 +276,70 @@ export function decodeGscOAuthState(state: string | null | undefined): { storeId
   }
 }
 
+// ─── Site (property) selection ─────────────────────────────────────────
+// The cron used to derive the property as `sc-domain:<store.domain>`, which
+// breaks for stores whose verified GSC property differs from their Shopify
+// domain (the common case: domain is *.myshopify.com, the verified property
+// is the real brand domain). The founder picks the property once; it lives
+// in PlatformConnection.config.siteUrl and the cron prefers it.
+
+export interface GscSiteEntry {
+  siteUrl: string;
+  permissionLevel: string;
+}
+
+/** List the verified GSC properties the connected Google account can read. */
+export async function listGscSites(storeId: string): Promise<GscSiteEntry[]> {
+  const searchConsole = await createSearchConsoleClient(storeId);
+  const response = await searchConsole.sites.list();
+  return (response.data.siteEntry ?? [])
+    .map((s) => ({
+      siteUrl: s.siteUrl ?? "",
+      permissionLevel: s.permissionLevel ?? "unknown"
+    }))
+    .filter((s) => s.siteUrl);
+}
+
+/**
+ * Persist the founder's property choice. Validated against sites.list so a
+ * client can never store a property the connected account can't read.
+ */
+export async function setGscSiteUrl(storeId: string, siteUrl: string): Promise<void> {
+  const clean = siteUrl?.trim();
+  if (!clean) throw new AppError("siteUrl is required.", 400);
+  const sites = await listGscSites(storeId);
+  if (!sites.some((s) => s.siteUrl === clean)) {
+    throw new AppError("That property is not accessible with the connected Google account.", 400);
+  }
+
+  const db = getDb();
+  const connection = (await db.platformConnection.findUnique({
+    where: { storeId_platform: { storeId, platform: GSC_PLATFORM } },
+    select: { config: true }
+  })) as { config: Record<string, unknown> | null } | null;
+  if (!connection) {
+    throw new AppError("Google Search Console is not connected for this store.", 409);
+  }
+  await db.platformConnection.update({
+    where: { storeId_platform: { storeId, platform: GSC_PLATFORM } },
+    data: {
+      config: { ...(connection.config ?? {}), siteUrl: clean },
+      healthMessage: null
+    }
+  });
+}
+
+/** The founder-selected property, or null when none was chosen yet. */
+export async function getGscSelectedSiteUrl(storeId: string): Promise<string | null> {
+  const db = getDb();
+  const connection = (await db.platformConnection.findUnique({
+    where: { storeId_platform: { storeId, platform: GSC_PLATFORM } },
+    select: { config: true }
+  })) as { config: { siteUrl?: unknown } | null } | null;
+  const siteUrl = connection?.config?.siteUrl;
+  return typeof siteUrl === "string" && siteUrl.trim() ? siteUrl.trim() : null;
+}
+
 /** Upsert the PlatformConnection row carrying the encrypted refresh token. */
 async function persistGscConnection(storeId: string, refreshToken: string, tokens: GscCredentials): Promise<void> {
   const db = getDb();
@@ -283,11 +347,21 @@ async function persistGscConnection(storeId: string, refreshToken: string, token
     throw new AppError("Database client is not available. Generate the Prisma client and try again.", 500);
   }
 
+  // Preserve a previously selected property across reconnects — the OAuth
+  // token changes, the founder's property choice shouldn't.
+  const existing = (await db.platformConnection.findUnique({
+    where: { storeId_platform: { storeId, platform: GSC_PLATFORM } },
+    select: { config: true }
+  })) as { config: { siteUrl?: unknown } | null } | null;
+  const priorSiteUrl =
+    typeof existing?.config?.siteUrl === "string" ? existing.config.siteUrl : undefined;
+
   const config = {
     refreshTokenEnc: encryptSecret(refreshToken),
     scope: tokens.scope ?? GSC_SCOPES.join(" "),
     tokenType: tokens.token_type ?? "Bearer",
-    connectedAt: new Date().toISOString()
+    connectedAt: new Date().toISOString(),
+    ...(priorSiteUrl ? { siteUrl: priorSiteUrl } : {})
   };
 
   await db.platformConnection.upsert({

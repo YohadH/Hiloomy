@@ -8,6 +8,7 @@ import { MetaAdsConnectionManager } from "@/components/settings/meta-ads-connect
 import { WeeklyReportRecipientsManager } from "@/components/settings/weekly-report-recipients-manager";
 import { CompetitorSetManager } from "@/components/settings/competitor-set-manager";
 import { GscConnectionManager } from "@/components/settings/gsc-connection-manager";
+import { Ga4ConnectionManager } from "@/components/settings/ga4-connection-manager";
 import { IntegrationsHub, type IntegrationItem } from "@/components/settings/integrations-hub";
 import { SettingsTabs, type SettingsNavItem } from "@/components/settings/settings-nav";
 import { BixGrowWebhookCard } from "@/components/settings/bixgrow-webhook-card";
@@ -26,6 +27,7 @@ import { buildSetupHealth } from "@/lib/services/setup-health-service";
 import { getAppLocale, getDictionary } from "@/lib/i18n";
 import { getDb } from "@/lib/server/db";
 import { GSC_PLATFORM } from "@/lib/services/gsc-service";
+import { GA4_PLATFORM } from "@/lib/services/ga4-service";
 import { getAuthContext } from "@/lib/auth/session";
 
 export default async function SettingsPage({
@@ -34,6 +36,8 @@ export default async function SettingsPage({
   searchParams: Promise<{
     gsc_connected?: string;
     gsc_error?: string;
+    ga4_connected?: string;
+    ga4_error?: string;
     meta_connected?: string;
     meta_error?: string;
     meta_account?: string;
@@ -48,6 +52,8 @@ export default async function SettingsPage({
   const params = await searchParams;
   const gscConnected = params.gsc_connected === "true";
   const gscError = params.gsc_error ?? null;
+  const ga4Connected = params.ga4_connected === "true";
+  const ga4Error = params.ga4_error ?? null;
   const metaOauthResult =
     params.meta_connected === "true" || params.meta_error
       ? {
@@ -90,6 +96,13 @@ export default async function SettingsPage({
         })
         .catch(() => null)
     ]);
+
+  const ga4Connection = await getDb()
+    .platformConnection.findUnique({
+      where: { storeId_platform: { storeId: chrome.store.id, platform: GA4_PLATFORM } },
+      select: { status: true, tokenLastFour: true, healthMessage: true, lastSyncAt: true }
+    })
+    .catch(() => null);
 
   // Organization context — best-effort: a dev environment without auth
   // simply hides the section.
@@ -283,12 +296,21 @@ export default async function SettingsPage({
         gscConnected={gscConnected}
         gscError={gscError}
       />
-      <p className="rounded-xl border border-dashed border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
-        {lang(
-          "בקרוב באותו חיבור: Google Analytics 4 — אירועי אתר והמרות לכל מוצר.",
-          "Coming to this same connection: Google Analytics 4 — site events and per-product conversion."
-        )}
-      </p>
+      <Ga4ConnectionManager
+        storeId={chrome.store.id}
+        initialConnection={
+          ga4Connection
+            ? {
+                status: ga4Connection.status,
+                tokenLastFour: ga4Connection.tokenLastFour ?? null,
+                healthMessage: ga4Connection.healthMessage ?? null,
+                lastSyncAt: ga4Connection.lastSyncAt?.toISOString() ?? null
+              }
+            : null
+        }
+        ga4Connected={ga4Connected}
+        ga4Error={ga4Error}
+      />
       </div>
     ),
     bixgrow: (

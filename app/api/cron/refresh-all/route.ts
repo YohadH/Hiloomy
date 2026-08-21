@@ -5,7 +5,8 @@ import { syncMetaAdsCampaignInsights } from "@/lib/services/meta-ads-service";
 import { syncInstagramPostsForStore } from "@/lib/services/instagram-service";
 import { refreshMetaTokensNearExpiry } from "@/lib/services/meta-token-refresh-service";
 import { reconcileAffiliateAttributionOrphans } from "@/lib/services/affiliate-attribution-reconciler";
-import { syncGscData, GSC_PLATFORM } from "@/lib/services/gsc-service";
+import { syncGscData, getGscSelectedSiteUrl, GSC_PLATFORM } from "@/lib/services/gsc-service";
+import { syncGa4Data, getGa4SelectedProperty, GA4_PLATFORM } from "@/lib/services/ga4-service";
 import {
   syncCompetitorSignals,
   upsertCompetitorResponseAlerts
@@ -97,6 +98,7 @@ interface PerStoreResult {
   instagram: { ok: boolean; skipped?: boolean; error?: string };
   bixgrow: { ok: boolean; skipped: boolean };
   gsc: { ok: boolean; skipped?: boolean; pagesUpserted?: number; queriesUpserted?: number; error?: string };
+  ga4: { ok: boolean; skipped?: boolean; rowsUpserted?: number; days?: number; error?: string };
   competitors: {
     ok: boolean;
     skipped?: boolean;
@@ -178,6 +180,7 @@ async function handler(request: Request) {
         instagram: { ok: false },
         bixgrow: { ok: true, skipped: true },
         gsc: { ok: true, skipped: true },
+        ga4: { ok: true, skipped: true },
         competitors: { ok: true, skipped: true }
       };
 
@@ -300,10 +303,14 @@ async function handler(request: Request) {
         result.gsc = { ok: true, skipped: true };
       } else {
         try {
+          // Prefer the founder-selected property (Settings → GSC picker);
+          // fall back to deriving from the store domain for legacy
+          // connections that never picked one.
           // Derive siteUrl from the store domain. GSC domain properties use
           // the "sc-domain:<domain>" format (supports all URL prefixes under
           // that domain). Falls back gracefully if syncGscData throws.
-          const siteUrl = `sc-domain:${store.domain}`;
+          const selectedSite = await getGscSelectedSiteUrl(store.id).catch(() => null);
+          const siteUrl = selectedSite ?? `sc-domain:${store.domain}`;
           const gscResult = await syncGscData(store.id, siteUrl);
           result.gsc = {
             ok: true,
@@ -315,6 +322,39 @@ async function handler(request: Request) {
           // the site may not be verified, or the env vars may be missing.
           console.error(`[refresh-all] GSC sync failed for ${store.id}:`, err);
           result.gsc = {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err)
+          };
+        }
+      }
+
+      // ── Google Analytics 4 (optional) ─────────────────────────────
+      // Requires a connected googleAnalytics PlatformConnection AND a
+      // founder-selected GA4 property. Failures are isolated like GSC.
+      const ga4Conn = await db.platformConnection
+        .findUnique({
+          where: { storeId_platform: { storeId: store.id, platform: GA4_PLATFORM } },
+          select: { id: true, status: true }
+        })
+        .catch(() => null);
+      if (!ga4Conn || ga4Conn.status !== "connected") {
+        result.ga4 = { ok: true, skipped: true };
+      } else {
+        try {
+          const property = await getGa4SelectedProperty(store.id);
+          if (!property) {
+            result.ga4 = { ok: true, skipped: true };
+          } else {
+            const ga4Result = await syncGa4Data(store.id);
+            result.ga4 = {
+              ok: true,
+              rowsUpserted: ga4Result.rowsUpserted,
+              days: ga4Result.days
+            };
+          }
+        } catch (err) {
+          console.error(`[refresh-all] GA4 sync failed for ${store.id}:`, err);
+          result.ga4 = {
             ok: false,
             error: err instanceof Error ? err.message : String(err)
           };

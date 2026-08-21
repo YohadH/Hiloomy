@@ -51,8 +51,52 @@ export function GscConnectionManager({
   const [successMsg, setSuccessMsg] = useState<string | null>(
     gscConnected ? "Google Search Console connected successfully." : null
   );
+  // Property picker — the sync reads the property chosen here. Without a
+  // choice the cron falls back to sc-domain:<shopify-domain>, which is
+  // usually NOT the verified property.
+  const [sites, setSites] = useState<Array<{ siteUrl: string; permissionLevel: string }> | null>(null);
+  const [selectedSite, setSelectedSite] = useState("");
+  const [savedSite, setSavedSite] = useState<string | null>(null);
+  const [siteBusy, setSiteBusy] = useState(false);
 
   const isConnected = connection?.status === "connected";
+
+  async function loadSites() {
+    setSiteBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/gsc/sites?storeId=${encodeURIComponent(storeId)}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body?.error ?? "Could not load properties.");
+      setSites(body.sites ?? []);
+      setSavedSite(body.selectedSiteUrl ?? null);
+      setSelectedSite(body.selectedSiteUrl ?? body.sites?.[0]?.siteUrl ?? "");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load properties.");
+    } finally {
+      setSiteBusy(false);
+    }
+  }
+
+  async function saveSite() {
+    setSiteBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/gsc/sites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId, siteUrl: selectedSite })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body?.error ?? "Could not save the property.");
+      setSavedSite(selectedSite);
+      setSuccessMsg(`Property saved: ${selectedSite}. The next sync reads from it.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save the property.");
+    } finally {
+      setSiteBusy(false);
+    }
+  }
 
   async function refreshStatus() {
     setRefreshing(true);
@@ -171,6 +215,45 @@ export function GscConnectionManager({
             {connection.healthMessage ? (
               <p className="mt-1 text-xs text-amber-700">{connection.healthMessage}</p>
             ) : null}
+          </div>
+        ) : null}
+
+        {/* Property picker — which verified GSC property the sync reads. */}
+        {isConnected ? (
+          <div className="space-y-2 rounded-lg border border-border bg-background/70 px-4 py-3 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Synced property
+              </span>
+              <span className="font-mono text-xs" dir="ltr">
+                {savedSite ?? "not selected — using the Shopify domain (usually wrong)"}
+              </span>
+            </div>
+            {sites === null ? (
+              <Button variant="secondary" size="sm" onClick={loadSites} disabled={siteBusy}>
+                {siteBusy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                Choose property
+              </Button>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={selectedSite}
+                  onChange={(e) => setSelectedSite(e.target.value)}
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  dir="ltr"
+                >
+                  {sites.map((s) => (
+                    <option key={s.siteUrl} value={s.siteUrl}>
+                      {s.siteUrl} ({s.permissionLevel})
+                    </option>
+                  ))}
+                </select>
+                <Button size="sm" onClick={saveSite} disabled={siteBusy || !selectedSite || selectedSite === savedSite}>
+                  {siteBusy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                  Save
+                </Button>
+              </div>
+            )}
           </div>
         ) : null}
 

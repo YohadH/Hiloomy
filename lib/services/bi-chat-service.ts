@@ -154,6 +154,100 @@ async function executeTool(
       };
       break;
     }
+    case "get_traffic": {
+      const days = int(input.days, 30, 7, 90);
+      const since = new Date(Date.now() - days * 86_400_000);
+      const db = getDb() as any;
+      const rows = (await db.gaTrafficDaily.findMany({
+        where: { storeId, date: { gte: since } },
+        orderBy: { date: "asc" },
+        select: {
+          date: true,
+          channel: true,
+          sessions: true,
+          totalUsers: true,
+          newUsers: true,
+          conversions: true,
+          revenue: true
+        }
+      })) as Array<{
+        date: Date;
+        channel: string;
+        sessions: number;
+        totalUsers: number;
+        newUsers: number;
+        conversions: unknown;
+        revenue: unknown;
+      }>;
+      if (rows.length === 0) {
+        result = { note: "GA4 is not connected for this store, or no traffic data has synced yet." };
+        break;
+      }
+      const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+      const byChannel = new Map<string, { sessions: number; newUsers: number; conversions: number; revenue: number }>();
+      const byDay = new Map<string, { sessions: number; conversions: number }>();
+      let totalSessions = 0;
+      let totalConversions = 0;
+      for (const row of rows) {
+        const c = byChannel.get(row.channel) ?? { sessions: 0, newUsers: 0, conversions: 0, revenue: 0 };
+        c.sessions += row.sessions;
+        c.newUsers += row.newUsers;
+        c.conversions += n(row.conversions);
+        c.revenue += n(row.revenue);
+        byChannel.set(row.channel, c);
+        const dayKey = row.date.toISOString().slice(0, 10);
+        const d = byDay.get(dayKey) ?? { sessions: 0, conversions: 0 };
+        d.sessions += row.sessions;
+        d.conversions += n(row.conversions);
+        byDay.set(dayKey, d);
+        totalSessions += row.sessions;
+        totalConversions += n(row.conversions);
+      }
+      result = {
+        windowDays: days,
+        totals: {
+          sessions: totalSessions,
+          conversions: Math.round(totalConversions * 100) / 100,
+          sessionConversionRate:
+            totalSessions > 0 ? Math.round((totalConversions / totalSessions) * 10000) / 10000 : null
+        },
+        channels: [...byChannel.entries()]
+          .map(([channel, v]) => ({ channel, ...v, revenue: Math.round(v.revenue * 100) / 100 }))
+          .sort((a, b) => b.sessions - a.sessions),
+        daily: [...byDay.entries()].map(([date, v]) => ({ date, ...v }))
+      };
+      break;
+    }
+    case "get_organic_search": {
+      const limit = int(input.limit, 15, 5, 50);
+      const db = getDb() as any;
+      const [queries, pages] = await Promise.all([
+        db.searchConsoleQuery.findMany({
+          where: { storeId },
+          orderBy: { totalClicks: "desc" },
+          take: limit,
+          select: { query: true, totalImpressions: true, totalClicks: true, avgPosition: true }
+        }),
+        db.searchConsolePage.findMany({
+          where: { storeId },
+          orderBy: { totalClicks: "desc" },
+          take: limit,
+          select: { url: true, totalImpressions: true, totalClicks: true, avgPosition: true }
+        })
+      ]);
+      if ((queries?.length ?? 0) === 0 && (pages?.length ?? 0) === 0) {
+        result = {
+          note: "Google Search Console is not connected for this store, or no search data has synced yet."
+        };
+        break;
+      }
+      result = {
+        window: "rolling ~90 days (rollup)",
+        topQueries: queries,
+        topPages: pages
+      };
+      break;
+    }
     case "get_retention": {
       result = await buildCohortRetention({
         storeId,

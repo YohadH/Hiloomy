@@ -24,6 +24,8 @@ import { buildRoasCollapseReport } from "@/lib/services/roas-collapse-service";
 import { upsertCompetitorResponseAlerts } from "@/lib/services/competitor-intel-service";
 import { getCompetitorBrief } from "@/lib/services/competitor-brief-service";
 import { CompetitorBriefSection } from "@/components/command-center/competitor-brief-section";
+import { TrafficSearchSection } from "@/components/dashboard/traffic-search-section";
+import { buildTrafficSearchSummary } from "@/lib/services/traffic-search-summary-service";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
 import { buildSetupHealth } from "@/lib/services/setup-health-service";
 import { SetupHealthBadge } from "@/components/setup-health/setup-health-badge";
@@ -182,6 +184,12 @@ export default async function CommandCenterPage() {
   // Cached 24h; falls back to the intel's own action list when the BI agent
   // is unreachable, so the section always renders.
   const competitorBrief = await getCompetitorBrief(storeId ?? undefined, isHe ? "he" : "en").catch(() => null);
+
+  // Traffic (GA4) + organic search (GSC) summary. Null when neither source
+  // has synced data — the section hides entirely.
+  const trafficSearch = storeId
+    ? await buildTrafficSearchSummary(storeId).catch(() => null)
+    : null;
 
   // Contribution margin for the same window the controls have selected.
   // This is the "money snapshot" anchor — explicit accuracy label, no
@@ -385,6 +393,21 @@ export default async function CommandCenterPage() {
               )}
             />
             <CompetitorBriefSection brief={competitorBrief} isHe={isHe} />
+          </section>
+        ) : null}
+
+        {/* ── SECTION — Traffic & organic search (תנועה וחיפוש) ────────── */}
+        {trafficSearch ? (
+          <section className="space-y-3">
+            <SectionHead
+              eyebrow={lang("תנועה וחיפוש", "Traffic & search")}
+              title={lang("מי מגיע לאתר — ומאיפה", "Who reaches the site — and from where")}
+              hint={lang(
+                "ביקורים והמרות מGoogle Analytics, ושאילתות החיפוש שמביאות קליקים מGoogle.",
+                "Sessions and conversions from Google Analytics, and the search queries earning clicks on Google."
+              )}
+            />
+            <TrafficSearchSection summary={trafficSearch} isHe={isHe} />
           </section>
         ) : null}
 

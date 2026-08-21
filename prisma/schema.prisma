@@ -233,6 +233,7 @@ model Store {
   searchConsoleMetrics       SearchConsoleMetric[]
   searchConsolePages         SearchConsolePage[]
   searchConsoleQueries       SearchConsoleQuery[]
+  gaTrafficDaily             GaTrafficDaily[]
   ganttSheets                GanttSheet[]
   ganttRows                  GanttRow[]
   competitors                Competitor[]
@@ -1467,6 +1468,26 @@ model SearchConsoleQuery {
 
   @@unique([storeId, query])
   @@index([storeId, totalImpressions(sort: Desc)])
+}
+
+// GA4 daily traffic, one row per (store, day, default channel group).
+// Totals are derived by summing channels — GA4's channel grouping covers
+// every session. Synced by ga4-service via the refresh-all cron.
+model GaTrafficDaily {
+  id          String   @id @default(cuid())
+  storeId     String
+  date        DateTime @db.Date
+  channel     String
+  sessions    Int      @default(0)
+  totalUsers  Int      @default(0)
+  newUsers    Int      @default(0)
+  conversions Decimal  @default(0) @db.Decimal(12, 2)
+  revenue     Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, date, channel])
+  @@index([storeId, date(sort: Desc)])
 }
 
 // ─── Creative Sprint (SA-SPRINT-01) ──────────────────────────────────

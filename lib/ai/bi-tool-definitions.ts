@@ -101,6 +101,40 @@ export const BI_TOOL_DEFINITIONS = [
     }
   },
   {
+    name: "get_traffic",
+    description:
+      "Site traffic from Google Analytics 4 over a recent window: daily sessions, users, new users, conversions and revenue, plus totals per acquisition channel group (Organic Search, Paid Social, Direct, etc.) and the overall session→conversion rate. This sees the visits that did NOT convert — use it for questions about traffic, conversion rate, or 'traffic up but orders flat'. Returns a note instead of data when GA4 is not connected or has no rows yet.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        days: {
+          type: "integer",
+          minimum: 7,
+          maximum: 90,
+          description: "Window length in days, ending today. Default 30."
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: "get_organic_search",
+    description:
+      "Organic search performance from Google Search Console (rolling ~90-day rollup): top queries and top pages by clicks, each with impressions, clicks and average position, plus overall totals. Use for SEO questions — what people search to find the store, which pages earn clicks, where rankings sit. Returns a note instead of data when GSC is not connected or not yet synced.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        limit: {
+          type: "integer",
+          minimum: 5,
+          maximum: 50,
+          description: "Max queries and pages to return, by clicks. Default 15."
+        }
+      },
+      required: []
+    }
+  },
+  {
     name: "get_retention",
     description:
       "Monthly cohort retention: for each first-order-month cohort, cohort size and how many customers ordered again in month +1, +2, +3…, as counts and rates. Compare the newest cohorts to older cohorts at the same age to say whether retention is improving. Use for questions about returning customers, retention, LTV direction, or repeat purchase behavior.",
