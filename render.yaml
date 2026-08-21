@@ -302,14 +302,34 @@ services:
       - key: TELEGRAM_CHAT_ID
         sync: false
 
+      # ─── Meta Ads OAuth (Facebook Login for Business) ─────────────────
+      # Required for "Facebook Login for Business"-type Meta apps: the
+      # Configuration ID from the Meta app dashboard (Facebook Login for
+      # Business → Configurations). Without it the OAuth dialog shows
+      # Meta's "Feature Unavailable" screen. Classic Meta apps can leave
+      # this unset (scope-based dialog is used instead).
+      - key: META_ADS_LOGIN_CONFIG_ID
+        sync: false
+
+      # ─── Anthropic API (BI analyst chat — direct, no tunnel) ──────────
+      # When set, the chat widget's BI analyst answers via the Anthropic
+      # API with store-scoped data tools (streamed answers, seconds not
+      # minutes). Unset → falls back to the BI_AGENT_URL tunnel. Persona
+      # text lives in lib/ai/bi-persona.ts.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Optional model override for the BI chat (default claude-opus-5).
+      - key: BI_CHAT_MODEL
+        sync: false
+
       # ─── RivalSweeper (competitor intelligence) ───────────────────────
       # Real API (apilayer.rivalsweeper.com, OAuth2 client-credentials).
-      # Set RIVALSWEEPER_KEY_ID (rsk_...) + RIVALSWEEPER_KEY_SECRET (rss_...)
-      # in the dashboard, then REMOVE RIVALSWEEPER_MOCK (or set "false") to
-      # go live. With mock on, deterministic demo signals keep the pipeline
-      # exercisable without spending API quota.
+      # LIVE since 20/08/2026: RIVALSWEEPER_KEY_ID (rsk_...) +
+      # RIVALSWEEPER_KEY_SECRET (rss_...) are set in the dashboard and mock
+      # mode is off. Set RIVALSWEEPER_MOCK="true" to fall back to
+      # deterministic demo signals (no API quota spent).
       - key: RIVALSWEEPER_MOCK
-        value: "true"
+        value: "false"
       - key: RIVALSWEEPER_API_URL
         sync: false
       - key: RIVALSWEEPER_KEY_ID

@@ -1,4 +1,4 @@
-// Terms of Service — Hiloomy (operated by Brandzp Ltd).
+// Terms of Service — Hiloomy.
 //
 // Satisfies Shopify App Store, Meta, and Google review URL checks. Have
 // counsel review before customers beyond the pilot.
@@ -28,8 +28,8 @@ export default function TermsOfServicePage() {
         <p>
           By creating an account, installing the Shopify app, or using{" "}
           <strong>Hiloomy</strong> (the &quot;Service&quot;, at www.hiloomy.com),
-          you agree to these Terms. The Service is operated by Brandzp Ltd,
-          registered in Israel (&quot;we&quot;, &quot;us&quot;).
+          you agree to these Terms (&quot;we&quot;, &quot;us&quot; refer to
+          Hiloomy).
         </p>
       </Section>
 
