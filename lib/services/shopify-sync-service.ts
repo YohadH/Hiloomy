@@ -673,6 +673,33 @@ export async function syncOrders(storeId: string, updatedAfter?: Date | null) {
 }
 
 /**
+ * Returns-intelligence backfill (Engine 3). The initial BULK order sync
+ * omits refund line items (bulk operations can't nest that connection),
+ * so historical refunds exist only as order-level totals — per-product
+ * return rates read low until those orders are re-fetched through the
+ * paginated query, whose mapper attributes refunds back to each line
+ * (refundedQuantity / refundedSubtotal).
+ *
+ * This re-pulls exactly the REFUNDED orders via a search query and pushes
+ * them through the same upsert pipeline the incremental sync uses.
+ * Idempotent — re-running just rewrites the same values.
+ */
+export async function backfillRefundLineItems(storeId: string) {
+  const db = getDb();
+  const store = await db.store.findUnique({ where: { id: storeId } });
+  if (!store) throw new AppError("Store not found.", 404);
+
+  const credentials = await getStoredShopifyCredentials(storeId);
+  const client = createShopifyClient(credentials);
+  const query = "financial_status:refunded OR financial_status:partially_refunded";
+  const orders = await client.paginateConnection<any, { orders: any }>("orders", ORDERS_QUERY, { query });
+
+  await processOrdersWithPreload(db, storeId, store, orders);
+
+  return { fetched: orders.length };
+}
+
+/**
  * Bulk-exports the store's products via a single Shopify Bulk Operation, re-nests
  * each product's variants, and upserts via the shared `upsertProductFromNode`.
  * Returns counts shaped like the paginated `syncProducts` so callers can sum them

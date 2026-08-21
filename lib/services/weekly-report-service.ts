@@ -25,6 +25,10 @@ import {
   type PriorWeekSnapshot
 } from "@/lib/services/meta-ads-report-insights-service";
 import {
+  buildReturnsIntelligence,
+  extractReturnRisks
+} from "@/lib/services/returns-intelligence-service";
+import {
   generateInstagramInsights,
   type InstagramInsights,
   type InstagramAffiliateSummary
@@ -202,12 +206,24 @@ export async function buildWeeklyReportBundle(
     }
   }
 
+  // Returns intelligence for the ROAS × returns cross-signal: a "scale
+  // this campaign" recommendation is downgraded when the advertised
+  // product is a high-returner. 60-day window — returns lag purchases.
+  const returnRisks = await buildReturnsIntelligence({
+    storeId: input.storeId,
+    start: new Date(input.end.getTime() - 60 * 86_400_000),
+    end: input.end
+  })
+    .then(extractReturnRisks)
+    .catch(() => null);
+
   const metaAdsInsightsByBrand: Record<string, BrandInsights> = {};
   if (metaAds && metaAds.brands.length > 0) {
     const entries = await Promise.all(
       metaAds.brands.map((brand) =>
         generateBrandInsights(brand, metaAds.dateRange, locale, {
-          prior: priorByBrand.get(brand.name) ?? null
+          prior: priorByBrand.get(brand.name) ?? null,
+          returnRisks
         }).then((insights) => [brand.name, insights] as const)
       )
     );

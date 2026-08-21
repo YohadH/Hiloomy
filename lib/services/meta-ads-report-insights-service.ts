@@ -22,6 +22,10 @@
 
 import type { MetaAdsReportBrand } from "@/lib/services/meta-ads-report-service";
 import { generateInsightsJson } from "@/lib/clients/ai-insights-client";
+import {
+  findReturnRiskForName,
+  type ProductReturnRisk
+} from "@/lib/services/returns-intelligence-service";
 
 export interface BrandInsights {
   hookLine: string;
@@ -357,11 +361,44 @@ Write in clear founder-readable English. Avoid jargon ("synergy", "optimization"
   ].join("\n");
 }
 
+// ROAS × returns cross-signal (Engine 3). The scale recommendation is
+// built from Meta numbers alone — a 3.3x-ROAS product with 15% returns is
+// NOT a winner. This deterministic guard runs AFTER generation (LLM or
+// fallback alike), finds the same scale candidate the recommendation logic
+// picks, and if its campaign name matches a high-return product, appends a
+// caution that downgrades "scale" to "check returns first".
+function applyReturnsGuard(
+  insights: BrandInsights,
+  brand: MetaAdsReportBrand,
+  returnRisks: ProductReturnRisk[] | null | undefined,
+  isHe: boolean
+): BrandInsights {
+  if (!returnRisks || returnRisks.length === 0) return insights;
+  const scaleCandidate = [...brand.campaigns]
+    .filter((c) => (c.purchaseRoas ?? 0) >= 3 && c.spend >= 500)
+    .sort((a, b) => (b.purchaseRoas ?? 0) - (a.purchaseRoas ?? 0))[0];
+  if (!scaleCandidate) return insights;
+  // Match on the campaign name, falling back to its top ads' names —
+  // whichever carries the product name.
+  const adNames = brand.ads.map((a) => a.adName).filter(Boolean).slice(0, 12) as string[];
+  const risk =
+    findReturnRiskForName(scaleCandidate.campaignName, returnRisks) ??
+    adNames.map((n) => findReturnRiskForName(n, returnRisks)).find(Boolean) ??
+    null;
+  if (!risk) return insights;
+
+  const pct = Math.round(risk.returnRate * 100);
+  const caution = isHe
+    ? `⚠️ לפני הגדלת "${scaleCandidate.campaignName}": למוצר "${risk.title}" שיעור החזרות של ${pct}% — ROAS גבוה עם החזרות כאלה הוא לא מנצח אמיתי. תקנו מידות/תיאור לפני עוד תקציב.`
+    : `⚠️ Before scaling "${scaleCandidate.campaignName}": "${risk.title}" has a ${pct}% return rate — high ROAS with returns like that is not a real winner. Fix sizing/description before adding budget.`;
+  return { ...insights, actions: [...insights.actions, caution] };
+}
+
 export async function generateBrandInsights(
   brand: MetaAdsReportBrand,
   dateRange: { start: string; end: string },
   locale: "he" | "en" = "he",
-  options: { prior?: PriorWeekSnapshot | null } = {}
+  options: { prior?: PriorWeekSnapshot | null; returnRisks?: ProductReturnRisk[] | null } = {}
 ): Promise<BrandInsights> {
   const systemPrompt = buildSystemPrompt(locale);
   const userPrompt = buildPrompt(brand, dateRange, options.prior ?? null, locale);
@@ -375,20 +412,22 @@ export async function generateBrandInsights(
     maxTokens: 900,
     jsonHint: 'object with hookLine:string, observations:string[2-4], actions:string[2-3]'
   });
-  if (!parsed) return fallback;
+  const insights: BrandInsights = !parsed
+    ? fallback
+    : {
+        hookLine:
+          typeof parsed.hookLine === "string" && parsed.hookLine.trim()
+            ? parsed.hookLine.trim()
+            : fallback.hookLine,
+        observations:
+          Array.isArray(parsed.observations) && parsed.observations.length > 0
+            ? parsed.observations.map((s) => String(s).trim()).filter(Boolean).slice(0, 4)
+            : fallback.observations,
+        actions:
+          Array.isArray(parsed.actions) && parsed.actions.length > 0
+            ? parsed.actions.map((s) => String(s).trim()).filter(Boolean).slice(0, 3)
+            : fallback.actions
+      };
 
-  return {
-    hookLine:
-      typeof parsed.hookLine === "string" && parsed.hookLine.trim()
-        ? parsed.hookLine.trim()
-        : fallback.hookLine,
-    observations:
-      Array.isArray(parsed.observations) && parsed.observations.length > 0
-        ? parsed.observations.map((s) => String(s).trim()).filter(Boolean).slice(0, 4)
-        : fallback.observations,
-    actions:
-      Array.isArray(parsed.actions) && parsed.actions.length > 0
-        ? parsed.actions.map((s) => String(s).trim()).filter(Boolean).slice(0, 3)
-        : fallback.actions
-  };
+  return applyReturnsGuard(insights, brand, options.returnRisks, locale === "he");
 }
