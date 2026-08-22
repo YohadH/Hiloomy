@@ -47,6 +47,7 @@ import {
   type ReturnsIntelligenceReport
 } from "@/lib/services/returns-intelligence-service";
 import { buildCollectionRhythm } from "@/lib/services/collection-rhythm-service";
+import { buildLeakScan, type LeakScanReport } from "@/lib/services/leak-scan-service";
 import {
   buildRestockHeroAlerts,
   type RestockHeroAlertReport
@@ -213,6 +214,7 @@ export default async function MetaAdsWeeklyPrintPage({
   let discountScorecards: DiscountScorecardReport | null = null;
   let returnsIntel: ReturnsIntelligenceReport | null = null;
   let rhythmLine: { he: string; en: string } | null = null;
+  let leakScan: LeakScanReport | null = null;
   if (!storeId) {
     diagnostic = "no_store";
   } else {
@@ -244,6 +246,9 @@ export default async function MetaAdsWeeklyPrintPage({
     rhythmLine = await buildCollectionRhythm({ storeId, end })
       .then((r) => (r.recommendation ? { he: r.recommendation.he, en: r.recommendation.en } : null))
       .catch(() => null);
+    // Leak Scan cover — the report opens with the aggregated "₪ you're
+    // leaking" number, same engine as the Command Center hero.
+    leakScan = await buildLeakScan({ storeId }).catch(() => null);
     if (!report) diagnostic = "no_meta_connection";
     // Closed-loop: refresh outcome measurements + read for the report. Lives
     // here so the PDF shows the same loop the founder sees on the Command
@@ -1110,6 +1115,9 @@ export default async function MetaAdsWeeklyPrintPage({
               ) : null}
             </section>
           ) : null}
+
+          {/* COVER — Your Money Leaks (the product's headline number) */}
+          {leakScan ? <MoneyLeaksCover scan={leakScan} isHe={isHe} /> : null}
 
           {/* PAGE 1 — Executive Summary (the 60-second view) */}
           {reconciliation && report ? (
@@ -2879,6 +2887,48 @@ function RestockHeroActionPage({
           ) : null}
         </div>
       ))}
+    </section>
+  );
+}
+
+// Money Leaks cover — the report's opening statement. Same LeakScanReport
+// the Command Center hero renders; print-styled with the pwr system.
+function MoneyLeaksCover({ scan, isHe }: { scan: LeakScanReport; isHe: boolean }) {
+  const lang = (he: string, en: string) => (isHe ? he : en);
+  const fmt = (v: number) => `₪${Math.round(v).toLocaleString("en-US")}`;
+  const t = (v: { he: string; en: string }) => (isHe ? v.he : v.en);
+  const available = scan.items.filter((i) => i.available);
+  const leaking = available.filter((i) => i.amount > 0);
+  return (
+    <section className="pwr-section" style={{ borderTop: "4px solid #C96A15", paddingTop: 10 }}>
+      <h2 className="pwr-section-title" style={{ marginBottom: 2 }}>
+        {lang("דליפות הרווח שלכם", "Your Money Leaks")}
+      </h2>
+      <p style={{ margin: "0 0 8px 0", fontSize: 11, color: "#64748b" }}>
+        {lang(`Hiloomy Leak Scan · ${scan.windowDays} הימים האחרונים`, `Hiloomy Leak Scan · last ${scan.windowDays} days`)}
+      </p>
+      <p style={{ margin: "0 0 10px 0", fontSize: 20, fontWeight: 800 }}>
+        {scan.total > 0
+          ? lang(`זוהו ${fmt(scan.total)} דליפות רווח`, `${fmt(scan.total)} in profit leaks identified`)
+          : lang("לא זוהו דליפות רווח פעילות — הכל נקי", "No active profit leaks — all clean")}
+      </p>
+      {leaking.map((item) => (
+        <p key={item.id} className="pwr-recon-warning" style={{ marginBottom: 6 }}>
+          <b>{fmt(item.amount)}</b> — {t(item.reason)}
+          {item.detail ? ` (${t(item.detail)})` : ""}. {lang("פעולה", "Action")}: {t(item.action)}
+          {item.monthlyImpact > 0
+            ? lang(` · פוטנציאל +${fmt(item.monthlyImpact)}/חודש`, ` · potential +${fmt(item.monthlyImpact)}/mo`)
+            : ""}
+        </p>
+      ))}
+      {leaking.length === 0 && available.length > 0 ? (
+        <p className="pwr-recon-warning pwr-recon-warning-info" style={{ marginBottom: 6 }}>
+          {lang(
+            `${available.length} בדיקות רצו על החלון — אף דליפה פעילה. ממשיכים לסרוק בכל סנכרון.`,
+            `${available.length} checks ran on this window — no active leaks. Scanning continues on every sync.`
+          )}
+        </p>
+      ) : null}
     </section>
   );
 }

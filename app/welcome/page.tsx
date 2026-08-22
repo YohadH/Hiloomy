@@ -51,10 +51,11 @@ function getCopy(isHe: boolean) {
   return isHe
     ? {
         nav: { features: "יכולות", how: "איך זה עובד", report: "הדוח השבועי", pricing: "מחירים", security: "אבטחה", login: "התחברות", cta: "צרו משתמש", switchLabel: "EN" },
-        dateline: { brand: "Hiloomy · מרכז הפיקוד למותגי Shopify", tag: "רענון כל שעתיים", meta: "גרסה 2026" },
+        dateline: { brand: "Hiloomy · מודיעין רווח לאיקומרס", tag: "רענון כל שעתיים", meta: "גרסה 2026" },
         hero: {
-          title: "ההכנסות זה כותרת. הרווח זה הסיפור.",
-          body: "Hiloomy מחבר את Shopify, Meta Ads, אינסטגרם ותוכנית השותפים למסד נתונים אחד, מוריד את כל העלויות, ומחזיר לכם את המספר שנשאר בבנק — עם התראה שמגיעה עם פעולה ודוח שבועי שמסביר מה קרה.",
+          title: "מצאו את הכסף שהחנות שלכם מאבדת.",
+          body: "Hiloomy סורק ברציפות את המוצרים, המודעות, ההנחות, השותפים וההחזרים שלכם — ואומר כמה כסף דולף, למה, ומה לעשות. עמלות ששולמו על לקוחות שכבר שלכם, קודים שמוכרים בהפסד, תקציב פרסום על מוצרים שחוזרים — מספר אחד, עם הפעולה שסוגרת כל דליפה.",
+          guarantee: "נמצא לך לפחות ₪5,000 דליפות רווח — או שהחודש הראשון עלינו.",
           fine: "ללא כרטיס אשראי · חיבור ב־30 שניות · הרשאות קריאה בלבד",
           ctaSecondary: "איך זה בנוי"
         },
@@ -113,10 +114,11 @@ function getCopy(isHe: boolean) {
       }
     : {
         nav: { features: "Features", how: "How it works", report: "Weekly report", pricing: "Pricing", security: "Security", login: "Log in", cta: "Create account", switchLabel: "עב" },
-        dateline: { brand: "Hiloomy · Command center for Shopify brands", tag: "Refreshed every two hours", meta: "Edition 2026" },
+        dateline: { brand: "Hiloomy · Ecommerce Profit Intelligence", tag: "Refreshed every two hours", meta: "Edition 2026" },
         hero: {
-          title: "Revenue is the headline. Profit is the story.",
-          body: "Hiloomy joins Shopify, Meta Ads, Instagram and your affiliate program into one database, subtracts every real cost, and hands back the number that actually stays in the bank — with alerts that arrive carrying an action and a weekly report that explains the week.",
+          title: "Find the money your store is leaking.",
+          body: "Hiloomy continuously scans your products, ads, discounts, affiliates and returns — and tells you how much money is leaking, why, and what to do next. Commissions paid on customers you already own, codes selling at a loss, ad budget on products that come back — one number, with the action that closes each leak.",
+          guarantee: "We'll find at least ₪5,000 in profit leaks — or your first month is on us.",
           fine: "No credit card · Connect in 30 seconds · Read-only scopes",
           ctaSecondary: "How it's built"
         },
@@ -425,6 +427,12 @@ export default async function WelcomePage({
               {t.hero.ctaSecondary}
             </a>
           </div>
+          <p
+            className="hl-rise mt-5 inline-block rounded-full border px-4 py-2 text-sm font-bold"
+            style={{ borderColor: ORANGE, color: ORANGE, animationDelay: ".33s" }}
+          >
+            {t.hero.guarantee}
+          </p>
           <p className="hl-rise mt-4 text-xs" style={{ color: DIM, animationDelay: ".38s" }}>
             {t.hero.fine}
           </p>

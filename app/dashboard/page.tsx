@@ -16,6 +16,8 @@ import {
   CommandCenterAlertCard,
   type CommandCenterAlert
 } from "@/components/command-center/command-center-alert-card";
+import { LeakScanHero } from "@/components/command-center/leak-scan-hero";
+import { buildLeakScan } from "@/lib/services/leak-scan-service";
 import { AlertOctagon, TrendingUp, Wallet } from "lucide-react";
 import { getOverviewPayload, getAppChromeData } from "@/lib/services/analytics-service";
 import { listOpenAlerts } from "@/lib/services/alert-writer-service";
@@ -178,6 +180,10 @@ export default async function CommandCenterPage() {
     ? await buildSetupHealth({ storeId }).catch(() => null)
     : null;
 
+  // Leak Scan — the product's headline: one aggregated "₪ you're leaking"
+  // number over the trailing 30 days, independent of the date controls.
+  const leakScan = storeId ? await buildLeakScan({ storeId }).catch(() => null) : null;
+
   // Competitor brief — intel snapshot + BI-prescribed actions (today/this
   // week). storeId lets the generator feed LIVE store facts (product movers,
   // campaign ROAS, open alerts) into the prompt so actions name real things.
@@ -267,6 +273,11 @@ export default async function CommandCenterPage() {
   return (
     <AppShell store={chrome.store} controls={chrome.controls}>
       <div className="space-y-6 sm:space-y-8">
+        {/* ── LEAK SCAN — the product's headline number, always first ── */}
+        {leakScan ? (
+          <LeakScanHero scan={leakScan} currency={overview.store.currency} isHe={isHe} />
+        ) : null}
+
         {/* ── BUSINESS SUMMARY — 2-3 line glance at current state ────── */}
         {contributionMargin ? (
           <BusinessSummaryBlock
