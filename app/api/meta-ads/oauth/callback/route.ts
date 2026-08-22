@@ -39,7 +39,13 @@ export async function GET(request: Request) {
 
     const jar = await cookies();
     const expectedState = jar.get(META_OAUTH_STATE_COOKIE)?.value;
-    const storeId = jar.get(META_OAUTH_STORE_COOKIE)?.value || null;
+    // Multi-tenant: the cookie must agree with the session's active store —
+    // the connection is written to the session store, never a foreign one.
+    const cookieStoreId = jar.get(META_OAUTH_STORE_COOKIE)?.value || null;
+    if (!auth.storeId || (cookieStoreId && cookieStoreId !== auth.storeId)) {
+      return back(`meta_error=${encodeURIComponent("Store not resolved for this session.")}`);
+    }
+    const storeId = auth.storeId;
     const state = url.searchParams.get("state");
     const code = url.searchParams.get("code");
 

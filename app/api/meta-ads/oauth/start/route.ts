@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { getAuthContext } from "@/lib/auth/session";
+import { requireSessionStoreId } from "@/lib/auth/require-store";
 import { toErrorMessage } from "@/lib/server/errors";
 import { META_OAUTH_STATE_COOKIE, META_OAUTH_STORE_COOKIE } from "@/lib/meta-oauth";
 
@@ -33,7 +34,15 @@ export async function GET(request: Request) {
       return NextResponse.redirect(`${appUrl}/settings?meta_error=${msg}`);
     }
 
-    const storeId = url.searchParams.get("storeId") ?? "";
+    // Multi-tenant: the connection targets the SESSION's active store; a
+    // mismatched storeId in the query is rejected, never honored.
+    const session = await requireSessionStoreId(url.searchParams.get("storeId"));
+    if (!session) {
+      return NextResponse.redirect(
+        `${appUrl}/settings?meta_error=${encodeURIComponent("Store not resolved for this session.")}`
+      );
+    }
+    const storeId = session.storeId;
     const state = randomBytes(16).toString("hex");
     const redirectUri = `${appUrl}/api/meta-ads/oauth/callback`;
 

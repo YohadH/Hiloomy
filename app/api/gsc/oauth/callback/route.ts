@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createRouteHandlerSupabaseClient } from "@/lib/auth/supabase-server";
+import { requireSessionStoreId } from "@/lib/auth/require-store";
 import { decodeGscOAuthState, handleGscOAuthCallback } from "@/lib/services/gsc-service";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 
@@ -46,7 +47,13 @@ export async function GET(request: Request) {
       return fail("Google Search Console OAuth state was missing or invalid.");
     }
 
-    await handleGscOAuthCallback(code, decoded.storeId);
+    // Multi-tenant: the state's storeId must be the session's active store.
+    const session = await requireSessionStoreId(decoded.storeId);
+    if (!session) {
+      return fail("Store not resolved for this session.");
+    }
+
+    await handleGscOAuthCallback(code, session.storeId);
 
     return NextResponse.redirect(`${appUrl}/settings?gsc_connected=true`);
   } catch (error) {

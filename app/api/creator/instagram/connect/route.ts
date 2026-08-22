@@ -9,7 +9,8 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const result = await saveInstagramConnection(body.accessToken);
+    // Multi-tenant: attach to the session's active store.
+    const result = await saveInstagramConnection(body.accessToken, auth.storeId);
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json({ ok: false, error: toErrorMessage(error) }, { status: 400 });
