@@ -89,6 +89,23 @@ export function TrafficSearchSection({
             <p className="mt-1 text-xs text-muted-foreground" dir="ltr">
               {nf.format(summary.gsc.totalClicks)} {lang("קליקים", "clicks")} ·{" "}
               {nf.format(summary.gsc.totalImpressions)} {lang("חשיפות", "impressions")}
+              {summary.gsc.clicksChangePct != null ? (
+                <span
+                  className={
+                    summary.gsc.clicksChangePct >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"
+                  }
+                >
+                  {" "}
+                  ({summary.gsc.clicksChangePct >= 0 ? "+" : ""}
+                  {summary.gsc.clicksChangePct}%)
+                </span>
+              ) : null}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {lang(
+                `${summary.gsc.windowDays} ימים אחרונים · נתונים עד ${summary.gsc.dataThrough ?? "—"} (Google מעדכן באיחור של 2-3 ימים)`,
+                `Last ${summary.gsc.windowDays} days · data through ${summary.gsc.dataThrough ?? "—"} (Google lags 2-3 days)`
+              )}
             </p>
             <div className="mt-3 space-y-2">
               {summary.gsc.topQueries.map((q) => (

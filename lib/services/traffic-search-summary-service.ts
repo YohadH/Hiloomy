@@ -17,8 +17,16 @@ export interface TrafficSummaryHalf {
 }
 
 export interface SearchSummaryHalf {
+  // Windowed (last 28 available days), NOT lifetime — the earlier version
+  // summed the SearchConsoleQuery lifetime rollups, which barely move
+  // between syncs and made the dashboard section look frozen.
   totalClicks: number;
   totalImpressions: number;
+  priorClicks: number | null;
+  clicksChangePct: number | null;
+  windowDays: number;
+  /** Latest date GSC actually has data for (Google lags 2-3 days). */
+  dataThrough: string | null;
   topQueries: Array<{ query: string; clicks: number; impressions: number; position: number }>;
 }
 
@@ -78,29 +86,67 @@ async function buildGa4Half(storeId: string): Promise<TrafficSummaryHalf | null>
   };
 }
 
+const GSC_WINDOW_DAYS = 28;
+
 async function buildGscHalf(storeId: string): Promise<SearchSummaryHalf | null> {
   const db = getDb() as any;
-  const queries = (await db.searchConsoleQuery.findMany({
-    where: { storeId },
-    orderBy: { totalClicks: "desc" },
-    take: 5,
-    select: { query: true, totalClicks: true, totalImpressions: true, avgPosition: true }
-  })) as Array<{ query: string; totalClicks: number; totalImpressions: number; avgPosition: number }>;
-  if (queries.length === 0) return null;
 
-  const totals = (await db.searchConsoleQuery.aggregate({
+  // Anchor the window on the LATEST date GSC actually has (Google's data
+  // lags 2-3 days) — anchoring on "today" would silently shave days off
+  // the window and make totals drift for no real reason.
+  const latest = (await db.searchConsoleMetric.findFirst({
     where: { storeId },
-    _sum: { totalClicks: true, totalImpressions: true }
-  })) as { _sum: { totalClicks: number | null; totalImpressions: number | null } };
+    orderBy: { date: "desc" },
+    select: { date: true }
+  })) as { date: Date } | null;
+  if (!latest) return null;
+
+  const windowStart = new Date(latest.date.getTime() - (GSC_WINDOW_DAYS - 1) * 86_400_000);
+  const priorStart = new Date(windowStart.getTime() - GSC_WINDOW_DAYS * 86_400_000);
+
+  const [current, prior, topQueryRows] = await Promise.all([
+    db.searchConsoleMetric.aggregate({
+      where: { storeId, date: { gte: windowStart, lte: latest.date } },
+      _sum: { clicks: true, impressions: true }
+    }),
+    db.searchConsoleMetric.aggregate({
+      where: { storeId, date: { gte: priorStart, lt: windowStart } },
+      _sum: { clicks: true, impressions: true }
+    }),
+    db.searchConsoleMetric.groupBy({
+      by: ["query"],
+      where: { storeId, query: { not: null }, date: { gte: windowStart, lte: latest.date } },
+      _sum: { clicks: true, impressions: true },
+      _avg: { position: true },
+      orderBy: { _sum: { clicks: "desc" } },
+      take: 5
+    })
+  ]);
+
+  const totalClicks = num(current._sum?.clicks);
+  const totalImpressions = num(current._sum?.impressions);
+  if (totalClicks === 0 && totalImpressions === 0) return null;
+  const priorClicks = num(prior._sum?.clicks);
+  const priorHasData = priorClicks > 0;
 
   return {
-    totalClicks: totals._sum.totalClicks ?? 0,
-    totalImpressions: totals._sum.totalImpressions ?? 0,
-    topQueries: queries.map((q) => ({
-      query: q.query,
-      clicks: q.totalClicks,
-      impressions: q.totalImpressions,
-      position: Math.round(q.avgPosition * 10) / 10
+    totalClicks,
+    totalImpressions,
+    priorClicks: priorHasData ? priorClicks : null,
+    clicksChangePct: priorHasData
+      ? Math.round(((totalClicks - priorClicks) / priorClicks) * 1000) / 10
+      : null,
+    windowDays: GSC_WINDOW_DAYS,
+    dataThrough: latest.date.toISOString().slice(0, 10),
+    topQueries: (topQueryRows as Array<{
+      query: string | null;
+      _sum: { clicks: unknown; impressions: unknown };
+      _avg: { position: unknown };
+    }>).map((q) => ({
+      query: q.query ?? "—",
+      clicks: num(q._sum.clicks),
+      impressions: num(q._sum.impressions),
+      position: Math.round(num(q._avg.position) * 10) / 10
     }))
   };
 }

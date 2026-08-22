@@ -37,7 +37,11 @@ export function getInstagramOauthStartUrl() {
     response_type: "code"
   });
 
-  return `https://api.instagram.com/oauth/authorize?${params.toString()}`;
+  // Business Login authorizes on www.instagram.com — the old
+  // api.instagram.com/oauth/authorize host belonged to Basic Display and
+  // now returns "Sorry, this page isn't available." (The token exchange
+  // below still lives on api.instagram.com — only authorize moved.)
+  return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
 }
 
 export async function exchangeInstagramCodeForToken(code: string) {
