@@ -11,6 +11,7 @@ import {
   type FeatureItem,
   type PlanItem
 } from "@/components/marketing/home-interactive";
+import { HeroBanner } from "@/components/marketing/hero-banner";
 
 // Public marketing landing. Served at "/" for anonymous visitors (middleware
 // rewrite) and directly at /welcome. Bilingual (he default, ?lang= override).
@@ -39,8 +40,6 @@ const PAPER = "#F7F7F6";
 const DIM = "#605D5D";
 const HAIR = "rgba(32,30,29,.12)";
 
-const BARS = [38, 46, 41, 55, 49, 62, 58, 71, 66, 78, 74, 88, 82, 96];
-
 export const metadata = {
   title: "Hiloomy — Profit command center for Shopify brands",
   description:
@@ -58,23 +57,6 @@ function getCopy(isHe: boolean) {
           guarantee: "נמצא לך לפחות ₪5,000 דליפות רווח — או שהחודש הראשון עלינו.",
           fine: "ללא כרטיס אשראי · חיבור ב־30 שניות · הרשאות קריאה בלבד",
           ctaSecondary: "איך זה בנוי"
-        },
-        mock: {
-          profitLabel: "רווח תרומה · 30 ימים",
-          accuracy: "דיוק גבוה",
-          profit: "₪116,181",
-          share: "62% מההכנסה",
-          rows: [
-            ["הכנסות", "₪187,118"],
-            ["הנחות", "−₪12,404"],
-            ["החזרים", "−₪3,720"],
-            ["עלות מוצרים", "−₪54,813"]
-          ],
-          alertLabel: "התראה",
-          alertPriority: "עדיפות גבוהה",
-          alertTitle: "מוצר הדגל ייגמר בעוד 6 ימים",
-          alertAction: "פעולה: להזמין 120 יחידות היום",
-          alertLoop: "התוצאה תימדד ותדווח בעוד 7 ימים"
         },
         layers: {
           kicker: "שלוש שכבות",
@@ -121,23 +103,6 @@ function getCopy(isHe: boolean) {
           guarantee: "We'll find at least ₪5,000 in profit leaks — or your first month is on us.",
           fine: "No credit card · Connect in 30 seconds · Read-only scopes",
           ctaSecondary: "How it's built"
-        },
-        mock: {
-          profitLabel: "Contribution profit · 30 days",
-          accuracy: "High accuracy",
-          profit: "₪116,181",
-          share: "62% of revenue",
-          rows: [
-            ["Revenue", "₪187,118"],
-            ["Discounts", "−₪12,404"],
-            ["Refunds", "−₪3,720"],
-            ["Cost of goods", "−₪54,813"]
-          ],
-          alertLabel: "Alert",
-          alertPriority: "High priority",
-          alertTitle: "Your flagship product runs out in 6 days",
-          alertAction: "Action: order 120 units today",
-          alertLoop: "Outcome measured and reported back in 7 days"
         },
         layers: { kicker: "Three layers", title: "Data in. Signals up. Growth out." },
         features: {
@@ -400,8 +365,10 @@ export default async function WelcomePage({
       </header>
 
       {/* ── Hero ─────────────────────────────────────────────────────── */}
-      <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-12 sm:px-10 sm:pt-16 lg:grid-cols-[1.05fr_.95fr]">
-        <div>
+      {/* Stacked, not the old two-column split: the banner is a 16:9 cinematic
+          that needs full width to stay legible. Copy keeps its own measure. */}
+      <section className="mx-auto max-w-6xl px-5 pb-20 pt-12 sm:px-10 sm:pt-16">
+        <div className="max-w-3xl">
           <h1
             className="hl-rise text-[2.6rem] font-normal leading-[0.98] tracking-tight [font-family:var(--font-hl-display)] [text-wrap:balance] sm:text-6xl"
             style={{ animationDelay: ".08s", letterSpacing: "-0.02em" }}
@@ -438,61 +405,9 @@ export default async function WelcomePage({
           </p>
         </div>
 
-        {/* Product mock */}
-        <div className="hl-rise mx-auto w-full max-w-md space-y-4 lg:max-w-none" style={{ animationDelay: ".22s" }}>
-          <div className="rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: HAIR, boxShadow: "0 30px 70px -28px rgba(18,52,31,.35)" }}>
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: DIM }}>
-                {t.mock.profitLabel}
-              </p>
-              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ backgroundColor: "#D8EFE1", color: GREEN }}>
-                {t.mock.accuracy}
-              </span>
-            </div>
-            <p className="mt-3 text-4xl font-normal tabular-nums [font-family:var(--font-hl-display)]" style={{ color: INK }}>
-              {t.mock.profit}{" "}
-              <span className="text-sm" style={{ color: DIM }}>
-                {t.mock.share}
-              </span>
-            </p>
-            <div className="mt-5 flex h-20 items-end gap-1" aria-hidden>
-              {BARS.map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-t-[3px]"
-                  style={{ height: `${h}%`, backgroundColor: i === BARS.length - 3 ? ORANGE : "#7CC79A" }}
-                />
-              ))}
-            </div>
-            <div className="mt-5 space-y-2 border-t pt-4" style={{ borderColor: HAIR }}>
-              {t.mock.rows.map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between text-sm">
-                  <span style={{ color: DIM }}>{k}</span>
-                  <span className="font-bold tabular-nums" dir="ltr">
-                    {v}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border bg-white p-5 shadow-lg" style={{ borderColor: "rgba(209,115,31,.4)" }}>
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
-              <span style={{ color: ORANGE }}>{t.mock.alertLabel}</span>
-              <span className="rounded-full px-2 py-0.5" style={{ backgroundColor: "#FBE3D0", color: "#A8521A" }}>
-                {t.mock.alertPriority}
-              </span>
-            </div>
-            <p className="mt-2 text-base font-bold" style={{ color: INK }}>
-              {t.mock.alertTitle}
-            </p>
-            <p className="mt-2 rounded-lg px-3 py-2 text-sm font-bold" style={{ backgroundColor: "#FBE3D0", color: "#A8521A" }}>
-              {t.mock.alertAction}
-            </p>
-            <p className="mt-2 text-xs" style={{ color: DIM }}>
-              ↻ {t.mock.alertLoop}
-            </p>
-          </div>
+        {/* Animated product banner — replaces the former static mock cards. */}
+        <div className="hl-rise mt-12 sm:mt-14" style={{ animationDelay: ".44s" }}>
+          <HeroBanner locale={isHe ? "he" : "en"} />
         </div>
       </section>
 
