@@ -233,7 +233,12 @@ export async function syncGa4Data(
       { name: "sessions" },
       { name: "totalUsers" },
       { name: "newUsers" },
-      { name: "conversions" },
+      // "transactions" = completed PURCHASES. The previous "conversions"
+      // metric counted every key event (page milestones, add-to-carts…)
+      // and produced absurd 40%+ "conversion rates" on the dashboard.
+      // Stored in the `conversions` column; a manual Sync now rewrites
+      // the whole 90d window with the corrected numbers.
+      { name: "transactions" },
       { name: "purchaseRevenue" }
     ],
     limit: "100000"

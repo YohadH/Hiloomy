@@ -47,6 +47,11 @@ export interface DiscountScorecard {
   baselineAov: number | null; // AOV of non-discounted orders, same window
   newCustomerShare: number | null; // null when no linked customers
   hasCostData: boolean; // false → margin is revenue-only (COGS missing)
+  // The code belongs to an affiliate (BixGrow/portal coupon). Its real
+  // economics are discount + commission on the same order, and "stop the
+  // code" means renegotiating with a person — the UI labels these so the
+  // merchant reads the verdict in the right context.
+  affiliateName: string | null;
   firstUsedAt: string;
   lastUsedAt: string;
   active: boolean; // used within the trailing 7 days of the window end
@@ -107,6 +112,31 @@ export async function buildDiscountScorecards(input: {
       select: { code: true, amount: true, orderId: true }
     });
   if (usages.length === 0) return empty;
+
+  // Affiliate-owned coupon codes (BixGrow / portal), uppercased for the
+  // same normalization the per-code grouping below uses.
+  const affiliateByCode = new Map<string, string>();
+  if (db.affiliateMember) {
+    const members: Array<{ firstName: string; lastName: string; couponCode: string | null }> =
+      await db.affiliateMember.findMany({
+        where: { storeId: input.storeId, couponCode: { not: null } },
+        select: { firstName: true, lastName: true, couponCode: true }
+      }).catch(() => []);
+    for (const m of members) {
+      if (m.couponCode) affiliateByCode.set(m.couponCode.trim().toUpperCase(), `${m.firstName} ${m.lastName}`.trim());
+    }
+    const assignments: Array<{ couponCode: string; affiliateMember: { firstName: string; lastName: string } }> =
+      await db.affiliateCouponAssignment.findMany({
+        where: { storeId: input.storeId },
+        select: { couponCode: true, affiliateMember: { select: { firstName: true, lastName: true } } }
+      }).catch(() => []);
+    for (const a of assignments) {
+      const key = a.couponCode.trim().toUpperCase();
+      if (!affiliateByCode.has(key)) {
+        affiliateByCode.set(key, `${a.affiliateMember.firstName} ${a.affiliateMember.lastName}`.trim());
+      }
+    }
+  }
 
   const orderIds = Array.from(new Set(usages.map((u) => u.orderId)));
   const orders: Array<{
@@ -245,15 +275,21 @@ export async function buildDiscountScorecards(input: {
     const hasCostData = acc.costLines > 0;
     const newShare = acc.knownCustomers > 0 ? acc.newCustomers / acc.knownCustomers : null;
     const marginRate = acc.revenue > 0 ? margin / acc.revenue : 0;
+    const affiliateName = affiliateByCode.get(code) ?? null;
 
     let verdict: DiscountVerdict = "keep";
     let reason: { he: string; en: string };
     if (hasCostData && margin < 0 && uses >= STOP_MIN_USES) {
       verdict = "stop";
-      reason = {
-        he: "ההזמנות תחת הקוד מפסידות כסף — שולי התרומה שליליים אחרי ההנחה ועלות המוצר.",
-        en: "Orders under this code lose money — contribution margin is negative after the discount and COGS."
-      };
+      reason = affiliateName
+        ? {
+            he: `קוד השותפה של ${affiliateName} מפסיד כסף עוד לפני העמלה — שקלו להקטין את ההנחה או לעדכן את תנאי השותפות.`,
+            en: `${affiliateName}'s affiliate code loses money even before commission — shrink the discount or renegotiate the partnership terms.`
+          }
+        : {
+            he: "ההזמנות תחת הקוד מפסידות כסף — שולי התרומה שליליים אחרי ההנחה ועלות המוצר.",
+            en: "Orders under this code lose money — contribution margin is negative after the discount and COGS."
+          };
     } else if (
       hasCostData &&
       margin > 0 &&
@@ -296,6 +332,7 @@ export async function buildDiscountScorecards(input: {
       baselineAov,
       newCustomerShare: newShare,
       hasCostData,
+      affiliateName,
       firstUsedAt: acc.firstUsedAt.toISOString(),
       lastUsedAt: acc.lastUsedAt.toISOString(),
       active: input.end.getTime() - acc.lastUsedAt.getTime() <= ACTIVE_WINDOW_MS,

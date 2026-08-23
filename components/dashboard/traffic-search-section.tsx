@@ -24,7 +24,13 @@ export function TrafficSearchSection({
           <CardContent className="p-4">
             <p className="flex items-center gap-2 text-sm font-bold text-foreground">
               <Globe className="h-4 w-4" aria-hidden />
-              {lang("תנועה לאתר (30 ימים)", "Site traffic (30 days)")}
+              {lang(`תנועה לאתר · ${summary.ga4.windowDays} ימים`, `Site traffic · ${summary.ga4.windowDays} days`)}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {lang(
+                `נתונים עד ${summary.ga4.dataThrough ?? "—"} (GA4 מעדכן באיחור של עד יום)`,
+                `Data through ${summary.ga4.dataThrough ?? "—"} (GA4 lags up to a day)`
+              )}
             </p>
             <div className="mt-3 grid grid-cols-3 gap-3">
               <div>
@@ -103,8 +109,8 @@ export function TrafficSearchSection({
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               {lang(
-                `${summary.gsc.windowDays} ימים אחרונים · נתונים עד ${summary.gsc.dataThrough ?? "—"} (Google מעדכן באיחור של 2-3 ימים)`,
-                `Last ${summary.gsc.windowDays} days · data through ${summary.gsc.dataThrough ?? "—"} (Google lags 2-3 days)`
+                `${summary.gsc.windowDays} ימים · נתונים עד ${summary.gsc.dataThrough ?? "—"} (Google מעדכן באיחור של 2-3 ימים)`,
+                `${summary.gsc.windowDays} days · data through ${summary.gsc.dataThrough ?? "—"} (Google lags 2-3 days)`
               )}
             </p>
             <div className="mt-3 space-y-2">

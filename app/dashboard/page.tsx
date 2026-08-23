@@ -191,10 +191,14 @@ export default async function CommandCenterPage() {
   // is unreachable, so the section always renders.
   const competitorBrief = await getCompetitorBrief(storeId ?? undefined, isHe ? "he" : "en").catch(() => null);
 
-  // Traffic (GA4) + organic search (GSC) summary. Null when neither source
-  // has synced data — the section hides entirely.
+  // Traffic (GA4) + organic search (GSC) summary — follows the page's
+  // selected date window like every other section. Null when neither
+  // source has synced data — the section hides entirely.
   const trafficSearch = storeId
-    ? await buildTrafficSearchSummary(storeId).catch(() => null)
+    ? await buildTrafficSearchSummary(storeId, {
+        start: new Date(`${chrome.controls.startDate}T00:00:00Z`),
+        end: new Date(`${chrome.controls.endDate}T23:59:59Z`)
+      }).catch(() => null)
     : null;
 
   // Contribution margin for the same window the controls have selected.
@@ -328,9 +332,12 @@ export default async function CommandCenterPage() {
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
             {overview.kpis.map((kpi) => {
               const label = kpi.label.toLowerCase();
-              // Match both English labels and Hebrew equivalents (הכנסות / רווח משוער).
+              // Match the Shopify-parity labels (סך מכירות / Total sales) plus
+              // the legacy revenue wordings so drill-links survive copy changes.
               const isRevenue =
                 label.includes("revenue") ||
+                label.includes("total sales") ||
+                label.includes("מכירות") ||
                 label.includes("הכנסות") ||
                 label.includes("הכנסה");
               const isProfit =
@@ -572,10 +579,10 @@ function BusinessSummaryBlock({
       </p>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-1">
         <span className="text-base font-bold text-foreground">
-          {lang("הכנסה", "Revenue")}: {fmt(revenue)}
+          {lang("מכירות ברוטו", "Gross sales")}: {fmt(revenue)}
         </span>
         <span className="text-base font-bold text-foreground">
-          {lang("רווח", "Profit")}: {fmt(profit)}{" "}
+          {lang("רווח תרומה", "Contribution profit")}: {fmt(profit)}{" "}
           <span className="text-sm font-semibold text-muted-foreground">({ratePct}%)</span>
         </span>
         <span
@@ -707,7 +714,7 @@ function ContributionMarginPanel({
           </p>
         </div>
         <div className="grid w-full grid-cols-2 gap-2 text-[11px] sm:w-auto sm:flex-1 sm:grid-cols-4">
-          <BreakdownTile label={lang("הכנסה", "Revenue")} value={fmt(t.revenue)} />
+          <BreakdownTile label={lang("מכירות ברוטו", "Gross sales")} value={fmt(t.revenue)} />
           <BreakdownTile label={lang("הנחות", "Discounts")} value={`-${fmt(t.discounts)}`} />
           <BreakdownTile label={lang("החזרים", "Refunds")} value={`-${fmt(t.refunds)}`} />
           <BreakdownTile label={lang("עלות מוצרים (COGS)", "COGS")} value={`-${fmt(t.cogs)}`} />

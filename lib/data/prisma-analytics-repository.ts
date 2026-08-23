@@ -213,8 +213,8 @@ async function getActiveRange() {
  *    key difference from the old logic, which subtracted refunds on the order
  *    date and never reconciled with Shopify).
  *  - netSales = gross − discounts − returns
- *  - totalSales = netSales + shipping  (no tax addback — tax-included stores
- *    already embed VAT in the price; see comment at the totalSales calc)
+ *  - totalSales = netSales + shipping + taxes (Shopify's Total sales
+ *    formula — see comment at the totalSales calc)
  */
 export interface ShopifySalesSummary {
   orders: number;
@@ -233,6 +233,10 @@ export interface ShopifySalesSummary {
   taxes: number;
   totalSales: number;
   cogs: number;
+  // Window commission net of refunds (shared computeWindowAffiliateCommission).
+  affiliateCommission: number;
+  // Contribution profit: net product sales − COGS − affiliate commission.
+  // The ONE profit number every dashboard surface shows.
   estimatedProfit: number;
   unitsSold: number;
   returningOrders: number;
@@ -247,13 +251,46 @@ function num(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+// Affiliate commission for a window, net of refunds — THE one shared
+// implementation (SA clarity fix 2026-08-23). Both the overview KPI's
+// estimated profit and the contribution-margin snapshot deduct THIS
+// number, so the dashboard shows a single profit figure instead of two
+// engines disagreeing by the commission amount. Refund-fraction deduction
+// matches the affiliate portal (see DISC-FIX): a refunded order claws its
+// commission back proportionally.
+export async function computeWindowAffiliateCommission(
+  db: any,
+  storeId: string,
+  start: Date,
+  end: Date
+): Promise<number> {
+  if (!db?.affiliateAttribution) return 0;
+  const rows = (await db.affiliateAttribution.findMany({
+    where: { storeId, occurredAt: { gte: start, lte: end } },
+    select: {
+      commissionAmount: true,
+      order: { select: { totalPrice: true, totalRefunds: true } }
+    }
+  })) as Array<{
+    commissionAmount: unknown;
+    order: { totalPrice?: unknown; totalRefunds?: unknown } | null;
+  }>;
+  return rows.reduce((sum, row) => {
+    const commission = Number(row.commissionAmount ?? 0);
+    const total = Number(row.order?.totalPrice ?? 0);
+    const refunds = Number(row.order?.totalRefunds ?? 0);
+    const refundFraction = total > 0 && refunds > 0 ? Math.min(refunds / total, 1) : 0;
+    return sum + commission * (1 - refundFraction);
+  }, 0);
+}
+
 async function computeSalesSummary(
   db: any,
   storeId: string,
   start: Date,
   end: Date
 ): Promise<ShopifySalesSummary> {
-  const [orderAgg, lineAgg, refundAgg, returningRows] = await Promise.all([
+  const [orderAgg, lineAgg, refundAgg, returningRows, affiliateCommission] = await Promise.all([
     db.order.aggregate({
       // Shopify's Sales report excludes cancelled and test orders.
       where: { storeId, createdAt: { gte: start, lte: end }, cancelledAt: null, test: false },
@@ -300,7 +337,8 @@ async function computeSalesSummary(
       WHERE o."storeId" = ${storeId}
         AND o."createdAt" >= ${start} AND o."createdAt" <= ${end}
         AND o."cancelledAt" IS NULL AND o."test" = false
-        AND o."createdAt" > f.first_at`
+        AND o."createdAt" > f.first_at`,
+    computeWindowAffiliateCommission(db, storeId, start, end).catch(() => 0)
   ]);
 
   const orders = num(orderAgg._count?._all);
@@ -337,6 +375,12 @@ async function computeSalesSummary(
   // worse than they are. Matches contribution-margin-service.
   const netLineItemSales = grossSales - discounts - returnsLineItems;
   const returningOrders = num(returningRows?.[0]?.count);
+  // ONE profit definition across the app (SA clarity fix 2026-08-23):
+  // estimated profit = contribution profit = net product sales − COGS −
+  // affiliate commissions. Previously the KPI skipped commissions while
+  // the money-snapshot panel deducted them, so the dashboard showed two
+  // "profits" a few thousand ₪ apart with no explanation.
+  const estimatedProfit = netLineItemSales - cogs - affiliateCommission;
 
   return {
     orders,
@@ -349,9 +393,8 @@ async function computeSalesSummary(
     taxes,
     totalSales,
     cogs,
-    // Line-item refunds subtracted against line-item COGS — see comment
-    // above at netLineItemSales for Pattern A / bug #7 rationale.
-    estimatedProfit: netLineItemSales - cogs,
+    affiliateCommission,
+    estimatedProfit,
     unitsSold,
     returningOrders,
     returningCustomerRate: orders ? (returningOrders / orders) * 100 : 0,

@@ -1,25 +1,31 @@
 // Traffic & organic search summary for the dashboard — the "reflection"
-// layer over GaTrafficDaily (GA4) and the SearchConsole rollups (GSC).
+// layer over GaTrafficDaily (GA4) and SearchConsoleMetric (GSC).
+//
+// WINDOW-AWARE (2026-08-23): both halves follow the dashboard's selected
+// date range instead of hardcoded 30d/28d windows — a founder on "last 7
+// days" sees 7 days of traffic, matching every other section. The prior-
+// period comparison uses the same window length immediately before.
+// Google's data lags 2-3 days, so each half also reports the latest date
+// it actually has (`dataThrough`) and the UI shows it.
+//
 // Both halves are independently optional; returns null when neither has
 // data so the dashboard section can hide entirely.
 
 import { getDb } from "@/lib/server/db";
 
 export interface TrafficSummaryHalf {
-  // Last 30 full days.
   sessions: number;
   priorSessions: number | null;
   sessionsChangePct: number | null;
   conversions: number;
-  conversionRate: number | null; // conversions / sessions
+  conversionRate: number | null; // purchases / sessions (see ga4-service metric note)
   revenue: number;
+  windowDays: number;
+  dataThrough: string | null;
   topChannels: Array<{ channel: string; sessions: number; sharePct: number }>;
 }
 
 export interface SearchSummaryHalf {
-  // Windowed (last 28 available days), NOT lifetime — the earlier version
-  // summed the SearchConsoleQuery lifetime rollups, which barely move
-  // between syncs and made the dashboard section look frozen.
   totalClicks: number;
   totalImpressions: number;
   priorClicks: number | null;
@@ -36,34 +42,43 @@ export interface TrafficSearchSummary {
 }
 
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const DAY_MS = 86_400_000;
 
-async function buildGa4Half(storeId: string): Promise<TrafficSummaryHalf | null> {
+function windowDayCount(start: Date, end: Date): number {
+  return Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY_MS));
+}
+
+async function buildGa4Half(storeId: string, start: Date, end: Date): Promise<TrafficSummaryHalf | null> {
   const db = getDb() as any;
-  const since = new Date(Date.now() - 60 * 86_400_000);
+  const days = windowDayCount(start, end);
+  const priorStart = new Date(start.getTime() - days * DAY_MS);
+
   const rows = (await db.gaTrafficDaily.findMany({
-    where: { storeId, date: { gte: since } },
+    where: { storeId, date: { gte: priorStart, lte: end } },
     select: { date: true, channel: true, sessions: true, conversions: true, revenue: true }
   })) as Array<{ date: Date; channel: string; sessions: number; conversions: unknown; revenue: unknown }>;
   if (rows.length === 0) return null;
 
-  const cutoff = Date.now() - 30 * 86_400_000;
   let sessions = 0;
   let priorSessions = 0;
   let priorHasData = false;
   let conversions = 0;
   let revenue = 0;
+  let latest: Date | null = null;
   const channels = new Map<string, number>();
   for (const row of rows) {
-    if (row.date.getTime() >= cutoff) {
+    if (row.date.getTime() >= start.getTime()) {
       sessions += row.sessions;
       conversions += num(row.conversions);
       revenue += num(row.revenue);
       channels.set(row.channel, (channels.get(row.channel) ?? 0) + row.sessions);
+      if (!latest || row.date > latest) latest = row.date;
     } else {
       priorSessions += row.sessions;
       priorHasData = true;
     }
   }
+  if (sessions === 0 && conversions === 0) return null;
 
   return {
     sessions,
@@ -75,6 +90,8 @@ async function buildGa4Half(storeId: string): Promise<TrafficSummaryHalf | null>
     conversions: Math.round(conversions),
     conversionRate: sessions > 0 ? Math.round((conversions / sessions) * 10000) / 100 : null,
     revenue: Math.round(revenue),
+    windowDays: days,
+    dataThrough: latest ? latest.toISOString().slice(0, 10) : null,
     topChannels: [...channels.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 4)
@@ -86,14 +103,11 @@ async function buildGa4Half(storeId: string): Promise<TrafficSummaryHalf | null>
   };
 }
 
-const GSC_WINDOW_DAYS = 28;
-
-async function buildGscHalf(storeId: string): Promise<SearchSummaryHalf | null> {
+async function buildGscHalf(storeId: string, start: Date, end: Date): Promise<SearchSummaryHalf | null> {
   const db = getDb() as any;
 
-  // Anchor the window on the LATEST date GSC actually has (Google's data
-  // lags 2-3 days) — anchoring on "today" would silently shave days off
-  // the window and make totals drift for no real reason.
+  // Google's data lags 2-3 days — clamp the effective end to the latest
+  // date GSC actually delivered so short windows don't silently lose days.
   const latest = (await db.searchConsoleMetric.findFirst({
     where: { storeId },
     orderBy: { date: "desc" },
@@ -101,21 +115,23 @@ async function buildGscHalf(storeId: string): Promise<SearchSummaryHalf | null> 
   })) as { date: Date } | null;
   if (!latest) return null;
 
-  const windowStart = new Date(latest.date.getTime() - (GSC_WINDOW_DAYS - 1) * 86_400_000);
-  const priorStart = new Date(windowStart.getTime() - GSC_WINDOW_DAYS * 86_400_000);
+  const effectiveEnd = latest.date.getTime() < end.getTime() ? latest.date : end;
+  if (effectiveEnd.getTime() < start.getTime()) return null;
+  const days = windowDayCount(start, effectiveEnd);
+  const priorStart = new Date(start.getTime() - days * DAY_MS);
 
   const [current, prior, topQueryRows] = await Promise.all([
     db.searchConsoleMetric.aggregate({
-      where: { storeId, date: { gte: windowStart, lte: latest.date } },
+      where: { storeId, date: { gte: start, lte: effectiveEnd } },
       _sum: { clicks: true, impressions: true }
     }),
     db.searchConsoleMetric.aggregate({
-      where: { storeId, date: { gte: priorStart, lt: windowStart } },
+      where: { storeId, date: { gte: priorStart, lt: start } },
       _sum: { clicks: true, impressions: true }
     }),
     db.searchConsoleMetric.groupBy({
       by: ["query"],
-      where: { storeId, query: { not: null }, date: { gte: windowStart, lte: latest.date } },
+      where: { storeId, query: { not: null }, date: { gte: start, lte: effectiveEnd } },
       _sum: { clicks: true, impressions: true },
       _avg: { position: true },
       orderBy: { _sum: { clicks: "desc" } },
@@ -136,8 +152,8 @@ async function buildGscHalf(storeId: string): Promise<SearchSummaryHalf | null> 
     clicksChangePct: priorHasData
       ? Math.round(((totalClicks - priorClicks) / priorClicks) * 1000) / 10
       : null,
-    windowDays: GSC_WINDOW_DAYS,
-    dataThrough: latest.date.toISOString().slice(0, 10),
+    windowDays: days,
+    dataThrough: effectiveEnd.toISOString().slice(0, 10),
     topQueries: (topQueryRows as Array<{
       query: string | null;
       _sum: { clicks: unknown; impressions: unknown };
@@ -152,11 +168,14 @@ async function buildGscHalf(storeId: string): Promise<SearchSummaryHalf | null> 
 }
 
 export async function buildTrafficSearchSummary(
-  storeId: string
+  storeId: string,
+  window?: { start: Date; end: Date }
 ): Promise<TrafficSearchSummary | null> {
+  const end = window?.end ?? new Date();
+  const start = window?.start ?? new Date(end.getTime() - 30 * DAY_MS);
   const [ga4, gsc] = await Promise.all([
-    buildGa4Half(storeId).catch(() => null),
-    buildGscHalf(storeId).catch(() => null)
+    buildGa4Half(storeId, start, end).catch(() => null),
+    buildGscHalf(storeId, start, end).catch(() => null)
   ]);
   if (!ga4 && !gsc) return null;
   return { ga4, gsc };

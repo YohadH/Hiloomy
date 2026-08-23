@@ -79,11 +79,19 @@ function ScorecardCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-mono text-sm font-bold tracking-wide">{card.code}</p>
+          <p className="flex items-center gap-2 truncate font-mono text-sm font-bold tracking-wide">
+            {card.code}
+            {card.affiliateName ? (
+              <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 font-sans text-[10px] font-semibold text-emerald-800">
+                {isHe ? `קוד שותפה · ${card.affiliateName}` : `Affiliate · ${card.affiliateName}`}
+              </span>
+            ) : null}
+          </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {card.uses} {isHe ? "הזמנות" : "orders"} ·{" "}
             {new Date(card.lastUsedAt).toLocaleDateString(isHe ? "he-IL" : "en-US")}{" "}
             {isHe ? "(שימוש אחרון)" : "(last use)"}
+            {card.affiliateName ? (isHe ? " · העמלה נספרת בנפרד בפורטל השותפים" : " · commission tracked separately in the affiliate portal") : ""}
           </p>
         </div>
         <span

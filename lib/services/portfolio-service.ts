@@ -430,6 +430,7 @@ function emptySummary(): ShopifySalesSummary {
     taxes: 0,
     totalSales: 0,
     cogs: 0,
+    affiliateCommission: 0,
     estimatedProfit: 0,
     unitsSold: 0,
     returningOrders: 0,

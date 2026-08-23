@@ -31,7 +31,7 @@ export default async function PayoutsPage() {
           title={heading.title}
           description={heading.description}
         />
-        <AffiliatePortalNav />
+        <AffiliatePortalNav locale={isHe ? "he" : "en"} />
       </section>
 
       <PayoutsView locale={isHe ? "he" : "en"} currency={chrome.store.currency} />

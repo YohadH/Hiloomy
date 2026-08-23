@@ -34,7 +34,10 @@
 //                 overrides. (Tier 3.)
 
 import { getDb } from "@/lib/server/db";
-import { getShopifySalesSummaryForWindow } from "@/lib/data/prisma-analytics-repository";
+import {
+  computeWindowAffiliateCommission,
+  getShopifySalesSummaryForWindow
+} from "@/lib/data/prisma-analytics-repository";
 
 export type AccuracyTier = "estimated" | "attributed" | "reconciled";
 
@@ -132,23 +135,15 @@ export async function buildContributionMargin(
   // sums raw commissionAmount (including fully- or partially-refunded orders)
   // while the portal shows commission net of refunds — causing a discrepancy
   // of up to Σ(commission × refundFraction). See DISC-FIX.
-  const affRows = await db.affiliateAttribution.findMany({
-    where: {
-      storeId: input.storeId,
-      occurredAt: { gte: input.start, lte: input.end }
-    },
-    select: {
-      commissionAmount: true,
-      order: { select: { totalPrice: true, totalRefunds: true } }
-    }
-  });
-  const affiliateCommission = affRows.reduce((sum: number, row: { commissionAmount: unknown; order: { totalPrice?: unknown; totalRefunds?: unknown } | null }) => {
-    const commission = Number(row.commissionAmount ?? 0);
-    const total = Number(row.order?.totalPrice ?? 0);
-    const refunds = Number(row.order?.totalRefunds ?? 0);
-    const refundFraction = total > 0 && refunds > 0 ? Math.min(refunds / total, 1) : 0;
-    return sum + commission * (1 - refundFraction);
-  }, 0);
+  // Single shared implementation (SA clarity fix 2026-08-23) — the same
+  // number the overview KPI's estimated profit deducts, so the snapshot
+  // and the KPI card can never drift apart again.
+  const affiliateCommission = await computeWindowAffiliateCommission(
+    db,
+    input.storeId,
+    input.start,
+    input.end
+  );
 
   // ── Quality assessment ────────────────────────────────────────────
   // Same as v1 — count products that sold in the window but have no cost
@@ -277,7 +272,7 @@ function buildQualityNotes(input: {
       `${input.ordersWithoutLineItemCost} orders without line-item cost.`
     );
   }
-  pieces.he.push("הכנסה לפי Shopify Gross sales (תואם תפריט סקירה).");
-  pieces.en.push("Revenue uses Shopify Gross sales (reconciles to Overview).");
+  pieces.he.push("מכירות ברוטו לפי Shopify Gross sales — לפני הנחות; 'סך מכירות' בכרטיס למטה כולל משלוח ומע\"מ, תואם Shopify.");
+  pieces.en.push("Gross sales matches Shopify's Gross sales (pre-discount); the 'Total sales' card below adds shipping + tax, matching Shopify.");
   return { he: pieces.he.join(" "), en: pieces.en.join(" ") };
 }

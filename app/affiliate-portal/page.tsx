@@ -316,7 +316,7 @@ export default async function AffiliatePortalDashboardPage() {
           toneLabel={totals.totalSales > 0 ? t.toneDriving : t.toneGetStarted}
         />
 
-        <AffiliatePortalNav />
+        <AffiliatePortalNav locale={isHe ? "he" : "en"} />
 
         <section className="space-y-3">
           <SectionHead eyebrow={t.step1Eyebrow} title={t.step1Title} hint={t.step1Hint} />

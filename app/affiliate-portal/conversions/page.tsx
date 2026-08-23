@@ -58,7 +58,7 @@ export default async function ConversionsPage() {
             </a>
           </div>
         </div>
-        <AffiliatePortalNav />
+        <AffiliatePortalNav locale={isHe ? "he" : "en"} />
       </section>
 
       <DataTable
