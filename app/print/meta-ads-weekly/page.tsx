@@ -286,8 +286,10 @@ export default async function MetaAdsWeeklyPrintPage({
   // stored biCommentary / brandInsights / igInsights when they're < 24h
   // old. Turns a 60-90s PDF render into a 3-5s one when the operator
   // re-opens the same window.
+  // Locale-scoped: a Hebrew render must never be served English prose
+  // generated for the same window (and vice versa).
   const cachedInsights = storeId
-    ? await readCachedInsights(storeId, start, end).catch(() => null)
+    ? await readCachedInsights(storeId, start, end, locale).catch(() => null)
     : null;
 
   // BI agent executive commentary. Best-effort: null if the agent is
@@ -461,11 +463,13 @@ export default async function MetaAdsWeeklyPrintPage({
     for (const [name, insights] of insightsByBrand) {
       brandInsightsRecord[name] = insights;
     }
-    await writeCachedInsights(storeId, start, end, {
-      biCommentary,
-      brandInsights: brandInsightsRecord,
-      igInsights
-    }).catch(() => undefined);
+    await writeCachedInsights(
+      storeId,
+      start,
+      end,
+      { biCommentary, brandInsights: brandInsightsRecord, igInsights },
+      locale
+    ).catch(() => undefined);
   }
 
   const t = isHe

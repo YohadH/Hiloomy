@@ -402,10 +402,17 @@ export async function persistWeeklyReport(input: {
       // read directly from here instead of calling OpenAI / BI agent
       // again. biCommentary is included so the exec-summary section
       // renders in ~5s instead of ~60s on second view.
+      //
+      // KEYED BY LOCALE (2026-08-23) — these are LLM-generated prose, so
+      // the bundle's own locale owns the bucket. Writing the old flat
+      // shape here would be read back as a legacy (unknown-language) blob
+      // and always miss, silently throwing away the cron's expensive work.
       insightsJson: {
-        brandInsights: input.bundle.metaAdsInsightsByBrand,
-        igInsights: input.bundle.instagramInsights,
-        biCommentary: input.bundle.biAgentCommentary ?? null
+        [input.bundle.locale === "en" ? "en" : "he"]: {
+          brandInsights: input.bundle.metaAdsInsightsByBrand,
+          igInsights: input.bundle.instagramInsights,
+          biCommentary: input.bundle.biAgentCommentary ?? null
+        }
       } as unknown as object
     },
     select: { id: true }
