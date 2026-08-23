@@ -11,6 +11,7 @@
 import { getDb } from "@/lib/server/db";
 import { AppError } from "@/lib/server/errors";
 import {
+  fetchAdsDerivedSignals,
   fetchCompetitorSignals,
   isRivalSweeperConfigured
 } from "@/lib/clients/rivalsweeper-client";
@@ -314,14 +315,24 @@ export async function syncCompetitorSignals(
   let snapshotsUpserted = 0;
   let skippedNoData = 0;
   for (const competitor of competitors) {
-    const signals = await fetchCompetitorSignals({
+    let signals = await fetchCompetitorSignals({
       domain: competitor.domain,
       igHandle: competitor.igHandle,
       date: now
     });
-    // Null = provider has no usable data for this domain yet (not monitored,
-    // or monitored but never crawled). Skip — an upserted "0 promos" row
-    // would poison the week-over-week diff with fake quiet.
+    let rowSource = source;
+    // Null = the promo-analysis pipeline has no data for this domain yet.
+    // Before skipping, derive promo signals from the ADS feed, which the
+    // provider fills within days (probe 2026-08-22: ads fresh for 3 of 4
+    // domains while every promo report was empty) — an ad shouting
+    // "20% הנחה" is a promo signal with budget behind it.
+    if (signals === null) {
+      signals = await fetchAdsDerivedSignals(competitor.domain);
+      if (signals !== null) rowSource = "rivalsweeper-ads";
+    }
+    // Still null = provider truly has nothing (not monitored / not yet
+    // crawled). Skip — an upserted "0 promos" row would poison the
+    // week-over-week diff with fake quiet.
     if (signals === null) {
       skippedNoData += 1;
       continue;
@@ -335,7 +346,7 @@ export async function syncCompetitorSignals(
         }
       },
       update: {
-        source,
+        source: rowSource,
         activePromoCount: signals.activePromoCount,
         maxDiscountPct: signals.maxDiscountPct,
         freeShippingThreshold: signals.freeShippingThreshold,
@@ -346,7 +357,7 @@ export async function syncCompetitorSignals(
         storeId,
         competitorId: competitor.id,
         snapshotDate,
-        source,
+        source: rowSource,
         activePromoCount: signals.activePromoCount,
         maxDiscountPct: signals.maxDiscountPct,
         freeShippingThreshold: signals.freeShippingThreshold,

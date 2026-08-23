@@ -121,6 +121,30 @@ export function GscConnectionManager({
     window.location.href = `/api/gsc/oauth/start?storeId=${encodeURIComponent(storeId)}`;
   }
 
+  async function syncNow() {
+    setRefreshing(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await fetch("/api/gsc/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body?.error ?? "Search Console sync failed.");
+      setSuccessMsg(
+        `Synced ${body.siteUrl}: ${body.pagesUpserted} pages, ${body.queriesUpserted} queries.`
+      );
+      await refreshStatus();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Search Console sync failed.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   async function disconnect() {
     setError(null);
     setSuccessMsg(null);
@@ -260,8 +284,11 @@ export function GscConnectionManager({
         <div className="flex flex-wrap items-center gap-2">
           {isConnected ? (
             <>
-              <Button variant="secondary" size="sm" onClick={refreshStatus} disabled={refreshing}>
+              <Button size="sm" onClick={syncNow} disabled={refreshing}>
                 {refreshing ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                Sync now
+              </Button>
+              <Button variant="secondary" size="sm" onClick={refreshStatus} disabled={refreshing}>
                 Refresh status
               </Button>
               <Button variant="secondary" size="sm" onClick={startOAuth}>

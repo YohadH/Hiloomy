@@ -65,6 +65,27 @@ export function Ga4ConnectionManager({
     }
   }
 
+  async function syncNow() {
+    setBusy(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await fetch("/api/ga4/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body?.error ?? "GA4 sync failed.");
+      setSuccessMsg(`Synced ${body.days} days of traffic (${body.rowsUpserted} rows). The dashboard section is live.`);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "GA4 sync failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveProperty() {
     setBusy(true);
     setError(null);
@@ -176,9 +197,18 @@ export function Ga4ConnectionManager({
 
         <div className="flex flex-wrap items-center gap-2">
           {isConnected ? (
-            <Button variant="secondary" size="sm" onClick={startOAuth}>
-              Reconnect
-            </Button>
+            <>
+              {/* Always offered while connected — the API answers with a
+                  clear "pick a property first" when none is saved yet
+                  (savedProperty state only hydrates after Choose property). */}
+              <Button size="sm" onClick={syncNow} disabled={busy}>
+                {busy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                Sync now
+              </Button>
+              <Button variant="secondary" size="sm" onClick={startOAuth}>
+                Reconnect
+              </Button>
+            </>
           ) : (
             <Button size="sm" onClick={startOAuth}>
               Connect Google Analytics

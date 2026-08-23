@@ -376,6 +376,84 @@ export async function fetchCompetitorActivity(options?: {
   }
 }
 
+// ── Ads-derived promo signals ───────────────────────────────────────────
+// Probe finding (2026-08-22): the provider's promo/coupon analysis
+// pipeline (homepage-promo, markdowns, coupons, free-shipping) can stay
+// EMPTY for weeks after a domain is added, while the ads + news feeds are
+// fresh within days and carry rich payloads (headline, body, spend_range,
+// impressions_range, platforms). Until the promo pipeline matures, derive
+// promo signals from the ad creatives themselves — an ad shouting
+// "20% הנחה" IS a promo signal, arguably a stronger one than a homepage
+// banner because money is behind it.
+
+const PROMO_TEXT_RE = /(\d{1,2})\s*%|(\b|^)(sale|off)(\b|$)|מבצע|הנחה|1\s*\+\s*1|חינם/i;
+const FREE_SHIP_RE = /(?:משלוח חינם.{0,12}?|free shipping.{0,12}?)(?:₪|\$|over |מעל )\s*(\d{2,4})/i;
+
+export async function fetchAdsDerivedSignals(
+  domain: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<RivalSweeperSignals | null> {
+  if (isMock()) return null;
+  try {
+    const host = normalizeHost(domain);
+    const domainMap = await getDomainGuidMap(timeoutMs);
+    const entry = domainMap.get(host);
+    if (!entry) return null;
+
+    const auth = await getAccessToken(timeoutMs);
+    const ads = await getReport(
+      `/companies/${auth.companyGuid}/domains/${entry.guid}/reports/ads?since=14d&limit=200`,
+      timeoutMs
+    );
+    if (ads.last_refreshed_at == null) return null;
+    const records = ads.records ?? [];
+
+    let promoAds = 0;
+    let maxPct: number | null = null;
+    let shippingThreshold: number | null = null;
+    let topPromoHeadline: string | null = null;
+    const platforms = new Map<string, number>();
+
+    for (const record of records) {
+      const payload = (record.payload ?? {}) as Record<string, unknown>;
+      const text = [pickText(payload, ["headline", "title"]), pickText(payload, ["body", "text", "description"])]
+        .filter(Boolean)
+        .join(" · ");
+      for (const p of Array.isArray(payload["platforms"]) ? (payload["platforms"] as unknown[]) : []) {
+        const key = String(p);
+        platforms.set(key, (platforms.get(key) ?? 0) + 1);
+      }
+      if (!text || !PROMO_TEXT_RE.test(text)) continue;
+      promoAds += 1;
+      const pct = parsePctFromText(text);
+      if (pct != null && (maxPct == null || pct > maxPct)) {
+        maxPct = pct;
+        topPromoHeadline = pickText(payload, ["headline", "title"]) ?? topPromoHeadline;
+      }
+      if (!topPromoHeadline) topPromoHeadline = pickText(payload, ["headline", "title"]);
+      const ship = text.match(FREE_SHIP_RE);
+      if (ship && shippingThreshold == null) shippingThreshold = Number(ship[1]);
+    }
+
+    return {
+      activePromoCount: promoAds,
+      maxDiscountPct: maxPct,
+      freeShippingThreshold: shippingThreshold,
+      homepageMessage: topPromoHeadline,
+      raw: {
+        source: "ads-derived",
+        adsTotal: ads.page?.total ?? records.length,
+        adsRefreshedAt: ads.last_refreshed_at,
+        promoAds,
+        platforms: Object.fromEntries(platforms)
+      }
+    };
+  } catch (err) {
+    console.warn("[rivalsweeper] ads-derived signals failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 export interface FetchCompetitorSignalsInput {
   domain: string;
   igHandle?: string | null;

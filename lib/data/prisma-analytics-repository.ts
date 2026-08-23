@@ -313,21 +313,23 @@ async function computeSalesSummary(
   const shipping = num(orderAgg._sum?.totalShipping);
   const taxes = num(orderAgg._sum?.totalTax);
   const netSales = grossSales - discounts - returns;
-  // Shopify's dashboard "Total sales" tile shows net sales + shipping
-  // WITHOUT adding taxes back for tax-included stores (the default for
-  // Israel/EU). Adding `taxes` back double-counts VAT when the customer
-  // paid a tax-inclusive price — the tax is already embedded in the
-  // amount they were charged, and stripping it from grossSales + adding
-  // it back to totalSales inflates the number by the entire VAT amount.
+  // Shopify parity (SA reconciliation 2026-08-22, per Sidekick's formula):
+  //   Total sales = Gross − Discounts − Returns + Shipping + Taxes
+  //                 (+ Duties + Additional fees, which we don't track — ~0)
+  // Verified against the store's own Analytics: 1,109,159 net + 20,139
+  // shipping + 202,753 taxes = 1,332,051 Total sales — Shopify DOES add
+  // taxes back, tax-inclusive stores included. The previous "don't add
+  // taxes" rule here was compensating for the mapper bug that left
+  // lineSubtotal partially tax-inclusive; with amounts now properly
+  // ex-VAT (rate-based strip + shipping netting + prod repair), adding
+  // `taxes` is the correct walk.
   //
-  // On a 984-order store this manifested as our "הכנסות" tile showing
-  // ~₪449k while Shopify's manual report showed ~₪434k — the ₪15k gap
-  // was the reclaimed VAT.
-  //
-  // For tax-EXCLUDED stores this deducts nothing (their `taxes` field is
-  // near zero anyway because the customer paid tax on top of the line
-  // subtotal, and that tax shows up as `totalPrice - subtotalPrice`).
-  const totalSales = netSales + shipping;
+  // Refund nuance that makes this exact: `returns` is the FULL refunded
+  // amount (product + its VAT), while `taxes` is the full tax CHARGED
+  // (not reduced by refunds). The refunded VAT is thus subtracted once
+  // inside `returns` and added once inside `taxes` — netting out to
+  // Shopify's convention (net product returns + net tax column).
+  const totalSales = netSales + shipping + taxes;
   // Bug audit #7 (docs/ANALYTICS-AUDIT-2026-06-16.md) — profit must subtract
   // ONLY the line-item portion of refunds against ONLY the line-item COGS.
   // Using `netSales` (which subtracts the FULL refund, incl. shipping+tax)
