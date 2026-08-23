@@ -111,6 +111,20 @@ export async function readCachedInsights(
 // existing WeeklyReport row for the window. Never inserts a row — that's
 // persistWeeklyReport's job during the scheduled cron. Buckets for other
 // locales are preserved, so HE and EN coexist on the same report row.
+//
+// The merge runs INSIDE Postgres (one UPDATE, no read-modify-write in JS)
+// because Prisma's `update` replaces the whole jsonb column. A read-then-
+// write would let two renders in different languages finishing at the same
+// time clobber each other: both read `{}`, then the later write lands
+// without the earlier one's bucket and ~90s of generated prose is lost.
+// `||` merges right-into-left, so we compose:
+//
+//   base  ||  { locale: (base->locale || patch) }
+//
+// which preserves sibling locales and merges field-by-field within the
+// locale. Only non-null fields go into the patch, matching the `??`
+// semantics this used to have: a failed generation leaves whatever was
+// cached before rather than overwriting it with null.
 export async function writeCachedInsights(
   storeId: string,
   periodStart: Date,
@@ -119,31 +133,60 @@ export async function writeCachedInsights(
   locale: InsightsLocale = "he",
   kind: "weekly" | "monthly" = "weekly"
 ): Promise<void> {
+  const patch: Record<string, unknown> = {};
+  if (insights.biCommentary != null) patch.biCommentary = insights.biCommentary;
+  if (insights.brandInsights != null) patch.brandInsights = insights.brandInsights;
+  if (insights.igInsights != null) patch.igInsights = insights.igInsights;
+  // Everything failed to generate — don't write an empty bucket, which
+  // would read back as a HIT holding nothing and suppress the retry.
+  if (Object.keys(patch).length === 0) return;
+
+  const { gte, lte } = periodWindow(periodEnd);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = getDb() as any;
-  const row = await db.weeklyReport.findFirst({
-    where: { storeId, kind, periodEnd: periodWindow(periodEnd) },
-    orderBy: { generatedAt: "desc" },
-    select: { id: true, insightsJson: true }
-  });
-  if (!row) return; // Ad-hoc render; nothing to cache to.
 
-  const stored = row.insightsJson as LocalizedInsightsBlob | null;
-  // Drop the legacy blob entirely rather than trying to guess its language.
-  const base: LocalizedInsightsBlob = stored && !isLegacyFlatBlob(stored) ? stored : {};
-  const existing = base[locale] ?? {};
+  // The base must be read from w's OWN column inside the SET expression,
+  // not lifted into a CTE. Under READ COMMITTED, a writer that blocks on a
+  // concurrently-updated row re-evaluates column references against the
+  // NEW row version (the same rule that makes `SET n = n + 1` safe) — but
+  // a CTE is evaluated once against the original snapshot, so a CTE-held
+  // base would reintroduce the very lost-update this is avoiding.
+  //
+  // `jsonb_exists_any` is the function form of the `?|` operator, used
+  // because a literal `?` in a raw query collides with the driver's
+  // placeholder parsing. It detects the pre-locale flat shape, which is
+  // discarded (its language is unknowable) rather than merged.
+  const BASE = `
+    CASE
+      WHEN w."insightsJson" IS NULL THEN '{}'::jsonb
+      WHEN jsonb_typeof(w."insightsJson") <> 'object' THEN '{}'::jsonb
+      WHEN jsonb_exists_any(w."insightsJson", ARRAY['biCommentary', 'brandInsights', 'igInsights'])
+        THEN '{}'::jsonb
+      ELSE w."insightsJson"
+    END`;
 
-  const merged: LocalizedInsightsBlob = {
-    ...base,
-    [locale]: {
-      biCommentary: insights.biCommentary ?? existing.biCommentary ?? null,
-      brandInsights: insights.brandInsights ?? existing.brandInsights ?? null,
-      igInsights: insights.igInsights ?? existing.igInsights ?? null
-    }
-  };
-
-  await db.weeklyReport.update({
-    where: { id: row.id },
-    data: { insightsJson: merged as unknown as object }
-  });
+  // $executeRawUnsafe only so BASE can be composed in; every value is
+  // still a bound parameter ($1…$6).
+  await db.$executeRawUnsafe(
+    `UPDATE "WeeklyReport" AS w
+     SET "insightsJson" = (${BASE}) || jsonb_build_object(
+       $5::text,
+       COALESCE((${BASE}) -> $5::text, '{}'::jsonb) || $6::jsonb
+     )
+     WHERE w.id = (
+       SELECT id FROM "WeeklyReport"
+       WHERE "storeId" = $1
+         AND "kind" = $2
+         AND "periodEnd" >= $3
+         AND "periodEnd" <= $4
+       ORDER BY "generatedAt" DESC
+       LIMIT 1
+     )`,
+    storeId,
+    kind,
+    gte,
+    lte,
+    locale,
+    JSON.stringify(patch)
+  );
 }
