@@ -25,16 +25,22 @@ const sideClasses: Record<Side, string> = {
   right: "left-full ms-2 top-1/2 -translate-y-1/2"
 };
 
+// LOGICAL alignment (2026-08-23). These were physical `left-0`/`right-0`,
+// so on RTL pages the tooltip anchored to the wrong edge and pushed the
+// panel off-screen — measured horizontal page overflow of 1446-1497px on
+// /retention, /affiliate-portal and /growth-agent. `start`/`end` flip with
+// direction; the centered case needs no translate because start-0 + end-0
+// lets the box center itself within the trigger.
 const alignClasses: Record<Side, Record<Align, string>> = {
   top: {
-    start: "left-0",
-    center: "left-1/2 -translate-x-1/2",
-    end: "right-0"
+    start: "start-0",
+    center: "start-1/2 -translate-x-1/2 rtl:translate-x-1/2",
+    end: "end-0"
   },
   bottom: {
-    start: "left-0",
-    center: "left-1/2 -translate-x-1/2",
-    end: "right-0"
+    start: "start-0",
+    center: "start-1/2 -translate-x-1/2 rtl:translate-x-1/2",
+    end: "end-0"
   },
   left: { start: "", center: "", end: "" },
   right: { start: "", center: "", end: "" }
@@ -55,7 +61,9 @@ export function HelpTip({
   className,
   iconClassName,
   width = "md",
-  locale = "en"
+  // Hebrew-first default: nearly every caller omits `locale`, and with an
+  // "en" default the aria-label leaked English on every Hebrew page.
+  locale = "he"
 }: HelpTipProps) {
   const Icon = variant === "info" ? Info : HelpCircle;
   const positionClass = side === "left" || side === "right"

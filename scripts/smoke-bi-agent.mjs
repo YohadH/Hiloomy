@@ -1,4 +1,4 @@
-// Smoke test for the Brandzp BI Gateway Creative agent.
+﻿// Smoke test for the BI Gateway Creative agent.
 // Verifies a brief-generation-style call goes through and produces parseable JSON.
 //
 // Usage:

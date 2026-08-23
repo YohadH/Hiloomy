@@ -105,7 +105,9 @@ function buildInstagramProfileEvidence(input: {
   crawl?: Record<string, unknown> | null;
   posts: any[];
   lastRunAt: string | null;
+  locale?: "he" | "en";
 }): MarketingPlannerInstagramCrawlProfile {
+  const lang = (he: string, en: string) => ((input.locale ?? "he") === "he" ? he : en);
   const profileUrl = String(input.profile?.profileUrl ?? input.crawl?.profileUrl ?? instagramProfileUrl(input.username));
   const postsScanned = readNumber(input.crawl?.postsScanned);
   const postsFound = readNumber(input.crawl?.postsFound);
@@ -116,7 +118,10 @@ function buildInstagramProfileEvidence(input: {
   const profileWasScanned = Boolean(input.crawl);
   const profileIsStored = Boolean(input.profile);
   let status: MarketingPlannerInstagramCrawlProfile["status"] = "missing";
-  let note = "No public Instagram data is stored for this profile yet.";
+  let note = lang(
+    "עדיין לא נשמרו נתוני אינסטגרם ציבוריים עבור הפרופיל הזה.",
+    "No public Instagram data is stored for this profile yet."
+  );
 
   if (profileWasScanned) {
     status = "scanned";
@@ -128,18 +133,36 @@ function buildInstagramProfileEvidence(input: {
 
   if (input.role === "brand") {
     if (input.posts.length) {
-      note = "Brand public posts/reels are stored and available for planner insights.";
+      note = lang(
+        "הפוסטים והרילס הציבוריים של המותג נשמרו וזמינים לתובנות המתכנן.",
+        "Brand public posts/reels are stored and available for planner insights."
+      );
     } else if (profileWasScanned) {
-      note = "The brand profile was scanned, but no public posts/reels were stored.";
+      note = lang(
+        "פרופיל המותג נסרק, אבל לא נשמרו ממנו פוסטים או רילס ציבוריים.",
+        "The brand profile was scanned, but no public posts/reels were stored."
+      );
     }
   } else if (!profileWasScanned && !profileIsStored) {
-    note = "Instagram handle is saved on the affiliate, but it has not been scanned yet.";
+    note = lang(
+      "שם המשתמש באינסטגרם שמור אצל השותפה, אבל הפרופיל עדיין לא נסרק.",
+      "Instagram handle is saved on the affiliate, but it has not been scanned yet."
+    );
   } else if (postsFound > 0 || input.posts.length > 0) {
-    note = "Crawler found brand-related public posts for this affiliate.";
+    note = lang(
+      "הסורק מצא פוסטים ציבוריים שקשורים למותג עבור השותפה הזו.",
+      "Crawler found brand-related public posts for this affiliate."
+    );
   } else if (postsScanned > 0 && postsSkippedUnrelated >= postsScanned) {
-    note = "Crawler scanned recent public posts, but none matched the brand, tag, hashtag, coupon, or affiliate code.";
+    note = lang(
+      "הסורק עבר על פוסטים ציבוריים אחרונים, אבל אף אחד מהם לא התאים למותג, לתיוג, להאשטג, לקופון או לקוד השותפה.",
+      "Crawler scanned recent public posts, but none matched the brand, tag, hashtag, coupon, or affiliate code."
+    );
   } else if (profileWasScanned) {
-    note = "Crawler scanned the profile, but no brand-related posts are stored yet.";
+    note = lang(
+      "הסורק סרק את הפרופיל, אבל עדיין לא נשמרו ממנו פוסטים שקשורים למותג.",
+      "Crawler scanned the profile, but no brand-related posts are stored yet."
+    );
   }
 
   return {
@@ -168,8 +191,12 @@ export async function buildInstagramCrawlEvidence(
     start?: Date | null;
     end?: Date | null;
     takePosts?: number;
+    locale?: "he" | "en";
   } = {}
 ): Promise<MarketingPlannerInstagramCrawlEvidence> {
+  const locale = options.locale ?? "he";
+  const lang = (he: string, en: string) => (locale === "he" ? he : en);
+
   if (!db.creatorProfile || !db.creatorPost || !db.syncRun) {
     return {
       source: PUBLIC_INSTAGRAM_PLATFORM,
@@ -182,7 +209,12 @@ export async function buildInstagramCrawlEvidence(
       brandProfile: null,
       affiliateProfiles: [],
       recentPosts: [],
-      warnings: ["Instagram crawler storage is not available in this environment."]
+      warnings: [
+        lang(
+          "אחסון הסורק של אינסטגרם אינו זמין בסביבה הזו.",
+          "Instagram crawler storage is not available in this environment."
+        )
+      ]
     };
   }
 
@@ -241,7 +273,8 @@ export async function buildInstagramCrawlEvidence(
     profile: profilesByUsername.get(BRAND_INSTAGRAM_USERNAME) ?? null,
     crawl: latestCrawledProfiles.get(BRAND_INSTAGRAM_USERNAME) ?? null,
     posts: postsByUsername.get(BRAND_INSTAGRAM_USERNAME) ?? [],
-    lastRunAt
+    lastRunAt,
+    locale
   });
 
   const affiliateProfiles = (members as any[])
@@ -256,7 +289,8 @@ export async function buildInstagramCrawlEvidence(
         profile: profilesByUsername.get(username) ?? null,
         crawl: latestCrawledProfiles.get(username) ?? null,
         posts: postsByUsername.get(username) ?? [],
-        lastRunAt
+        lastRunAt,
+        locale
       });
     })
     .filter(Boolean) as MarketingPlannerInstagramCrawlProfile[];
@@ -280,13 +314,22 @@ export async function buildInstagramCrawlEvidence(
 
   const warnings = readStringArray(latestDetails.warnings);
   if (!latestRun) {
-    warnings.push("The public Instagram crawler has not run yet for this store.");
+    warnings.push(lang(
+      "הסורק הציבורי של אינסטגרם עדיין לא רץ עבור החנות הזו.",
+      "The public Instagram crawler has not run yet for this store."
+    ));
   }
   if (!affiliateProfiles.length) {
-    warnings.push("No affiliate Instagram handles are saved yet, so the crawler can only use the brand page.");
+    warnings.push(lang(
+      "עדיין לא נשמרו חשבונות אינסטגרם של שותפות, ולכן הסורק יכול להשתמש רק בעמוד המותג.",
+      "No affiliate Instagram handles are saved yet, so the crawler can only use the brand page."
+    ));
   }
   if (affiliateProfiles.some((profile) => profile.status === "handle_saved")) {
-    warnings.push("Some affiliate Instagram handles are saved but have not been scanned yet. Run the public crawler before generating the final GANT.");
+    warnings.push(lang(
+      "חלק מחשבונות האינסטגרם של השותפות שמורים אבל עדיין לא נסרקו. הריצו את הסורק הציבורי לפני יצירת הגאנט הסופי.",
+      "Some affiliate Instagram handles are saved but have not been scanned yet. Run the public crawler before generating the final GANT."
+    ));
   }
 
   return {
@@ -402,6 +445,7 @@ export async function buildMarketingPlannerInfluencerIntelligence(
     start?: Date | null;
     end?: Date | null;
     periodLabel?: string | null;
+    locale?: "he" | "en";
   } = {}
 ): Promise<MarketingPlannerInfluencerIntelligence | null> {
   if (!storeScope.connected || !storeScope.storeId) {
@@ -474,7 +518,9 @@ export async function buildMarketingPlannerInfluencerIntelligence(
     db,
     storeScope.storeId,
     members as any[],
-    hasExplicitRange ? { start: previousMonth.start, end: previousMonth.end } : {}
+    hasExplicitRange
+      ? { start: previousMonth.start, end: previousMonth.end, locale: options.locale ?? "he" }
+      : { locale: options.locale ?? "he" }
   );
 
   const statsByMemberId = new Map<string, { clicks: number; orders: number; sales: number; commission: number }>();

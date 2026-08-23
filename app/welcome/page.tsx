@@ -108,7 +108,7 @@ function getCopy(isHe: boolean) {
           company: "חברה",
           privacy: "פרטיות",
           terms: "תנאי שימוש",
-          legal: "© 2026 Brandzp Ltd. כל הזכויות שמורות.",
+          legal: "© 2026 Hiloomy. כל הזכויות שמורות.",
           switchLong: "Switch to English"
         }
       }
@@ -168,7 +168,7 @@ function getCopy(isHe: boolean) {
           company: "Company",
           privacy: "Privacy",
           terms: "Terms",
-          legal: "© 2026 Brandzp Ltd. All rights reserved.",
+          legal: "© 2026 Hiloomy. All rights reserved.",
           switchLong: "עברו לעברית"
         }
       };

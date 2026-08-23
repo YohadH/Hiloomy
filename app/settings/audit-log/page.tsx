@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/auth/session";
 import { getDb } from "@/lib/server/db";
 import { History, User as UserIcon } from "lucide-react";
+import { getAppLocale } from "@/lib/i18n";
 
 // Audit log viewer. Owner/admin only — members see "permission required".
 // Read-only — log is append-only (no edit/delete).
@@ -14,7 +15,9 @@ export default async function AuditLogPage() {
   if (!auth.orgId) redirect("/");
 
   const isAdmin = auth.role === "owner" || auth.role === "admin";
-  const locale = auth.locale === "he" ? "he" : "en";
+  // Cookie is the source of truth for UI language (auth.locale drives
+  // emails); reading it here keeps this page in step with the app shell.
+  const locale = (await getAppLocale()) === "he" ? "he" : "en";
   const t = locale === "he"
     ? {
         title: "יומן ביקורת",

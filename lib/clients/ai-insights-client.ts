@@ -8,7 +8,7 @@
 // This helper centralises that contract behind a single function so all
 // the per-feature services can use the same provider waterfall:
 //
-//   1. Brandzp BI agent (askBiAgentJson) — primary. Domain-tuned, runs
+//   1. BI agent (askBiAgentJson) — primary. Domain-tuned, runs
 //      through our tunnel, no per-call cost beyond what the tunnel does.
 //   2. OpenAI gpt-4o-mini — fallback if BI agent is unconfigured OR
 //      throws. Costs about $0.0008 per call.
@@ -57,7 +57,7 @@ export async function generateInsightsJson<T>(input: GenerateInsightsInput): Pro
 }
 
 // Same as generateInsightsJson but also returns which provider succeeded.
-// Useful for the print page footer ("Written by Brandzp BI" vs "OpenAI").
+// Useful for the print page footer ("Written by Hiloomy BI" vs "OpenAI").
 export async function generateInsightsJsonTraced<T>(input: GenerateInsightsInput): Promise<GenerateInsightsResult<T>> {
   const biActive = isBiAgentConfigured() && process.env.BI_AGENT_DISABLE !== "1";
   const timeoutMs = input.timeoutMs ?? 90_000;

@@ -1,4 +1,4 @@
-// Brandzp BI Gateway client.
+// BI Gateway client (self-hosted agent behind BI_AGENT_URL).
 //
 // The gateway fronts two internal agents behind a single Cloudflare tunnel:
 //

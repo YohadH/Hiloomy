@@ -3,7 +3,10 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { AffiliatePortalNav } from "@/components/affiliate-portal/portal-nav";
 import { ReturningPolicyCard } from "@/components/affiliate-portal/returning-policy-card";
 import { getAppChromeData } from "@/lib/services/analytics-service";
-import { getAffiliatePrograms } from "@/lib/services/affiliate-portal-service";
+import {
+  getAffiliateChecklistGroupLabel,
+  getAffiliatePrograms
+} from "@/lib/services/affiliate-portal-service";
 import { getAppLocale } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/utils";
@@ -121,7 +124,9 @@ export default async function AffiliateProgramsPage() {
         <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {program.checklist.map((item) => (
             <div key={item.id} className="rounded-2xl border border-border/70 bg-background/70 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{item.group}</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                {getAffiliateChecklistGroupLabel(item.group, locale)}
+              </p>
               <p className="mt-2 font-semibold">{item.title}</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 {item.done ? lang("הושלם", "Completed") : lang("ממתין", "Pending")}

@@ -1,7 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { getGrowthStatusLabel } from "@/lib/i18n/growth-agent-labels";
 
-export function GrowthStatusBadge({ status }: { status: string }) {
+export function GrowthStatusBadge({
+  status,
+  locale = "he"
+}: {
+  status: string;
+  locale?: "he" | "en";
+}) {
   const classes: Record<string, string> = {
     active: "border-emerald-200 bg-emerald-50 text-emerald-700",
     paused: "border-slate-200 bg-slate-100 text-slate-700",
@@ -26,9 +33,10 @@ export function GrowthStatusBadge({ status }: { status: string }) {
     high: "border-rose-200 bg-rose-50 text-rose-700"
   };
 
+  // `status` stays the raw API value — only the rendered text is localized.
   return (
-    <Badge className={cn("normal-case tracking-normal", classes[status] ?? "")}>
-      {status.replaceAll("_", " ")}
+    <Badge className={cn("normal-case tracking-normal", classes[status] ?? "")} title={status}>
+      {getGrowthStatusLabel(status, locale)}
     </Badge>
   );
 }

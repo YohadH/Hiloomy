@@ -1092,8 +1092,13 @@ export async function buildMarketingPlannerMetaAds(
   options: {
     start?: Date | null;
     end?: Date | null;
+    locale?: "he" | "en";
   } = {}
 ): Promise<MarketingPlannerMetaAds | null> {
+  // Hebrew-first: callers that don't know the request locale get Hebrew copy,
+  // which matches the app default. `summaryLines` / `dataWarnings` are pure
+  // display strings — nothing downstream parses them.
+  const lang = (he: string, en: string) => ((options.locale ?? "he") === "he" ? he : en);
   if (!storeScope.connected || !storeScope.storeId) return null;
   const db = getDb();
   if (!db?.metaAdsConnection || !db?.metaAdsCampaignInsight) return null;
@@ -1132,8 +1137,14 @@ export async function buildMarketingPlannerMetaAds(
       topCreatives: [],
       dailyBreakdown: [],
       campaigns: [],
-      summaryLines: ["Meta Ads is connected, but no campaign insights have been synced yet."],
-      dataWarnings: ["Run Meta Ads sync from Settings before generating the final GANT."]
+      summaryLines: [lang(
+        "Meta Ads מחובר, אבל עדיין לא סונכרנו תובנות קמפיינים.",
+        "Meta Ads is connected, but no campaign insights have been synced yet."
+      )],
+      dataWarnings: [lang(
+        "הריצו סנכרון של Meta Ads ממסך ההגדרות לפני יצירת הגאנט הסופי.",
+        "Run Meta Ads sync from Settings before generating the final GANT."
+      )]
     };
   }
 
@@ -1183,8 +1194,14 @@ export async function buildMarketingPlannerMetaAds(
       topCreatives: [],
       dailyBreakdown: [],
       campaigns: [],
-      summaryLines: [`Meta Ads is connected, but no campaign/ad rows are stored for ${dateStart || "the selected start"}-${dateStop || "the selected end"}.`],
-      dataWarnings: ["Sync Meta Ads for a date preset that covers this reporting window before relying on paid-media conclusions."]
+      summaryLines: [lang(
+        `Meta Ads מחובר, אבל לא נשמרו שורות קמפיין/מודעה עבור ${dateStart || "תאריך ההתחלה שנבחר"}-${dateStop || "תאריך הסיום שנבחר"}.`,
+        `Meta Ads is connected, but no campaign/ad rows are stored for ${dateStart || "the selected start"}-${dateStop || "the selected end"}.`
+      )],
+      dataWarnings: [lang(
+        "סנכרנו את Meta Ads עבור טווח תאריכים שמכסה את חלון הדיווח הזה לפני שמסתמכים על מסקנות מדיה בתשלום.",
+        "Sync Meta Ads for a date preset that covers this reporting window before relying on paid-media conclusions."
+      )]
     };
   }
   const campaignRows = rows.filter((row: any) => row.level === "campaign");
@@ -1228,26 +1245,50 @@ export async function buildMarketingPlannerMetaAds(
   const dateStart = dailyBreakdown[0]?.dateStart ?? campaigns[0]?.dateStart ?? "";
   const dateStop = dailyBreakdown[dailyBreakdown.length - 1]?.dateStop ?? campaigns[0]?.dateStop ?? "";
   const summaryLines = [
-    `Meta Ads synced ${dailyBreakdown.length} daily date(s), ${campaigns.length} campaign(s), and ${creativeRows.length} ad/creative row(s) for ${dateStart || "unknown"}-${dateStop || "unknown"} with ${formatCurrency(totalSpend)} spend and ${totalPurchases} purchases.`,
+    lang(
+      `סונכרנו מ-Meta Ads ${dailyBreakdown.length} תאריכים, ${campaigns.length} קמפיינים ו-${creativeRows.length} שורות מודעה/קריאייטיב עבור ${dateStart || "לא ידוע"}-${dateStop || "לא ידוע"}, עם הוצאה של ${formatCurrency(totalSpend)} ו-${totalPurchases} רכישות.`,
+      `Meta Ads synced ${dailyBreakdown.length} daily date(s), ${campaigns.length} campaign(s), and ${creativeRows.length} ad/creative row(s) for ${dateStart || "unknown"}-${dateStop || "unknown"} with ${formatCurrency(totalSpend)} spend and ${totalPurchases} purchases.`
+    ),
     best
-      ? `Best paid signal: ${best.campaignName} with ROAS ${best.purchaseRoas != null ? best.purchaseRoas.toFixed(2) : "n/a"}, ${formatCurrency(best.spend)} spend, ${best.purchases} purchases.`
-      : "No clear paid winner is available yet.",
+      ? lang(
+          `האות החזק ביותר במדיה בתשלום: ${best.campaignName} עם ROAS ${best.purchaseRoas != null ? best.purchaseRoas.toFixed(2) : "לא זמין"}, הוצאה של ${formatCurrency(best.spend)} ו-${best.purchases} רכישות.`,
+          `Best paid signal: ${best.campaignName} with ROAS ${best.purchaseRoas != null ? best.purchaseRoas.toFixed(2) : "n/a"}, ${formatCurrency(best.spend)} spend, ${best.purchases} purchases.`
+        )
+      : lang("עדיין אין מנצח ברור במדיה בתשלום.", "No clear paid winner is available yet."),
     bestCreative
-      ? `Best creative signal: ${bestCreative.adName ?? bestCreative.creativeName ?? bestCreative.campaignName} in ${bestCreative.campaignName}, ROAS ${bestCreative.purchaseRoas != null ? bestCreative.purchaseRoas.toFixed(2) : "n/a"}, ${bestCreative.purchases} purchases.`
-      : "Ad creative rows are not available yet. Sync Meta Ads again to collect ad-level creative links.",
+      ? lang(
+          `הקריאייטיב החזק ביותר: ${bestCreative.adName ?? bestCreative.creativeName ?? bestCreative.campaignName} בקמפיין ${bestCreative.campaignName}, ROAS ${bestCreative.purchaseRoas != null ? bestCreative.purchaseRoas.toFixed(2) : "לא זמין"}, ${bestCreative.purchases} רכישות.`,
+          `Best creative signal: ${bestCreative.adName ?? bestCreative.creativeName ?? bestCreative.campaignName} in ${bestCreative.campaignName}, ROAS ${bestCreative.purchaseRoas != null ? bestCreative.purchaseRoas.toFixed(2) : "n/a"}, ${bestCreative.purchases} purchases.`
+        )
+      : lang(
+          "אין עדיין שורות קריאייטיב ברמת מודעה. סנכרנו שוב את Meta Ads כדי לאסוף קישורים לקריאייטיבים.",
+          "Ad creative rows are not available yet. Sync Meta Ads again to collect ad-level creative links."
+        ),
     averagePurchaseRoas != null
-      ? `Average campaign ROAS in the synced set is ${averagePurchaseRoas.toFixed(2)}.`
-      : "ROAS is missing from the synced campaign set."
+      ? lang(
+          `ה-ROAS הממוצע בסט הקמפיינים המסונכרן הוא ${averagePurchaseRoas.toFixed(2)}.`,
+          `Average campaign ROAS in the synced set is ${averagePurchaseRoas.toFixed(2)}.`
+        )
+      : lang("חסר ROAS בסט הקמפיינים המסונכרן.", "ROAS is missing from the synced campaign set.")
   ];
   const dataWarnings = [
     ...(watchCampaigns.length
-      ? [`${watchCampaigns.length} Meta campaign(s) need review because ROAS is low/missing or purchases are weak.`]
+      ? [lang(
+          `${watchCampaigns.length} קמפיינים ב-Meta דורשים בדיקה כי ה-ROAS נמוך או חסר, או שהרכישות חלשות.`,
+          `${watchCampaigns.length} Meta campaign(s) need review because ROAS is low/missing or purchases are weak.`
+        )]
       : []),
     ...(adRows.length && topCreatives.some((creative) => !creative.creativePreviewUrl && !creative.creativePermalinkUrl)
-      ? ["Some Meta ad rows synced without a preview/permalink, usually because Meta did not expose the creative object for that ad."]
+      ? [lang(
+          "חלק משורות המודעות מ-Meta סונכרנו ללא תצוגה מקדימה או קישור קבוע, בדרך כלל כי Meta לא חשפה את אובייקט הקריאייטיב עבור אותה מודעה.",
+          "Some Meta ad rows synced without a preview/permalink, usually because Meta did not expose the creative object for that ad."
+        )]
       : []),
     ...(!adRows.length
-      ? ["No ad-level creative rows were synced yet, so creative recommendations are campaign-only."]
+      ? [lang(
+          "עדיין לא סונכרנו שורות קריאייטיב ברמת מודעה, ולכן ההמלצות לקריאייטיב מבוססות על קמפיינים בלבד.",
+          "No ad-level creative rows were synced yet, so creative recommendations are campaign-only."
+        )]
       : [])
   ];
 

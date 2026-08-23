@@ -308,7 +308,19 @@ async function getDirectoryContext(storeId?: string) {
   }
 
   await ensureAffiliateProgramSeed(store.id);
-  return { db, store };
+
+  // Hebrew-first: copy generated during import (coupon titles, …) follows the
+  // merchant's app locale. Cron/background callers have no request scope, so
+  // they fall back to the app default.
+  let locale: "he" | "en" = "he";
+  try {
+    const { getAppLocale } = await import("@/lib/i18n");
+    locale = await getAppLocale();
+  } catch {
+    locale = "he";
+  }
+
+  return { db, store, locale };
 }
 
 async function ensureUniqueAffiliateCode(context: DirectoryContext, preferredCode: string, currentAffiliateId?: string) {
@@ -380,6 +392,10 @@ async function syncImportedCouponSnapshot(
     return;
   }
 
+  const importedCouponTitle = context.locale === "he"
+    ? `קופון מיובא ${normalizedCouponCode}`
+    : `Imported coupon ${normalizedCouponCode}`;
+
   const existingCoupon = await context.db.affiliateCoupon.findUnique({
     where: { storeId_code: { storeId: context.store.id, code: normalizedCouponCode } }
   });
@@ -389,7 +405,7 @@ async function syncImportedCouponSnapshot(
     where: { storeId_code: { storeId: context.store.id, code: normalizedCouponCode } },
     update: {
       affiliateMemberId: affiliate.id,
-      title: existingCoupon?.title ?? `Imported coupon ${normalizedCouponCode}`,
+      title: existingCoupon?.title ?? importedCouponTitle,
       discountType: existingCoupon?.discountType ?? "percent",
       discountValue: existingCoupon?.discountValue ?? 0,
       applyLink: applyLink ?? existingCoupon?.applyLink ?? buildReferralLink(context.store.domain, affiliate.affiliateCode, normalizedCouponCode),
@@ -398,7 +414,7 @@ async function syncImportedCouponSnapshot(
     create: {
       storeId: context.store.id,
       affiliateMemberId: affiliate.id,
-      title: `Imported coupon ${normalizedCouponCode}`,
+      title: importedCouponTitle,
       code: normalizedCouponCode,
       discountType: "percent",
       discountValue: 0,

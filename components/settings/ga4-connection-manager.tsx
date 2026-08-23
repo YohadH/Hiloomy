@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, XCircle, Loader2, LineChart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useSyncStatus } from "@/components/sync/sync-status-provider";
 
 // GA4 connection card — mirrors the GSC card: OAuth connect + a property
 // picker (the sync only runs once a property is chosen).
@@ -30,6 +31,8 @@ export function Ga4ConnectionManager({
   locale?: "he" | "en";
 }) {
   const router = useRouter();
+  const sync = useSyncStatus();
+  const syncing = sync?.isRunning("ga4") ?? false;
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
   const [connection, setConnection] = useState<Ga4ConnectionStatus>(initialConnection);
@@ -77,30 +80,23 @@ export function Ga4ConnectionManager({
     }
   }
 
-  async function syncNow() {
-    setBusy(true);
+  // Handed to the app-shell provider so it keeps running (and keeps
+  // reporting in the dock) after this modal closes or the user navigates.
+  function syncNow() {
     setError(null);
     setSuccessMsg(null);
-    try {
-      const res = await fetch("/api/ga4/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId })
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body?.error ?? lang("הסנכרון מGA4 נכשל.", "GA4 sync failed."));
-      setSuccessMsg(
+    sync?.startSync({
+      id: "ga4",
+      label: lang("Google Analytics 4", "Google Analytics 4"),
+      url: "/api/ga4/sync",
+      body: { storeId },
+      describeResult: (body) =>
         lang(
-          `סונכרנו ${body.days} ימי תנועה (${body.rowsUpserted} שורות). מדור הדשבורד פעיל.`,
-          `Synced ${body.days} days of traffic (${body.rowsUpserted} rows). The dashboard section is live.`
-        )
-      );
-      router.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : lang("הסנכרון מGA4 נכשל.", "GA4 sync failed."));
-    } finally {
-      setBusy(false);
-    }
+          `סונכרנו ${body.days} ימי תנועה (${body.rowsUpserted} שורות)`,
+          `Synced ${body.days} days of traffic (${body.rowsUpserted} rows)`
+        ),
+      onDone: () => router.refresh()
+    });
   }
 
   async function saveProperty() {
@@ -236,9 +232,9 @@ export function Ga4ConnectionManager({
               {/* Always offered while connected — the API answers with a
                   clear "pick a property first" when none is saved yet
                   (savedProperty state only hydrates after Choose property). */}
-              <Button size="sm" onClick={syncNow} disabled={busy}>
-                {busy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                {lang("סנכרון עכשיו", "Sync now")}
+              <Button size="sm" onClick={syncNow} disabled={busy || syncing}>
+                {syncing ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                {syncing ? lang("מסנכרן ברקע…", "Syncing in background…") : lang("סנכרון עכשיו", "Sync now")}
               </Button>
               <Button variant="secondary" size="sm" onClick={startOAuth}>
                 {lang("חיבור מחדש", "Reconnect")}

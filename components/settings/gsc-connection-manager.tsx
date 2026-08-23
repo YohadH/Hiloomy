@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, XCircle, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useSyncStatus } from "@/components/sync/sync-status-provider";
 
 // Shape returned by GET /api/gsc/connection/status
 type GscConnectionStatus = {
@@ -47,6 +48,8 @@ export function GscConnectionManager({
   locale?: "he" | "en";
 }) {
   const router = useRouter();
+  const sync = useSyncStatus();
+  const gscSyncing = sync?.isRunning("gsc") ?? false;
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
   const [connection, setConnection] = useState<GscConnectionStatus>(initialConnection);
@@ -138,36 +141,26 @@ export function GscConnectionManager({
     window.location.href = `/api/gsc/oauth/start?storeId=${encodeURIComponent(storeId)}`;
   }
 
-  async function syncNow() {
-    setRefreshing(true);
+  // Runs in the app-shell provider so closing this modal (or navigating
+  // away) no longer loses the spinner, the result, or the error.
+  function syncNow() {
     setError(null);
     setSuccessMsg(null);
-    try {
-      const res = await fetch("/api/gsc/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId })
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok)
-        throw new Error(body?.error ?? lang("הסנכרון מSearch Console נכשל.", "Search Console sync failed."));
-      setSuccessMsg(
+    sync?.startSync({
+      id: "gsc",
+      label: lang("Google Search Console", "Google Search Console"),
+      url: "/api/gsc/sync",
+      body: { storeId },
+      describeResult: (body) =>
         lang(
-          `סונכרן ${body.siteUrl}: ${body.pagesUpserted} עמודים, ${body.queriesUpserted} שאילתות.`,
-          `Synced ${body.siteUrl}: ${body.pagesUpserted} pages, ${body.queriesUpserted} queries.`
-        )
-      );
-      await refreshStatus();
-      router.refresh();
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : lang("הסנכרון מSearch Console נכשל.", "Search Console sync failed.")
-      );
-    } finally {
-      setRefreshing(false);
-    }
+          `${body.pagesUpserted} עמודים, ${body.queriesUpserted} שאילתות`,
+          `${body.pagesUpserted} pages, ${body.queriesUpserted} queries`
+        ),
+      onDone: () => {
+        void refreshStatus();
+        router.refresh();
+      }
+    });
   }
 
   async function disconnect() {
@@ -321,9 +314,11 @@ export function GscConnectionManager({
         <div className="flex flex-wrap items-center gap-2">
           {isConnected ? (
             <>
-              <Button size="sm" onClick={syncNow} disabled={refreshing}>
-                {refreshing ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                {lang("סנכרון עכשיו", "Sync now")}
+              <Button size="sm" onClick={syncNow} disabled={refreshing || gscSyncing}>
+                {gscSyncing ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                {gscSyncing
+                  ? lang("מסנכרן ברקע…", "Syncing in background…")
+                  : lang("סנכרון עכשיו", "Sync now")}
               </Button>
               <Button variant="secondary" size="sm" onClick={refreshStatus} disabled={refreshing}>
                 {lang("רענון סטטוס", "Refresh status")}

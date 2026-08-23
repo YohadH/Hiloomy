@@ -9,6 +9,8 @@ import { getSubscriptionStatus } from "@/lib/billing/subscription-status";
 import { gateTrialAccess } from "@/lib/billing/trial-gate";
 import { getDisabledModules, getLockedModules } from "@/lib/server/module-flags";
 import { ChatWidget } from "@/components/chat/chat-widget";
+import { SyncStatusProvider } from "@/components/sync/sync-status-provider";
+import { SyncStatusDock } from "@/components/sync/sync-status-dock";
 
 export async function AppShell({
   children,
@@ -40,7 +42,11 @@ export async function AppShell({
   // the banner.
   const sub = await getSubscriptionStatus().catch(() => null);
 
+  // SyncStatusProvider wraps the whole shell so background syncs survive
+  // modal close AND client-side navigation — it sits above the router
+  // outlet and is never unmounted by either.
   return (
+    <SyncStatusProvider locale={locale === "he" ? "he" : "en"}>
     <div className="min-h-screen lg:flex">
       <Sidebar
         storeName={store.name}
@@ -65,6 +71,9 @@ export async function AppShell({
       </main>
       {/* Floating chat launcher — BI analyst + customer support, all pages. */}
       <ChatWidget locale={locale === "he" ? "he" : "en"} />
+      {/* Background-sync dock — visible on every page while a sync runs. */}
+      <SyncStatusDock locale={locale === "he" ? "he" : "en"} />
     </div>
+    </SyncStatusProvider>
   );
 }

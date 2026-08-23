@@ -26,7 +26,7 @@ export function GrowthFindingsList({
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <GrowthStatusBadge status={finding.severity} />
+                  <GrowthStatusBadge status={finding.severity} locale={locale} />
                   <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground" dir="ltr">{finding.metricName}</span>
                 </div>
                 <p className="text-base font-semibold">{finding.summary}</p>

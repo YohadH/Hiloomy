@@ -22,7 +22,7 @@ type CellValue = "yes" | "no" | "partial" | string;
 
 interface ComparisonRow {
   feature: string;
-  brandzp: CellValue;
+  hiloomy: CellValue;
   goprofit: CellValue;
   beprofit: CellValue;
   tripleWhale: CellValue;
@@ -32,7 +32,7 @@ interface ComparisonRow {
 const rows: ComparisonRow[] = [
   {
     feature: "שפת ממשק",
-    brandzp: "עברית ראשית + אנגלית",
+    hiloomy:"עברית ראשית + אנגלית",
     goprofit: "עברית (מוצר ישראלי)",
     beprofit: "אנגלית בלבד",
     tripleWhale: "אנגלית בלבד",
@@ -40,7 +40,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "מטבע ברירת מחדל",
-    brandzp: "ILS (שקל)",
+    hiloomy:"ILS (שקל)",
     goprofit: "ILS",
     beprofit: "USD (המרה ידנית)",
     tripleWhale: "USD",
@@ -48,7 +48,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "מחיר כניסה",
-    brandzp: "Starter / Growth",
+    hiloomy:"Starter / Growth",
     goprofit: "לא פורסם",
     beprofit: "מ-$25/חודש",
     tripleWhale: "מ-$129/חודש",
@@ -56,7 +56,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "גרסת ניסיון",
-    brandzp: "14 יום חינם",
+    hiloomy:"14 יום חינם",
     goprofit: "לא פורסם",
     beprofit: "7 ימים",
     tripleWhale: "7 ימים",
@@ -64,7 +64,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "רווח אמיתי לפי SKU",
-    brandzp: "yes",
+    hiloomy:"yes",
     goprofit: "partial",
     beprofit: "partial",
     tripleWhale: "partial",
@@ -72,7 +72,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "מעקב אפיל / משפיענים",
-    brandzp: "yes",
+    hiloomy:"yes",
     goprofit: "partial",
     beprofit: "no",
     tripleWhale: "no",
@@ -80,7 +80,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "התראות מלאי בעברית",
-    brandzp: "yes",
+    hiloomy:"yes",
     goprofit: "partial",
     beprofit: "no",
     tripleWhale: "no",
@@ -88,7 +88,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "סיכום שבועי AI בעברית",
-    brandzp: "yes",
+    hiloomy:"yes",
     goprofit: "no",
     beprofit: "no",
     tripleWhale: "no",
@@ -96,7 +96,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "Native לShopify",
-    brandzp: "yes",
+    hiloomy:"yes",
     goprofit: "yes",
     beprofit: "yes",
     tripleWhale: "yes",
@@ -104,7 +104,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "Cohorts / שימור לקוחות",
-    brandzp: "yes",
+    hiloomy:"yes",
     goprofit: "partial",
     beprofit: "partial",
     tripleWhale: "yes",
@@ -112,7 +112,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "Meta Ads attribution",
-    brandzp: "yes",
+    hiloomy:"yes",
     goprofit: "yes",
     beprofit: "yes",
     tripleWhale: "yes",
@@ -120,7 +120,7 @@ const rows: ComparisonRow[] = [
   },
   {
     feature: "תמיכה ישראלית",
-    brandzp: "מייסד ישראלי",
+    hiloomy:"מייסד ישראלי",
     goprofit: "ישראלי",
     beprofit: "US / EN",
     tripleWhale: "US",
@@ -271,7 +271,7 @@ const uniqueFeatures = [
 
 export default function CompareHePage() {
   const columns = [
-    { key: "brandzp", label: "Hiloomy", highlight: true },
+    { key: "hiloomy", label: "Hiloomy", highlight: true },
     { key: "goprofit", label: "GoProfit", highlight: false },
     { key: "beprofit", label: "BeProfit", highlight: false },
     { key: "tripleWhale", label: "Triple Whale", highlight: false },
@@ -525,7 +525,7 @@ export default function CompareHePage() {
       {/* Footer */}
       <footer className="border-t border-border/40 mt-6">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
-          <p>© 2026 Brandzp Ltd. כל הזכויות שמורות.</p>
+          <p>© 2026 Hiloomy. כל הזכויות שמורות.</p>
           <nav className="flex items-center gap-4">
             <a href="/privacy" className="hover:text-foreground">פרטיות</a>
             <a href="/terms" className="hover:text-foreground">תנאי שימוש</a>

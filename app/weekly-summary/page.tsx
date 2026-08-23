@@ -301,11 +301,13 @@ export default async function WeeklySummaryPage() {
     buildMarketingPlannerInfluencerIntelligence(storeScope, range.end, {
       start: range.start,
       end: range.end,
-      periodLabel: dateRangeLabel
+      periodLabel: dateRangeLabel,
+      locale
     }).catch(() => null),
     buildMarketingPlannerMetaAds(storeScope, {
       start: range.start,
-      end: range.end
+      end: range.end,
+      locale
     }).catch(() => null)
   ]);
   const weeklyAgentInsights = await buildWeeklyAgentInsights({
@@ -376,6 +378,7 @@ export default async function WeeklySummaryPage() {
             metaAds={metaAds}
             direction={direction}
             dateRangeLabel={dateRangeLabel}
+            locale={locale}
           />
         </section>
 
@@ -399,6 +402,7 @@ export default async function WeeklySummaryPage() {
                 instagram={influencerIntelligence.instagramCrawl}
                 direction={direction}
                 dateRangeLabel={dateRangeLabel}
+                locale={locale}
                 description={locale === "he"
                   ? "שכבת הוכחה לעמוד המותג ולחשבונות האינסטגרם של השותפים, בתוך חלון התאריכים של הסיכום."
                   : "Proof layer for the brand page and affiliate Instagram handles, within the summary's date range."}

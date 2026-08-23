@@ -392,7 +392,7 @@ export default async function MetaAdsWeeklyPrintPage({
         influencer = await buildMarketingPlannerInfluencerIntelligence(
           { storeId, storeName: store.name, storeDomain: store.domain, connected: true },
           end,
-          { start, end, periodLabel: `${params.from ?? ""} → ${params.to ?? ""}` }
+          { start, end, periodLabel: `${params.from ?? ""} → ${params.to ?? ""}`, locale }
         );
       }
       // Pull recent posts over the wider 30-day window directly so even

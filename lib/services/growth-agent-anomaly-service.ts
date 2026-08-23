@@ -74,6 +74,9 @@ export async function runGrowthAgentAnomalyDetection(storeId?: string) {
   const returningDeltaYesterday = percentDelta(currentReturning, Number(yesterday.returningCustomers ?? currentReturning));
   const returningDelta7d = percentDelta(currentReturning, Number(last7Days.returningCustomers ?? currentReturning));
 
+  // `label` is the stable English fallback. The UI renders it through
+  // getGrowthMetricLabel(card.key, card.label, locale) so the merchant sees
+  // Hebrew without the persisted/serialized payload becoming locale-specific.
   const monitoringCards: GrowthMonitoringCard[] = [
     {
       key: "sessions",

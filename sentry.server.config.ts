@@ -19,7 +19,7 @@ if (dsn) {
     // Always tag with the deploy version if Render exposes it. RENDER_GIT_COMMIT
     // is set by Render automatically on every deploy.
     release: process.env.RENDER_GIT_COMMIT
-      ? `brandzp@${process.env.RENDER_GIT_COMMIT.slice(0, 7)}`
+      ? `hiloomy@${process.env.RENDER_GIT_COMMIT.slice(0, 7)}`
       : undefined
   });
 }

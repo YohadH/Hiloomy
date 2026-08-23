@@ -37,7 +37,7 @@ function getCopy(isHe: boolean) {
         finalTitle: "רוצים את הדוח הזה על הנתונים שלכם?",
         finalBody: "מחברים את Shopify, ובראשון הראשון שאחרי החיבור הדוח נכנס למייל.",
         backHome: "לעמוד הבית",
-        legal: "© 2026 Brandzp Ltd."
+        legal: "© 2026 Hiloomy"
       }
     : {
         nav: { features: "Features", report: "Weekly report", pricing: "Pricing", security: "Security", login: "Log in", cta: "Create account", ctaFree: "Get started free", switchLabel: "עב", switchLong: "עברו לעברית" },
@@ -49,7 +49,7 @@ function getCopy(isHe: boolean) {
         finalTitle: "Want this report on your own numbers?",
         finalBody: "Connect Shopify and it lands in your inbox the first Sunday after.",
         backHome: "Back to home",
-        legal: "© 2026 Brandzp Ltd."
+        legal: "© 2026 Hiloomy"
       };
 }
 

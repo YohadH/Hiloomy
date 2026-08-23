@@ -16,7 +16,7 @@
 //   • Optional prior-week comparison (delta % per KPI + winner/loser ads)
 //
 // Provider waterfall (via lib/clients/ai-insights-client):
-//   1. Brandzp BI agent (askBiAgentJson) — primary; domain-tuned
+//   1. BI agent (askBiAgentJson) — primary; domain-tuned
 //   2. OpenAI gpt-4o-mini — fallback if BI is unconfigured or throws
 //   3. Deterministic fallback content if both fail (no fabrication)
 

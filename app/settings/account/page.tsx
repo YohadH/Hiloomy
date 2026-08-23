@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/auth/session";
 import { getDb } from "@/lib/server/db";
 import { AccountSettingsForm } from "@/components/settings/account-settings-form";
+import { getAppLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,10 @@ export default async function AccountSettingsPage() {
 
   if (!user) redirect("/signin" as never);
 
-  const t = auth.locale === "he"
+  // Cookie drives UI language (auth.locale drives emails) — same rule as
+  // the app shell, so this page can't render in the "other" language.
+  const uiLocale = await getAppLocale();
+  const t = uiLocale === "he"
     ? { title: "הגדרות חשבון", subtitle: "פרטים אישיים והעדפות שפה" }
     : { title: "Account settings", subtitle: "Personal details and language preference" };
 
@@ -34,10 +38,13 @@ export default async function AccountSettingsPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t.subtitle}</p>
       </div>
 
+      {/* initialLocale uses uiLocale (cookie), NOT user.locale (DB) —
+          otherwise the form body renders in the opposite language to its
+          own header, which is exactly the bug the E2E pass caught. */}
       <AccountSettingsForm
         initialEmail={user.email}
         initialDisplayName={user.displayName ?? ""}
-        initialLocale={user.locale === "en" ? "en" : "he"}
+        initialLocale={uiLocale === "en" ? "en" : "he"}
       />
     </main>
   );

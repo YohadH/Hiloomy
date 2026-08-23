@@ -17,11 +17,14 @@ const SEVERITY_PILL: Record<Alert["severity"], string> = {
 
 export function AlertCard({
   alert,
-  severityLabel
+  severityLabel,
+  locale = "he"
 }: {
   alert: Alert;
   severityLabel?: string;
+  locale?: "he" | "en";
 }) {
+  const isHe = locale === "he";
   return (
     <Card className={cn("border", SEVERITY_CARD[alert.severity])}>
       <CardContent className="space-y-3 p-5">
@@ -44,7 +47,7 @@ export function AlertCard({
         {alert.suggestedAction ? (
           <div className="rounded-lg border border-border bg-card/80 px-3 py-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Suggested action
+              {isHe ? "פעולה מומלצת" : "Suggested action"}
             </p>
             <p className="mt-1 text-xs leading-5">{alert.suggestedAction}</p>
           </div>

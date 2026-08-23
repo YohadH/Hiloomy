@@ -18,19 +18,62 @@ import {
   resolveAffiliateSourcePlatform
 } from "@/lib/services/affiliate-attribution-source";
 import { resolveOrCreateBaseStore } from "@/lib/services/creator-admin-service";
+import { getAppLocale } from "@/lib/i18n";
 
-const DEFAULT_PROGRAM_CHECKLIST: AffiliateProgram["checklist"] = [
-  { id: "embedded", title: "Enable app embed", done: false, group: "launch" },
-  { id: "program", title: "Create a program", done: false, group: "launch" },
-  { id: "brand", title: "Add brand identity", done: false, group: "launch" },
-  { id: "payments", title: "Add payment method", done: false, group: "launch" },
-  { id: "portal", title: "Design portal pages", done: false, group: "launch" },
-  { id: "emails", title: "Review email automation", done: false, group: "launch" },
-  { id: "first-affiliate", title: "Add the first affiliate", done: false, group: "test" },
-  { id: "first-conversion", title: "Get the first conversion", done: false, group: "test" },
-  { id: "landing", title: "Showcase landing page on your store", done: false, group: "promote" },
-  { id: "reachout", title: "Reach out to potential affiliates", done: false, group: "promote" }
+/**
+ * Hebrew-first locale for service-generated copy. Falls back to "he" outside a
+ * request scope (cron, report generation), which matches the app default.
+ */
+async function resolveAffiliateLocale(): Promise<"he" | "en"> {
+  try {
+    return await getAppLocale();
+  } catch {
+    return "he";
+  }
+}
+
+// Hebrew-first. `id` and `group` stay stable machine values; `title` and
+// `groupLabel` are the merchant-facing copy for the /affiliate-portal/programs
+// setup guide.
+const PROGRAM_CHECKLIST_COPY: {
+  id: string;
+  group: string;
+  he: string;
+  en: string;
+}[] = [
+  { id: "embedded", group: "launch", he: "הפעלת ההטמעה באפליקציה", en: "Enable app embed" },
+  { id: "program", group: "launch", he: "יצירת תוכנית שותפים", en: "Create a program" },
+  { id: "brand", group: "launch", he: "הוספת זהות מותג", en: "Add brand identity" },
+  { id: "payments", group: "launch", he: "הוספת אמצעי תשלום", en: "Add payment method" },
+  { id: "portal", group: "launch", he: "עיצוב עמודי הפורטל", en: "Design portal pages" },
+  { id: "emails", group: "launch", he: "בדיקת אוטומציית האימיילים", en: "Review email automation" },
+  { id: "first-affiliate", group: "test", he: "הוספת השותפה הראשונה", en: "Add the first affiliate" },
+  { id: "first-conversion", group: "test", he: "קבלת ההמרה הראשונה", en: "Get the first conversion" },
+  { id: "landing", group: "promote", he: "הצגת עמוד הנחיתה בחנות", en: "Showcase landing page on your store" },
+  { id: "reachout", group: "promote", he: "פנייה לשותפות פוטנציאליות", en: "Reach out to potential affiliates" }
 ];
+
+const CHECKLIST_GROUP_LABELS: Record<string, { he: string; en: string }> = {
+  launch: { he: "השקה", en: "LAUNCH" },
+  test: { he: "בדיקה", en: "TEST" },
+  promote: { he: "קידום", en: "PROMOTE" }
+};
+
+/** Merchant-facing eyebrow for a checklist group. Keeps the raw group id as data. */
+export function getAffiliateChecklistGroupLabel(group: string, locale: "he" | "en" = "he") {
+  const entry = CHECKLIST_GROUP_LABELS[group];
+  if (!entry) return group.toUpperCase();
+  return locale === "he" ? entry.he : entry.en;
+}
+
+function buildProgramChecklist(locale: "he" | "en"): AffiliateProgram["checklist"] {
+  return PROGRAM_CHECKLIST_COPY.map((item) => ({
+    id: item.id,
+    title: locale === "he" ? item.he : item.en,
+    done: false,
+    group: item.group
+  }));
+}
 
 const DEFAULT_PORTAL_SETTINGS = {
   portalLanguage: "English",
@@ -69,7 +112,10 @@ function refundedFraction(order: { totalPrice?: unknown; totalRefunds?: unknown 
   return Math.min(refunds / total, 1);
 }
 
-function buildProgramName(storeName?: string | null) {
+function buildProgramName(storeName?: string | null, locale: "he" | "en" = "he") {
+  if (locale === "he") {
+    return storeName ? `תוכנית השותפים של ${storeName}` : "תוכנית שותפים";
+  }
   return storeName ? `${storeName} Affiliate Program` : "Affiliate Program";
 }
 
@@ -126,17 +172,22 @@ function normalizeSourceLabel(
   return humanizeAffiliateSourcePlatform(sourcePlatform) ?? "Unknown";
 }
 
-function buildProgramPayload(store: any | null, row: any | null, affiliateRows: AffiliateProfile[]): AffiliateProgram {
+function buildProgramPayload(
+  store: any | null,
+  row: any | null,
+  affiliateRows: AffiliateProfile[],
+  locale: "he" | "en" = "he"
+): AffiliateProgram {
   return {
     id: row?.id ?? `${store?.id ?? "affiliate"}-program`,
-    name: row?.name ?? buildProgramName(store?.name),
+    name: row?.name ?? buildProgramName(store?.name, locale),
     status: (row?.status === "active" ? "active" : "draft") as AffiliateProgram["status"],
     defaultCommissionRate: row ? Math.round(toNumber(row.commissionRate) * 10000) / 100 : 0,
     affiliates: affiliateRows.length,
     orders: affiliateRows.reduce((sum, item) => sum + item.orders, 0),
     sales: affiliateRows.reduce((sum, item) => sum + item.sales, 0),
     signUpLink: row?.signUpLink ?? "",
-    checklist: DEFAULT_PROGRAM_CHECKLIST,
+    checklist: buildProgramChecklist(locale),
     returningCustomerPolicy: (row?.returningCustomerPolicy === "reduced" || row?.returningCustomerPolicy === "zero"
       ? row.returningCustomerPolicy
       : "full") as AffiliateProgram["returningCustomerPolicy"],
@@ -179,14 +230,14 @@ function isWithinRange(value: string | Date, start: Date, end: Date) {
   return date >= start && date <= end;
 }
 
-function buildAffiliateProfileFromMember(row: any, store: any): AffiliateProfile {
+function buildAffiliateProfileFromMember(row: any, store: any, locale: "he" | "en" = "he"): AffiliateProfile {
   const referralLink = row.referralLink ?? buildReferralLink(store.domain, row.affiliateCode, row.couponCode);
   return {
     id: row.id,
     firstName: row.firstName,
     lastName: row.lastName,
     email: row.email,
-    programName: row.program?.name ?? buildProgramName(store.name),
+    programName: row.program?.name ?? buildProgramName(store.name, locale),
     status: row.status,
     dateJoined: row.joinedAt.toISOString(),
     lastLogin: row.lastLoginAt?.toISOString() ?? null,
@@ -206,9 +257,10 @@ function buildAffiliateProfileFromMember(row: any, store: any): AffiliateProfile
   };
 }
 
-async function loadAffiliatesFromDb(): Promise<AffiliateProfile[]> {
+async function loadAffiliatesFromDb(locale?: "he" | "en"): Promise<AffiliateProfile[]> {
   const db = getDb();
   const store = await getAffiliateStore();
+  const resolvedLocale = locale ?? await resolveAffiliateLocale();
   if (!db || !store || !db.affiliateMember) return [];
 
   try {
@@ -225,7 +277,7 @@ async function loadAffiliatesFromDb(): Promise<AffiliateProfile[]> {
         firstName: row.firstName,
         lastName: row.lastName,
         email: row.email,
-        programName: row.program?.name ?? buildProgramName(store.name),
+        programName: row.program?.name ?? buildProgramName(store.name, resolvedLocale),
         status: row.status,
         dateJoined: row.joinedAt.toISOString(),
         lastLogin: row.lastLoginAt?.toISOString() ?? null,
@@ -487,11 +539,15 @@ async function loadContentFromDb(): Promise<AffiliateContentPerformance[]> {
   }
 }
 
-async function loadProgramFromDb(affiliateRows: AffiliateProfile[]): Promise<AffiliateProgram> {
+async function loadProgramFromDb(
+  affiliateRows: AffiliateProfile[],
+  locale?: "he" | "en"
+): Promise<AffiliateProgram> {
   const db = getDb();
   const store = await getAffiliateStore();
-  if (!store) return buildProgramPayload(null, null, affiliateRows);
-  if (!db || !db.affiliateProgram) return buildProgramPayload(store, null, affiliateRows);
+  const resolvedLocale = locale ?? await resolveAffiliateLocale();
+  if (!store) return buildProgramPayload(null, null, affiliateRows, resolvedLocale);
+  if (!db || !db.affiliateProgram) return buildProgramPayload(store, null, affiliateRows, resolvedLocale);
 
   try {
     const row = await db.affiliateProgram.findFirst({
@@ -499,15 +555,17 @@ async function loadProgramFromDb(affiliateRows: AffiliateProfile[]): Promise<Aff
       orderBy: { createdAt: "asc" }
     });
 
-    return buildProgramPayload(store, row, affiliateRows);
+    return buildProgramPayload(store, row, affiliateRows, resolvedLocale);
   } catch {
-    return buildProgramPayload(store, null, affiliateRows);
+    return buildProgramPayload(store, null, affiliateRows, resolvedLocale);
   }
 }
 
 async function loadAffiliateDashboardSnapshot() {
   const db = getDb();
   const store = await getAffiliateStore();
+  const locale = await resolveAffiliateLocale();
+  const lang = (he: string, en: string) => (locale === "he" ? he : en);
   if (!db || !store) {
     return null;
   }
@@ -599,7 +657,7 @@ async function loadAffiliateDashboardSnapshot() {
   const memberIdByAffiliateCode = new Map<string, string>();
 
   for (const member of memberRows as any[]) {
-    profilesById.set(member.id, buildAffiliateProfileFromMember(member, store));
+    profilesById.set(member.id, buildAffiliateProfileFromMember(member, store, locale));
     memberIdByAffiliateCode.set(String(member.affiliateCode).toUpperCase(), member.id);
   }
 
@@ -614,7 +672,7 @@ async function loadAffiliateDashboardSnapshot() {
     }
 
     if (input.member && resolvedMemberId) {
-      const profile = buildAffiliateProfileFromMember(input.member, store);
+      const profile = buildAffiliateProfileFromMember(input.member, store, locale);
       profilesById.set(resolvedMemberId, profile);
       memberIdByAffiliateCode.set(String(profile.affiliateCode).toUpperCase(), resolvedMemberId);
       return profile;
@@ -632,7 +690,7 @@ async function loadAffiliateDashboardSnapshot() {
         firstName: fallbackCode,
         lastName: "",
         email: "",
-        programName: buildProgramName(store.name),
+        programName: buildProgramName(store.name, locale),
         status: "approved",
         dateJoined: new Date(range.start).toISOString(),
         lastLogin: null,
@@ -688,17 +746,24 @@ async function loadAffiliateDashboardSnapshot() {
   const scope = useBixGrowScope
     ? {
         id: "bixgrow" as const,
-        label: "BixGrow tracked",
-        description: "Showing only clicks and orders marked by BixGrow tracking (`bg_ref`) in the selected window."
+        label: lang("במעקב BixGrow", "BixGrow tracked"),
+        description: lang(
+          "מוצגים רק קליקים והזמנות שסומנו על ידי מעקב BixGrow (`bg_ref`) בחלון הנבחר.",
+          "Showing only clicks and orders marked by BixGrow tracking (`bg_ref`) in the selected window."
+        )
       }
     : {
         id: "all_affiliates" as const,
-        label: "All affiliate sources",
-        description: "Showing all affiliate-attributed clicks and orders in the selected window."
+        label: lang("כל מקורות השותפות", "All affiliate sources"),
+        description: lang(
+          "מוצגים כל הקליקים וההזמנות המיוחסים לשותפות בחלון הנבחר.",
+          "Showing all affiliate-attributed clicks and orders in the selected window."
+        )
       };
 
   return {
     scope,
+    locale,
     store,
     range,
     memberRows,
@@ -822,6 +887,8 @@ async function loadTopReferralSourcesFromDb(
 
 export async function getAffiliatePortalDashboard(): Promise<AffiliatePortalDashboardPayload> {
   const snapshot = await loadAffiliateDashboardSnapshot();
+  const locale = snapshot?.locale ?? await resolveAffiliateLocale();
+  const lang = (he: string, en: string) => (locale === "he" ? he : en);
   const affiliateRows = snapshot?.affiliateRows ?? [];
   const [contentRows, trend, topProducts, topReferralSources] = await Promise.all([
     loadContentFromDb(),
@@ -830,8 +897,8 @@ export async function getAffiliatePortalDashboard(): Promise<AffiliatePortalDash
     loadTopReferralSourcesFromDb(snapshot)
   ]);
   const program = snapshot?.store
-    ? buildProgramPayload(snapshot.store, snapshot.programRow, affiliateRows)
-    : await loadProgramFromDb(affiliateRows);
+    ? buildProgramPayload(snapshot.store, snapshot.programRow, affiliateRows, locale)
+    : await loadProgramFromDb(affiliateRows, locale);
   const contentHighlights = snapshot
     ? contentRows.filter((item) => isWithinRange(item.postedAt, snapshot.range.start, snapshot.range.end))
     : contentRows;
@@ -839,8 +906,11 @@ export async function getAffiliatePortalDashboard(): Promise<AffiliatePortalDash
   return {
     scope: snapshot?.scope ?? {
       id: "all_affiliates",
-      label: "All affiliate sources",
-      description: "Showing all affiliate-attributed clicks and orders in the selected window."
+      label: lang("כל מקורות השותפות", "All affiliate sources"),
+      description: lang(
+        "מוצגים כל הקליקים וההזמנות המיוחסים לשותפות בחלון הנבחר.",
+        "Showing all affiliate-attributed clicks and orders in the selected window."
+      )
     },
     program,
     totals: {

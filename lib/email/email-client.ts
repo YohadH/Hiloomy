@@ -32,7 +32,11 @@ function getResendClient(): Resend | null {
 }
 
 function getFromAddress(): string {
-  return process.env.REPORT_FROM_EMAIL ?? "Hiloomy <noreply@brandzp.co.il>";
+  // ⚠️ DELIVERABILITY: this fallback domain must be verified in Resend
+  // (SPF/DKIM) or sends will bounce. Set REPORT_FROM_EMAIL on Render to
+  // override. Was noreply@brandzp.co.il until the 2026-08 Hiloomy-only
+  // rebrand — verify hiloomy.com in Resend before relying on the default.
+  return process.env.REPORT_FROM_EMAIL ?? "Hiloomy <noreply@hiloomy.com>";
 }
 
 /**

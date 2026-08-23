@@ -97,7 +97,7 @@ const dictionaries = {
       bundleDescription:
         "Placeholder for bundle-level contribution once kit attribution is connected.",
       bundleTodo:
-        "TODO: Add Shopify Admin API ingestion for bundle composition, line item metadata, and order enrichment before enabling bundle contribution reporting.",
+        "Coming soon: bundle profitability — we'll show what each bundle really contributes after the cost of the products inside it.",
       refundImpact: "Refund and return impact",
       refundDescription:
         "Placeholder for SKU-level reason coding and net recovery analysis.",
@@ -463,7 +463,7 @@ const dictionaries = {
       bundleDescription:
         "אזור שמור לניתוח תרומת באנדלים כאשר יתחבר ייחוס קיטים.",
       bundleTodo:
-        "TODO: להוסיף קליטה של הרכב באנדלים, מטא דאטה של שורות הזמנה והעשרת הזמנות לפני שמדליקים דיווח תרומת באנדלים.",
+        "בקרוב: ניתוח רווחיות באנדלים — נציג כאן כמה כל באנדל באמת תורם אחרי עלויות המוצרים שבתוכו.",
       refundImpact: "השפעת החזרים והחזרות",
       refundDescription:
         "אזור שמור לניתוח סיבות החזרה וערך נטו שנשמר.",

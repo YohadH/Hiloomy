@@ -6,6 +6,7 @@ import type { GrowthAction } from "@/lib/domain/growth-agent-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GrowthStatusBadge } from "@/components/growth-agent/status-badge";
+import { getGrowthActionTypeLabel } from "@/lib/i18n/growth-agent-labels";
 
 export function GrowthActionCenter({
   actions,
@@ -57,9 +58,14 @@ export function GrowthActionCenter({
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <GrowthStatusBadge status={action.status} />
-                  <GrowthStatusBadge status={action.riskLevel} />
-                  <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground" dir="ltr">{action.actionType}</span>
+                  <GrowthStatusBadge status={action.status} locale={locale} />
+                  <GrowthStatusBadge status={action.riskLevel} locale={locale} />
+                  <span
+                    className="text-xs uppercase tracking-[0.16em] text-muted-foreground"
+                    title={action.actionType}
+                  >
+                    {getGrowthActionTypeLabel(action.actionType, locale)}
+                  </span>
                 </div>
                 <p className="text-base font-semibold">{action.title}</p>
                 <p className="text-sm text-muted-foreground">{action.reason}</p>

@@ -5,37 +5,31 @@
 // inside the coverage banner on /profit/returns; refreshes the page when
 // done so the tables pick up the newly-attributed lines.
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
-import { toast } from "@/components/ui/toast";
+import { useSyncStatus } from "@/components/sync/sync-status-provider";
 
 export function RefundBackfillButton({ storeId, locale }: { storeId: string; locale: "he" | "en" }) {
   const isHe = locale === "he";
-  const [running, setRunning] = useState(false);
   const router = useRouter();
+  const sync = useSyncStatus();
+  // Re-fetches every refunded order in the store's history — by far the
+  // longest sync in the app, so it must survive navigation.
+  const jobId = "refund-backfill";
+  const running = sync?.isRunning(jobId) ?? false;
 
-  const run = async () => {
-    setRunning(true);
-    try {
-      const res = await fetch("/api/shopify/backfill-refunds", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId })
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      toast.success(
+  const run = () => {
+    sync?.startSync({
+      id: jobId,
+      label: isHe ? "סנכרון החזרות היסטורי" : "Historical refunds backfill",
+      url: "/api/shopify/backfill-refunds",
+      body: { storeId },
+      describeResult: (body) =>
         isHe
-          ? `סונכרנו ${body.fetched} הזמנות עם החזרים — הטבלאות מתרעננות`
-          : `Re-synced ${body.fetched} refunded orders — refreshing tables`
-      );
-      router.refresh();
-    } catch (err) {
-      toast.error(err, { fallback: isHe ? "הסנכרון נכשל" : "Backfill failed" });
-    } finally {
-      setRunning(false);
-    }
+          ? `סונכרנו ${body.fetched} הזמנות עם החזרים`
+          : `Re-synced ${body.fetched} refunded orders`,
+      onDone: () => router.refresh()
+    });
   };
 
   return (

@@ -2,6 +2,7 @@ import type { GrowthMonitoringCard, GrowthTrafficChannel } from "@/lib/domain/gr
 import { Card, CardContent } from "@/components/ui/card";
 import { GrowthStatusBadge } from "@/components/growth-agent/status-badge";
 import { formatCurrency, formatNumber, formatSignedPercent } from "@/lib/utils";
+import { getGrowthMetricLabel } from "@/lib/i18n/growth-agent-labels";
 
 function formatMetric(card: GrowthMonitoringCard, currency: string) {
   if (card.unit === "currency") return formatCurrency(card.data.current, currency);
@@ -31,10 +32,10 @@ export function GrowthMonitoringGrid({
             <CardContent className="space-y-4 p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm text-muted-foreground">{card.label}</p>
+                  <p className="text-sm text-muted-foreground">{getGrowthMetricLabel(card.key, card.label, locale)}</p>
                   <p className="mt-2 text-2xl font-semibold">{formatMetric(card, currency)}</p>
                 </div>
-                <GrowthStatusBadge status={card.data.status} />
+                <GrowthStatusBadge status={card.data.status} locale={locale} />
               </div>
               <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
                 <p>{lang("מול אתמול", "vs yesterday")} {formatSignedPercent(card.data.previousDayDelta)}</p>
@@ -63,7 +64,7 @@ export function GrowthMonitoringGrid({
                     <p className="mt-2 text-sm text-muted-foreground">{formatNumber(channel.sessions)} {lang("ביקורים", "sessions")}</p>
                     <p className="mt-1 text-sm text-muted-foreground">{formatCurrency(channel.revenue, currency)} {lang("הכנסות", "revenue")}</p>
                   </div>
-                  <GrowthStatusBadge status={channel.status} />
+                  <GrowthStatusBadge status={channel.status} locale={locale} />
                 </div>
                 <p className="mt-3 text-sm font-medium">{formatSignedPercent(channel.delta)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{lang("רמת ביטחון", "Confidence")} {Math.round(channel.confidence * 100)}%</p>

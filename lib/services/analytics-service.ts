@@ -467,7 +467,7 @@ export async function getProfitAnalyticsPayload(): Promise<ProfitAnalyticsPayloa
 
 export async function getRetentionPayload(): Promise<RetentionPayload> {
   const locale = await getAppLocale();
-  const dbPayload = await getRetentionAnalyticsFromDb();
+  const dbPayload = await getRetentionAnalyticsFromDb(locale);
   if (dbPayload) return dbPayload;
 
   const repository = await getAnalyticsRepository();

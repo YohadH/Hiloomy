@@ -17,6 +17,7 @@ import { GrowthAgentManualControls } from "@/components/growth-agent/manual-cont
 import { ProductRecommendationsPanel } from "@/components/growth-agent/product-recommendations-panel";
 import { formatNumber } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
+import { getGrowthAgentModeLabel } from "@/lib/i18n/growth-agent-labels";
 
 export default async function GrowthAgentOverviewPage() {
   const locale = await getAppLocale();
@@ -28,7 +29,7 @@ export default async function GrowthAgentOverviewPage() {
 
   const connectedCount = overview.connectedPlatforms.filter((item) => item.status === "connected").length;
   const tone = overview.status === "active" ? "up" : "neutral";
-  const modeLabel = overview.currentMode.replaceAll("_", " ");
+  const modeLabel = getGrowthAgentModeLabel(overview.currentMode, locale);
   const headline =
     overview.status === "active"
       ? locale === "he"
@@ -95,7 +96,7 @@ export default async function GrowthAgentOverviewPage() {
               label={locale === "he" ? "סטטוס הסוכן" : "Agent status"}
               value={
                 <span className="flex justify-center">
-                  <GrowthStatusBadge status={overview.status} />
+                  <GrowthStatusBadge status={overview.status} locale={locale} />
                 </span>
               }
               icon={Bot}
@@ -107,7 +108,7 @@ export default async function GrowthAgentOverviewPage() {
             />
             <StatTile
               label={locale === "he" ? "מצב נוכחי" : "Current mode"}
-              value={overview.currentMode.replaceAll("_", " ")}
+              value={modeLabel}
               icon={ShieldCheck}
               tooltip={
                 locale === "he"

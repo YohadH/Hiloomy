@@ -164,7 +164,7 @@ function synthesizePadding(
 }
 
 // Provider switch:
-//   - Default: Brandzp's Creative BI agent (askCreativeAgentJson). It's
+//   - Default: the Creative BI agent (askCreativeAgentJson). It's
 //     domain-tuned for marketing copy and runs through our gateway.
 //   - Fallback: Anthropic Claude direct (anthropicChatJson). Used only
 //     when BI agent isn't configured OR the BI call throws — so a tunnel

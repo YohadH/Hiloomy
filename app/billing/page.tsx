@@ -5,6 +5,7 @@ import { getDb } from "@/lib/server/db";
 import { PLANS } from "@/lib/billing/plans";
 import { BillingPlanPicker } from "@/components/billing/billing-plan-picker";
 import { billingEnabled } from "@/lib/billing/billing-flag";
+import { getAppLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,10 @@ export default async function BillingPage() {
   })) as { name: string; currency: string } | null;
   if (!org) redirect("/");
 
-  const locale = auth.locale === "he" ? "he" : "en";
+  // Cookie first (what the app shell renders from), DB locale as the
+  // fallback — otherwise this page could disagree with the surrounding UI.
+  const cookieLocale = await getAppLocale();
+  const locale = cookieLocale === "he" ? "he" : "en";
   const currency = org.currency === "USD" ? "USD" : "ILS";
 
   // Billing disabled in this environment — show a friendly notice

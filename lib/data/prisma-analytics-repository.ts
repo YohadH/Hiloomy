@@ -1027,7 +1027,8 @@ export async function hasPrismaAnalyticsData() {
   return Boolean(store);
 }
 
-export async function getRetentionAnalyticsFromDb() {
+export async function getRetentionAnalyticsFromDb(locale: "he" | "en" = "he") {
+  const lang = (he: string, en: string) => (locale === "he" ? he : en);
   const store = await getConnectedStoreRecord();
   if (!store) return null;
   const range = await getActiveRange();
@@ -1083,13 +1084,15 @@ export async function getRetentionAnalyticsFromDb() {
     const firstOrder = orderLookup.get(orderIds[0]);
     const secondOrder = orderLookup.get(orderIds[1]);
 
+    const unknownProduct = lang("מוצר לא ידוע", "Unknown product");
+
     firstOrder?.lineItems.forEach((item) => {
-      const title = item.productId ? productLookup.get(item.productId) ?? "Unknown product" : "Unknown product";
+      const title = item.productId ? productLookup.get(item.productId) ?? unknownProduct : unknownProduct;
       firstOrderProducts.set(title, (firstOrderProducts.get(title) ?? 0) + item.quantity);
     });
 
     secondOrder?.lineItems.forEach((item) => {
-      const title = item.productId ? productLookup.get(item.productId) ?? "Unknown product" : "Unknown product";
+      const title = item.productId ? productLookup.get(item.productId) ?? unknownProduct : unknownProduct;
       secondOrderProducts.set(title, (secondOrderProducts.get(title) ?? 0) + item.quantity);
     });
   }
@@ -1100,8 +1103,10 @@ export async function getRetentionAnalyticsFromDb() {
     previousDailyMetrics: buildDailyMetrics(normalizedPrevOrders, history),
     firstOrderProducts: Array.from(firstOrderProducts.entries()).map(([title, orders]) => ({ title, orders })).sort((a, b) => b.orders - a.orders).slice(0, 5),
     secondOrderProducts: Array.from(secondOrderProducts.entries()).map(([title, orders]) => ({ title, orders })).sort((a, b) => b.orders - a.orders).slice(0, 5),
-    cohortPlaceholder:
+    cohortPlaceholder: lang(
+      "מודל קוהורטות השימור מוכן לתצוגה עשירה יותר מבוססת מחסן נתונים ברגע שWebhooks וסנכרון אירועי לקוח אינקרמנטלי יהיו במקום.",
       "Cohort retention modeling is ready for a richer warehouse-backed view once webhooks and incremental customer event sync are in place."
+    )
   };
 }
 

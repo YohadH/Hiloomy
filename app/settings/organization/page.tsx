@@ -3,17 +3,21 @@ import { getAuthContext } from "@/lib/auth/session";
 import { getDb } from "@/lib/server/db";
 import { OrganizationSettingsForm } from "@/components/settings/organization-settings-form";
 import { TeamManagement } from "@/components/settings/team-management";
+import { getAppLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrganizationSettingsPage() {
   const auth = await getAuthContext();
   if (!auth.userId) redirect("/signin?next=/settings/organization" as never);
+  // Cookie drives UI language (auth.locale drives emails).
+  const uiLocale = await getAppLocale();
+  const isHe = uiLocale === "he";
   if (!auth.orgId) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-10">
+      <main dir={isHe ? "rtl" : "ltr"} className="mx-auto max-w-2xl px-4 py-10">
         <p className="text-sm text-muted-foreground">
-          {auth.locale === "he" ? "אין ארגון פעיל." : "No active organization."}
+          {isHe ? "אין ארגון פעיל." : "No active organization."}
         </p>
       </main>
     );
@@ -48,7 +52,7 @@ export default async function OrganizationSettingsPage() {
   if (!org) redirect("/");
 
   const t =
-    auth.locale === "he"
+    isHe
       ? {
           title: "הגדרות ארגון",
           subtitle: "שם הארגון, מטבע וחברי הצוות",
@@ -117,7 +121,7 @@ export default async function OrganizationSettingsPage() {
           <p className="mt-1 text-lg font-semibold capitalize">{org.plan}</p>
           {org.trialEndsAt && org.plan === "trial" ? (
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              {t.trial}: {new Intl.DateTimeFormat(auth.locale === "he" ? "he-IL" : "en-US").format(org.trialEndsAt)}
+              {t.trial}: {new Intl.DateTimeFormat(isHe ? "he-IL" : "en-US").format(org.trialEndsAt)}
             </p>
           ) : null}
         </div>
@@ -145,7 +149,7 @@ export default async function OrganizationSettingsPage() {
         initialLocale={org.locale === "en" ? "en" : "he"}
         initialBillingCountry={org.billingCountry ?? ""}
         canEdit={isAdmin}
-        viewerLocale={auth.locale === "he" ? "he" : "en"}
+        viewerLocale={isHe ? "he" : "en"}
       />
 
       <div className="mt-8">
@@ -164,7 +168,7 @@ export default async function OrganizationSettingsPage() {
             expiresAt: inv.expiresAt.toISOString()
           }))}
           canEdit={isAdmin}
-          viewerLocale={auth.locale === "he" ? "he" : "en"}
+          viewerLocale={isHe ? "he" : "en"}
         />
       </div>
     </main>

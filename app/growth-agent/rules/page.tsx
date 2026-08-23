@@ -7,6 +7,7 @@ import { getGrowthAgentSettings, getGrowthAgentStoreContext } from "@/lib/servic
 import { GrowthAgentNav } from "@/components/growth-agent/agent-nav";
 import { GrowthAgentManualControls } from "@/components/growth-agent/manual-controls";
 import { getAppLocale } from "@/lib/i18n";
+import { getGrowthAgentModeLabel, getGrowthSettingKeyLabel } from "@/lib/i18n/growth-agent-labels";
 
 export default async function GrowthAgentRulesPage() {
   const locale = await getAppLocale();
@@ -18,9 +19,32 @@ export default async function GrowthAgentRulesPage() {
 
   const emptyMessage = lang("אין נתונים להצגה עדיין.", "No data available yet.");
 
-  const thresholdRows = Object.entries(settings.thresholds).map(([metric, value]) => ({ metric, value: `${value}%` }));
-  const allowedRows = Object.entries(settings.allowedActions).map(([action, enabled]) => ({ action, enabled: enabled ? lang("מופעל", "Enabled") : lang("כבוי", "Disabled") }));
-  const approvalRows = Object.entries(settings.approvalRules).map(([rule, value]) => ({ rule, value: String(value) }));
+  // The config keys (`aovDropPercent`, `sendAlert`, …) stay the data; only the
+  // rendered name is mapped to a human label, with the raw key kept underneath.
+  const thresholdRows = Object.entries(settings.thresholds).map(([metric, value]) => ({
+    metric,
+    metricLabel: getGrowthSettingKeyLabel(metric, locale),
+    value: `${value}%`
+  }));
+  const allowedRows = Object.entries(settings.allowedActions).map(([action, enabled]) => ({
+    action,
+    actionLabel: getGrowthSettingKeyLabel(action, locale),
+    enabled: enabled ? lang("מופעל", "Enabled") : lang("כבוי", "Disabled")
+  }));
+  const approvalRows = Object.entries(settings.approvalRules).map(([rule, value]) => ({
+    rule,
+    ruleLabel: getGrowthSettingKeyLabel(rule, locale),
+    value: typeof value === "boolean"
+      ? (value ? lang("כן", "Yes") : lang("לא", "No"))
+      : String(value)
+  }));
+
+  const renderKeyCell = (label: string, rawKey: string) => (
+    <div>
+      <span className="font-medium text-foreground">{label}</span>
+      <span className="mt-0.5 block text-xs text-muted-foreground" dir="ltr">{rawKey}</span>
+    </div>
+  );
 
   return (
     <AppShell store={chrome.store} controls={chrome.controls}>
@@ -42,7 +66,7 @@ export default async function GrowthAgentRulesPage() {
         <Card>
           <CardHeader><CardTitle className="text-base">{lang("מצב הפעלה", "Operating mode")}</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>{lang("מצב:", "Mode:")} {settings.agentMode.replaceAll("_", " ")}</p>
+            <p>{lang("מצב:", "Mode:")} {getGrowthAgentModeLabel(settings.agentMode, locale)}</p>
             <p>{lang("תדירות בדיקה: כל", "Check frequency: every")} {settings.checkFrequencyMinutes} {lang("דקות", "minutes")}</p>
             <p>{lang("ביצוע אוטומטי חסום אלא אם הפעולה מופעלת וגם נמצאת בתוך מעקות הבטיחות.", "Auto execution is blocked unless an action is both enabled and inside guardrails.")}</p>
           </CardContent>
@@ -70,19 +94,40 @@ export default async function GrowthAgentRulesPage() {
         <DataTable
           title={lang("ספי התראה", "Thresholds")}
           emptyMessage={emptyMessage}
-          columns={[{ key: "metric", label: lang("מדד", "Metric") }, { key: "value", label: lang("סף", "Threshold") }]}
+          columns={[
+            {
+              key: "metric",
+              label: lang("מדד", "Metric"),
+              render: (row) => renderKeyCell(row.metricLabel, row.metric)
+            },
+            { key: "value", label: lang("סף", "Threshold") }
+          ]}
           rows={thresholdRows}
         />
         <DataTable
           title={lang("פעולות מותרות", "Allowed actions")}
           emptyMessage={emptyMessage}
-          columns={[{ key: "action", label: lang("פעולה", "Action") }, { key: "enabled", label: lang("סטטוס", "Status") }]}
+          columns={[
+            {
+              key: "action",
+              label: lang("פעולה", "Action"),
+              render: (row) => renderKeyCell(row.actionLabel, row.action)
+            },
+            { key: "enabled", label: lang("סטטוס", "Status") }
+          ]}
           rows={allowedRows}
         />
         <DataTable
           title={lang("חוקי אישור", "Approval rules")}
           emptyMessage={emptyMessage}
-          columns={[{ key: "rule", label: lang("חוק", "Rule") }, { key: "value", label: lang("ערך", "Value") }]}
+          columns={[
+            {
+              key: "rule",
+              label: lang("חוק", "Rule"),
+              render: (row) => renderKeyCell(row.ruleLabel, row.rule)
+            },
+            { key: "value", label: lang("ערך", "Value") }
+          ]}
           rows={approvalRows}
         />
       </section>
