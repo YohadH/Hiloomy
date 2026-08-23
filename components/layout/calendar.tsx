@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const WEEKDAY_LABELS_EN = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const WEEKDAY_LABELS_HE = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
 
 function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -51,11 +52,15 @@ interface MonthGridProps {
   onPrev?: () => void;
   onNext?: () => void;
   maxDate?: Date;
+  locale?: "he" | "en";
 }
 
-function MonthGrid({ month, start, end, hover, onSelect, onHover, onPrev, onNext, maxDate }: MonthGridProps) {
+function MonthGrid({ month, start, end, hover, onSelect, onHover, onPrev, onNext, maxDate, locale = "he" }: MonthGridProps) {
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
   const days = buildMonthMatrix(month);
-  const monthLabel = month.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const weekdayLabels = isHe ? WEEKDAY_LABELS_HE : WEEKDAY_LABELS_EN;
+  const monthLabel = month.toLocaleDateString(lang("he-IL", "en-US"), { month: "long", year: "numeric" });
   const liveEnd = end ?? (start && hover && hover.getTime() > start.getTime() ? hover : null);
   const liveStart = start && hover && hover.getTime() < start.getTime() ? hover : start;
 
@@ -66,7 +71,7 @@ function MonthGrid({ month, start, end, hover, onSelect, onHover, onPrev, onNext
           <button
             type="button"
             onClick={onPrev}
-            aria-label="Previous month"
+            aria-label={lang("החודש הקודם", "Previous month")}
             className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -79,7 +84,7 @@ function MonthGrid({ month, start, end, hover, onSelect, onHover, onPrev, onNext
           <button
             type="button"
             onClick={onNext}
-            aria-label="Next month"
+            aria-label={lang("החודש הבא", "Next month")}
             className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <ChevronRight className="h-4 w-4" />
@@ -89,7 +94,7 @@ function MonthGrid({ month, start, end, hover, onSelect, onHover, onPrev, onNext
         )}
       </div>
       <div className="grid grid-cols-7 text-center text-[11px] font-medium text-muted-foreground">
-        {WEEKDAY_LABELS.map((d) => (
+        {weekdayLabels.map((d) => (
           <div key={d} className="py-1">
             {d}
           </div>
@@ -147,9 +152,11 @@ export interface DualCalendarProps {
   onChange: (start: Date | null, end: Date | null) => void;
   initialMonth?: Date;
   maxDate?: Date;
+  /** Hebrew-first: month names, weekday labels and aria-labels follow this. */
+  locale?: "he" | "en";
 }
 
-export function DualCalendar({ start, end, onChange, initialMonth, maxDate }: DualCalendarProps) {
+export function DualCalendar({ start, end, onChange, initialMonth, maxDate, locale = "he" }: DualCalendarProps) {
   const [leftMonth, setLeftMonth] = useState(() => startOfMonth(initialMonth ?? start ?? new Date()));
   const [hover, setHover] = useState<Date | null>(null);
   const rightMonth = addMonths(leftMonth, 1);
@@ -191,6 +198,7 @@ export function DualCalendar({ start, end, onChange, initialMonth, maxDate }: Du
         onHover={setHover}
         onPrev={() => setLeftMonth(addMonths(leftMonth, -1))}
         maxDate={maxDate}
+        locale={locale}
       />
       <MonthGrid
         month={rightMonth}
@@ -201,6 +209,7 @@ export function DualCalendar({ start, end, onChange, initialMonth, maxDate }: Du
         onHover={setHover}
         onNext={() => setLeftMonth(addMonths(leftMonth, 1))}
         maxDate={maxDate}
+        locale={locale}
       />
     </div>
   );

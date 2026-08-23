@@ -354,6 +354,7 @@ export default async function CommandCenterPage() {
                   kpi={kpi}
                   currency={overview.store.currency}
                   href={drillHref}
+                  locale={locale}
                 />
               );
             })}

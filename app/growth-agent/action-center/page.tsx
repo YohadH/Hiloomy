@@ -7,8 +7,13 @@ import { GrowthAgentNav } from "@/components/growth-agent/agent-nav";
 import { GrowthActionCenter } from "@/components/growth-agent/action-center";
 import { GrowthAgentManualControls } from "@/components/growth-agent/manual-controls";
 import { formatNumber } from "@/lib/utils";
+import { getAppLocale } from "@/lib/i18n";
 
 export default async function GrowthAgentActionCenterPage() {
+  const locale = await getAppLocale();
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
+
   const { store } = await getGrowthAgentStoreContext();
   const [chrome, actions] = await Promise.all([getAppChromeData(store.id), getGrowthActions(store.id)]);
   const pending = actions.filter((action) => action.status === "pending_approval");
@@ -20,23 +25,26 @@ export default async function GrowthAgentActionCenterPage() {
     <AppShell store={chrome.store} controls={chrome.controls}>
       <section className="space-y-4">
         <SectionHeading
-          eyebrow="Growth Agent"
-          title="Action Center"
-          description="Recommendations, pending approvals, executed actions, and rejected items all live in one operational queue."
+          eyebrow={lang("סוכן הצמיחה", "Growth Agent")}
+          title={lang("מרכז פעולות", "Action Center")}
+          description={lang(
+            "המלצות, פעולות שממתינות לאישור, פעולות שבוצעו ופריטים שנדחו – הכל בתור תפעולי אחד.",
+            "Recommendations, pending approvals, executed actions, and rejected items all live in one operational queue."
+          )}
         />
-        <GrowthAgentNav />
+        <GrowthAgentNav locale={locale} />
       </section>
 
-      <GrowthAgentManualControls storeId={store.id} />
+      <GrowthAgentManualControls storeId={store.id} locale={locale} />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Recommended" value={formatNumber(recommended.length)} />
-        <StatCard label="Pending approval" value={formatNumber(pending.length)} />
-        <StatCard label="Executed" value={formatNumber(executed.length)} />
-        <StatCard label="Rejected" value={formatNumber(rejected.length)} />
+        <StatCard label={lang("מומלץ", "Recommended")} value={formatNumber(recommended.length)} />
+        <StatCard label={lang("ממתין לאישור", "Pending approval")} value={formatNumber(pending.length)} />
+        <StatCard label={lang("בוצע", "Executed")} value={formatNumber(executed.length)} />
+        <StatCard label={lang("נדחה", "Rejected")} value={formatNumber(rejected.length)} />
       </section>
 
-      <GrowthActionCenter actions={actions} storeId={store.id} />
+      <GrowthActionCenter actions={actions} storeId={store.id} locale={locale} />
     </AppShell>
   );
 }

@@ -6,8 +6,14 @@ import { getGrowthAgentStoreContext, getGrowthAttributionSessions, getGrowthFind
 import { GrowthAgentNav } from "@/components/growth-agent/agent-nav";
 import { GrowthFindingsList } from "@/components/growth-agent/findings-list";
 import { GrowthAgentManualControls } from "@/components/growth-agent/manual-controls";
+import { getAppLocale } from "@/lib/i18n";
 
 export default async function GrowthAgentHistoryPage() {
+  const locale = await getAppLocale();
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
+  const dateLocale = isHe ? "he-IL" : "en-US";
+
   const { store } = await getGrowthAgentStoreContext();
   const [chrome, findings, snapshots, webhooks, sessions] = await Promise.all([
     getAppChromeData(store.id),
@@ -17,10 +23,12 @@ export default async function GrowthAgentHistoryPage() {
     getGrowthAttributionSessions(store.id)
   ]);
 
+  const emptyMessage = lang("אין נתונים להצגה עדיין.", "No data available yet.");
+
   const snapshotRows = snapshots.map((snapshot: any) => ({
     id: snapshot.id,
     source: snapshot.source,
-    bucketedAt: new Date(snapshot.bucketedAt).toLocaleString("en-US"),
+    bucketedAt: new Date(snapshot.bucketedAt).toLocaleString(dateLocale),
     confidence: snapshot.confidenceScore ? `${Math.round(snapshot.confidenceScore * 100)}%` : "-"
   }));
 
@@ -29,8 +37,8 @@ export default async function GrowthAgentHistoryPage() {
     platform: event.platform,
     topic: event.topic,
     status: event.status,
-    processedAt: event.processedAt ? new Date(event.processedAt).toLocaleString("en-US") : "-",
-    createdAt: new Date(event.createdAt).toLocaleString("en-US")
+    processedAt: event.processedAt ? new Date(event.processedAt).toLocaleString(dateLocale) : "-",
+    createdAt: new Date(event.createdAt).toLocaleString(dateLocale)
   }));
 
   const sessionRows = sessions.map((session: any) => ({
@@ -40,27 +48,62 @@ export default async function GrowthAgentHistoryPage() {
     clickId: session.clickId,
     sourcePlatform: session.sourcePlatform ?? "-",
     coupon: session.couponCode ?? "-",
-    convertedAt: session.convertedAt ? new Date(session.convertedAt).toLocaleString("en-US") : "-"
+    convertedAt: session.convertedAt ? new Date(session.convertedAt).toLocaleString(dateLocale) : "-"
   }));
 
   return (
     <AppShell store={chrome.store} controls={chrome.controls}>
       <section className="space-y-4">
         <SectionHeading
-          eyebrow="Growth Agent"
-          title="Alerts / History"
-          description="Recent findings, webhook processing history, attribution sessions, and the underlying metric snapshot log used by the monitoring engine."
+          eyebrow={lang("סוכן הצמיחה", "Growth Agent")}
+          title={lang("התראות / היסטוריה", "Alerts / History")}
+          description={lang(
+            "ממצאים אחרונים, היסטוריית עיבוד Webhooks, סשנים של ייחוס מכירות ויומן תמונות המצב של המדדים שמשמש את מנוע הניטור.",
+            "Recent findings, webhook processing history, attribution sessions, and the underlying metric snapshot log used by the monitoring engine."
+          )}
         />
-        <GrowthAgentNav />
+        <GrowthAgentNav locale={locale} />
       </section>
 
-      <GrowthAgentManualControls storeId={store.id} />
-      <GrowthFindingsList findings={findings} title="Findings history" />
+      <GrowthAgentManualControls storeId={store.id} locale={locale} />
+      <GrowthFindingsList findings={findings} title={lang("היסטוריית ממצאים", "Findings history")} locale={locale} />
       <section className="grid gap-4 xl:grid-cols-2">
-        <DataTable title="Webhook history" columns={[{ key: "platform", label: "Platform" }, { key: "topic", label: "Topic" }, { key: "status", label: "Status" }, { key: "processedAt", label: "Processed" }, { key: "createdAt", label: "Received" }]} rows={webhookRows} />
-        <DataTable title="Attribution sessions" columns={[{ key: "affiliate", label: "Affiliate" }, { key: "ref", label: "ref" }, { key: "clickId", label: "Click ID" }, { key: "sourcePlatform", label: "Source" }, { key: "coupon", label: "Coupon" }, { key: "convertedAt", label: "Converted" }]} rows={sessionRows} />
+        <DataTable
+          title={lang("היסטוריית Webhooks", "Webhook history")}
+          emptyMessage={emptyMessage}
+          columns={[
+            { key: "platform", label: lang("פלטפורמה", "Platform") },
+            { key: "topic", label: lang("נושא", "Topic") },
+            { key: "status", label: lang("סטטוס", "Status") },
+            { key: "processedAt", label: lang("עובד", "Processed") },
+            { key: "createdAt", label: lang("התקבל", "Received") }
+          ]}
+          rows={webhookRows}
+        />
+        <DataTable
+          title={lang("סשנים של ייחוס מכירות", "Attribution sessions")}
+          emptyMessage={emptyMessage}
+          columns={[
+            { key: "affiliate", label: lang("שותף", "Affiliate") },
+            { key: "ref", label: "ref", render: (row) => <span dir="ltr">{row.ref}</span> },
+            { key: "clickId", label: lang("מזהה קליק", "Click ID"), render: (row) => <span dir="ltr">{row.clickId}</span> },
+            { key: "sourcePlatform", label: lang("מקור", "Source") },
+            { key: "coupon", label: lang("קופון", "Coupon"), render: (row) => <span dir="ltr">{row.coupon}</span> },
+            { key: "convertedAt", label: lang("הומר", "Converted") }
+          ]}
+          rows={sessionRows}
+        />
       </section>
-      <DataTable title="Metric snapshots" columns={[{ key: "source", label: "Source" }, { key: "bucketedAt", label: "Bucket" }, { key: "confidence", label: "Confidence" }]} rows={snapshotRows} />
+      <DataTable
+        title={lang("תמונות מצב של מדדים", "Metric snapshots")}
+        emptyMessage={emptyMessage}
+        columns={[
+          { key: "source", label: lang("מקור", "Source") },
+          { key: "bucketedAt", label: lang("חלון זמן", "Bucket") },
+          { key: "confidence", label: lang("רמת ביטחון", "Confidence") }
+        ]}
+        rows={snapshotRows}
+      />
     </AppShell>
   );
 }

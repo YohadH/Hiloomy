@@ -31,7 +31,9 @@ export function AccountSettingsForm({
         save: "שמרו שינויים",
         saving: "שומר…",
         savedMsg: "ההגדרות נשמרו.",
-        emailHidden: "האימייל לא ניתן לשינוי. צרו קשר אם אתם צריכים לעדכן אותו."
+        emailHidden: "האימייל לא ניתן לשינוי. צרו קשר אם אתם צריכים לעדכן אותו.",
+        saveFailed: "השמירה נכשלה.",
+        unexpectedError: "אירעה שגיאה בלתי צפויה."
       }
     : {
         email: "Email",
@@ -43,7 +45,9 @@ export function AccountSettingsForm({
         save: "Save changes",
         saving: "Saving…",
         savedMsg: "Settings saved.",
-        emailHidden: "Email can't be changed here. Contact support if you need to update it."
+        emailHidden: "Email can't be changed here. Contact support if you need to update it.",
+        saveFailed: "Failed to save.",
+        unexpectedError: "Unexpected error."
       };
 
   const handleSave = async () => {
@@ -57,11 +61,11 @@ export function AccountSettingsForm({
         body: JSON.stringify({ displayName, locale })
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.ok) throw new Error(body?.error ?? "Failed to save.");
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? t.saveFailed);
       setSavedMsg(t.savedMsg);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : t.unexpectedError);
     } finally {
       setSaving(false);
     }
@@ -77,6 +81,7 @@ export function AccountSettingsForm({
           type="email"
           value={initialEmail}
           disabled
+          dir="ltr"
           className="mt-1 w-full rounded-md border border-border bg-muted/40 px-3 py-2 text-sm cursor-not-allowed"
         />
         <p className="mt-1 text-[11px] text-muted-foreground">{t.emailHidden}</p>

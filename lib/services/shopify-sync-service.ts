@@ -566,7 +566,9 @@ async function upsertOrderFromMapped(
         storeId,
         orderId: orderRecord.id,
         code: discount.code,
-        amount: mapped.order.totalDiscounts / Math.max(mapped.discounts.length, 1)
+        // Per-code, ex-VAT — computed in the mapper from each line's
+        // discountAllocations (was: order total split evenly, tax-inclusive).
+        amount: discount.amount ?? mapped.order.totalDiscounts / Math.max(mapped.discounts.length, 1)
       }
     });
   }

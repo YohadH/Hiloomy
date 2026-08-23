@@ -272,6 +272,34 @@ const dictionaries = {
         created: "Created",
         updated: "Updated",
         failed: "Failed",
+        orLabel: "OR",
+        orPasteToken: "paste a Custom App Admin API access token below (starts with",
+        tokenGuide: {
+          summary: "Where do I find the Admin API access token?",
+          step1: "In Shopify Admin, go to",
+          step2a: "Click your existing custom app (or",
+          step2b: "if you don't have one).",
+          step3a: "Click",
+          step3b: "and grant at minimum:",
+          step3c: "(add",
+          step3d: "for affiliate coupon creation).",
+          step4a: "Click",
+          step4b: "at the top right — confirm.",
+          step5a: "Go to the",
+          step5b: "tab. Under",
+          step5c: "click",
+          step5d: "and copy the value (starts with",
+          step6: "Paste it into the field above.",
+          docsLink: "Shopify's docs on custom apps"
+        },
+        syncBlockedTitle: "Shopify sync is blocked — credentials can’t be decrypted",
+        syncFailedTitle: "Last Shopify sync failed",
+        syncBlockedBodyA:
+          "Your saved Shopify Admin API token can’t be decrypted, so every sync (including the hourly background job) is failing. This happens when",
+        syncBlockedBodyB:
+          "changed since the token was saved. Fix it by either re-entering and saving the access token above, or restoring the original encryption key — then run a sync again.",
+        syncFailedBody:
+          "The most recent sync didn’t complete. The hourly background sync will retry automatically.",
         syncModes: {
           initial: "Initial",
           incremental: "Incremental"
@@ -330,7 +358,17 @@ const dictionaries = {
       saving: "Saving...",
       attributionSaved: "Creator attribution settings saved.",
       requestFailed: "Request failed.",
-      oauthHelp: "Use the Instagram button for a guided login flow, or paste a token manually if you already have one."
+      oauthHelp: "Use the Instagram button for a guided login flow, or paste a token manually if you already have one.",
+      crawlerTitle: "Public Instagram crawler",
+      crawlerDescription:
+        "Crawls only public posts/reels from @incenseparfums and pasted public influencer profiles. No login or private insights.",
+      crawlerHandlesLabel: "Influencer handles or profile URLs",
+      crawling: "Crawling...",
+      crawlNow: "Crawl public Instagram",
+      crawlResult: "Public Instagram crawl finished:",
+      crawlProfiles: "profiles",
+      crawlNewPosts: "new posts",
+      crawlUpdatedPosts: "updated posts."
     }
   },
   he: {
@@ -598,6 +636,34 @@ const dictionaries = {
         created: "נוצרו",
         updated: "עודכנו",
         failed: "נכשלו",
+        orLabel: "או",
+        orPasteToken: "הדביקו למטה טוקן Admin API של אפליקציה פרטית (מתחיל ב",
+        tokenGuide: {
+          summary: "איפה מוצאים את טוקן הגישה של Admin API?",
+          step1: "בממשק הניהול של Shopify, עברו אל",
+          step2a: "לחצו על האפליקציה הפרטית הקיימת שלכם (או על",
+          step2b: "אם עדיין אין לכם).",
+          step3a: "לחצו על",
+          step3b: "והעניקו לפחות את ההרשאות:",
+          step3c: "(הוסיפו",
+          step3d: "ליצירת קופוני שותפים).",
+          step4a: "לחצו על",
+          step4b: "בפינה העליונה — ואשרו.",
+          step5a: "עברו ללשונית",
+          step5b: ". תחת",
+          step5c: "לחצו על",
+          step5d: "והעתיקו את הערך (מתחיל ב",
+          step6: "הדביקו אותו בשדה שלמעלה.",
+          docsLink: "התיעוד של Shopify על אפליקציות פרטיות"
+        },
+        syncBlockedTitle: "הסנכרון מShopify חסום — לא ניתן לפענח את פרטי הגישה",
+        syncFailedTitle: "הסנכרון האחרון מShopify נכשל",
+        syncBlockedBodyA:
+          "לא ניתן לפענח את טוקן הAdmin API השמור של Shopify, ולכן כל סנכרון (כולל העבודה השעתית ברקע) נכשל. זה קורה כאשר",
+        syncBlockedBodyB:
+          "השתנה מאז שהטוקן נשמר. תקנו זאת על ידי הזנה ושמירה מחדש של טוקן הגישה למעלה, או שחזור מפתח ההצפנה המקורי — ואז הריצו סנכרון שוב.",
+        syncFailedBody:
+          "הסנכרון האחרון לא הושלם. הסנכרון השעתי ברקע ינסה שוב אוטומטית.",
         syncModes: {
           initial: "ראשוני",
           incremental: "אינקרמנטלי"
@@ -656,7 +722,17 @@ const dictionaries = {
       saving: "שומר…",
       attributionSaved: "הגדרות ייחוס המכירות נשמרו.",
       requestFailed: "הבקשה נכשלה.",
-      oauthHelp: "השתמשו בכפתור Instagram לתהליך התחברות מודרך, או הדביקו טוקן ידנית אם כבר יש לכם אחד."
+      oauthHelp: "השתמשו בכפתור Instagram לתהליך התחברות מודרך, או הדביקו טוקן ידנית אם כבר יש לכם אחד.",
+      crawlerTitle: "סורק אינסטגרם ציבורי",
+      crawlerDescription:
+        "סורק רק פוסטים ורילס ציבוריים מ-@incenseparfums ומפרופילי משפיענים ציבוריים שהדבקתם. ללא התחברות וללא נתונים פרטיים.",
+      crawlerHandlesLabel: "שמות משתמש או כתובות פרופיל של משפיענים",
+      crawling: "סורק…",
+      crawlNow: "סרקו אינסטגרם ציבורי",
+      crawlResult: "סריקת האינסטגרם הציבורית הסתיימה:",
+      crawlProfiles: "פרופילים",
+      crawlNewPosts: "פוסטים חדשים",
+      crawlUpdatedPosts: "פוסטים עודכנו."
     }
   }
 } as const;

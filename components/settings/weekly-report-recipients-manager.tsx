@@ -20,6 +20,7 @@ export function WeeklyReportRecipientsManager({
 }: {
   isHe: boolean;
 }) {
+  const lang = (he: string, en: string) => (isHe ? he : en);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
@@ -32,14 +33,15 @@ export function WeeklyReportRecipientsManager({
     try {
       const resp = await fetch("/api/weekly-summary/recipients", { cache: "no-store" });
       const body = await resp.json();
-      if (!resp.ok || !body?.ok) throw new Error(body?.error ?? "Failed to load.");
+      if (!resp.ok || !body?.ok)
+        throw new Error(body?.error ?? (isHe ? "הטעינה נכשלה." : "Failed to load."));
       setRecipients(body.recipients ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load.");
+      setError(e instanceof Error ? e.message : isHe ? "הטעינה נכשלה." : "Failed to load.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isHe]);
 
   useEffect(() => {
     load();
@@ -56,12 +58,12 @@ export function WeeklyReportRecipientsManager({
         body: JSON.stringify({ email: email.trim(), displayName: displayName.trim() || null })
       });
       const body = await resp.json();
-      if (!resp.ok || !body?.ok) throw new Error(body?.error ?? "Failed to add.");
+      if (!resp.ok || !body?.ok) throw new Error(body?.error ?? lang("ההוספה נכשלה.", "Failed to add."));
       setEmail("");
       setDisplayName("");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add.");
+      setError(e instanceof Error ? e.message : lang("ההוספה נכשלה.", "Failed to add."));
     } finally {
       setSubmitting(false);
     }
@@ -158,7 +160,10 @@ export function WeeklyReportRecipientsManager({
                 className="h-4 w-4"
               />
               <div className="flex min-w-0 flex-1 flex-col">
-                <span className={`truncate text-sm ${r.active ? "" : "text-muted-foreground line-through"}`}>
+                <span
+                  className={`truncate text-sm ${r.active ? "" : "text-muted-foreground line-through"}`}
+                  dir="ltr"
+                >
                   {r.email}
                 </span>
                 {r.displayName ? (

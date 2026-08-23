@@ -51,8 +51,8 @@ export default async function ConversionsPage() {
           />
           <div className="flex flex-wrap items-start gap-3">
             <ManualConversionButton locale={isHe ? "he" : "en"} />
-            <AffiliateAttributionSyncButton storeId={chrome.store.id} />
-            <UploadConversionsCsvButton />
+            <AffiliateAttributionSyncButton storeId={chrome.store.id} locale={isHe ? "he" : "en"} />
+            <UploadConversionsCsvButton locale={isHe ? "he" : "en"} />
             <a href="/api/affiliate-portal/conversions/export" className={buttonVariants({ variant: "secondary" })}>
               {heading.exportCsv}
             </a>
@@ -63,6 +63,7 @@ export default async function ConversionsPage() {
 
       <DataTable
         title={heading.sectionTitle}
+        locale={locale}
         description={heading.sectionDescription}
         columns={[
           { key: "orderNumber", label: t.order },

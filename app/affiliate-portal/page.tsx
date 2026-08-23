@@ -305,7 +305,7 @@ export default async function AffiliatePortalDashboardPage() {
       <div className="space-y-6 sm:space-y-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <PageHead eyebrow={t.eyebrow} title={t.title} description={t.description} />
-          <AffiliateAttributionSyncButton storeId={chrome.store.id} />
+          <AffiliateAttributionSyncButton storeId={chrome.store.id} locale={isHe ? "he" : "en"} />
         </div>
 
         <NarrativeBanner
@@ -511,6 +511,7 @@ export default async function AffiliatePortalDashboardPage() {
           <div className="grid items-start gap-4 xl:grid-cols-2">
             <DataTable
               title={t.tableTopBySales}
+              locale={locale}
               tooltip={t.tableTopBySalesTip}
               paginate
               initialPageSize={10}
@@ -525,6 +526,7 @@ export default async function AffiliatePortalDashboardPage() {
             />
             <DataTable
               title={t.tableTopByClicks}
+              locale={locale}
               tooltip={t.tableTopByClicksTip}
               paginate
               initialPageSize={10}
@@ -550,6 +552,7 @@ export default async function AffiliatePortalDashboardPage() {
               {hasProducts ? (
                 <DataTable
                   title={t.tableTopProducts}
+                  locale={locale}
                   paginate
                   initialPageSize={10}
                   pageSizes={[10, 25, 50]}
@@ -563,6 +566,7 @@ export default async function AffiliatePortalDashboardPage() {
               {hasSources ? (
                 <DataTable
                   title={t.tableTopSources}
+                  locale={locale}
                   paginate
                   initialPageSize={10}
                   pageSizes={[10, 25, 50]}
@@ -582,6 +586,7 @@ export default async function AffiliatePortalDashboardPage() {
             <SectionHead eyebrow={t.step5Eyebrow} title={t.step5Title} hint={t.step5Hint} />
             <DataTable
               title={t.tableTopContent}
+              locale={locale}
               description={t.tableTopContentDesc}
               paginate
               initialPageSize={10}

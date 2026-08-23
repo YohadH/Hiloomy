@@ -163,14 +163,27 @@ function getNavigation(
  * the enclosing <Link>, so the user gets feedback exactly on the item they
  * clicked while the destination page does its server work.
  */
-function NavLinkIcon({ Icon, isActive }: { Icon: LucideIcon; isActive: boolean }) {
+function NavLinkIcon({
+  Icon,
+  isActive,
+  locale = "he"
+}: {
+  Icon: LucideIcon;
+  isActive: boolean;
+  locale?: AppLocale;
+}) {
   const { pending } = useLinkStatus();
   const className = cn(
     "h-4 w-4 shrink-0",
     isActive ? "text-foreground" : "text-muted-foreground group-hover/nav:text-foreground"
   );
   if (pending) {
-    return <Loader2 className={cn(className, "animate-spin")} aria-label="Loading" />;
+    return (
+      <Loader2
+        className={cn(className, "animate-spin")}
+        aria-label={locale === "he" ? "טוען" : "Loading"}
+      />
+    );
   }
   return <Icon className={className} aria-hidden />;
 }
@@ -243,7 +256,7 @@ function NavContent({
             isActive ? "bg-foreground" : "bg-transparent group-hover/nav:bg-border"
           )}
         />
-        <NavLinkIcon Icon={Icon} isActive={isActive} />
+        <NavLinkIcon Icon={Icon} isActive={isActive} locale={locale} />
         <span className="truncate">{item.label}</span>
       </Link>
     );
@@ -267,7 +280,10 @@ function NavContent({
           </p>
         </div>
       </div>
-      <nav className="flex-1 space-y-4 px-3" aria-label="Primary">
+      <nav
+        className="flex-1 space-y-4 px-3"
+        aria-label={locale === "he" ? "ניווט ראשי" : "Primary"}
+      >
         <div className="space-y-1">{navigation.primary.map(renderNavLink)}</div>
         {navigation.dashboards.length > 0 ? (
           <div className="space-y-1">

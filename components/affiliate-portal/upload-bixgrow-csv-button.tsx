@@ -33,13 +33,15 @@ interface BixGrowImportResponse {
   fileName?: string;
 }
 
-export function UploadBixGrowCsvButton() {
+export function UploadBixGrowCsvButton({ locale = "he" }: { locale?: "he" | "en" }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<BixGrowImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
 
   const onChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -58,12 +60,12 @@ export function UploadBixGrowCsvButton() {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body?.ok) {
-        throw new Error(body?.error ?? "Upload failed.");
+        throw new Error(body?.error ?? lang("ההעלאה נכשלה.", "Upload failed."));
       }
       setResult(body as BixGrowImportResponse);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : lang("אירעה שגיאה לא צפויה.", "Unexpected error."));
     } finally {
       setUploading(false);
     }
@@ -75,10 +77,11 @@ export function UploadBixGrowCsvButton() {
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={uploading}
+        aria-label={lang("העלאת קובץ CSV של BixGrow", "Upload BixGrow CSV")}
         className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-semibold shadow-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
       >
         {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Upload className="h-4 w-4" aria-hidden />}
-        {uploading ? "Importing…" : "Upload BixGrow CSV"}
+        {uploading ? lang("מייבא…", "Importing…") : lang("העלאת קובץ CSV של BixGrow", "Upload BixGrow CSV")}
       </button>
       <input
         ref={inputRef}
@@ -92,17 +95,26 @@ export function UploadBixGrowCsvButton() {
         <div className="max-w-[460px] rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] leading-5 text-emerald-900">
           <p className="flex items-center gap-1.5 font-semibold">
             <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-            {fileName ?? "CSV"} imported
+            <span dir="ltr">{fileName ?? "CSV"}</span> {lang("יובא", "imported")}
           </p>
           <p className="mt-1">
-            <strong>{result.imported}</strong> attribution{result.imported === 1 ? "" : "s"} imported
-            {result.skipped > 0 ? ` · ${result.skipped} skipped` : ""}
+            <strong>{result.imported}</strong>{" "}
+            {lang(
+              result.imported === 1 ? "שיוך יובא" : "שיוכים יובאו",
+              `attribution${result.imported === 1 ? "" : "s"} imported`
+            )}
+            {result.skipped > 0
+              ? lang(` · ${result.skipped} דולגו`, ` · ${result.skipped} skipped`)
+              : ""}
           </p>
           <p>
-            {result.detail.parsedRows} of {result.detail.totalRows} rows parsed ·{" "}
-            <strong>{result.detail.membersCreated}</strong> new affiliates ·{" "}
-            <strong>{result.detail.ordersMatched}</strong> matched to Shopify orders ·{" "}
-            <strong>{result.detail.ordersUnmatched}</strong> unmatched
+            {lang(
+              `נותחו ${result.detail.parsedRows} מתוך ${result.detail.totalRows} שורות`,
+              `${result.detail.parsedRows} of ${result.detail.totalRows} rows parsed`
+            )}{" "}
+            · <strong>{result.detail.membersCreated}</strong> {lang("שותפים חדשים", "new affiliates")} ·{" "}
+            <strong>{result.detail.ordersMatched}</strong> {lang("שויכו להזמנות שופיפיי", "matched to Shopify orders")} ·{" "}
+            <strong>{result.detail.ordersUnmatched}</strong> {lang("ללא התאמה", "unmatched")}
           </p>
           {result.errors.length > 0 ? (
             <p className="mt-1 text-amber-800">
@@ -120,7 +132,7 @@ export function UploadBixGrowCsvButton() {
         <div className="max-w-[460px] rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] leading-5 text-rose-900">
           <p className="flex items-center gap-1.5 font-semibold">
             <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-            Import failed
+            {lang("הייבוא נכשל", "Import failed")}
           </p>
           <p className="mt-1">{error}</p>
         </div>

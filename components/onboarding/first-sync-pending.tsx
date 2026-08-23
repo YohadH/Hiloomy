@@ -31,7 +31,8 @@ export function FirstSyncPending({
             "זה לוקח בין 30 שניות לכמה דקות בהתאם לכמות ההזמנות. נטען מחדש את הדף אוטומטית כשהנתונים מוכנים.",
           syncNow: "סנכרון ידני עכשיו",
           syncing: "מסנכרן…",
-          tip: "טיפ: בזמן שהסנכרון רץ אפשר להוסיף בהגדרות את חיבור Meta Ads וInstagram."
+          tip: "טיפ: בזמן שהסנכרון רץ אפשר להוסיף בהגדרות את חיבור Meta Ads וInstagram.",
+          syncFailed: "הסנכרון נכשל."
         }
       : {
           title: "Pulling your Shopify data…",
@@ -39,7 +40,8 @@ export function FirstSyncPending({
             "This takes 30 seconds to a few minutes depending on order volume. We'll reload automatically when it's ready.",
           syncNow: "Sync now",
           syncing: "Syncing…",
-          tip: "Tip: You can add Meta Ads + Instagram connections in Settings while this runs."
+          tip: "Tip: You can add Meta Ads + Instagram connections in Settings while this runs.",
+          syncFailed: "Sync failed."
         };
 
   // Tick a counter so the UI doesn't feel frozen.
@@ -80,7 +82,7 @@ export function FirstSyncPending({
       if (!res.ok || body?.ok === false) throw new Error(body?.error ?? `${res.status}`);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Sync failed.");
+      setError(e instanceof Error ? e.message : t.syncFailed);
     } finally {
       setSyncing(false);
     }

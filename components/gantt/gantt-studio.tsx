@@ -28,7 +28,8 @@ import { cn } from "@/lib/utils";
 //   3. Drill-in pane: tasks for the selected day, with per-task action
 //      buttons (create discount in Shopify, open Creative wizard with
 //      brief pre-filled, etc.) + per-role PDF download
-// All Hebrew; the whole feature is built for the Israeli marketing team.
+// Hebrew-first (locale defaults to "he"); pass locale="en" for the
+// English UI. The feature was built for the Israeli marketing team.
 
 type GanttRow = {
   id: string;
@@ -91,65 +92,70 @@ type Insights = {
   }>;
 };
 
-const ACTION_META: Record<
+type ActionMeta = Record<
   NonNullable<GanttRow["actionType"]>,
   { label: string; icon: typeof Tag; ctaLabel: string; href: (row: GanttRow) => string }
-> = {
-  discount_code: {
-    label: "קופון/הנחה",
-    icon: Tag,
-    ctaLabel: "יצירת קופון בShopify",
-    href: (row) => `/marketing-tools?action=discount&title=${encodeURIComponent(row.task.slice(0, 80))}`
-  },
-  creative_image: {
-    label: "תמונה",
-    icon: ImageIcon,
-    ctaLabel: "פתיחת סטודיו ליצירה",
-    href: (row) => `/creative/new?type=PACKSHOT&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
-  },
-  creative_banner: {
-    label: "באנר",
-    icon: ImageIcon,
-    ctaLabel: "פתיחת סטודיו לבאנר",
-    href: (row) => `/creative/new?type=META_AD&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
-  },
-  creative_video: {
-    label: "וידאו",
-    icon: ImageIcon,
-    ctaLabel: "פתיחת סטודיו לווידאו",
-    href: (row) => `/creative/new?type=UGC_VIDEO&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
-  },
-  social_post: {
-    label: "פוסט/סטורי",
-    icon: MessageSquare,
-    ctaLabel: "פתיחת סטודיו ליצירה",
-    href: (row) => `/creative/new?type=INSTAGRAM_POST&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
-  },
-  email_campaign: {
-    label: "אימייל/ניוזלטר",
-    icon: Mail,
-    ctaLabel: "יצירת טיוטה",
-    href: (row) => `/marketing-tools?action=email&title=${encodeURIComponent(row.task.slice(0, 80))}`
-  },
-  sms_campaign: {
-    label: "סמס",
-    icon: MessageSquare,
-    ctaLabel: "יצירת טיוטת סמס",
-    href: (row) => `/marketing-tools?action=sms&title=${encodeURIComponent(row.task.slice(0, 80))}`
-  },
-  web_update: {
-    label: "אתר",
-    icon: Globe,
-    ctaLabel: "עדכון אתר",
-    href: () => `/settings`
-  },
-  blog_post: {
-    label: "מאמר/בלוג",
-    icon: FileText,
-    ctaLabel: "פתיחת עורך תוכן",
-    href: (row) => `/creative/new?type=INSTAGRAM_POST&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
-  }
-};
+>;
+
+function buildActionMeta(isHe: boolean): ActionMeta {
+  const lang = (he: string, en: string) => (isHe ? he : en);
+  return {
+    discount_code: {
+      label: lang("קופון/הנחה", "Coupon / discount"),
+      icon: Tag,
+      ctaLabel: lang("יצירת קופון בShopify", "Create a Shopify coupon"),
+      href: (row) => `/marketing-tools?action=discount&title=${encodeURIComponent(row.task.slice(0, 80))}`
+    },
+    creative_image: {
+      label: lang("תמונה", "Image"),
+      icon: ImageIcon,
+      ctaLabel: lang("פתיחת סטודיו ליצירה", "Open the creative studio"),
+      href: (row) => `/creative/new?type=PACKSHOT&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
+    },
+    creative_banner: {
+      label: lang("באנר", "Banner"),
+      icon: ImageIcon,
+      ctaLabel: lang("פתיחת סטודיו לבאנר", "Open the banner studio"),
+      href: (row) => `/creative/new?type=META_AD&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
+    },
+    creative_video: {
+      label: lang("וידאו", "Video"),
+      icon: ImageIcon,
+      ctaLabel: lang("פתיחת סטודיו לווידאו", "Open the video studio"),
+      href: (row) => `/creative/new?type=UGC_VIDEO&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
+    },
+    social_post: {
+      label: lang("פוסט/סטורי", "Post / story"),
+      icon: MessageSquare,
+      ctaLabel: lang("פתיחת סטודיו ליצירה", "Open the creative studio"),
+      href: (row) => `/creative/new?type=INSTAGRAM_POST&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
+    },
+    email_campaign: {
+      label: lang("אימייל/ניוזלטר", "Email / newsletter"),
+      icon: Mail,
+      ctaLabel: lang("יצירת טיוטה", "Create a draft"),
+      href: (row) => `/marketing-tools?action=email&title=${encodeURIComponent(row.task.slice(0, 80))}`
+    },
+    sms_campaign: {
+      label: lang("סמס", "SMS"),
+      icon: MessageSquare,
+      ctaLabel: lang("יצירת טיוטת סמס", "Create an SMS draft"),
+      href: (row) => `/marketing-tools?action=sms&title=${encodeURIComponent(row.task.slice(0, 80))}`
+    },
+    web_update: {
+      label: lang("אתר", "Site"),
+      icon: Globe,
+      ctaLabel: lang("עדכון אתר", "Update the site"),
+      href: () => `/settings`
+    },
+    blog_post: {
+      label: lang("מאמר/בלוג", "Article / blog"),
+      icon: FileText,
+      ctaLabel: lang("פתיחת עורך תוכן", "Open the content editor"),
+      href: (row) => `/creative/new?type=INSTAGRAM_POST&prompt=${encodeURIComponent(row.task.slice(0, 280))}`
+    }
+  };
+}
 
 function daysBetween(from: Date, to: Date): Date[] {
   const days: Date[] = [];
@@ -176,6 +182,7 @@ function fmtDayLabel(date: Date): string {
 }
 
 const DOW_HE = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
+const DOW_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // ─── Category color palette ─────────────────────────────────────────────
 // Every distinct category (col A in the operator's calendar) gets a
@@ -232,7 +239,20 @@ function categoryColor(category: string | null | undefined): (typeof CATEGORY_PA
   return CATEGORY_PALETTE[Math.abs(hash) % CATEGORY_PALETTE.length];
 }
 
-export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummary[] }) {
+export function GanttStudio({
+  initialSheets,
+  locale = "he"
+}: {
+  initialSheets: GanttSheetSummary[];
+  locale?: "he" | "en";
+}) {
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
+  // Intl locale used for the dates rendered to the operator. Note: the
+  // sheet-tab sanity check below deliberately stays on he-IL because it
+  // compares against Hebrew tab names coming out of the workbook.
+  const dateLocale = isHe ? "he-IL" : "en-US";
+  const ACTION_META = useMemo(() => buildActionMeta(isHe), [isHe]);
   const router = useRouter();
   const [sheets, setSheets] = useState<GanttSheetSummary[]>(initialSheets);
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(
@@ -364,7 +384,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
     if (!selectedSheetId) return;
     setDownloadingRole(role);
     try {
-      const url = `/api/gantt/${selectedSheetId}/export-role-pdf?role=${encodeURIComponent(role)}&locale=he`;
+      const url = `/api/gantt/${selectedSheetId}/export-role-pdf?role=${encodeURIComponent(role)}&locale=${locale}`;
       const res = await fetch(url, { method: "POST" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
@@ -377,7 +397,9 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
       a.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (err) {
-      alert(`יצירת הPDF נכשלה: ${err instanceof Error ? err.message : String(err)}`);
+      alert(
+        `${lang("יצירת הPDF נכשלה", "PDF export failed")}: ${err instanceof Error ? err.message : String(err)}`
+      );
     } finally {
       setDownloadingRole(null);
     }
@@ -481,7 +503,9 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
       // Now open the destination in a new tab.
       window.open(meta.href(row), "_blank", "noopener,noreferrer");
     } catch (err) {
-      alert(`לא הצלחנו לסמן את המשימה: ${err instanceof Error ? err.message : String(err)}`);
+      alert(
+        `${lang("לא הצלחנו לסמן את המשימה", "We could not mark the task")}: ${err instanceof Error ? err.message : String(err)}`
+      );
     } finally {
       setExecutingRowId(null);
     }
@@ -511,10 +535,12 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
       <div className="rounded-2xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h3 className="text-base font-semibold">גאנט שיווקי</h3>
+            <h3 className="text-base font-semibold">{lang("גאנט שיווקי", "Marketing Gantt")}</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              העלאת קובץ Excel של גאנט חודשי. המערכת מזהה את המבנה, מציעה כפתורי
-              פעולה לכל משימה, ויוצרת בריף PDF לכל תפקיד.
+              {lang(
+                "העלאת קובץ Excel של גאנט חודשי. המערכת מזהה את המבנה, מציעה כפתורי פעולה לכל משימה, ויוצרת בריף PDF לכל תפקיד.",
+                "Upload a monthly Gantt Excel file. The system detects its structure, suggests an action button for every task, and generates a PDF brief per role."
+              )}
             </p>
           </div>
           <label
@@ -528,7 +554,9 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
             ) : (
               <Upload className="h-4 w-4" aria-hidden />
             )}
-            {uploading ? "מעלה…" : "העלאת גאנט (.xlsx / .csv)"}
+            {uploading
+              ? lang("מעלה…", "Uploading…")
+              : lang("העלאת גאנט (.xlsx / .csv)", "Upload a Gantt (.xlsx / .csv)")}
             <input
               type="file"
               accept=".xlsx,.xls,.csv"
@@ -546,7 +574,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
         {sheets.length > 0 ? (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground">
-              גאנטים שמורים:
+              {lang("גאנטים שמורים:", "Saved Gantts:")}
             </span>
             <select
               className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
@@ -555,7 +583,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
             >
               {sheets.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.title} · {s.rowCount} משימות
+                  {s.title} · {s.rowCount} {lang("משימות", "tasks")}
                 </option>
               ))}
             </select>
@@ -565,7 +593,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
             {sheet && sheet.sheetNamesJson.length > 1 ? (
               <>
                 <span className="ms-2 text-xs font-semibold text-muted-foreground">
-                  לשונית בקובץ:
+                  {lang("לשונית בקובץ:", "Sheet tab in file:")}
                 </span>
                 <select
                   className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
@@ -604,10 +632,12 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
           {/* ── Parsed range banner — visual sanity check ──────────── */}
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 text-sm">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="font-semibold text-emerald-900">📅 טווח הגאנט:</span>
-              <span className="font-mono text-emerald-800">
+              <span className="font-semibold text-emerald-900">
+                {lang("📅 טווח הגאנט:", "📅 Gantt range:")}
+              </span>
+              <span className="font-mono text-emerald-800" dir={isHe ? undefined : "ltr"}>
                 {sheet.rangeStart
-                  ? new Date(sheet.rangeStart).toLocaleDateString("he-IL", {
+                  ? new Date(sheet.rangeStart).toLocaleDateString(dateLocale, {
                       day: "2-digit",
                       month: "short",
                       year: "numeric"
@@ -615,7 +645,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                   : "—"}
                 {" → "}
                 {sheet.rangeEnd
-                  ? new Date(sheet.rangeEnd).toLocaleDateString("he-IL", {
+                  ? new Date(sheet.rangeEnd).toLocaleDateString(dateLocale, {
                       day: "2-digit",
                       month: "short",
                       year: "numeric"
@@ -623,7 +653,8 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                   : "—"}
               </span>
               <span className="text-xs text-muted-foreground">
-                לשונית מקור: <strong>{sheet.parsedSheetName ?? "?"}</strong> · {sheet.rowCount} משימות
+                {lang("לשונית מקור:", "Source tab:")} <strong>{sheet.parsedSheetName ?? "?"}</strong> ·{" "}
+                {sheet.rowCount} {lang("משימות", "tasks")}
               </span>
               {sheet.rangeStart &&
               sheet.rangeEnd &&
@@ -632,7 +663,10 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 new Date(sheet.rangeStart).toLocaleString("he-IL", { month: "long" })
               ) ? (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                  ⚠ שם הלשונית לא מתאים לטווח התאריכים — ייתכן שהלשונית שגויה
+                  {lang(
+                    "⚠ שם הלשונית לא מתאים לטווח התאריכים — ייתכן שהלשונית שגויה",
+                    "⚠ The tab name does not match the date range — the wrong tab may be selected"
+                  )}
                 </span>
               ) : null}
             </div>
@@ -643,11 +677,13 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-green-600" aria-hidden />
-                <h3 className="text-base font-semibold">תובנות מסוכן BI</h3>
+                <h3 className="text-base font-semibold">
+                  {lang("תובנות מסוכן BI", "Insights from the BI agent")}
+                </h3>
                 {insightsGeneratedAt ? (
                   <span className="text-[11px] text-muted-foreground">
-                    הופק:{" "}
-                    {new Date(insightsGeneratedAt).toLocaleString("he-IL", {
+                    {lang("הופק:", "Generated:")}{" "}
+                    {new Date(insightsGeneratedAt).toLocaleString(dateLocale, {
                       dateStyle: "short",
                       timeStyle: "short"
                     })}
@@ -665,7 +701,9 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 ) : (
                   <Sparkles className="h-3 w-3" aria-hidden />
                 )}
-                {insights ? "רענון תובנות" : "הפעלת ניתוח"}
+                {insights
+                  ? lang("רענון תובנות", "Refresh insights")
+                  : lang("הפעלת ניתוח", "Run analysis")}
               </button>
             </div>
             {insightsError ? (
@@ -713,7 +751,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 {insights.actions.length > 0 ? (
                   <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800">
-                      פעולות מומלצות
+                      {lang("פעולות מומלצות", "Recommended actions")}
                     </p>
                     <ul className="mt-2 space-y-2 text-sm">
                       {insights.actions.map((a, i) => (
@@ -733,8 +771,10 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
               </div>
             ) : (
               <p className="mt-3 text-sm text-muted-foreground">
-                לחצו על &quot;הפעלת ניתוח&quot; כדי לקבל סיכום, אזהרות (חוסרים, התנגשויות,
-                חוסר זמן הכנה) והמלצות מסוכן הBI.
+                {lang(
+                  'לחצו על "הפעלת ניתוח" כדי לקבל סיכום, אזהרות (חוסרים, התנגשויות, חוסר זמן הכנה) והמלצות מסוכן הBI.',
+                  'Click "Run analysis" to get a summary, warnings (gaps, conflicts, not enough lead time) and recommendations from the BI agent.'
+                )}
               </p>
             )}
           </div>
@@ -745,12 +785,15 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-orange-600" aria-hidden />
-                  <h3 className="text-base font-semibold">בריף שיווקי חודשי</h3>
+                  <h3 className="text-base font-semibold">
+                    {lang("בריף שיווקי חודשי", "Monthly marketing brief")}
+                  </h3>
                 </div>
                 <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                  הBI יבנה בריף מלא בפורמט שאתם משתמשים בו: הטבות קבועות, קודי
-                  קופון של משפיעניות, הנחות באתר, בריף קידום ממומן (תקציב + ROAS +
-                  קמפיינים), ותוכן UGC — הכל עם הדגשות, קופונים, ותנאי המבצעים.
+                  {lang(
+                    "הBI יבנה בריף מלא בפורמט שאתם משתמשים בו: הטבות קבועות, קודי קופון של משפיעניות, הנחות באתר, בריף קידום ממומן (תקציב + ROAS + קמפיינים), ותוכן UGC — הכל עם הדגשות, קופונים, ותנאי המבצעים.",
+                    "The BI agent builds a full brief in the format you already use: standing perks, influencer coupon codes, on-site discounts, a paid-promotion brief (budget + ROAS + campaigns), and UGC content — all with highlights, coupons, and promo terms."
+                  )}
                 </p>
               </div>
             </div>
@@ -771,7 +814,9 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 ) : (
                   <Sparkles className="h-4 w-4" aria-hidden />
                 )}
-                {briefReady ? "יצירה מחדש" : "יצירת בריף שיווקי"}
+                {briefReady
+                  ? lang("יצירה מחדש", "Regenerate")
+                  : lang("יצירת בריף שיווקי", "Generate marketing brief")}
               </button>
               <button
                 type="button"
@@ -784,7 +829,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 ) : (
                   <Download className="h-4 w-4" aria-hidden />
                 )}
-                הורדת PDF
+                {lang("הורדת PDF", "Download PDF")}
               </button>
               <a
                 href={`/print/gantt-marketing-brief?sheetId=${selectedSheetId}`}
@@ -792,7 +837,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-2 text-sm text-muted-foreground hover:border-orange-300"
               >
-                תצוגה מקדימה בדפדפן
+                {lang("תצוגה מקדימה בדפדפן", "Preview in browser")}
               </a>
             </div>
           </div>
@@ -800,22 +845,25 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
           {/* ── Per-role PDF downloads ───────────────────────────────── */}
           {sheet.rolesJson.length > 0 || sheet.rows.some((r) => r.actionType === "discount_code") ? (
             <div className="rounded-2xl border border-border bg-card p-5">
-              <h3 className="text-base font-semibold">בריף PDF לכל תפקיד</h3>
+              <h3 className="text-base font-semibold">
+                {lang("בריף PDF לכל תפקיד", "PDF brief per role")}
+              </h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                מורידים את הקובץ ושולחים לחבר/ה בצוות. הקובץ כולל רק את המשימות
-                שלהם, מקובצות לפי ערוץ ותאריך. שירות לקוחות מקבל אוטומטית את כל
-                המבצעים וההשקות כדי לענות ללקוחות.
+                {lang(
+                  "מורידים את הקובץ ושולחים לחבר/ה בצוות. הקובץ כולל רק את המשימות שלהם, מקובצות לפי ערוץ ותאריך. שירות לקוחות מקבל אוטומטית את כל המבצעים וההשקות כדי לענות ללקוחות.",
+                  "Download the file and send it to a teammate. It contains only their tasks, grouped by channel and date. Customer service automatically gets every promo and launch so they can answer customers."
+                )}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {sheet.rolesJson.map((role) => {
                   const label =
                     ({
-                      web: "אתר",
-                      social: "סושיאל",
-                      graphic: "גרפיקה",
-                      affiliates: "אפיליאייטים",
-                      email: "אימייל / SMS",
-                      marketing: "שיווק / מבצעים"
+                      web: lang("אתר", "Site"),
+                      social: lang("סושיאל", "Social"),
+                      graphic: lang("גרפיקה", "Graphics"),
+                      affiliates: lang("אפיליאייטים", "Affiliates"),
+                      email: lang("אימייל / SMS", "Email / SMS"),
+                      marketing: lang("שיווק / מבצעים", "Marketing / promos")
                     } as Record<string, string>)[role] ?? role;
                   return (
                     <button
@@ -847,7 +895,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                   ) : (
                     <Download className="h-3.5 w-3.5" aria-hidden />
                   )}
-                  שירות לקוחות
+                  {lang("שירות לקוחות", "Customer service")}
                 </button>
                 <button
                   type="button"
@@ -860,7 +908,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                   ) : (
                     <Download className="h-3.5 w-3.5" aria-hidden />
                   )}
-                  כל הצוותים
+                  {lang("כל הצוותים", "All teams")}
                 </button>
               </div>
             </div>
@@ -870,14 +918,17 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
           <div className="rounded-2xl border border-border bg-card p-5">
             <div className="mb-3 flex items-center gap-2">
               <Calendar className="h-4 w-4 text-emerald-600" aria-hidden />
-              <h3 className="text-base font-semibold">לוח שנה</h3>
+              <h3 className="text-base font-semibold">{lang("לוח שנה", "Calendar")}</h3>
               <span className="text-xs text-muted-foreground">
-                {calendarDays.length} ימים, {sheet.rows.length} משימות. לחצו על יום
-                כדי לראות את המשימות שלו.
+                {calendarDays.length} {lang("ימים,", "days,")} {sheet.rows.length}{" "}
+                {lang(
+                  "משימות. לחצו על יום כדי לראות את המשימות שלו.",
+                  "tasks. Click a day to see its tasks."
+                )}
               </span>
             </div>
             <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold text-muted-foreground">
-              {DOW_HE.map((d) => (
+              {(isHe ? DOW_HE : DOW_EN).map((d) => (
                 <div key={d}>{d}</div>
               ))}
             </div>
@@ -969,19 +1020,19 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                       setSelectedDay(dayKey(d));
                     }}
                     className="rounded-lg border border-border p-1.5 hover:border-emerald-300"
-                    title="יום קודם"
+                    title={lang("יום קודם", "Previous day")}
                   >
                     <ChevronRight className="h-4 w-4" aria-hidden />
                   </button>
                   <h3 className="flex-1 text-base font-semibold">
-                    {new Date(selectedDay).toLocaleDateString("he-IL", {
+                    {new Date(selectedDay).toLocaleDateString(dateLocale, {
                       weekday: "long",
                       day: "2-digit",
                       month: "long",
                       year: "numeric"
                     })}
                     <span className="ms-3 text-xs font-normal text-muted-foreground">
-                      {tasksForSelectedDay.length} משימות
+                      {tasksForSelectedDay.length} {lang("משימות", "tasks")}
                     </span>
                   </h3>
                   <button
@@ -992,7 +1043,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                       setSelectedDay(dayKey(d));
                     }}
                     className="rounded-lg border border-border p-1.5 hover:border-emerald-300"
-                    title="יום הבא"
+                    title={lang("יום הבא", "Next day")}
                   >
                     <ChevronLeft className="h-4 w-4" aria-hidden />
                   </button>
@@ -1000,7 +1051,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                     type="button"
                     onClick={() => setDayModalOpen(false)}
                     className="rounded-lg border border-border p-1.5 hover:border-rose-300 hover:bg-rose-50"
-                    title="סגירה"
+                    title={lang("סגירה", "Close")}
                   >
                     ✕
                   </button>
@@ -1008,7 +1059,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                 <div className="max-h-[calc(85vh-60px)] overflow-y-auto p-5">
                   {tasksForSelectedDay.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      אין משימות מתוכננות ליום זה.
+                      {lang("אין משימות מתוכננות ליום זה.", "No tasks planned for this day.")}
                     </p>
                   ) : (
                     <ul className="space-y-3">
@@ -1054,9 +1105,9 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                                 {executed ? (
                                   <p className="flex items-center gap-1 text-[11px] text-emerald-700">
                                     <CheckCircle2 className="h-3 w-3" aria-hidden />
-                                    סומן כבוצע{" "}
+                                    {lang("סומן כבוצע", "Marked as done")}{" "}
                                     {row.executionJson?.executedAt
-                                      ? new Date(row.executionJson.executedAt).toLocaleString("he-IL", {
+                                      ? new Date(row.executionJson.executedAt).toLocaleString(dateLocale, {
                                           dateStyle: "short",
                                           timeStyle: "short"
                                         })
@@ -1081,7 +1132,7 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
                                   ) : (
                                     <Icon className="h-3.5 w-3.5" aria-hidden />
                                   )}
-                                  {executed ? "פתיחה מחדש" : meta.ctaLabel}
+                                  {executed ? lang("פתיחה מחדש", "Open again") : meta.ctaLabel}
                                 </button>
                               ) : null}
                             </div>
@@ -1100,10 +1151,14 @@ export function GanttStudio({ initialSheets }: { initialSheets: GanttSheetSummar
       {!sheet && !loadingSheet && sheets.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-10 text-center">
           <Upload className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden />
-          <p className="mt-3 text-sm font-semibold">העלו את הגאנט הראשון</p>
+          <p className="mt-3 text-sm font-semibold">
+            {lang("העלו את הגאנט הראשון", "Upload your first Gantt")}
+          </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            פורמט מטריצה (יום בכל עמודה, ערוץ בכל שורה) או טבלאי (שורה לכל משימה).
-            עברית ואנגלית נתמכות.
+            {lang(
+              "פורמט מטריצה (יום בכל עמודה, ערוץ בכל שורה) או טבלאי (שורה לכל משימה). עברית ואנגלית נתמכות.",
+              "Matrix format (a day per column, a channel per row) or tabular (one row per task). Hebrew and English are both supported."
+            )}
           </p>
         </div>
       ) : null}

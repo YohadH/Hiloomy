@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -10,13 +10,16 @@ interface ProductRecommendationsPanelProps {
   recommendations: GrowthProductRecommendation[];
   currency: string;
   storeId: string;
+  locale?: "he" | "en";
 }
 
-export function ProductRecommendationsPanel({ recommendations, currency, storeId }: ProductRecommendationsPanelProps) {
+export function ProductRecommendationsPanel({ recommendations, currency, storeId, locale = "he" }: ProductRecommendationsPanelProps) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [statusMap, setStatusMap] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
 
   function importRecommendation(recommendation: GrowthProductRecommendation) {
     setPendingId(recommendation.id);
@@ -29,18 +32,18 @@ export function ProductRecommendationsPanel({ recommendations, currency, storeId
         });
         const payload = await response.json();
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.error ?? "Could not create the draft product.");
+          throw new Error(payload.error ?? lang("לא הצלחנו ליצור את טיוטת המוצר.", "Could not create the draft product."));
         }
 
         setStatusMap((current) => ({
           ...current,
-          [recommendation.id]: `Draft created in Shopify: ${payload.title}`
+          [recommendation.id]: isHe ? `נוצרה טיוטה בShopify: ${payload.title}` : `Draft created in Shopify: ${payload.title}`
         }));
         router.refresh();
       } catch (error) {
         setStatusMap((current) => ({
           ...current,
-          [recommendation.id]: error instanceof Error ? error.message : "Could not create the draft product."
+          [recommendation.id]: error instanceof Error ? error.message : lang("לא הצלחנו ליצור את טיוטת המוצר.", "Could not create the draft product.")
         }));
       } finally {
         setPendingId(null);
@@ -51,7 +54,7 @@ export function ProductRecommendationsPanel({ recommendations, currency, storeId
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Sourced product ideas</CardTitle>
+        <CardTitle className="text-base">{lang("רעיונות מוצרים שנמצאו", "Sourced product ideas")}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {recommendations.slice(0, 6).map((recommendation) => {
@@ -63,17 +66,19 @@ export function ProductRecommendationsPanel({ recommendations, currency, storeId
               <div className="space-y-2">
                 <p className="font-semibold">{recommendation.title}</p>
                 <p className="text-sm text-muted-foreground">{recommendation.summary}</p>
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{recommendation.sourceDomain} · score {recommendation.score}</p>
-                <p className="text-sm text-muted-foreground">{recommendation.price ? `${currency} ${recommendation.price}` : "Price not detected"}</p>
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                  <span dir="ltr">{recommendation.sourceDomain}</span> · {lang("ניקוד", "score")} {recommendation.score}
+                </p>
+                <p className="text-sm text-muted-foreground">{recommendation.price ? `${currency} ${recommendation.price}` : lang("לא זוהה מחיר", "Price not detected")}</p>
                 <div className="flex flex-wrap gap-2 pt-2">
                   <a href="/growth-agent/supplier-orders">
-                    <Button type="button" variant="secondary" size="sm">Map supplier</Button>
+                    <Button type="button" variant="secondary" size="sm">{lang("מיפוי ספק", "Map supplier")}</Button>
                   </a>
                   <a href={recommendation.sourceUrl} target="_blank" rel="noreferrer">
-                    <Button type="button" variant="secondary" size="sm">Open source</Button>
+                    <Button type="button" variant="secondary" size="sm">{lang("פתיחת המקור", "Open source")}</Button>
                   </a>
                   <Button type="button" size="sm" onClick={() => importRecommendation(recommendation)} disabled={isPending}>
-                    {isImporting ? "Adding..." : "Add to Shopify"}
+                    {isImporting ? lang("מוסיף…", "Adding...") : lang("הוספה לShopify", "Add to Shopify")}
                   </Button>
                 </div>
                 {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}

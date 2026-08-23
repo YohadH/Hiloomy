@@ -32,6 +32,7 @@ export default async function AffiliateContentPage() {
 
       <DataTable
         title={lang("ביצועי תוכן לפי שותפה", "Content performance by affiliate")}
+        locale={locale}
         columns={[
           { key: "affiliateName", label: lang("שותף/ה", "Affiliate") },
           { key: "title", label: lang("תוכן", "Content") },

@@ -1,21 +1,23 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-const tabs = [
-  { href: "/growth-agent", label: "Overview" },
-  { href: "/growth-agent/configuration", label: "Configuration" },
-  { href: "/growth-agent/connections", label: "Connections" },
-  { href: "/growth-agent/supplier-orders", label: "Supplier Drafts" },
-  { href: "/growth-agent/rules", label: "Rules & Automations" },
-  { href: "/growth-agent/history", label: "Alerts / History" },
-  { href: "/growth-agent/action-center", label: "Action Center" }
-] as const;
-
-export function GrowthAgentNav() {
+export function GrowthAgentNav({ locale = "he" }: { locale?: "he" | "en" }) {
   const pathname = usePathname();
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
+
+  const tabs = [
+    { href: "/growth-agent", label: lang("סקירה", "Overview") },
+    { href: "/growth-agent/configuration", label: lang("הגדרות", "Configuration") },
+    { href: "/growth-agent/connections", label: lang("חיבורים", "Connections") },
+    { href: "/growth-agent/supplier-orders", label: lang("טיוטות ספק", "Supplier Drafts") },
+    { href: "/growth-agent/rules", label: lang("חוקים ואוטומציות", "Rules & Automations") },
+    { href: "/growth-agent/history", label: lang("התראות / היסטוריה", "Alerts / History") },
+    { href: "/growth-agent/action-center", label: lang("מרכז פעולות", "Action Center") }
+  ] as const;
 
   return (
     <div className="overflow-x-auto">

@@ -234,6 +234,7 @@ model Store {
   searchConsolePages         SearchConsolePage[]
   searchConsoleQueries       SearchConsoleQuery[]
   gaTrafficDaily             GaTrafficDaily[]
+  gaTrafficBreakdowns        GaTrafficBreakdown[]
   ganttSheets                GanttSheet[]
   ganttRows                  GanttRow[]
   competitors                Competitor[]
@@ -1488,6 +1489,32 @@ model GaTrafficDaily {
 
   @@unique([storeId, date, channel])
   @@index([storeId, date(sort: Desc)])
+}
+
+// GA4 traffic broken down by the dimension that answers "WHICH link
+// works" — channel groups alone ("Organic Social") don't tell a merchant
+// whether it was the bio link, a story, or one specific campaign.
+//
+// One table, three `kind`s so a new breakdown never needs a migration:
+//   "source"   — key = "instagram / referral"  (source / medium)
+//   "campaign" — key = the UTM campaign name
+//   "landing"  — key = landing page path + query (the actual link opened)
+// `key` is truncated to 400 chars in the sync so the unique index stays
+// inside Postgres's btree limit.
+model GaTrafficBreakdown {
+  id           String   @id @default(cuid())
+  storeId      String
+  date         DateTime @db.Date
+  kind         String
+  key          String
+  sessions     Int      @default(0)
+  transactions Decimal  @default(0) @db.Decimal(12, 2)
+  revenue      Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt    DateTime @default(now())
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, date, kind, key])
+  @@index([storeId, kind, date(sort: Desc)])
 }
 
 // ─── Creative Sprint (SA-SPRINT-01) ──────────────────────────────────

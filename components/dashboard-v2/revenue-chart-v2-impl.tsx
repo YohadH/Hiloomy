@@ -19,11 +19,16 @@ import { formatCurrency } from "@/lib/utils";
  */
 export function RevenueChartV2({
   data,
-  currency = "USD"
+  currency = "USD",
+  locale = "he"
 }: {
   data: DailyMetric[];
   currency?: string;
+  /** Hebrew-first: tooltip series names render in Hebrew unless told otherwise. */
+  locale?: "he" | "en";
 }) {
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
   return (
     <div className="h-[280px] w-full sm:h-[320px]">
       <ResponsiveContainer width="100%" height="100%">
@@ -67,7 +72,9 @@ export function RevenueChartV2({
             labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
             formatter={(value: number, name: string) => [
               formatCurrency(value, currency),
-              name === "revenue" ? "Revenue" : "Estimated profit"
+              name === "revenue"
+                ? lang("סך מכירות", "Revenue")
+                : lang("רווח תרומה", "Estimated profit")
             ]}
           />
           <Area

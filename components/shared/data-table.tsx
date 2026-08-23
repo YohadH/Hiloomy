@@ -22,6 +22,8 @@ export interface DataTableProps<T> {
   pageSizes?: number[];
   initialPageSize?: number;
   maxBodyHeight?: number;
+  /** Hebrew-first: built-in copy renders in Hebrew unless told otherwise. */
+  locale?: "he" | "en";
 }
 
 export function DataTable<T extends object>({
@@ -30,12 +32,18 @@ export function DataTable<T extends object>({
   tooltip,
   columns,
   rows,
-  emptyMessage = "No data available yet.",
+  emptyMessage,
   paginate,
   pageSizes,
   initialPageSize,
-  maxBodyHeight
+  maxBodyHeight,
+  locale = "he"
 }: DataTableProps<T>) {
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
+  const resolvedEmptyMessage =
+    emptyMessage ?? lang("עדיין אין נתונים להצגה.", "No data available yet.");
+
   if (paginate) {
     const renderedRows: React.ReactNode[][] = rows.map((row) =>
       columns.map((column) =>
@@ -57,7 +65,8 @@ export function DataTable<T extends object>({
         pageSizes={pageSizes}
         initialPageSize={initialPageSize}
         maxBodyHeight={maxBodyHeight}
-        emptyMessage={emptyMessage}
+        emptyMessage={resolvedEmptyMessage}
+        locale={locale}
       />
     );
   }
@@ -114,7 +123,7 @@ export function DataTable<T extends object>({
             ) : (
               <tr>
                 <td colSpan={columns.length} className="py-6 text-sm text-muted-foreground">
-                  {emptyMessage}
+                  {resolvedEmptyMessage}
                 </td>
               </tr>
             )}

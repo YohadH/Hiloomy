@@ -12,7 +12,9 @@ export default async function OrganizationSettingsPage() {
   if (!auth.orgId) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-10">
-        <p className="text-sm text-muted-foreground">No active organization.</p>
+        <p className="text-sm text-muted-foreground">
+          {auth.locale === "he" ? "אין ארגון פעיל." : "No active organization."}
+        </p>
       </main>
     );
   }

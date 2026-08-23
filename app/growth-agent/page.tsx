@@ -76,9 +76,9 @@ export default async function GrowthAgentOverviewPage() {
           }
         />
 
-        <GrowthAgentNav />
+        <GrowthAgentNav locale={locale} />
 
-        <GrowthAgentManualControls storeId={store.id} />
+        <GrowthAgentManualControls storeId={store.id} locale={locale} />
 
         <section className="space-y-3">
           <SectionHead
@@ -248,7 +248,7 @@ export default async function GrowthAgentOverviewPage() {
                 </p>
               </CardContent>
             </Card>
-            <GrowthConnectionsPanel connections={overview.connectedPlatforms} />
+            <GrowthConnectionsPanel connections={overview.connectedPlatforms} locale={locale} />
           </div>
         </section>
 
@@ -267,6 +267,7 @@ export default async function GrowthAgentOverviewPage() {
               recommendations={overview.productRecommendations}
               currency={chrome.store.currency}
               storeId={store.id}
+              locale={locale}
             />
           </section>
         ) : null}
@@ -285,6 +286,7 @@ export default async function GrowthAgentOverviewPage() {
             cards={overview.monitoringCards}
             trafficChannels={overview.trafficChannels}
             currency={chrome.store.currency}
+            locale={locale}
           />
         </section>
 
@@ -302,11 +304,13 @@ export default async function GrowthAgentOverviewPage() {
             <GrowthFindingsList
               findings={overview.findings.slice(0, 6)}
               title={locale === "he" ? "ממצאים אחרונים" : "Recent findings"}
+              locale={locale}
             />
             <GrowthActionCenter
               actions={overview.actions.slice(0, 6)}
               storeId={store.id}
-              title={locale === "he" ? "תצוגה מקדימה של Action Center" : "Action center preview"}
+              title={locale === "he" ? "תצוגה מקדימה של מרכז הפעולות" : "Action center preview"}
+              locale={locale}
             />
           </div>
         </section>

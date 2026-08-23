@@ -185,6 +185,7 @@ export default async function PortfolioPage() {
               }}
               currency={portfolio.currency}
               icon={Crown}
+              locale={locale}
             />
             <KpiTile
               kpi={{
@@ -200,6 +201,7 @@ export default async function PortfolioPage() {
               }}
               currency={portfolio.currency}
               icon={ShoppingBag}
+              locale={locale}
             />
             <KpiTile
               kpi={{
@@ -209,6 +211,7 @@ export default async function PortfolioPage() {
               }}
               currency={portfolio.currency}
               icon={TrendingUp}
+              locale={locale}
             />
             <KpiTile
               kpi={{
@@ -218,6 +221,7 @@ export default async function PortfolioPage() {
               }}
               currency={portfolio.currency}
               icon={Flame}
+              locale={locale}
             />
             <KpiTile
               kpi={{
@@ -227,6 +231,7 @@ export default async function PortfolioPage() {
               }}
               currency={portfolio.currency}
               icon={ShieldAlert}
+              locale={locale}
             />
           </div>
           <p className="text-xs text-muted-foreground">

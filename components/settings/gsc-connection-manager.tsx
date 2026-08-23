@@ -35,7 +35,8 @@ export function GscConnectionManager({
   storeId,
   initialConnection,
   gscConnected,
-  gscError
+  gscError,
+  locale = "he"
 }: {
   storeId: string;
   initialConnection: GscConnectionStatus;
@@ -43,13 +44,18 @@ export function GscConnectionManager({
   gscConnected?: boolean;
   /** non-null when the OAuth flow returned an error */
   gscError?: string | null;
+  locale?: "he" | "en";
 }) {
   const router = useRouter();
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
   const [connection, setConnection] = useState<GscConnectionStatus>(initialConnection);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(gscError ?? null);
   const [successMsg, setSuccessMsg] = useState<string | null>(
-    gscConnected ? "Google Search Console connected successfully." : null
+    gscConnected
+      ? lang("Google Search Console חובר בהצלחה.", "Google Search Console connected successfully.")
+      : null
   );
   // Property picker — the sync reads the property chosen here. Without a
   // choice the cron falls back to sc-domain:<shopify-domain>, which is
@@ -67,12 +73,15 @@ export function GscConnectionManager({
     try {
       const res = await fetch(`/api/gsc/sites?storeId=${encodeURIComponent(storeId)}`);
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body?.error ?? "Could not load properties.");
+      if (!res.ok || !body.ok)
+        throw new Error(body?.error ?? lang("לא ניתן לטעון את הנכסים.", "Could not load properties."));
       setSites(body.sites ?? []);
       setSavedSite(body.selectedSiteUrl ?? null);
       setSelectedSite(body.selectedSiteUrl ?? body.sites?.[0]?.siteUrl ?? "");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load properties.");
+      setError(
+        e instanceof Error ? e.message : lang("לא ניתן לטעון את הנכסים.", "Could not load properties.")
+      );
     } finally {
       setSiteBusy(false);
     }
@@ -88,11 +97,19 @@ export function GscConnectionManager({
         body: JSON.stringify({ storeId, siteUrl: selectedSite })
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body?.error ?? "Could not save the property.");
+      if (!res.ok || !body.ok)
+        throw new Error(body?.error ?? lang("לא ניתן לשמור את הנכס.", "Could not save the property."));
       setSavedSite(selectedSite);
-      setSuccessMsg(`Property saved: ${selectedSite}. The next sync reads from it.`);
+      setSuccessMsg(
+        lang(
+          `הנכס נשמר: ${selectedSite}. הסנכרון הבא יקרא ממנו.`,
+          `Property saved: ${selectedSite}. The next sync reads from it.`
+        )
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save the property.");
+      setError(
+        e instanceof Error ? e.message : lang("לא ניתן לשמור את הנכס.", "Could not save the property.")
+      );
     } finally {
       setSiteBusy(false);
     }
@@ -132,14 +149,22 @@ export function GscConnectionManager({
         body: JSON.stringify({ storeId })
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body?.error ?? "Search Console sync failed.");
+      if (!res.ok || !body.ok)
+        throw new Error(body?.error ?? lang("הסנכרון מSearch Console נכשל.", "Search Console sync failed."));
       setSuccessMsg(
-        `Synced ${body.siteUrl}: ${body.pagesUpserted} pages, ${body.queriesUpserted} queries.`
+        lang(
+          `סונכרן ${body.siteUrl}: ${body.pagesUpserted} עמודים, ${body.queriesUpserted} שאילתות.`,
+          `Synced ${body.siteUrl}: ${body.pagesUpserted} pages, ${body.queriesUpserted} queries.`
+        )
       );
       await refreshStatus();
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Search Console sync failed.");
+      setError(
+        e instanceof Error
+          ? e.message
+          : lang("הסנכרון מSearch Console נכשל.", "Search Console sync failed.")
+      );
     } finally {
       setRefreshing(false);
     }
@@ -156,13 +181,15 @@ export function GscConnectionManager({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) {
-        throw new Error(body?.error ?? "Failed to disconnect.");
+        throw new Error(body?.error ?? lang("ניתוק החיבור נכשל.", "Failed to disconnect."));
       }
       setConnection(null);
-      setSuccessMsg("Google Search Console disconnected.");
+      setSuccessMsg(lang("Google Search Console נותק.", "Google Search Console disconnected."));
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(
+        e instanceof Error ? e.message : lang("אירעה שגיאה בלתי צפויה.", "Unexpected error.")
+      );
     }
   }
 
@@ -177,18 +204,20 @@ export function GscConnectionManager({
           {isConnected ? (
             <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
               <CheckCircle2 className="h-3 w-3" aria-hidden />
-              Connected
+              {lang("מחובר", "Connected")}
             </span>
           ) : (
             <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
               <XCircle className="h-3 w-3" aria-hidden />
-              Not connected
+              {lang("לא מחובר", "Not connected")}
             </span>
           )}
         </div>
         <p className="text-sm text-muted-foreground">
-          Sync organic search impressions, clicks, and top queries directly from Google Search Console into
-          your analytics dashboard.
+          {lang(
+            "סנכרון חשיפות, קליקים ושאילתות מובילות מחיפוש אורגני ישירות מGoogle Search Console אל דשבורד האנליטיקס שלכם.",
+            "Sync organic search impressions, clicks, and top queries directly from Google Search Console into your analytics dashboard."
+          )}
         </p>
       </CardHeader>
 
@@ -208,21 +237,23 @@ export function GscConnectionManager({
         {isConnected && connection ? (
           <div className="space-y-2 rounded-lg border border-border bg-background/70 px-4 py-3 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</span>
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                {lang("סטטוס", "Status")}
+              </span>
               <span className="font-semibold text-emerald-700">{connection.status}</span>
             </div>
             {connection.tokenLastFour ? (
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Token (last 4)
+                  {lang("טוקן (4 אחרונות)", "Token (last 4)")}
                 </span>
-                <span className="font-mono text-xs">••••{connection.tokenLastFour}</span>
+                <span className="font-mono text-xs" dir="ltr">••••{connection.tokenLastFour}</span>
               </div>
             ) : null}
             {connection.lastSyncAt ? (
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Last synced
+                  {lang("סנכרון אחרון", "Last synced")}
                 </span>
                 <span suppressHydrationWarning className="tabular-nums">
                   {new Date(connection.lastSyncAt).toLocaleString()}
@@ -231,9 +262,11 @@ export function GscConnectionManager({
             ) : (
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Last synced
+                  {lang("סנכרון אחרון", "Last synced")}
                 </span>
-                <span className="text-muted-foreground">Pending first cron run</span>
+                <span className="text-muted-foreground">
+                  {lang("ממתין לריצת הcron הראשונה", "Pending first cron run")}
+                </span>
               </div>
             )}
             {connection.healthMessage ? (
@@ -247,16 +280,20 @@ export function GscConnectionManager({
           <div className="space-y-2 rounded-lg border border-border bg-background/70 px-4 py-3 text-sm">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Synced property
+                {lang("הנכס המסונכרן", "Synced property")}
               </span>
               <span className="font-mono text-xs" dir="ltr">
-                {savedSite ?? "not selected — using the Shopify domain (usually wrong)"}
+                {savedSite ??
+                  lang(
+                    "לא נבחר — בשימוש דומיין הShopify (בדרך כלל לא נכון)",
+                    "not selected — using the Shopify domain (usually wrong)"
+                  )}
               </span>
             </div>
             {sites === null ? (
               <Button variant="secondary" size="sm" onClick={loadSites} disabled={siteBusy}>
                 {siteBusy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                Choose property
+                {lang("בחרו נכס", "Choose property")}
               </Button>
             ) : (
               <div className="flex flex-wrap items-center gap-2">
@@ -274,7 +311,7 @@ export function GscConnectionManager({
                 </select>
                 <Button size="sm" onClick={saveSite} disabled={siteBusy || !selectedSite || selectedSite === savedSite}>
                   {siteBusy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                  Save
+                  {lang("שמרו", "Save")}
                 </Button>
               </div>
             )}
@@ -286,27 +323,27 @@ export function GscConnectionManager({
             <>
               <Button size="sm" onClick={syncNow} disabled={refreshing}>
                 {refreshing ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                Sync now
+                {lang("סנכרון עכשיו", "Sync now")}
               </Button>
               <Button variant="secondary" size="sm" onClick={refreshStatus} disabled={refreshing}>
-                Refresh status
+                {lang("רענון סטטוס", "Refresh status")}
               </Button>
               <Button variant="secondary" size="sm" onClick={startOAuth}>
-                Reconnect
+                {lang("חיבור מחדש", "Reconnect")}
               </Button>
               <Button variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700" onClick={disconnect}>
-                Disconnect
+                {lang("ניתוק", "Disconnect")}
               </Button>
             </>
           ) : (
             <Button size="sm" onClick={startOAuth}>
-              Connect Google Search Console
+              {lang("חברו את Google Search Console", "Connect Google Search Console")}
             </Button>
           )}
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Requires a verified property in{" "}
+          {lang("נדרש נכס מאומת ב", "Requires a verified property in")}{" "}
           <a
             href="https://search.google.com/search-console"
             target="_blank"
@@ -315,7 +352,10 @@ export function GscConnectionManager({
           >
             Google Search Console
           </a>{" "}
-          for your store domain. Only read-only access is requested.
+          {lang(
+            "עבור דומיין החנות שלכם. מתבקשת גישת קריאה בלבד.",
+            "for your store domain. Only read-only access is requested."
+          )}
         </p>
       </CardContent>
     </Card>

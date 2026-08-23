@@ -7,26 +7,44 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import type { ShopifyConnectionSummary, SyncRunSummary } from "@/lib/domain/types";
 import { ShopifyOauthSection } from "@/components/settings/shopify-oauth-section";
 
-// Map raw Shopify / network errors into plain-English remediations. The
+// Bilingual picker threaded in from the component (which owns `locale`).
+type LangFn = (he: string, en: string) => string;
+
+// Map raw Shopify / network errors into plain-language remediations. The
 // raw 401 "Invalid API key or access token" is technically accurate but
 // useless to a non-developer — they need to know WHAT to fix.
-function humanizeShopifyError(raw: string): string {
+function humanizeShopifyError(raw: string, lang: LangFn): string {
   const r = raw.toLowerCase();
 
   if (r.includes("401") || r.includes("invalid api key") || r.includes("unrecognized login")) {
-    return "The token Shopify received was rejected as invalid. Make sure you pasted the Admin API access token (starts with shpat_), not the API key or secret. Re-check the token under Shopify Admin → Settings → Apps and sales channels → Develop apps → your app → API credentials.";
+    return lang(
+      "הטוקן שShopify קיבלה נדחה כלא תקין. ודאו שהדבקתם את טוקן הגישה של Admin API (מתחיל ב-shpat_), ולא את הAPI key או הAPI secret. בדקו את הטוקן שוב בממשק הניהול של Shopify ← Settings → Apps and sales channels → Develop apps ← האפליקציה שלכם ← API credentials.",
+      "The token Shopify received was rejected as invalid. Make sure you pasted the Admin API access token (starts with shpat_), not the API key or secret. Re-check the token under Shopify Admin → Settings → Apps and sales channels → Develop apps → your app → API credentials."
+    );
   }
   if (r.includes("403") || r.includes("forbidden") || r.includes("not authorized")) {
-    return "The token is valid but doesn't have the required permissions. In Shopify Admin → your custom app → Configure Admin API scopes, grant: read_products, read_orders, read_customers, read_inventory (plus write_discounts if you use affiliate coupon creation).";
+    return lang(
+      "הטוקן תקין אבל חסרות לו ההרשאות הנדרשות. בממשק הניהול של Shopify ← האפליקציה הפרטית שלכם ← Configure Admin API scopes, העניקו: read_products, read_orders, read_customers, read_inventory (ובנוסף write_discounts אם אתם משתמשים ביצירת קופוני שותפים).",
+      "The token is valid but doesn't have the required permissions. In Shopify Admin → your custom app → Configure Admin API scopes, grant: read_products, read_orders, read_customers, read_inventory (plus write_discounts if you use affiliate coupon creation)."
+    );
   }
   if (r.includes("404") || r.includes("could not find shop")) {
-    return "The shop domain wasn't found. Use the full myshopify domain (e.g. yourstore.myshopify.com), not your storefront URL.";
+    return lang(
+      "דומיין החנות לא נמצא. השתמשו בדומיין המלא של myshopify (לדוגמה: yourstore.myshopify.com), ולא בכתובת חזית החנות.",
+      "The shop domain wasn't found. Use the full myshopify domain (e.g. yourstore.myshopify.com), not your storefront URL."
+    );
   }
   if (r.includes("getaddrinfo") || r.includes("enotfound") || r.includes("dns")) {
-    return "Could not reach the shop — the domain isn't resolving. Double-check the spelling (should look like yourstore.myshopify.com).";
+    return lang(
+      "לא ניתן להגיע לחנות — הדומיין לא נפתר. בדקו שוב את האיות (אמור להיראות כמו yourstore.myshopify.com).",
+      "Could not reach the shop — the domain isn't resolving. Double-check the spelling (should look like yourstore.myshopify.com)."
+    );
   }
   if (r.includes("etimedout") || r.includes("timeout")) {
-    return "Shopify took too long to respond. Try again in a moment.";
+    return lang(
+      "Shopify לקחה יותר מדי זמן להגיב. נסו שוב בעוד רגע.",
+      "Shopify took too long to respond. Try again in a moment."
+    );
   }
   return raw;
 }
@@ -34,15 +52,25 @@ function humanizeShopifyError(raw: string): string {
 // Soft client-side check: warn if the pasted value clearly isn't a custom
 // app access token. Doesn't block submission — just nudges. shpat_ is the
 // 2023+ format; older tokens may have other prefixes which we don't fail.
-function tokenFormatWarning(token: string): string | null {
+function tokenFormatWarning(token: string, lang: LangFn): string | null {
   const t = token.trim();
   if (!t) return null;
   if (t.startsWith("shpat_")) return null;
-  if (t.length < 20) return "That looks too short — Shopify Admin tokens are usually 40+ characters.";
+  if (t.length < 20)
+    return lang(
+      "זה נראה קצר מדי — טוקני Admin של Shopify הם בדרך כלל באורך 40 תווים ומעלה.",
+      "That looks too short — Shopify Admin tokens are usually 40+ characters."
+    );
   if (/^[a-f0-9]{32}$/i.test(t)) {
-    return "Looks like an API key, not the access token. The Admin API access token starts with shpat_ and is shown right below the API key in the Shopify app dashboard.";
+    return lang(
+      "נראה כמו API key ולא כמו טוקן הגישה. טוקן הגישה של Admin API מתחיל ב-shpat_ ומוצג ממש מתחת לAPI key בלוח הבקרה של האפליקציה בShopify.",
+      "Looks like an API key, not the access token. The Admin API access token starts with shpat_ and is shown right below the API key in the Shopify app dashboard."
+    );
   }
-  return "Custom-app Admin API tokens normally start with shpat_. If yours doesn't, double-check it's the Admin access token (not API key, not API secret).";
+  return lang(
+    "טוקני Admin API של אפליקציה פרטית מתחילים בדרך כלל ב-shpat_. אם שלכם לא, בדקו שוב שזה טוקן הגישה של Admin (לא API key ולא API secret).",
+    "Custom-app Admin API tokens normally start with shpat_. If yours doesn't, double-check it's the Admin access token (not API key, not API secret)."
+  );
 }
 
 interface SyncStatusPayload {
@@ -96,6 +124,31 @@ interface ShopifyLabels {
   failed: string;
   syncModes: { initial: string; incremental: string };
   syncStatuses: { idle: string; running: string; success: string; error: string };
+  orLabel: string;
+  orPasteToken: string;
+  tokenGuide: {
+    summary: string;
+    step1: string;
+    step2a: string;
+    step2b: string;
+    step3a: string;
+    step3b: string;
+    step3c: string;
+    step3d: string;
+    step4a: string;
+    step4b: string;
+    step5a: string;
+    step5b: string;
+    step5c: string;
+    step5d: string;
+    step6: string;
+    docsLink: string;
+  };
+  syncBlockedTitle: string;
+  syncFailedTitle: string;
+  syncBlockedBodyA: string;
+  syncBlockedBodyB: string;
+  syncFailedBody: string;
 }
 
 export function ShopifyConnectionManager({
@@ -109,6 +162,7 @@ export function ShopifyConnectionManager({
   labels: ShopifyLabels;
   locale?: "he" | "en";
 }) {
+  const lang: LangFn = (he, en) => (locale === "he" ? he : en);
   const [shopDomain, setShopDomain] = useState(initialConnection?.shopDomain ?? "");
   const [adminAccessToken, setAdminAccessToken] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -153,7 +207,7 @@ export function ShopifyConnectionManager({
       await handler();
     } catch (caught) {
       const raw = caught instanceof Error ? caught.message : labels.unexpectedError;
-      setError(humanizeShopifyError(raw));
+      setError(humanizeShopifyError(raw, lang));
     } finally {
       await refreshStatus().catch(() => null);
       setLoadingAction(null);
@@ -210,8 +264,8 @@ export function ShopifyConnectionManager({
           <ShopifyOauthSection locale={locale} />
 
           <div className="rounded-md border border-border bg-slate-50/50 px-3 py-2 text-[11px] text-slate-700">
-            <strong>OR</strong> paste a Custom App Admin API access token below (starts with{" "}
-            <code className="rounded bg-slate-200 px-1 text-[10px]">shpat_</code>).
+            <strong>{labels.orLabel}</strong> {labels.orPasteToken}{" "}
+            <code className="rounded bg-slate-200 px-1 text-[10px]" dir="ltr">shpat_</code>).
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -233,10 +287,10 @@ export function ShopifyConnectionManager({
                 onChange={(event) => setAdminAccessToken(event.target.value)}
                 placeholder={labels.tokenPlaceholder}
               />
-              {tokenFormatWarning(adminAccessToken) ? (
+              {tokenFormatWarning(adminAccessToken, lang) ? (
                 <p className="flex items-start gap-1.5 text-[11px] leading-5 text-amber-700">
                   <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" aria-hidden />
-                  <span>{tokenFormatWarning(adminAccessToken)}</span>
+                  <span>{tokenFormatWarning(adminAccessToken, lang)}</span>
                 </p>
               ) : null}
             </label>
@@ -247,33 +301,38 @@ export function ShopifyConnectionManager({
           <details className="rounded-xl border border-border bg-slate-50/50 px-4 py-3 text-sm">
             <summary className="flex cursor-pointer items-center gap-2 font-medium text-slate-700">
               <HelpCircle className="h-4 w-4" aria-hidden />
-              Where do I find the Admin API access token?
+              {labels.tokenGuide.summary}
             </summary>
             <ol className="mt-3 list-decimal space-y-2 ps-5 text-xs leading-6 text-slate-700">
               <li>
-                In Shopify Admin, go to <strong>Settings → Apps and sales channels → Develop apps</strong>.
+                {labels.tokenGuide.step1}{" "}
+                <strong dir="ltr">Settings → Apps and sales channels → Develop apps</strong>.
               </li>
               <li>
-                Click your existing custom app (or <strong>Create an app</strong> if you don&apos;t have one).
+                {labels.tokenGuide.step2a} <strong dir="ltr">Create an app</strong> {labels.tokenGuide.step2b}
               </li>
               <li>
-                Click <strong>Configure Admin API scopes</strong> and grant at minimum:
-                <code className="ms-1 rounded bg-slate-200 px-1 text-[10px]">read_products</code>,{" "}
-                <code className="rounded bg-slate-200 px-1 text-[10px]">read_orders</code>,{" "}
-                <code className="rounded bg-slate-200 px-1 text-[10px]">read_customers</code>,{" "}
-                <code className="rounded bg-slate-200 px-1 text-[10px]">read_inventory</code>{" "}
-                (add <code className="rounded bg-slate-200 px-1 text-[10px]">write_discounts</code> for
-                affiliate coupon creation).
+                {labels.tokenGuide.step3a} <strong dir="ltr">Configure Admin API scopes</strong>{" "}
+                {labels.tokenGuide.step3b}
+                <code className="ms-1 rounded bg-slate-200 px-1 text-[10px]" dir="ltr">read_products</code>,{" "}
+                <code className="rounded bg-slate-200 px-1 text-[10px]" dir="ltr">read_orders</code>,{" "}
+                <code className="rounded bg-slate-200 px-1 text-[10px]" dir="ltr">read_customers</code>,{" "}
+                <code className="rounded bg-slate-200 px-1 text-[10px]" dir="ltr">read_inventory</code>{" "}
+                {labels.tokenGuide.step3c}{" "}
+                <code className="rounded bg-slate-200 px-1 text-[10px]" dir="ltr">write_discounts</code>{" "}
+                {labels.tokenGuide.step3d}
               </li>
               <li>
-                Click <strong>Install app</strong> at the top right — confirm.
+                {labels.tokenGuide.step4a} <strong dir="ltr">Install app</strong> {labels.tokenGuide.step4b}
               </li>
               <li>
-                Go to the <strong>API credentials</strong> tab. Under <strong>Admin API access token</strong>, click{" "}
-                <strong>Reveal token once</strong> and copy the value (starts with{" "}
-                <code className="rounded bg-slate-200 px-1 text-[10px]">shpat_</code>).
+                {labels.tokenGuide.step5a} <strong dir="ltr">API credentials</strong>
+                {labels.tokenGuide.step5b} <strong dir="ltr">Admin API access token</strong>,{" "}
+                {labels.tokenGuide.step5c} <strong dir="ltr">Reveal token once</strong>{" "}
+                {labels.tokenGuide.step5d}{" "}
+                <code className="rounded bg-slate-200 px-1 text-[10px]" dir="ltr">shpat_</code>).
               </li>
-              <li>Paste it into the field above.</li>
+              <li>{labels.tokenGuide.step6}</li>
             </ol>
             <a
               href="https://help.shopify.com/en/manual/apps/app-types/custom-apps"
@@ -281,7 +340,7 @@ export function ShopifyConnectionManager({
               rel="noopener noreferrer"
               className="mt-3 inline-flex items-center gap-1 text-[11px] font-medium text-sky-700 hover:underline"
             >
-              Shopify&apos;s docs on custom apps <ExternalLink className="h-3 w-3" aria-hidden />
+              {labels.tokenGuide.docsLink} <ExternalLink className="h-3 w-3" aria-hidden />
             </a>
           </details>
 
@@ -332,26 +391,18 @@ export function ShopifyConnectionManager({
                 </span>
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-rose-900">
-                    {isCredentialError
-                      ? "Shopify sync is blocked — credentials can’t be decrypted"
-                      : "Last Shopify sync failed"}
+                    {isCredentialError ? labels.syncBlockedTitle : labels.syncFailedTitle}
                   </p>
                   {isCredentialError ? (
                     <p className="text-sm text-rose-800">
-                      Your saved Shopify Admin API token can’t be decrypted, so every
-                      sync (including the hourly background job) is failing. This
-                      happens when <code className="font-mono text-xs">SHOPIFY_CREDENTIALS_ENCRYPTION_KEY</code>{" "}
-                      changed since the token was saved. Fix it by either re-entering
-                      and saving the access token above, or restoring the original
-                      encryption key — then run a sync again.
+                      {labels.syncBlockedBodyA}{" "}
+                      <code className="font-mono text-xs" dir="ltr">SHOPIFY_CREDENTIALS_ENCRYPTION_KEY</code>{" "}
+                      {labels.syncBlockedBodyB}
                     </p>
                   ) : (
-                    <p className="text-sm text-rose-800">
-                      The most recent sync didn’t complete. The hourly background
-                      sync will retry automatically.
-                    </p>
+                    <p className="text-sm text-rose-800">{labels.syncFailedBody}</p>
                   )}
-                  <p className="rounded-lg bg-rose-100/70 px-3 py-1.5 font-mono text-xs text-rose-900">
+                  <p className="rounded-lg bg-rose-100/70 px-3 py-1.5 font-mono text-xs text-rose-900" dir="ltr">
                     {syncError}
                   </p>
                 </div>

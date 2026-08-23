@@ -21,7 +21,8 @@ interface AppConfigStatus {
 }
 
 export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
-  const t = useSaasStrings(locale).shopifyOauth;
+  const strings = useSaasStrings(locale);
+  const t = strings.shopifyOauth;
   const [shopDomain, setShopDomain] = useState("");
   const [config, setConfig] = useState<AppConfigStatus | null>(null);
   const [showCredentialsForm, setShowCredentialsForm] = useState(false);
@@ -110,12 +111,12 @@ export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
         })
       });
       const body = await res.json();
-      if (!res.ok || !body?.ok) throw new Error(body?.error ?? "Failed to save.");
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? t.saveFailed);
       setSavedMsg(t.savedMsg);
       setClientSecretInput("");
       void loadConfig();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : strings.common.unexpectedError);
     } finally {
       setSaving(false);
     }

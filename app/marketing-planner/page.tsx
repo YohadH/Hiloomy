@@ -75,7 +75,7 @@ export default async function MarketingPlannerPage() {
               : "Upload the monthly marketing calendar, get automatic BI analysis, a PDF brief per role, and click any day to see its tasks and open them in the right tool (coupon, creative studio and more)."
           }
         />
-        <GanttStudio initialSheets={initialSheets} />
+        <GanttStudio initialSheets={initialSheets} locale={isHe ? "he" : "en"} />
       </div>
     </AppShell>
   );

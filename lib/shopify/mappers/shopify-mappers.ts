@@ -207,6 +207,21 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
     mappedOrder.totalShipping = roundCurrency(shippingInclusive - shippingTax);
   }
 
+  // Per-CODE discount totals, net of VAT (SA reconciliation 2026-08-23).
+  // Previously DiscountUsage.amount was order.totalDiscounts split evenly
+  // across codes — tax-INCLUSIVE (₪3,915 where Shopify reported ₪3,317 =
+  // exactly ×1.18) and wrong whenever an order carried two codes of
+  // different sizes. Each allocation names its discountApplication index,
+  // so we can attribute the real amount to the real code and strip VAT
+  // with the same per-line net factor the amounts above use.
+  const discountCodeByIndex = new Map<number, string>();
+  (order.discountApplications?.edges ?? []).forEach((edge: any, i: number) => {
+    const node = edge?.node ?? {};
+    const code = String(node.code ?? node.title ?? "Untitled discount").trim();
+    if (code) discountCodeByIndex.set(typeof node.index === "number" ? node.index : i, code);
+  });
+  const discountTotalsByCode = new Map<string, number>();
+
   const mappedLineItems = lineItems.flatMap((lineItem: any) => {
     const shopifyLineItemId = stripGid(lineItem.id);
     if (shopifyLineItemId && seenLineItemIds.has(shopifyLineItemId)) {
@@ -274,6 +289,22 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
         : taxesIncluded
           ? roundCurrency(Math.max(0, totalLineDiscount - (totalLineDiscount > 0 && originalTotal > 0 ? (totalLineDiscount / originalTotal) * taxAmount : 0)))
           : roundCurrency(totalLineDiscount);
+    // Attribute this line's allocations to their codes, ex-VAT.
+    for (const allocation of lineItem.discountAllocations ?? []) {
+      const allocated = amount(allocation?.allocatedAmountSet?.shopMoney);
+      if (allocated <= 0) continue;
+      const idx = allocation?.discountApplication?.index;
+      const code =
+        (typeof idx === "number" ? discountCodeByIndex.get(idx) : undefined) ??
+        // Single-code orders: the index is unambiguous even if Shopify
+        // omitted it. Multi-code orders without an index fall through to
+        // the even split below, which is the old behavior.
+        (discountCodeByIndex.size === 1 ? [...discountCodeByIndex.values()][0] : undefined);
+      if (!code) continue;
+      const net = taxesIncluded && taxRate > 0 ? allocated * netFactor : allocated;
+      discountTotalsByCode.set(code, (discountTotalsByCode.get(code) ?? 0) + net);
+    }
+
     const originalUnitPriceRaw = amount(lineItem.originalUnitPriceSet?.shopMoney);
     const discountedUnitPriceRaw = amount(lineItem.discountedUnitPriceSet?.shopMoney);
     const quantity = Number(lineItem.quantity ?? 0);
@@ -314,12 +345,30 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
     }];
   });
 
-  const mappedDiscounts = Array.from(new Set(
-    order.discountApplications?.edges
-      ?.map((edge: any) => edge.node)
-      ?.map((discount: any) => String(discount.code ?? discount.title ?? "Untitled discount").trim())
-      ?.filter((code: string) => isAnalyticsDiscountCode(code)) ?? []
-  )).map((code) => ({ code }));
+  const discountCodes = Array.from(
+    new Set<string>(
+      order.discountApplications?.edges
+        ?.map((edge: any) => edge.node)
+        ?.map((discount: any) => String(discount.code ?? discount.title ?? "Untitled discount").trim())
+        ?.filter((code: string) => isAnalyticsDiscountCode(code)) ?? []
+    )
+  );
+  // Ex-VAT per-code amount from the line allocations; falls back to an
+  // even split of the order's (VAT-stripped) total for the rare order
+  // whose allocations carry no application index.
+  const orderDiscountNet =
+    taxesIncluded && orderTotalTax > 0 && sumOriginalTotal > 0
+      ? roundCurrency(
+          Number(mappedOrder.totalDiscounts) *
+            (1 - orderTotalTax / Math.max(sumOriginalTotal, 1))
+        )
+      : Number(mappedOrder.totalDiscounts);
+  const mappedDiscounts = discountCodes.map((code) => ({
+    code,
+    amount: discountTotalsByCode.has(code)
+      ? roundCurrency(discountTotalsByCode.get(code) as number)
+      : roundCurrency(orderDiscountNet / Math.max(discountCodes.length, 1))
+  }));
 
   const mappedRefunds = refunds.map((refund: any) => ({
     shopifyRefundId: stripGid(refund.id),

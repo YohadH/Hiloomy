@@ -36,6 +36,8 @@ type AppliesToType = "all" | "products" | "collections";
 type MinimumRequirementType = "none" | "subtotal" | "quantity";
 type CustomerEligibilityType = "all" | "segments";
 
+type Translator = (he: string, en: string) => string;
+
 function sanitizeCouponCodeSegment(value: string) {
   return value
     .trim()
@@ -143,7 +145,8 @@ function renderApplyToSelection({
   products,
   collections,
   toggleProduct,
-  toggleCollection
+  toggleCollection,
+  lang
 }: {
   appliesToType: AppliesToType;
   selectedProductIds: string[];
@@ -152,6 +155,7 @@ function renderApplyToSelection({
   collections: CollectionOption[];
   toggleProduct: (id: string) => void;
   toggleCollection: (id: string) => void;
+  lang: Translator;
 }) {
   if (appliesToType === "products") {
     return (
@@ -159,7 +163,7 @@ function renderApplyToSelection({
         items={products.map((product) => ({ id: product.id, label: product.title }))}
         selectedIds={selectedProductIds}
         onToggle={toggleProduct}
-        emptyLabel="No synced Shopify products are available yet."
+        emptyLabel={lang("אין עדיין מוצרים מסונכרנים מ-Shopify.", "No synced Shopify products are available yet.")}
       />
     );
   }
@@ -170,7 +174,7 @@ function renderApplyToSelection({
         items={collections.map((collection) => ({ id: collection.id, label: collection.title }))}
         selectedIds={selectedCollectionIds}
         onToggle={toggleCollection}
-        emptyLabel="No Shopify collections are available yet."
+        emptyLabel={lang("אין עדיין קולקציות מ-Shopify.", "No Shopify collections are available yet.")}
       />
     );
   }
@@ -182,12 +186,14 @@ function renderSegmentSelection({
   customerEligibilityType,
   selectedSegmentIds,
   customerSegments,
-  toggleSegment
+  toggleSegment,
+  lang
 }: {
   customerEligibilityType: CustomerEligibilityType;
   selectedSegmentIds: string[];
   customerSegments: CustomerSegmentOption[];
   toggleSegment: (id: string) => void;
+  lang: Translator;
 }) {
   if (customerEligibilityType !== "segments") return null;
 
@@ -196,7 +202,10 @@ function renderSegmentSelection({
       items={customerSegments.map((segment) => ({ id: segment.id, label: segment.name }))}
       selectedIds={selectedSegmentIds}
       onToggle={toggleSegment}
-      emptyLabel="No Shopify customer segments are available for this store."
+      emptyLabel={lang(
+        "אין פלחי לקוחות מ-Shopify זמינים לחנות הזו.",
+        "No Shopify customer segments are available for this store."
+      )}
     />
   );
 }
@@ -208,7 +217,8 @@ export function AffiliateCouponManager({
   collections,
   customerSegments,
   lockedAffiliateId,
-  defaultMode = "single"
+  defaultMode = "single",
+  locale = "he"
 }: {
   baseStoreUrl: string;
   affiliates: AffiliateOption[];
@@ -217,7 +227,11 @@ export function AffiliateCouponManager({
   customerSegments: CustomerSegmentOption[];
   lockedAffiliateId?: string;
   defaultMode?: ManagerMode;
+  locale?: "he" | "en";
 }) {
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
+
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -324,15 +338,15 @@ export function AffiliateCouponManager({
     if (!generatedSingleLink) return;
     try {
       await navigator.clipboard.writeText(generatedSingleLink);
-      setMessage("Copied the affiliate preview link.");
+      setMessage(lang("קישור התצוגה המקדימה של השותפה הועתק.", "Copied the affiliate preview link."));
     } catch {
-      setMessage("Could not copy the affiliate preview link.");
+      setMessage(lang("לא הצלחנו להעתיק את קישור התצוגה המקדימה.", "Could not copy the affiliate preview link."));
     }
   }
 
   async function handleSingleAssign() {
     if (!selectedSingleAffiliate || !generatedSingleCode) {
-      setMessage("Choose an affiliate and coupon code first.");
+      setMessage(lang("בחרו שותפה וקוד קופון לפני שממשיכים.", "Choose an affiliate and coupon code first."));
       return;
     }
 
@@ -371,24 +385,32 @@ export function AffiliateCouponManager({
         });
         const payload = await response.json();
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.error ?? "Single assignment failed.");
+          throw new Error(payload.error ?? lang("השיוך הבודד נכשל.", "Single assignment failed."));
         }
 
         setMessage(
           singleMethod === "existing"
-            ? `Attached existing coupon ${payload.code} to ${payload.affiliateName}.`
-            : `Created Shopify discount ${payload.code} for ${payload.affiliateName}.`
+            ? lang(
+                `הקופון הקיים ${payload.code} שויך ל${payload.affiliateName}.`,
+                `Attached existing coupon ${payload.code} to ${payload.affiliateName}.`
+              )
+            : lang(
+                `נוצרה הנחת Shopify ${payload.code} עבור ${payload.affiliateName}.`,
+                `Created Shopify discount ${payload.code} for ${payload.affiliateName}.`
+              )
         );
         router.refresh();
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Single assignment failed.");
+        setMessage(
+          error instanceof Error ? error.message : lang("השיוך הבודד נכשל.", "Single assignment failed.")
+        );
       }
     });
   }
 
   async function handleBulkAssign() {
     if (!effectiveBulkAffiliateIds.length) {
-      setMessage("Select at least one affiliate for bulk assignment.");
+      setMessage(lang("בחרו לפחות שותפה אחת לשיוך כמותי.", "Select at least one affiliate for bulk assignment."));
       return;
     }
 
@@ -426,13 +448,20 @@ export function AffiliateCouponManager({
         });
         const payload = await response.json();
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.error ?? "Bulk assignment failed.");
+          throw new Error(payload.error ?? lang("השיוך הכמותי נכשל.", "Bulk assignment failed."));
         }
 
-        setMessage(`Created ${payload.assignedCount} Shopify discounts in bulk.`);
+        setMessage(
+          lang(
+            `נוצרו ${payload.assignedCount} הנחות Shopify בהפקה כמותית.`,
+            `Created ${payload.assignedCount} Shopify discounts in bulk.`
+          )
+        );
         router.refresh();
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Bulk assignment failed.");
+        setMessage(
+          error instanceof Error ? error.message : lang("השיוך הכמותי נכשל.", "Bulk assignment failed.")
+        );
       }
     });
   }
@@ -440,9 +469,12 @@ export function AffiliateCouponManager({
   return (
     <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-4">
       <div className="flex flex-col gap-2">
-        <h3 className="text-base font-semibold">Affiliate discount manager</h3>
+        <h3 className="text-base font-semibold">{lang("ניהול הנחות לשותפות", "Affiliate discount manager")}</h3>
         <p className="text-sm text-muted-foreground">
-          Build Shopify discount rules for one affiliate or create unique codes in bulk, then attach each code to an affiliate link.
+          {lang(
+            "בנו כללי הנחה ב-Shopify לשותפה אחת, או הפיקו קודים ייחודיים בכמות, ואז חברו כל קוד לקישור השותפה שלו.",
+            "Build Shopify discount rules for one affiliate or create unique codes in bulk, then attach each code to an affiliate link."
+          )}
         </p>
       </div>
 
@@ -453,36 +485,40 @@ export function AffiliateCouponManager({
             variant={mode === "single" ? "default" : "secondary"}
             onClick={() => setMode("single")}
           >
-            Single assign
+            {lang("שיוך בודד", "Single assign")}
           </Button>
           <Button
             type="button"
             variant={mode === "bulk" ? "default" : "secondary"}
             onClick={() => setMode("bulk")}
           >
-            Bulk assign
+            {lang("שיוך כמותי", "Bulk assign")}
           </Button>
         </div>
       ) : null}
 
       {!hasAffiliates ? (
         <p className="text-sm text-muted-foreground">
-          Add at least one affiliate before creating or attaching Shopify discounts.
+          {lang(
+            "הוסיפו לפחות שותפה אחת לפני יצירה או שיוך של הנחות Shopify.",
+            "Add at least one affiliate before creating or attaching Shopify discounts."
+          )}
         </p>
       ) : null}
 
       {mode === "single" ? (
         <div className="space-y-4">
-          <RuleCard title="Select affiliate">
+          <RuleCard title={lang("בחירת שותפה", "Select affiliate")}>
             {lockedAffiliate ? (
               <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm">
-                {getAffiliateLabel(lockedAffiliate)} - {lockedAffiliate.affiliateCode}
+                {getAffiliateLabel(lockedAffiliate)} - <span dir="ltr">{lockedAffiliate.affiliateCode}</span>
               </div>
             ) : (
               <select
                 value={singleAffiliateId}
                 onChange={(event) => setSingleAffiliateId(event.target.value)}
                 disabled={!hasAffiliates}
+                aria-label={lang("בחירת שותפה", "Select affiliate")}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               >
                 {affiliates.map((affiliate) => (
@@ -494,7 +530,7 @@ export function AffiliateCouponManager({
             )}
           </RuleCard>
 
-          <RuleCard title="Select method">
+          <RuleCard title={lang("בחירת שיטה", "Select method")}>
             <div className="space-y-3 text-sm">
               <label className="flex items-center gap-3">
                 <input
@@ -503,7 +539,7 @@ export function AffiliateCouponManager({
                   onChange={() => setSingleMethod("create")}
                   className="h-4 w-4 border-border"
                 />
-                Create a new Shopify coupon
+                {lang("יצירת קופון חדש ב-Shopify", "Create a new Shopify coupon")}
               </label>
               <label className="flex items-center gap-3">
                 <input
@@ -512,33 +548,49 @@ export function AffiliateCouponManager({
                   onChange={() => setSingleMethod("existing")}
                   className="h-4 w-4 border-border"
                 />
-                Use an existing Shopify coupon
+                {lang("שימוש בקופון קיים ב-Shopify", "Use an existing Shopify coupon")}
               </label>
             </div>
           </RuleCard>
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <RuleCard title="Coupon code">
+            <RuleCard title={lang("קוד הקופון", "Coupon code")}>
               <input
+                dir="ltr"
                 value={singleCode}
                 onChange={(event) => setSingleCode(event.target.value)}
+                aria-label={lang("קוד הקופון", "Coupon code")}
                 placeholder={selectedSingleAffiliate ? `${selectedSingleAffiliate.affiliateCode}-15` : "AFFILIATE-15"}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Shopify discount codes are normalized to uppercase letters, numbers, and dashes.
+                {lang(
+                  "קודי הנחה ב-Shopify מתורגמים אוטומטית לאותיות גדולות באנגלית, ספרות ומקפים.",
+                  "Shopify discount codes are normalized to uppercase letters, numbers, and dashes."
+                )}
               </p>
             </RuleCard>
 
-            <RuleCard title="Discount value" description={singleMethod === "existing" ? "Used for app reporting and display. The real rule stays in Shopify." : undefined}>
+            <RuleCard
+              title={lang("גובה ההנחה", "Discount value")}
+              description={
+                singleMethod === "existing"
+                  ? lang(
+                      "משמש לדיווח ולתצוגה באפליקציה בלבד. כלל ההנחה עצמו נשאר ב-Shopify.",
+                      "Used for app reporting and display. The real rule stays in Shopify."
+                    )
+                  : undefined
+              }
+            >
               <div className="grid gap-3 md:grid-cols-[1fr_1fr]">
                 <select
                   value={singleDiscountType}
                   onChange={(event) => setSingleDiscountType(event.target.value as DiscountType)}
+                  aria-label={lang("סוג ההנחה", "Discount type")}
                   className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                 >
-                  <option value="percent">Percentage</option>
-                  <option value="fixed">Fixed amount</option>
+                  <option value="percent">{lang("אחוז הנחה", "Percentage")}</option>
+                  <option value="fixed">{lang("סכום קבוע", "Fixed amount")}</option>
                 </select>
                 <input
                   type="number"
@@ -546,6 +598,7 @@ export function AffiliateCouponManager({
                   step="0.01"
                   value={singleValue}
                   onChange={(event) => setSingleValue(event.target.value)}
+                  aria-label={lang("גובה ההנחה", "Discount value")}
                   className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                 />
               </div>
@@ -554,28 +607,30 @@ export function AffiliateCouponManager({
 
           {singleMethod === "create" ? (
             <>
-              <RuleCard title="Purchase type">
+              <RuleCard title={lang("סוג הרכישה", "Purchase type")}>
                 <select
                   value={singlePurchaseType}
                   onChange={(event) => setSinglePurchaseType(event.target.value as PurchaseType)}
+                  aria-label={lang("סוג הרכישה", "Purchase type")}
                   className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                 >
-                  <option value="one_time">One-time purchase</option>
-                  <option value="subscription">Subscription only</option>
-                  <option value="both">One-time and subscription</option>
+                  <option value="one_time">{lang("רכישה חד-פעמית", "One-time purchase")}</option>
+                  <option value="subscription">{lang("מנוי בלבד", "Subscription only")}</option>
+                  <option value="both">{lang("רכישה חד-פעמית ומנוי", "One-time and subscription")}</option>
                 </select>
               </RuleCard>
 
-              <RuleCard title="Apply to">
+              <RuleCard title={lang("ההנחה חלה על", "Apply to")}>
                 <div className="space-y-3">
                   <select
                     value={singleAppliesToType}
                     onChange={(event) => setSingleAppliesToType(event.target.value as AppliesToType)}
+                    aria-label={lang("ההנחה חלה על", "Apply to")}
                     className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                   >
-                    <option value="all">All products</option>
-                    <option value="products">Specific products</option>
-                    <option value="collections">Specific collections</option>
+                    <option value="all">{lang("כל המוצרים", "All products")}</option>
+                    <option value="products">{lang("מוצרים נבחרים", "Specific products")}</option>
+                    <option value="collections">{lang("קולקציות נבחרות", "Specific collections")}</option>
                   </select>
                   {renderApplyToSelection({
                     appliesToType: singleAppliesToType,
@@ -584,21 +639,23 @@ export function AffiliateCouponManager({
                     products,
                     collections,
                     toggleProduct: (id) => toggleId(setSingleProductIds, id),
-                    toggleCollection: (id) => toggleId(setSingleCollectionIds, id)
+                    toggleCollection: (id) => toggleId(setSingleCollectionIds, id),
+                    lang
                   })}
                 </div>
               </RuleCard>
 
-              <RuleCard title="Minimum purchase requirements">
+              <RuleCard title={lang("דרישות מינימום לרכישה", "Minimum purchase requirements")}>
                 <div className="space-y-3">
                   <select
                     value={singleMinimumRequirementType}
                     onChange={(event) => setSingleMinimumRequirementType(event.target.value as MinimumRequirementType)}
+                    aria-label={lang("דרישות מינימום לרכישה", "Minimum purchase requirements")}
                     className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                   >
-                    <option value="none">No minimum requirements</option>
-                    <option value="subtotal">Minimum purchase amount</option>
-                    <option value="quantity">Minimum item quantity</option>
+                    <option value="none">{lang("ללא דרישות מינימום", "No minimum requirements")}</option>
+                    <option value="subtotal">{lang("סכום רכישה מינימלי", "Minimum purchase amount")}</option>
+                    <option value="quantity">{lang("כמות פריטים מינימלית", "Minimum item quantity")}</option>
                   </select>
                   {singleMinimumRequirementType === "subtotal" ? (
                     <input
@@ -607,7 +664,8 @@ export function AffiliateCouponManager({
                       step="0.01"
                       value={singleMinimumSubtotal}
                       onChange={(event) => setSingleMinimumSubtotal(event.target.value)}
-                      placeholder="Minimum subtotal"
+                      placeholder={lang("סכום ביניים מינימלי", "Minimum subtotal")}
+                      aria-label={lang("סכום ביניים מינימלי", "Minimum subtotal")}
                       className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                     />
                   ) : null}
@@ -618,33 +676,36 @@ export function AffiliateCouponManager({
                       step="1"
                       value={singleMinimumQuantity}
                       onChange={(event) => setSingleMinimumQuantity(event.target.value)}
-                      placeholder="Minimum quantity"
+                      placeholder={lang("כמות מינימלית", "Minimum quantity")}
+                      aria-label={lang("כמות מינימלית", "Minimum quantity")}
                       className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                     />
                   ) : null}
                 </div>
               </RuleCard>
 
-              <RuleCard title="Customer eligibility">
+              <RuleCard title={lang("זכאות לקוחות", "Customer eligibility")}>
                 <div className="space-y-3">
                   <select
                     value={singleCustomerEligibilityType}
                     onChange={(event) => setSingleCustomerEligibilityType(event.target.value as CustomerEligibilityType)}
+                    aria-label={lang("זכאות לקוחות", "Customer eligibility")}
                     className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                   >
-                    <option value="all">All customers</option>
-                    <option value="segments">Specific customer segments</option>
+                    <option value="all">{lang("כל הלקוחות", "All customers")}</option>
+                    <option value="segments">{lang("פלחי לקוחות נבחרים", "Specific customer segments")}</option>
                   </select>
                   {renderSegmentSelection({
                     customerEligibilityType: singleCustomerEligibilityType,
                     selectedSegmentIds: singleSegmentIds,
                     customerSegments,
-                    toggleSegment: (id) => toggleId(setSingleSegmentIds, id)
+                    toggleSegment: (id) => toggleId(setSingleSegmentIds, id),
+                    lang
                   })}
                 </div>
               </RuleCard>
 
-              <RuleCard title="Maximum discount uses">
+              <RuleCard title={lang("מספר שימושים מרבי בהנחה", "Maximum discount uses")}>
                 <div className="space-y-3">
                   <input
                     type="number"
@@ -652,7 +713,8 @@ export function AffiliateCouponManager({
                     step="1"
                     value={singleUsageLimit}
                     onChange={(event) => setSingleUsageLimit(event.target.value)}
-                    placeholder="Leave blank for unlimited total uses"
+                    placeholder={lang("השאירו ריק לשימוש ללא הגבלה", "Leave blank for unlimited total uses")}
+                    aria-label={lang("מספר שימושים מרבי בהנחה", "Maximum discount uses")}
                     className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                   />
                   <label className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -662,12 +724,12 @@ export function AffiliateCouponManager({
                       onChange={(event) => setSingleAppliesOncePerCustomer(event.target.checked)}
                       className="h-4 w-4 rounded border-border"
                     />
-                    Limit to one use per customer
+                    {lang("הגבלה לשימוש אחד לכל לקוח", "Limit to one use per customer")}
                   </label>
                 </div>
               </RuleCard>
 
-              <RuleCard title="Combinations">
+              <RuleCard title={lang("שילוב עם הנחות אחרות", "Combinations")}>
                 <div className="space-y-3 text-sm text-muted-foreground">
                   <label className="flex items-center gap-3">
                     <input
@@ -676,7 +738,7 @@ export function AffiliateCouponManager({
                       onChange={(event) => setSingleCombinesWithProductDiscounts(event.target.checked)}
                       className="h-4 w-4 rounded border-border"
                     />
-                    Product discounts
+                    {lang("הנחות על מוצרים", "Product discounts")}
                   </label>
                   <label className="flex items-center gap-3">
                     <input
@@ -685,7 +747,7 @@ export function AffiliateCouponManager({
                       onChange={(event) => setSingleCombinesWithOrderDiscounts(event.target.checked)}
                       className="h-4 w-4 rounded border-border"
                     />
-                    Order discounts
+                    {lang("הנחות על ההזמנה", "Order discounts")}
                   </label>
                   <label className="flex items-center gap-3">
                     <input
@@ -694,50 +756,65 @@ export function AffiliateCouponManager({
                       onChange={(event) => setSingleCombinesWithShippingDiscounts(event.target.checked)}
                       className="h-4 w-4 rounded border-border"
                     />
-                    Shipping discounts
+                    {lang("הנחות על משלוח", "Shipping discounts")}
                   </label>
                 </div>
               </RuleCard>
             </>
           ) : (
-            <RuleCard title="Existing Shopify coupon">
+            <RuleCard title={lang("קופון קיים ב-Shopify", "Existing Shopify coupon")}>
               <p className="text-sm text-muted-foreground">
-                The coupon already exists in Shopify. This action only attaches that code to the affiliate and tracking link inside the app.
+                {lang(
+                  "הקופון כבר קיים ב-Shopify. הפעולה הזו רק משייכת את הקוד לשותפה ולקישור המעקב בתוך האפליקציה.",
+                  "The coupon already exists in Shopify. This action only attaches that code to the affiliate and tracking link inside the app."
+                )}
               </p>
             </RuleCard>
           )}
 
-          <RuleCard title="Redirect path or URL">
+          <RuleCard title={lang("נתיב או כתובת להפניה", "Redirect path or URL")}>
             <input
+              dir="ltr"
               value={singleRedirectPath}
               onChange={(event) => setSingleRedirectPath(event.target.value || "/")}
-              placeholder="/products/your-product or https://yourstore.com/products/your-product"
+              aria-label={lang("נתיב או כתובת להפניה", "Redirect path or URL")}
+              placeholder={lang(
+                "/products/your-product או https://yourstore.com/products/your-product",
+                "/products/your-product or https://yourstore.com/products/your-product"
+              )}
               className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
             />
           </RuleCard>
 
-          <RuleCard title="Preview link">
-            <p className="break-all text-xs text-muted-foreground">
-              {generatedSingleLink || "Select an affiliate to preview the discount link."}
+          <RuleCard title={lang("קישור ההפעלה", "Preview link")}>
+            <p
+              dir={generatedSingleLink ? "ltr" : undefined}
+              className="break-all text-xs text-muted-foreground"
+            >
+              {generatedSingleLink ||
+                lang(
+                  "בחרו שותפה כדי לראות תצוגה מקדימה של קישור ההנחה.",
+                  "Select an affiliate to preview the discount link."
+                )}
             </p>
           </RuleCard>
 
           <div className="flex flex-wrap gap-3">
             <Button type="button" onClick={handleSingleAssign} disabled={isPending || !selectedSingleAffiliate}>
               {isPending
-                ? "Saving..."
+                ? lang("שומר...", "Saving...")
                 : singleMethod === "existing"
-                  ? "Attach existing coupon"
-                  : "Create in Shopify"}
+                  ? lang("שיוך קופון קיים", "Attach existing coupon")
+                  : lang("יצירה ב-Shopify", "Create in Shopify")}
             </Button>
             <Button type="button" variant="secondary" onClick={handleCopySingleLink} disabled={!generatedSingleLink}>
-              Copy preview link
+              {lang("העתקת קישור ההפעלה", "Copy preview link")}
             </Button>
           </div>
         </div>
       ) : (
         <div className="space-y-4">
-          <RuleCard title="Select affiliates">
+          <RuleCard title={lang("בחירת שותפות", "Select affiliates")}>
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                 <label className="flex items-center gap-3">
@@ -747,7 +824,7 @@ export function AffiliateCouponManager({
                     onChange={() => setBulkAssignToAll(false)}
                     className="h-4 w-4 border-border"
                   />
-                  Select specific affiliates
+                  {lang("בחירת שותפות מסוימות", "Select specific affiliates")}
                 </label>
                 <label className="flex items-center gap-3">
                   <input
@@ -756,7 +833,7 @@ export function AffiliateCouponManager({
                     onChange={() => setBulkAssignToAll(true)}
                     className="h-4 w-4 border-border"
                   />
-                  Assign to all affiliates
+                  {lang("שיוך לכל השותפות", "Assign to all affiliates")}
                 </label>
               </div>
 
@@ -766,14 +843,15 @@ export function AffiliateCouponManager({
                     <input
                       value={bulkSearch}
                       onChange={(event) => setBulkSearch(event.target.value)}
-                      placeholder="Search affiliates"
+                      placeholder={lang("חיפוש שותפות", "Search affiliates")}
+                      aria-label={lang("חיפוש שותפות", "Search affiliates")}
                       className="min-w-[16rem] flex-1 rounded-xl border border-border bg-background px-4 py-3 text-sm"
                     />
                     <Button type="button" variant="secondary" onClick={selectAllFilteredAffiliates}>
-                      Select filtered
+                      {lang("בחירת כל התוצאות", "Select filtered")}
                     </Button>
                     <Button type="button" variant="ghost" onClick={() => setSelectedAffiliateIds([])}>
-                      Clear
+                      {lang("ניקוי", "Clear")}
                     </Button>
                   </div>
                   <SelectableList
@@ -783,43 +861,51 @@ export function AffiliateCouponManager({
                     }))}
                     selectedIds={selectedAffiliateIds}
                     onToggle={(id) => toggleId(setSelectedAffiliateIds, id)}
-                    emptyLabel="No affiliates matched your search."
+                    emptyLabel={lang("לא נמצאו שותפות שתואמות לחיפוש.", "No affiliates matched your search.")}
                   />
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Every affiliate in the program will receive a unique Shopify coupon code.
+                  {lang(
+                    "כל שותפה בתוכנית תקבל קוד קופון ייחודי ב-Shopify.",
+                    "Every affiliate in the program will receive a unique Shopify coupon code."
+                  )}
                 </p>
               )}
             </div>
           </RuleCard>
 
-          <RuleCard title="Code format">
+          <RuleCard title={lang("מבנה הקוד", "Code format")}>
             <div className="grid gap-3 md:grid-cols-2">
               <input
+                dir="ltr"
                 value={bulkCodePrefix}
                 onChange={(event) => setBulkCodePrefix(event.target.value)}
-                placeholder="Code prefix"
+                placeholder={lang("קידומת לקוד", "Code prefix")}
+                aria-label={lang("קידומת לקוד", "Code prefix")}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               />
               <input
+                dir="ltr"
                 value={bulkCodeSuffix}
                 onChange={(event) => setBulkCodeSuffix(event.target.value)}
-                placeholder="Code suffix"
+                placeholder={lang("סיומת לקוד", "Code suffix")}
+                aria-label={lang("סיומת לקוד", "Code suffix")}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               />
             </div>
           </RuleCard>
 
-          <RuleCard title="Discount value">
+          <RuleCard title={lang("גובה ההנחה", "Discount value")}>
             <div className="grid gap-3 md:grid-cols-[1fr_1fr]">
               <select
                 value={bulkDiscountType}
                 onChange={(event) => setBulkDiscountType(event.target.value as DiscountType)}
+                aria-label={lang("סוג ההנחה", "Discount type")}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               >
-                <option value="percent">Percentage</option>
-                <option value="fixed">Fixed amount</option>
+                <option value="percent">{lang("אחוז הנחה", "Percentage")}</option>
+                <option value="fixed">{lang("סכום קבוע", "Fixed amount")}</option>
               </select>
               <input
                 type="number"
@@ -827,33 +913,36 @@ export function AffiliateCouponManager({
                 step="0.01"
                 value={bulkValue}
                 onChange={(event) => setBulkValue(event.target.value)}
+                aria-label={lang("גובה ההנחה", "Discount value")}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               />
             </div>
           </RuleCard>
 
-          <RuleCard title="Purchase type">
+          <RuleCard title={lang("סוג הרכישה", "Purchase type")}>
             <select
               value={bulkPurchaseType}
               onChange={(event) => setBulkPurchaseType(event.target.value as PurchaseType)}
+              aria-label={lang("סוג הרכישה", "Purchase type")}
               className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
             >
-              <option value="one_time">One-time purchase</option>
-              <option value="subscription">Subscription only</option>
-              <option value="both">One-time and subscription</option>
+              <option value="one_time">{lang("רכישה חד-פעמית", "One-time purchase")}</option>
+              <option value="subscription">{lang("מנוי בלבד", "Subscription only")}</option>
+              <option value="both">{lang("רכישה חד-פעמית ומנוי", "One-time and subscription")}</option>
             </select>
           </RuleCard>
 
-          <RuleCard title="Apply to">
+          <RuleCard title={lang("ההנחה חלה על", "Apply to")}>
             <div className="space-y-3">
               <select
                 value={bulkAppliesToType}
                 onChange={(event) => setBulkAppliesToType(event.target.value as AppliesToType)}
+                aria-label={lang("ההנחה חלה על", "Apply to")}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               >
-                <option value="all">All products</option>
-                <option value="products">Specific products</option>
-                <option value="collections">Specific collections</option>
+                <option value="all">{lang("כל המוצרים", "All products")}</option>
+                <option value="products">{lang("מוצרים נבחרים", "Specific products")}</option>
+                <option value="collections">{lang("קולקציות נבחרות", "Specific collections")}</option>
               </select>
               {renderApplyToSelection({
                 appliesToType: bulkAppliesToType,
@@ -862,21 +951,23 @@ export function AffiliateCouponManager({
                 products,
                 collections,
                 toggleProduct: (id) => toggleId(setBulkProductIds, id),
-                toggleCollection: (id) => toggleId(setBulkCollectionIds, id)
+                toggleCollection: (id) => toggleId(setBulkCollectionIds, id),
+                lang
               })}
             </div>
           </RuleCard>
 
-          <RuleCard title="Minimum purchase requirements">
+          <RuleCard title={lang("דרישות מינימום לרכישה", "Minimum purchase requirements")}>
             <div className="space-y-3">
               <select
                 value={bulkMinimumRequirementType}
                 onChange={(event) => setBulkMinimumRequirementType(event.target.value as MinimumRequirementType)}
+                aria-label={lang("דרישות מינימום לרכישה", "Minimum purchase requirements")}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               >
-                <option value="none">No minimum requirements</option>
-                <option value="subtotal">Minimum purchase amount</option>
-                <option value="quantity">Minimum item quantity</option>
+                <option value="none">{lang("ללא דרישות מינימום", "No minimum requirements")}</option>
+                <option value="subtotal">{lang("סכום רכישה מינימלי", "Minimum purchase amount")}</option>
+                <option value="quantity">{lang("כמות פריטים מינימלית", "Minimum item quantity")}</option>
               </select>
               {bulkMinimumRequirementType === "subtotal" ? (
                 <input
@@ -885,7 +976,8 @@ export function AffiliateCouponManager({
                   step="0.01"
                   value={bulkMinimumSubtotal}
                   onChange={(event) => setBulkMinimumSubtotal(event.target.value)}
-                  placeholder="Minimum subtotal"
+                  placeholder={lang("סכום ביניים מינימלי", "Minimum subtotal")}
+                  aria-label={lang("סכום ביניים מינימלי", "Minimum subtotal")}
                   className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                 />
               ) : null}
@@ -896,33 +988,36 @@ export function AffiliateCouponManager({
                   step="1"
                   value={bulkMinimumQuantity}
                   onChange={(event) => setBulkMinimumQuantity(event.target.value)}
-                  placeholder="Minimum quantity"
+                  placeholder={lang("כמות מינימלית", "Minimum quantity")}
+                  aria-label={lang("כמות מינימלית", "Minimum quantity")}
                   className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
                 />
               ) : null}
             </div>
           </RuleCard>
 
-          <RuleCard title="Customer eligibility">
+          <RuleCard title={lang("זכאות לקוחות", "Customer eligibility")}>
             <div className="space-y-3">
               <select
                 value={bulkCustomerEligibilityType}
                 onChange={(event) => setBulkCustomerEligibilityType(event.target.value as CustomerEligibilityType)}
+                aria-label={lang("זכאות לקוחות", "Customer eligibility")}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               >
-                <option value="all">All customers</option>
-                <option value="segments">Specific customer segments</option>
+                <option value="all">{lang("כל הלקוחות", "All customers")}</option>
+                <option value="segments">{lang("פלחי לקוחות נבחרים", "Specific customer segments")}</option>
               </select>
               {renderSegmentSelection({
                 customerEligibilityType: bulkCustomerEligibilityType,
                 selectedSegmentIds: bulkSegmentIds,
                 customerSegments,
-                toggleSegment: (id) => toggleId(setBulkSegmentIds, id)
+                toggleSegment: (id) => toggleId(setBulkSegmentIds, id),
+                lang
               })}
             </div>
           </RuleCard>
 
-          <RuleCard title="Maximum discount uses">
+          <RuleCard title={lang("מספר שימושים מרבי בהנחה", "Maximum discount uses")}>
             <div className="space-y-3">
               <input
                 type="number"
@@ -930,7 +1025,8 @@ export function AffiliateCouponManager({
                 step="1"
                 value={bulkUsageLimit}
                 onChange={(event) => setBulkUsageLimit(event.target.value)}
-                placeholder="Leave blank for unlimited total uses"
+                placeholder={lang("השאירו ריק לשימוש ללא הגבלה", "Leave blank for unlimited total uses")}
+                aria-label={lang("מספר שימושים מרבי בהנחה", "Maximum discount uses")}
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
               />
               <label className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -940,12 +1036,12 @@ export function AffiliateCouponManager({
                   onChange={(event) => setBulkAppliesOncePerCustomer(event.target.checked)}
                   className="h-4 w-4 rounded border-border"
                 />
-                Limit to one use per customer
+                {lang("הגבלה לשימוש אחד לכל לקוח", "Limit to one use per customer")}
               </label>
             </div>
           </RuleCard>
 
-          <RuleCard title="Combinations">
+          <RuleCard title={lang("שילוב עם הנחות אחרות", "Combinations")}>
             <div className="space-y-3 text-sm text-muted-foreground">
               <label className="flex items-center gap-3">
                 <input
@@ -954,7 +1050,7 @@ export function AffiliateCouponManager({
                   onChange={(event) => setBulkCombinesWithProductDiscounts(event.target.checked)}
                   className="h-4 w-4 rounded border-border"
                 />
-                Product discounts
+                {lang("הנחות על מוצרים", "Product discounts")}
               </label>
               <label className="flex items-center gap-3">
                 <input
@@ -963,7 +1059,7 @@ export function AffiliateCouponManager({
                   onChange={(event) => setBulkCombinesWithOrderDiscounts(event.target.checked)}
                   className="h-4 w-4 rounded border-border"
                 />
-                Order discounts
+                {lang("הנחות על ההזמנה", "Order discounts")}
               </label>
               <label className="flex items-center gap-3">
                 <input
@@ -972,39 +1068,54 @@ export function AffiliateCouponManager({
                   onChange={(event) => setBulkCombinesWithShippingDiscounts(event.target.checked)}
                   className="h-4 w-4 rounded border-border"
                 />
-                Shipping discounts
+                {lang("הנחות על משלוח", "Shipping discounts")}
               </label>
             </div>
           </RuleCard>
 
-          <RuleCard title="Redirect path or URL">
+          <RuleCard title={lang("נתיב או כתובת להפניה", "Redirect path or URL")}>
             <input
+              dir="ltr"
               value={bulkRedirectPath}
               onChange={(event) => setBulkRedirectPath(event.target.value || "/")}
-              placeholder="/products/your-product or https://yourstore.com/products/your-product"
+              aria-label={lang("נתיב או כתובת להפניה", "Redirect path or URL")}
+              placeholder={lang(
+                "/products/your-product או https://yourstore.com/products/your-product",
+                "/products/your-product or https://yourstore.com/products/your-product"
+              )}
               className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
             />
           </RuleCard>
 
-          <RuleCard title="Preview links">
+          <RuleCard title={lang("קישורי הפעלה", "Preview links")}>
             <div className="space-y-2">
               {bulkPreviewAffiliates.length ? bulkPreviewAffiliates.map((affiliate) => {
                 const code = buildBulkPreviewCode(affiliate, bulkCodePrefix, bulkCodeSuffix, Number(bulkValue || 0) || 0);
                 return (
                   <div key={affiliate.id} className="rounded-xl border border-border/60 bg-background px-4 py-3 text-sm">
                     <p className="font-medium">{getAffiliateLabel(affiliate)}</p>
-                    <p className="mt-1 text-muted-foreground">{code}</p>
-                    <p className="mt-1 break-all text-xs text-muted-foreground">
+                    <p dir="ltr" className="mt-1 text-muted-foreground">{code}</p>
+                    <p dir="ltr" className="mt-1 break-all text-xs text-muted-foreground">
                       {buildPreviewLink(baseStoreUrl, code, affiliate.affiliateCode, bulkRedirectPath)}
                     </p>
                   </div>
                 );
               }) : (
-                <p className="text-sm text-muted-foreground">Select affiliates to preview generated coupon links.</p>
+                <p className="text-sm text-muted-foreground">
+                  {lang(
+                    "בחרו שותפות כדי לראות תצוגה מקדימה של קישורי הקופונים שיופקו.",
+                    "Select affiliates to preview generated coupon links."
+                  )}
+                </p>
               )}
               {effectiveBulkAffiliateIds.length > bulkPreviewAffiliates.length ? (
                 <p className="text-xs text-muted-foreground">
-                  Plus {effectiveBulkAffiliateIds.length - bulkPreviewAffiliates.length} more affiliate{effectiveBulkAffiliateIds.length - bulkPreviewAffiliates.length === 1 ? "" : "s"}.
+                  {lang(
+                    effectiveBulkAffiliateIds.length - bulkPreviewAffiliates.length === 1
+                      ? "ועוד שותפה אחת."
+                      : `ועוד ${effectiveBulkAffiliateIds.length - bulkPreviewAffiliates.length} שותפות.`,
+                    `Plus ${effectiveBulkAffiliateIds.length - bulkPreviewAffiliates.length} more affiliate${effectiveBulkAffiliateIds.length - bulkPreviewAffiliates.length === 1 ? "" : "s"}.`
+                  )}
                 </p>
               ) : null}
             </div>
@@ -1012,7 +1123,12 @@ export function AffiliateCouponManager({
 
           <div className="flex flex-wrap gap-3">
             <Button type="button" onClick={handleBulkAssign} disabled={isPending || !effectiveBulkAffiliateIds.length}>
-              {isPending ? "Creating..." : `Create in bulk (${effectiveBulkAffiliateIds.length})`}
+              {isPending
+                ? lang("מפיק...", "Creating...")
+                : lang(
+                    `הפקה כמותית (${effectiveBulkAffiliateIds.length})`,
+                    `Create in bulk (${effectiveBulkAffiliateIds.length})`
+                  )}
             </Button>
           </div>
         </div>

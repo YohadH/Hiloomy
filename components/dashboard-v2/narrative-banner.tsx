@@ -14,9 +14,10 @@ export function NarrativeBanner({
   body,
   tone = "neutral",
   toneLabel,
-  locale = "en"
+  locale = "he"
 }: {
-  eyebrow: string;
+  /** Defaults to the bilingual "what happened this period" eyebrow. */
+  eyebrow?: string;
   headline: string;
   context?: string;
   body?: string;
@@ -24,6 +25,9 @@ export function NarrativeBanner({
   toneLabel?: string;
   locale?: AppLocale;
 }) {
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
+  const resolvedEyebrow = eyebrow ?? lang("מה קרה בתקופה הזו", "What happened this period");
   const Icon = tone === "up" ? TrendingUp : tone === "down" ? TrendingDown : null;
   const pillClass =
     tone === "up"
@@ -40,7 +44,7 @@ export function NarrativeBanner({
         </div>
         <div className="flex-1 space-y-1.5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-600">
-            {eyebrow}
+            {resolvedEyebrow}
           </p>
           <h2 className="text-lg font-semibold leading-snug text-foreground sm:text-xl">
             {headline}
@@ -79,10 +83,15 @@ export function NarrativeBanner({
  */
 export function OverviewNarrative({
   overview,
-  comparisonContext
+  comparisonContext,
+  // This wrapper's generated copy is still English-only, so it renders the
+  // English chrome to stay internally consistent. Pass "he" once the sentence
+  // templates below are translated.
+  locale = "en"
 }: {
   overview: OverviewPayload;
   comparisonContext?: string;
+  locale?: AppLocale;
 }) {
   const revenueKpi = overview.kpis[0];
   const profitKpi = overview.kpis[1];
@@ -120,11 +129,11 @@ export function OverviewNarrative({
 
   return (
     <NarrativeBanner
-      eyebrow="What happened this period"
       headline={headline}
       context={comparisonContext}
       body={body}
       tone={positive ? "up" : "down"}
+      locale={locale}
     />
   );
 }

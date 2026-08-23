@@ -287,10 +287,104 @@ export async function syncGa4Data(
     rowsUpserted += 1;
   }
 
+  // ── Breakdowns: WHICH link actually works ─────────────────────────
+  // Channel groups say "Organic Social"; merchants need "instagram /
+  // referral", "summer_sale", "/products/x?utm_...". Three extra reports
+  // over the same window, all into GaTrafficBreakdown.
+  rowsUpserted += await syncBreakdowns(db, analyticsData, property, storeId, iso(start), iso(end));
+
   await db.platformConnection.update({
     where: { storeId_platform: { storeId, platform: GA4_PLATFORM } },
     data: { lastSyncAt: new Date(), healthMessage: null }
   }).catch(() => undefined);
 
   return { rowsUpserted, days: daysSeen.size };
+}
+
+const BREAKDOWNS: Array<{
+  kind: "source" | "campaign" | "landing";
+  dimensions: string[];
+  /** Join the dimension values (after `date`) into the stored key. */
+  join: (values: string[]) => string;
+}> = [
+  {
+    kind: "source",
+    dimensions: ["sessionSource", "sessionMedium"],
+    join: (v) => `${v[0] || "(direct)"} / ${v[1] || "(none)"}`
+  },
+  {
+    kind: "campaign",
+    dimensions: ["sessionCampaignName"],
+    join: (v) => v[0] || "(not set)"
+  },
+  {
+    kind: "landing",
+    dimensions: ["landingPagePlusQueryString"],
+    join: (v) => v[0] || "/"
+  }
+];
+
+// Keys must stay inside Postgres's btree index limit; landing pages with
+// long UTM strings are the only realistic offender.
+const MAX_KEY_LEN = 400;
+
+async function syncBreakdowns(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  analyticsData: ReturnType<typeof google.analyticsdata>,
+  property: string,
+  storeId: string,
+  startDate: string,
+  endDate: string
+): Promise<number> {
+  let upserted = 0;
+  for (const breakdown of BREAKDOWNS) {
+    try {
+      const response = await analyticsData.properties.runReport({
+        property,
+        requestBody: {
+          dateRanges: [{ startDate, endDate }],
+          dimensions: [{ name: "date" }, ...breakdown.dimensions.map((name) => ({ name }))],
+          metrics: [{ name: "sessions" }, { name: "transactions" }, { name: "purchaseRevenue" }],
+          // Cap per report — the long tail of one-session referrers is
+          // noise, and the UI only ever shows the top handful.
+          limit: "25000",
+          orderBys: [{ metric: { metricName: "sessions" }, desc: true }]
+        }
+      });
+
+      for (const row of response.data.rows ?? []) {
+        const dims = (row.dimensionValues ?? []).map((d) => d.value ?? "");
+        const mets = row.metricValues ?? [];
+        const rawDate = dims[0] ?? "";
+        if (!/^\d{8}$/.test(rawDate)) continue;
+        const dateIso = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
+        const date = new Date(`${dateIso}T00:00:00.000Z`);
+        const key = breakdown.join(dims.slice(1)).slice(0, MAX_KEY_LEN);
+        const num = (i: number) => {
+          const n = Number(mets[i]?.value ?? 0);
+          return Number.isFinite(n) ? n : 0;
+        };
+        const data = {
+          sessions: Math.round(num(0)),
+          transactions: num(1),
+          revenue: num(2)
+        };
+        await db.gaTrafficBreakdown.upsert({
+          where: { storeId_date_kind_key: { storeId, date, kind: breakdown.kind, key } },
+          update: data,
+          create: { storeId, date, kind: breakdown.kind, key, ...data }
+        });
+        upserted += 1;
+      }
+    } catch (err) {
+      // A single unsupported dimension must not fail the whole sync —
+      // the channel-level data above is already persisted.
+      console.warn(
+        `[ga4] breakdown "${breakdown.kind}" failed:`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+  return upserted;
 }

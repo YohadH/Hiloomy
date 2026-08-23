@@ -105,12 +105,14 @@ export default async function AffiliateDetailPage({ params }: { params: Promise<
                 customerSegments={options.customerSegments}
                 lockedAffiliateId={affiliate.id}
                 defaultMode="single"
+                locale={isHe ? "he" : "en"}
               />
             </CardContent>
           </Card>
 
           <DataTable
             title={lang("קודי הנחה מחוברים", "Current connected discounts")}
+            locale={locale}
             description={lang(
               "כל קודי ההנחה שמשויכים כרגע לשותפה הזו.",
               "All discount codes currently mapped to this affiliate."
@@ -136,6 +138,7 @@ export default async function AffiliateDetailPage({ params }: { params: Promise<
 
           <DataTable
             title={lang("היסטוריית חיבורי הנחות", "Discount connection history")}
+            locale={locale}
             description={lang(
               "יומן קבוע של כל קוד הנחה שחובר אי פעם לשותפה הזו.",
               "A permanent log of every discount that has been connected to this affiliate."
@@ -164,6 +167,7 @@ export default async function AffiliateDetailPage({ params }: { params: Promise<
 
           <DataTable
             title={lang("ביצועי תוכן ויוצרות", "Content and creator performance")}
+            locale={locale}
             description={lang(
               "תוכן שמחובר לשותפה הזו והמכירות שהוא השפיע עליהן עד כה.",
               "Creator content connected to this affiliate and the sales it has influenced so far."
@@ -214,6 +218,7 @@ export default async function AffiliateDetailPage({ params }: { params: Promise<
           </Card>
           <DataTable
             title={lang("המרות מחוברות", "Connected conversions")}
+            locale={locale}
             columns={[
               { key: "orderNumber", label: lang("הזמנה", "Order") },
               { key: "trackingBy", label: lang("מעקב", "Tracking") },

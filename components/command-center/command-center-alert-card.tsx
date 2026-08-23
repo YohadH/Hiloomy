@@ -109,11 +109,13 @@ export function CommandCenterAlertCard({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body?.ok) {
-        throw new Error(body?.error ?? "Failed to update alert.");
+        throw new Error(body?.error ?? lang("עדכון ההתראה נכשל.", "Failed to update alert."));
       }
       startTransition(() => router.refresh());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(
+        e instanceof Error ? e.message : lang("אירעה שגיאה בלתי צפויה.", "Unexpected error.")
+      );
     }
   };
 

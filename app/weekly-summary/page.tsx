@@ -337,6 +337,7 @@ export default async function WeeklySummaryPage() {
               storeId={chrome.store.id}
               labelDownload={locale === "he" ? "ייצוא PDF" : "Export PDF"}
               labelGenerating={locale === "he" ? "מייצר…" : "Generating…"}
+              locale={locale}
             />
             <ExportMetaAdsPdfButton
               from={range.startInput}
@@ -345,6 +346,7 @@ export default async function WeeklySummaryPage() {
               appendix
               labelDownload={locale === "he" ? "ייצוא מורחב" : "Extended export"}
               labelGenerating={locale === "he" ? "מייצר…" : "Generating…"}
+              locale={locale}
             />
           </div>
         </div>

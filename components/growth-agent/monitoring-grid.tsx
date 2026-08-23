@@ -9,7 +9,20 @@ function formatMetric(card: GrowthMonitoringCard, currency: string) {
   return formatNumber(card.data.current);
 }
 
-export function GrowthMonitoringGrid({ cards, trafficChannels, currency }: { cards: GrowthMonitoringCard[]; trafficChannels: GrowthTrafficChannel[]; currency: string }) {
+export function GrowthMonitoringGrid({
+  cards,
+  trafficChannels,
+  currency,
+  locale = "he"
+}: {
+  cards: GrowthMonitoringCard[];
+  trafficChannels: GrowthTrafficChannel[];
+  currency: string;
+  locale?: "he" | "en";
+}) {
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
+
   return (
     <div className="space-y-4">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -24,10 +37,10 @@ export function GrowthMonitoringGrid({ cards, trafficChannels, currency }: { car
                 <GrowthStatusBadge status={card.data.status} />
               </div>
               <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-                <p>vs yesterday {formatSignedPercent(card.data.previousDayDelta)}</p>
-                <p>vs 7 days {formatSignedPercent(card.data.last7DaysDelta)}</p>
+                <p>{lang("מול אתמול", "vs yesterday")} {formatSignedPercent(card.data.previousDayDelta)}</p>
+                <p>{lang("מול 7 ימים", "vs 7 days")} {formatSignedPercent(card.data.last7DaysDelta)}</p>
               </div>
-              <p className="text-xs text-muted-foreground">Confidence {Math.round(card.data.confidence * 100)}%</p>
+              <p className="text-xs text-muted-foreground">{lang("רמת ביטחון", "Confidence")} {Math.round(card.data.confidence * 100)}%</p>
             </CardContent>
           </Card>
         ))}
@@ -37,8 +50,8 @@ export function GrowthMonitoringGrid({ cards, trafficChannels, currency }: { car
         <CardContent className="p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h3 className="font-semibold">Traffic by channel</h3>
-              <p className="text-sm text-muted-foreground">Use channel deltas to separate traffic issues from conversion issues.</p>
+              <h3 className="font-semibold">{lang("תנועה לפי ערוץ", "Traffic by channel")}</h3>
+              <p className="text-sm text-muted-foreground">{lang("השתמשו בהפרשים לפי ערוץ כדי להפריד בין בעיות תנועה לבעיות המרה.", "Use channel deltas to separate traffic issues from conversion issues.")}</p>
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -47,13 +60,13 @@ export function GrowthMonitoringGrid({ cards, trafficChannels, currency }: { car
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium">{channel.channel}</p>
-                    <p className="mt-2 text-sm text-muted-foreground">{formatNumber(channel.sessions)} sessions</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{formatCurrency(channel.revenue, currency)} revenue</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{formatNumber(channel.sessions)} {lang("ביקורים", "sessions")}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{formatCurrency(channel.revenue, currency)} {lang("הכנסות", "revenue")}</p>
                   </div>
                   <GrowthStatusBadge status={channel.status} />
                 </div>
                 <p className="mt-3 text-sm font-medium">{formatSignedPercent(channel.delta)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Confidence {Math.round(channel.confidence * 100)}%</p>
+                <p className="mt-1 text-xs text-muted-foreground">{lang("רמת ביטחון", "Confidence")} {Math.round(channel.confidence * 100)}%</p>
               </div>
             ))}
           </div>

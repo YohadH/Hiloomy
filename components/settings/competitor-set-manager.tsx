@@ -20,6 +20,7 @@ const MAX_ACTIVE = 5;
 // server-side state is already authoritative via cookies/storeId.
 
 export function CompetitorSetManager({ isHe }: { isHe: boolean }) {
+  const lang = (he: string, en: string) => (isHe ? he : en);
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
@@ -33,14 +34,15 @@ export function CompetitorSetManager({ isHe }: { isHe: boolean }) {
     try {
       const resp = await fetch("/api/competitors", { cache: "no-store" });
       const body = await resp.json();
-      if (!resp.ok || !body?.ok) throw new Error(body?.error ?? "Failed to load.");
+      if (!resp.ok || !body?.ok)
+        throw new Error(body?.error ?? (isHe ? "הטעינה נכשלה." : "Failed to load."));
       setCompetitors(body.competitors ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load.");
+      setError(e instanceof Error ? e.message : isHe ? "הטעינה נכשלה." : "Failed to load.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isHe]);
 
   useEffect(() => {
     load();
@@ -61,13 +63,13 @@ export function CompetitorSetManager({ isHe }: { isHe: boolean }) {
         })
       });
       const body = await resp.json();
-      if (!resp.ok || !body?.ok) throw new Error(body?.error ?? "Failed to add.");
+      if (!resp.ok || !body?.ok) throw new Error(body?.error ?? lang("ההוספה נכשלה.", "Failed to add."));
       setName("");
       setDomain("");
       setIgHandle("");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add.");
+      setError(e instanceof Error ? e.message : lang("ההוספה נכשלה.", "Failed to add."));
     } finally {
       setSubmitting(false);
     }
@@ -82,10 +84,10 @@ export function CompetitorSetManager({ isHe }: { isHe: boolean }) {
         body: JSON.stringify({ active })
       });
       const body = await resp.json();
-      if (!resp.ok || !body?.ok) throw new Error(body?.error ?? "Failed to update.");
+      if (!resp.ok || !body?.ok) throw new Error(body?.error ?? lang("העדכון נכשל.", "Failed to update."));
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update.");
+      setError(e instanceof Error ? e.message : lang("העדכון נכשל.", "Failed to update."));
     }
   };
 

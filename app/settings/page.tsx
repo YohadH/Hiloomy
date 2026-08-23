@@ -295,6 +295,7 @@ export default async function SettingsPage({
         }
         gscConnected={gscConnected}
         gscError={gscError}
+        locale={locale}
       />
       <Ga4ConnectionManager
         storeId={chrome.store.id}
@@ -310,6 +311,7 @@ export default async function SettingsPage({
         }
         ga4Connected={ga4Connected}
         ga4Error={ga4Error}
+        locale={locale}
       />
       </div>
     ),

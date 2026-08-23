@@ -20,18 +20,27 @@ export function Ga4ConnectionManager({
   storeId,
   initialConnection,
   ga4Connected,
-  ga4Error
+  ga4Error,
+  locale = "he"
 }: {
   storeId: string;
   initialConnection: Ga4ConnectionStatus;
   ga4Connected?: boolean;
   ga4Error?: string | null;
+  locale?: "he" | "en";
 }) {
   const router = useRouter();
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
   const [connection, setConnection] = useState<Ga4ConnectionStatus>(initialConnection);
   const [error, setError] = useState<string | null>(ga4Error ?? null);
   const [successMsg, setSuccessMsg] = useState<string | null>(
-    ga4Connected ? "Google Analytics connected — now pick the GA4 property below." : null
+    ga4Connected
+      ? lang(
+          "Google Analytics חובר — עכשיו בחרו את נכס הGA4 למטה.",
+          "Google Analytics connected — now pick the GA4 property below."
+        )
+      : null
   );
   const [properties, setProperties] = useState<
     Array<{ property: string; displayName: string; accountName: string }> | null
@@ -54,12 +63,15 @@ export function Ga4ConnectionManager({
     try {
       const res = await fetch(`/api/ga4/properties?storeId=${encodeURIComponent(storeId)}`);
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body?.error ?? "Could not load GA4 properties.");
+      if (!res.ok || !body.ok)
+        throw new Error(body?.error ?? lang("לא ניתן לטעון נכסי GA4.", "Could not load GA4 properties."));
       setProperties(body.properties ?? []);
       setSavedProperty(body.selectedProperty ?? null);
       setSelectedProperty(body.selectedProperty ?? body.properties?.[0]?.property ?? "");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load GA4 properties.");
+      setError(
+        e instanceof Error ? e.message : lang("לא ניתן לטעון נכסי GA4.", "Could not load GA4 properties.")
+      );
     } finally {
       setBusy(false);
     }
@@ -76,11 +88,16 @@ export function Ga4ConnectionManager({
         body: JSON.stringify({ storeId })
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body?.error ?? "GA4 sync failed.");
-      setSuccessMsg(`Synced ${body.days} days of traffic (${body.rowsUpserted} rows). The dashboard section is live.`);
+      if (!res.ok || !body.ok) throw new Error(body?.error ?? lang("הסנכרון מGA4 נכשל.", "GA4 sync failed."));
+      setSuccessMsg(
+        lang(
+          `סונכרנו ${body.days} ימי תנועה (${body.rowsUpserted} שורות). מדור הדשבורד פעיל.`,
+          `Synced ${body.days} days of traffic (${body.rowsUpserted} rows). The dashboard section is live.`
+        )
+      );
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "GA4 sync failed.");
+      setError(e instanceof Error ? e.message : lang("הסנכרון מGA4 נכשל.", "GA4 sync failed."));
     } finally {
       setBusy(false);
     }
@@ -96,12 +113,20 @@ export function Ga4ConnectionManager({
         body: JSON.stringify({ storeId, property: selectedProperty })
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body?.error ?? "Could not save the property.");
+      if (!res.ok || !body.ok)
+        throw new Error(body?.error ?? lang("לא ניתן לשמור את הנכס.", "Could not save the property."));
       setSavedProperty(selectedProperty);
-      setSuccessMsg("GA4 property saved. Traffic syncs on the next cron run (≤2h).");
+      setSuccessMsg(
+        lang(
+          "נכס הGA4 נשמר. התנועה תסונכרן בריצת הcron הבאה (עד שעתיים).",
+          "GA4 property saved. Traffic syncs on the next cron run (≤2h)."
+        )
+      );
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save the property.");
+      setError(
+        e instanceof Error ? e.message : lang("לא ניתן לשמור את הנכס.", "Could not save the property.")
+      );
     } finally {
       setBusy(false);
     }
@@ -118,18 +143,24 @@ export function Ga4ConnectionManager({
           {isConnected ? (
             <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
               <CheckCircle2 className="h-3 w-3" aria-hidden />
-              Connected
+              {lang("מחובר", "Connected")}
             </span>
           ) : (
             <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
               <XCircle className="h-3 w-3" aria-hidden />
-              Not connected
+              {lang("לא מחובר", "Not connected")}
             </span>
           )}
         </div>
         <p className="text-sm text-muted-foreground">
-          Sync daily sessions, users, conversions and revenue by acquisition channel — the traffic
-          picture behind the orders, including the visits that didn&apos;t convert.
+          {isHe ? (
+            "סנכרון יומי של סשנים, משתמשים, המרות והכנסה לפי ערוץ רכישה — תמונת התנועה שמאחורי ההזמנות, כולל הביקורים שלא המירו."
+          ) : (
+            <>
+              Sync daily sessions, users, conversions and revenue by acquisition channel — the traffic
+              picture behind the orders, including the visits that didn&apos;t convert.
+            </>
+          )}
         </p>
       </CardHeader>
 
@@ -147,16 +178,20 @@ export function Ga4ConnectionManager({
           <div className="space-y-2 rounded-lg border border-border bg-background/70 px-4 py-3 text-sm">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Synced property
+                {lang("הנכס המסונכרן", "Synced property")}
               </span>
               <span className="font-mono text-xs" dir="ltr">
-                {savedProperty ?? "not selected — sync is paused until you pick one"}
+                {savedProperty ??
+                  lang(
+                    "לא נבחר — הסנכרון מושהה עד שתבחרו נכס",
+                    "not selected — sync is paused until you pick one"
+                  )}
               </span>
             </div>
             {connection.lastSyncAt ? (
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Last synced
+                  {lang("סנכרון אחרון", "Last synced")}
                 </span>
                 <span suppressHydrationWarning className="tabular-nums">
                   {new Date(connection.lastSyncAt).toLocaleString()}
@@ -166,7 +201,7 @@ export function Ga4ConnectionManager({
             {properties === null ? (
               <Button variant="secondary" size="sm" onClick={loadProperties} disabled={busy}>
                 {busy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                Choose property
+                {lang("בחרו נכס", "Choose property")}
               </Button>
             ) : (
               <div className="flex flex-wrap items-center gap-2">
@@ -188,7 +223,7 @@ export function Ga4ConnectionManager({
                   disabled={busy || !selectedProperty || selectedProperty === savedProperty}
                 >
                   {busy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                  Save
+                  {lang("שמרו", "Save")}
                 </Button>
               </div>
             )}
@@ -203,21 +238,24 @@ export function Ga4ConnectionManager({
                   (savedProperty state only hydrates after Choose property). */}
               <Button size="sm" onClick={syncNow} disabled={busy}>
                 {busy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                Sync now
+                {lang("סנכרון עכשיו", "Sync now")}
               </Button>
               <Button variant="secondary" size="sm" onClick={startOAuth}>
-                Reconnect
+                {lang("חיבור מחדש", "Reconnect")}
               </Button>
             </>
           ) : (
             <Button size="sm" onClick={startOAuth}>
-              Connect Google Analytics
+              {lang("חברו את Google Analytics", "Connect Google Analytics")}
             </Button>
           )}
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Uses the same Google sign-in as Search Console. Only read-only access is requested.
+          {lang(
+            "משתמש באותה התחברות לGoogle כמו Search Console. מתבקשת גישת קריאה בלבד.",
+            "Uses the same Google sign-in as Search Console. Only read-only access is requested."
+          )}
         </p>
       </CardContent>
     </Card>

@@ -51,7 +51,7 @@ export function ResetPasswordForm({ defaultLocale }: { defaultLocale?: AuthLocal
       }
       setDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed.");
+      setError(err instanceof Error ? err.message : t.errors.failed);
     } finally {
       setSubmitting(false);
     }

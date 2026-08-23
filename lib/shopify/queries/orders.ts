@@ -102,6 +102,12 @@ export const ORDERS_QUERY = /* GraphQL */ `
                       amount
                     }
                   }
+                  # index ties the allocation back to the order's
+                  # discountApplications entry, so each CODE gets its own
+                  # real amount instead of an even split.
+                  discountApplication {
+                    index
+                  }
                 }
                 product {
                   id

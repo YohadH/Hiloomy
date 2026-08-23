@@ -16,6 +16,7 @@ interface Props {
   labelGenerating: string;
   // true → extended report including the diagnostic/deep-dive appendix.
   appendix?: boolean;
+  locale?: "he" | "en";
 }
 
 export function ExportMetaAdsPdfButton({
@@ -24,8 +25,11 @@ export function ExportMetaAdsPdfButton({
   storeId,
   labelDownload,
   labelGenerating,
-  appendix = false
+  appendix = false,
+  locale = "he"
 }: Props) {
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,7 +45,13 @@ export function ExportMetaAdsPdfButton({
       });
       if (!response.ok) {
         const text = await response.text().catch(() => "");
-        throw new Error(text || `Export failed (HTTP ${response.status}).`);
+        throw new Error(
+          text ||
+            lang(
+              `הייצוא נכשל (HTTP ${response.status}).`,
+              `Export failed (HTTP ${response.status}).`
+            )
+        );
       }
       const blob = await response.blob();
 
@@ -58,7 +68,9 @@ export function ExportMetaAdsPdfButton({
       // Revoke after the browser starts the download (sync on most browsers).
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1_000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unexpected error.");
+      setError(
+        err instanceof Error ? err.message : lang("אירעה שגיאה בלתי צפויה.", "Unexpected error.")
+      );
     } finally {
       setBusy(false);
     }

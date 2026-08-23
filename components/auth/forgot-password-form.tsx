@@ -41,7 +41,7 @@ export function ForgotPasswordForm({ defaultLocale }: { defaultLocale?: AuthLoca
       // email exists in our DB (security best practice).
       setDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed.");
+      setError(err instanceof Error ? err.message : t.failed);
     } finally {
       setSubmitting(false);
     }

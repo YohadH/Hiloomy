@@ -40,7 +40,9 @@ export function OrganizationSettingsForm({
           orgLocale: "שפת ברירת מחדל לדוחות",
           save: "שמרו שינויים",
           saving: "שומר…",
-          savedMsg: "השינויים נשמרו."
+          savedMsg: "השינויים נשמרו.",
+          saveFailed: "השמירה נכשלה.",
+          unexpectedError: "אירעה שגיאה בלתי צפויה."
         }
       : {
           name: "Organization name",
@@ -50,7 +52,9 @@ export function OrganizationSettingsForm({
           orgLocale: "Default locale for reports",
           save: "Save changes",
           saving: "Saving…",
-          savedMsg: "Changes saved."
+          savedMsg: "Changes saved.",
+          saveFailed: "Failed to save.",
+          unexpectedError: "Unexpected error."
         };
 
   const handleSave = async () => {
@@ -64,11 +68,11 @@ export function OrganizationSettingsForm({
         body: JSON.stringify({ name, currency, billingCountry, locale })
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.ok) throw new Error(body?.error ?? "Failed to save.");
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? t.saveFailed);
       setSavedMsg(t.savedMsg);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : t.unexpectedError);
     } finally {
       setSaving(false);
     }
@@ -100,6 +104,7 @@ export function OrganizationSettingsForm({
           type="text"
           value={initialSlug}
           disabled
+          dir="ltr"
           className="mt-1 w-full rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-mono cursor-not-allowed"
         />
       </label>

@@ -68,10 +68,17 @@ export interface DiscountScorecardReport {
   totalRevenue: number;
   totalMargin: number;
   discountedOrderShare: number | null; // discounted orders / all orders
+  /** Distinct codes found in the window (cards may be capped at MAX_CODES). */
+  codesTotal: number;
   cards: DiscountScorecard[];
 }
 
-const MAX_CODES = 40;
+// Show every code the store actually used. The old cap of 40 silently
+// hid real codes — an Incense window had 86 distinct codes, so DONE10
+// (rank 71 by discount cost) simply never appeared even though Shopify
+// showed it. `codesTotal` below reports the true count so the UI can say
+// so if this ceiling is ever hit.
+const MAX_CODES = 300;
 const ACTIVE_WINDOW_MS = 7 * 86_400_000;
 
 // Verdict thresholds. Deliberately conservative — "expand" is a real
@@ -96,6 +103,7 @@ export async function buildDiscountScorecards(input: {
     totalRevenue: 0,
     totalMargin: 0,
     discountedOrderShare: null,
+    codesTotal: 0,
     cards: []
   };
   if (!db?.discountUsage) return empty;
@@ -358,6 +366,7 @@ export async function buildDiscountScorecards(input: {
     totalRevenue: round2(kept.reduce((s, c) => s + c.revenue, 0)),
     totalMargin: round2(kept.reduce((s, c) => s + c.marginAfterDiscount, 0)),
     discountedOrderShare: allOrders > 0 ? discountedOrders / allOrders : null,
+    codesTotal: cards.length,
     cards: kept
   };
 }

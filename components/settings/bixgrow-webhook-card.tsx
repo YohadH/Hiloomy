@@ -22,7 +22,8 @@ export function BixGrowWebhookCard({
   locale?: UiLocale;
 }) {
   const router = useRouter();
-  const t = useSaasStrings(locale).bixgrow;
+  const strings = useSaasStrings(locale);
+  const t = strings.bixgrow;
   const [slug, setSlug] = useState(initialSlug ?? "");
   const [savedSlug, setSavedSlug] = useState(initialSlug);
   const [saving, setSaving] = useState(false);
@@ -44,13 +45,13 @@ export function BixGrowWebhookCard({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body?.ok) {
-        throw new Error(body?.error ?? "Failed to save slug.");
+        throw new Error(body?.error ?? t.saveSlugFailed);
       }
       setSavedSlug(body.slug);
       setSlug(body.slug);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : strings.common.unexpectedError);
     } finally {
       setSaving(false);
     }
@@ -113,7 +114,10 @@ export function BixGrowWebhookCard({
               {t.webhookUrl}
             </p>
             <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <code className="min-w-0 w-full sm:flex-1 truncate rounded-md border border-border bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-700">
+              <code
+                className="min-w-0 w-full sm:flex-1 truncate rounded-md border border-border bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-700"
+                dir="ltr"
+              >
                 {webhookUrl}
               </code>
               <button

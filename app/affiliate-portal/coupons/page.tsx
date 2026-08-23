@@ -38,7 +38,7 @@ export default async function CouponsPage() {
               "Create Shopify discount codes one by one or in bulk, attach them to affiliates, and use the generated apply links for referral tracking."
             )}
           />
-          <AffiliateAttributionSyncButton storeId={chrome.store.id} />
+          <AffiliateAttributionSyncButton storeId={chrome.store.id} locale={isHe ? "he" : "en"} />
         </div>
         <AffiliatePortalNav locale={isHe ? "he" : "en"} />
       </section>
@@ -50,10 +50,12 @@ export default async function CouponsPage() {
         collections={options.collections}
         customerSegments={options.customerSegments}
         defaultMode="single"
+        locale={isHe ? "he" : "en"}
       />
 
       <DataTable
         title={lang("הנחות מחוברות", "Connected discounts")}
+        locale={locale}
         description={lang(
           "שיוכי קודי ההנחה לשותפות ששמורים באפליקציה. בפרופיל של כל שותפה יש גם היסטוריית חיבורים מלאה.",
           "Current affiliate discount mappings stored in the app. The affiliate profile page also keeps the full connection history."

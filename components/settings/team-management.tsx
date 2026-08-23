@@ -65,7 +65,9 @@ export function TeamManagement({
         confirmRemove: "להסיר חבר זה מהארגון?",
         makeOwner: "הפכו לבעלים",
         makeAdmin: "הפכו למנהל",
-        makeMember: "הפכו לחבר"
+        makeMember: "הפכו לחבר",
+        failedMsg: "הפעולה נכשלה.",
+        unexpectedError: "אירעה שגיאה בלתי צפויה."
       }
     : {
         title: "Team",
@@ -93,7 +95,9 @@ export function TeamManagement({
         confirmRemove: "Remove this member from the organization?",
         makeOwner: "Make owner",
         makeAdmin: "Make admin",
-        makeMember: "Make member"
+        makeMember: "Make member",
+        failedMsg: "Failed.",
+        unexpectedError: "Unexpected error."
       };
 
   const [memberMenu, setMemberMenu] = useState<string | null>(null);
@@ -109,10 +113,10 @@ export function TeamManagement({
         body: JSON.stringify({ membershipId, role })
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.ok) throw new Error(body?.error ?? "Failed.");
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? t.failedMsg);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : t.unexpectedError);
     } finally {
       setMemberBusy(null);
       setMemberMenu(null);
@@ -128,10 +132,10 @@ export function TeamManagement({
         method: "DELETE"
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.ok) throw new Error(body?.error ?? "Failed.");
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? t.failedMsg);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : t.unexpectedError);
     } finally {
       setMemberBusy(null);
       setMemberMenu(null);
@@ -149,12 +153,12 @@ export function TeamManagement({
         body: JSON.stringify({ email: inviteEmail, role: inviteRole })
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.ok) throw new Error(body?.error ?? "Failed.");
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? t.failedMsg);
       setSavedMsg(t.sentMsg);
       setInviteEmail("");
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : t.unexpectedError);
     } finally {
       setSubmitting(false);
     }
@@ -170,10 +174,10 @@ export function TeamManagement({
         body: JSON.stringify({ invitationId })
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.ok) throw new Error(body?.error ?? "Failed.");
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? t.failedMsg);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : t.unexpectedError);
     } finally {
       setRevoking(null);
     }
@@ -205,7 +209,7 @@ export function TeamManagement({
                   {m.isYou ? <span className="ms-1 text-muted-foreground text-xs">{t.you}</span> : null}
                 </p>
                 {m.displayName ? (
-                  <p className="text-xs text-muted-foreground truncate">{m.email}</p>
+                  <p className="text-xs text-muted-foreground truncate" dir="ltr">{m.email}</p>
                 ) : null}
               </div>
               <span className="text-xs text-muted-foreground capitalize shrink-0">
@@ -286,7 +290,7 @@ export function TeamManagement({
             {invitations.map((inv) => (
               <li key={inv.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium truncate">{inv.email}</p>
+                  <p className="font-medium truncate" dir="ltr">{inv.email}</p>
                   <p className="text-xs text-muted-foreground">
                     {roleLabel(inv.role)} · {t.expiresOn}
                     {new Date(inv.expiresAt).toLocaleDateString(viewerLocale === "he" ? "he-IL" : "en-US")}

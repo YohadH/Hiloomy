@@ -532,6 +532,7 @@ export function ReportingPicker(props: ReportingPickerProps) {
                 onChange={handleCalendarChange}
                 initialMonth={pendingStart ?? new Date()}
                 maxDate={new Date()}
+                locale={locale}
               />
 
               <div className="mt-5 flex items-center justify-end gap-2 border-t border-border/70 pt-4">

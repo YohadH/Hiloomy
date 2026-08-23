@@ -38,7 +38,8 @@ export const saasStrings = {
       saving: "שומר…",
       savedMsg: "הפרטים נשמרו. עכשיו תוכלו ללחוץ על 'התקינו דרך Shopify' למעלה.",
       openPartner: "פתחו את הPartner Dashboard",
-      callbackHint: "ודאו שלאפליקציית הPartner יש את הכתובת הזו ברשימת הAllowed redirection URLs:"
+      callbackHint: "ודאו שלאפליקציית הPartner יש את הכתובת הזו ברשימת הAllowed redirection URLs:",
+      saveFailed: "השמירה נכשלה."
     },
     bixgrow: {
       title: "Webhook של BixGrow עבור",
@@ -53,7 +54,8 @@ export const saasStrings = {
       copied: "הועתק",
       saveSlugFirst: "שמרו מזהה תחילה, ואז תופיע כאן כתובת הWebhook.",
       payloadDetails: "איזה תוכן BixGrow צריך לשלוח?",
-      payloadAfter: "כל קריאה יוצרת/מעדכנת שורת AffiliateAttribution. שליחות חוזרות מטופלות אוטומטית."
+      payloadAfter: "כל קריאה יוצרת/מעדכנת שורת AffiliateAttribution. שליחות חוזרות מטופלות אוטומטית.",
+      saveSlugFailed: "שמירת המזהה נכשלה."
     },
     enrichedChart: {
       revenue: "הכנסה",
@@ -121,7 +123,8 @@ export const saasStrings = {
       saving: "Saving…",
       savedMsg: "Credentials saved. You can now click 'Install via Shopify' above.",
       openPartner: "Open Partner Dashboard",
-      callbackHint: "Make sure your Partner app has this in its Allowed redirection URLs:"
+      callbackHint: "Make sure your Partner app has this in its Allowed redirection URLs:",
+      saveFailed: "Failed to save."
     },
     bixgrow: {
       title: "BixGrow webhook for",
@@ -136,7 +139,8 @@ export const saasStrings = {
       copied: "Copied",
       saveSlugFirst: "Save a slug first, then the webhook URL appears below.",
       payloadDetails: "What payload should BixGrow send?",
-      payloadAfter: "Each delivery upserts an AffiliateAttribution row. Re-deliveries of the same order are deduplicated."
+      payloadAfter: "Each delivery upserts an AffiliateAttribution row. Re-deliveries of the same order are deduplicated.",
+      saveSlugFailed: "Failed to save slug."
     },
     enrichedChart: {
       revenue: "Revenue",

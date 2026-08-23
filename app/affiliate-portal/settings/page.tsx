@@ -117,7 +117,7 @@ export default async function AffiliatePortalSettingsPage() {
                   "BixGrow is a manual-export platform. Download the conversions CSV from your BixGrow dashboard, then upload it here to import affiliate attributions. Re-uploading the same export is safe — rows are deduplicated by affiliate and order."
                 )}
               </p>
-              <UploadBixGrowCsvButton />
+              <UploadBixGrowCsvButton locale={isHe ? "he" : "en"} />
             </CardContent>
           </Card>
         </div>

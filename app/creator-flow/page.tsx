@@ -199,6 +199,7 @@ export default async function CreatorFlowPage() {
           />
           <DataTable
             title={dictionary.creator.tableTitle}
+            locale={locale}
             description={dictionary.creator.tableDescription}
             tooltip="Per-post breakdown: caption, type, engagement, and attributed sales."
             paginate

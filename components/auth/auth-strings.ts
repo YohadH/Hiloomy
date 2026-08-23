@@ -50,7 +50,8 @@ export const authStrings = {
       submitting: "שולח…",
       backToSignin: "חזרה להתחברות",
       checkInbox: "בדקו את האימייל",
-      checkInboxBody: "אם הכתובת קיימת אצלנו, שלחנו קישור לאיפוס סיסמה."
+      checkInboxBody: "אם הכתובת קיימת אצלנו, שלחנו קישור לאיפוס סיסמה.",
+      failed: "הפעולה נכשלה."
     },
     reset: {
       title: "סיסמה חדשה",
@@ -66,7 +67,8 @@ export const authStrings = {
       errors: {
         mismatch: "הסיסמאות לא תואמות.",
         invalidLink: "קישור איפוס לא תקין. בקשו קישור חדש.",
-        tooShort: "סיסמה חייבת להכיל לפחות 8 תווים."
+        tooShort: "סיסמה חייבת להכיל לפחות 8 תווים.",
+        failed: "הפעולה נכשלה."
       }
     },
     signin: {
@@ -127,7 +129,8 @@ export const authStrings = {
       submitting: "Sending…",
       backToSignin: "← Back to sign in",
       checkInbox: "Check your inbox",
-      checkInboxBody: "If that email exists in our system, we've sent you a reset link."
+      checkInboxBody: "If that email exists in our system, we've sent you a reset link.",
+      failed: "Failed."
     },
     reset: {
       title: "New password",
@@ -143,7 +146,8 @@ export const authStrings = {
       errors: {
         mismatch: "Passwords don't match.",
         invalidLink: "Reset link is invalid. Request a new one.",
-        tooShort: "Password must be at least 8 characters."
+        tooShort: "Password must be at least 8 characters.",
+        failed: "Failed."
       }
     },
     signin: {

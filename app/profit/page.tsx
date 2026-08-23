@@ -209,6 +209,7 @@ export default async function ProfitPage() {
           <div className="grid items-start gap-4 lg:grid-cols-2">
             <DataTable
               title={dictionary.profit.productTable}
+              locale={locale}
               description={dictionary.profit.productTableDescription}
               tooltip={tips.productTable}
               paginate
@@ -272,6 +273,7 @@ export default async function ProfitPage() {
             <div className="grid gap-4">
               <DataTable
                 title={dictionary.profit.salesByCollection}
+                locale={locale}
                 paginate
                 initialPageSize={20}
                 pageSizes={[20, 50, 100]}
@@ -294,6 +296,7 @@ export default async function ProfitPage() {
               />
               <DataTable
                 title={dictionary.profit.discountImpact}
+                locale={locale}
                 paginate
                 initialPageSize={20}
                 pageSizes={[20, 50, 100]}

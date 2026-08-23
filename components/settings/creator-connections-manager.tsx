@@ -32,6 +32,15 @@ export function CreatorConnectionsManager({
     attributionSaved: string;
     requestFailed: string;
     oauthHelp: string;
+    crawlerTitle: string;
+    crawlerDescription: string;
+    crawlerHandlesLabel: string;
+    crawling: string;
+    crawlNow: string;
+    crawlResult: string;
+    crawlProfiles: string;
+    crawlNewPosts: string;
+    crawlUpdatedPosts: string;
   };
 }) {
   const searchParams = useSearchParams();
@@ -89,7 +98,7 @@ export function CreatorConnectionsManager({
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? labels.requestFailed);
       setMessage(
-        `Public Instagram crawl finished: ${payload.profilesCrawled} profiles, ${payload.postsSaved} new posts, ${payload.postsUpdated} updated posts.`
+        `${labels.crawlResult} ${payload.profilesCrawled} ${labels.crawlProfiles}, ${payload.postsSaved} ${labels.crawlNewPosts}, ${payload.postsUpdated} ${labels.crawlUpdatedPosts}`
       );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : labels.requestFailed);
@@ -166,23 +175,22 @@ export function CreatorConnectionsManager({
       {showCrawler ? (
       <Card>
         <CardHeader>
-          <CardTitle>Public Instagram crawler</CardTitle>
-          <CardDescription>
-            Crawls only public posts/reels from @incenseparfums and pasted public influencer profiles. No login or private insights.
-          </CardDescription>
+          <CardTitle>{labels.crawlerTitle}</CardTitle>
+          <CardDescription>{labels.crawlerDescription}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <label className="space-y-2 text-sm">
-            <span className="text-muted-foreground">Influencer handles or profile URLs</span>
+            <span className="text-muted-foreground">{labels.crawlerHandlesLabel}</span>
             <textarea
               className="min-h-28 w-full rounded-xl border border-border bg-background px-4 py-3 outline-none ring-0"
               value={publicCrawlerHandles}
               onChange={(event) => setPublicCrawlerHandles(event.target.value)}
               placeholder="@creator_name&#10;https://www.instagram.com/creator_name/"
+              dir="ltr"
             />
           </label>
           <Button variant="secondary" disabled={loading !== null} onClick={runPublicCrawler}>
-            {loading === "instagram-public-crawl" ? "Crawling..." : "Crawl public Instagram"}
+            {loading === "instagram-public-crawl" ? labels.crawling : labels.crawlNow}
           </Button>
         </CardContent>
       </Card>

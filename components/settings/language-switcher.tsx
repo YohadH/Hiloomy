@@ -18,6 +18,7 @@ export function LanguageSwitcher({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const lang = (he: string, en: string) => (locale === "he" ? he : en);
 
   async function updateLocale(nextLocale: AppLocale) {
     setError(null);
@@ -30,7 +31,7 @@ export function LanguageSwitcher({
 
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
-      setError(payload?.error ?? "Failed to update language.");
+      setError(payload?.error ?? lang("עדכון השפה נכשל.", "Failed to update language."));
       return;
     }
 

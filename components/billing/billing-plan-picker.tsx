@@ -26,7 +26,9 @@ export function BillingPlanPicker({
           perMonth: "/ חודש",
           chosen: "המסלול הנוכחי",
           choose: "בחרו במסלול",
-          subscribing: "מעבירים…"
+          subscribing: "מעבירים…",
+          checkoutFailed: "התשלום נכשל.",
+          unexpectedError: "אירעה שגיאה בלתי צפויה."
         }
       : {
           monthly: "Monthly",
@@ -34,7 +36,9 @@ export function BillingPlanPicker({
           perMonth: "/ month",
           chosen: "Current plan",
           choose: "Choose plan",
-          subscribing: "Redirecting…"
+          subscribing: "Redirecting…",
+          checkoutFailed: "Checkout failed.",
+          unexpectedError: "Unexpected error."
         };
 
   const fmtPrice = (n: number) => {
@@ -52,10 +56,10 @@ export function BillingPlanPicker({
         body: JSON.stringify({ planId, interval })
       });
       const body = await res.json();
-      if (!res.ok || !body?.ok) throw new Error(body?.error ?? "Checkout failed.");
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? t.checkoutFailed);
       window.location.href = body.url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unexpected error.");
+      setError(e instanceof Error ? e.message : t.unexpectedError);
       setSubmitting(null);
     }
   };

@@ -32,13 +32,14 @@ export default async function AffiliatesPage() {
               "Manage your affiliates, import them from files, export the directory, and open each profile for coupons and performance."
             )}
           />
-          <AffiliateDirectoryActions />
+          <AffiliateDirectoryActions locale={isHe ? "he" : "en"} />
         </div>
         <AffiliatePortalNav locale={isHe ? "he" : "en"} />
       </section>
 
       <DataTable
         title={lang("כל השותפות", "All affiliates")}
+        locale={locale}
         columns={[
           {
             key: "firstName",
@@ -72,6 +73,7 @@ export default async function AffiliatesPage() {
                 affiliateId={row.id}
                 storeId={chrome.store.id}
                 initialValue={row.instagramProfileUrl ?? null}
+                locale={isHe ? "he" : "en"}
               />
             )
           },

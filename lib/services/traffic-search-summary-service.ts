@@ -13,6 +13,16 @@
 
 import { getDb } from "@/lib/server/db";
 
+/** One row of "which link works" — same shape for source/campaign/landing. */
+export interface TrafficBreakdownRow {
+  key: string;
+  sessions: number;
+  transactions: number;
+  revenue: number;
+  /** purchases / sessions, as a percentage. Null when no sessions. */
+  conversionRate: number | null;
+}
+
 export interface TrafficSummaryHalf {
   sessions: number;
   priorSessions: number | null;
@@ -23,6 +33,10 @@ export interface TrafficSummaryHalf {
   windowDays: number;
   dataThrough: string | null;
   topChannels: Array<{ channel: string; sessions: number; sharePct: number }>;
+  /** Populated once the breakdown sync has run (GA4 "Sync now"). */
+  topSources: TrafficBreakdownRow[];
+  topCampaigns: TrafficBreakdownRow[];
+  topLandingPages: TrafficBreakdownRow[];
 }
 
 export interface SearchSummaryHalf {
@@ -80,6 +94,12 @@ async function buildGa4Half(storeId: string, start: Date, end: Date): Promise<Tr
   }
   if (sessions === 0 && conversions === 0) return null;
 
+  const [topSources, topCampaigns, topLandingPages] = await Promise.all([
+    topBreakdown(db, storeId, "source", start, end),
+    topBreakdown(db, storeId, "campaign", start, end),
+    topBreakdown(db, storeId, "landing", start, end)
+  ]);
+
   return {
     sessions,
     priorSessions: priorHasData ? priorSessions : null,
@@ -99,8 +119,54 @@ async function buildGa4Half(storeId: string, start: Date, end: Date): Promise<Tr
         channel,
         sessions: count,
         sharePct: sessions > 0 ? Math.round((count / sessions) * 100) : 0
-      }))
+      })),
+    topSources,
+    topCampaigns,
+    topLandingPages
   };
+}
+
+// Top rows of one breakdown kind for the window, ranked by sessions.
+// "(not set)" / "(direct)" campaigns are dropped from the campaign list —
+// they're the absence of a campaign, not a campaign worth reporting.
+async function topBreakdown(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  storeId: string,
+  kind: "source" | "campaign" | "landing",
+  start: Date,
+  end: Date
+): Promise<TrafficBreakdownRow[]> {
+  if (!db?.gaTrafficBreakdown) return [];
+  const rows = (await db.gaTrafficBreakdown
+    .groupBy({
+      by: ["key"],
+      where: {
+        storeId,
+        kind,
+        date: { gte: start, lte: end },
+        ...(kind === "campaign" ? { key: { notIn: ["(not set)", "(direct)", "(organic)"] } } : {})
+      },
+      _sum: { sessions: true, transactions: true, revenue: true },
+      orderBy: { _sum: { sessions: "desc" } },
+      take: 6
+    })
+    .catch(() => [])) as Array<{
+    key: string;
+    _sum: { sessions: unknown; transactions: unknown; revenue: unknown };
+  }>;
+
+  return rows.map((r) => {
+    const sessions = num(r._sum.sessions);
+    const transactions = num(r._sum.transactions);
+    return {
+      key: r.key,
+      sessions,
+      transactions: Math.round(transactions),
+      revenue: Math.round(num(r._sum.revenue)),
+      conversionRate: sessions > 0 ? Math.round((transactions / sessions) * 10000) / 100 : null
+    };
+  });
 }
 
 async function buildGscHalf(storeId: string, start: Date, end: Date): Promise<SearchSummaryHalf | null> {

@@ -24,6 +24,8 @@ export interface DataTablePaginatedProps {
   /** Max height of the scrollable body in px. */
   maxBodyHeight?: number;
   emptyMessage?: string;
+  /** Hebrew-first: built-in copy renders in Hebrew unless told otherwise. */
+  locale?: "he" | "en";
 }
 
 function alignClass(align?: "start" | "end" | "center") {
@@ -41,8 +43,13 @@ export function DataTablePaginated({
   pageSizes = [20, 50, 100],
   initialPageSize = 20,
   maxBodyHeight = 560,
-  emptyMessage = "No data available yet."
+  emptyMessage,
+  locale = "he"
 }: DataTablePaginatedProps) {
+  const isHe = locale === "he";
+  const lang = (he: string, en: string) => (isHe ? he : en);
+  const resolvedEmptyMessage =
+    emptyMessage ?? lang("עדיין אין נתונים להצגה.", "No data available yet.");
   const [pageSize, setPageSize] = useState<number>(initialPageSize);
   const [page, setPage] = useState<number>(1);
 
@@ -104,7 +111,7 @@ export function DataTablePaginated({
               {visibleRows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="px-6 py-6 text-sm text-muted-foreground">
-                    {emptyMessage}
+                    {resolvedEmptyMessage}
                   </td>
                 </tr>
               ) : (
@@ -127,7 +134,7 @@ export function DataTablePaginated({
 
         <div className="flex flex-col items-start justify-between gap-3 border-t border-border/60 px-6 py-3 text-sm sm:flex-row sm:items-center">
           <div className="flex items-center gap-2 text-muted-foreground">
-            <span>Rows per page</span>
+            <span>{lang("שורות בעמוד", "Rows per page")}</span>
             <div className="inline-flex overflow-hidden rounded-full border border-border bg-card">
               {pageSizes.map((size) => (
                 <button
@@ -147,8 +154,11 @@ export function DataTablePaginated({
             </div>
             <span className="hidden sm:inline">
               {totalRows === 0
-                ? "0 of 0"
-                : `${startIdx + 1}–${endIdx} of ${totalRows}`}
+                ? lang("0 מתוך 0", "0 of 0")
+                : lang(
+                    `${startIdx + 1}–${endIdx} מתוך ${totalRows}`,
+                    `${startIdx + 1}–${endIdx} of ${totalRows}`
+                  )}
             </span>
           </div>
 
@@ -158,19 +168,19 @@ export function DataTablePaginated({
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={safePage <= 1}
               className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-card disabled:hover:text-muted-foreground"
-              aria-label="Previous page"
+              aria-label={lang("העמוד הקודם", "Previous page")}
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
             <span className="min-w-[88px] text-center text-xs font-medium text-muted-foreground tabular-nums">
-              Page {safePage} of {totalPages}
+              {lang(`עמוד ${safePage} מתוך ${totalPages}`, `Page ${safePage} of ${totalPages}`)}
             </span>
             <button
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={safePage >= totalPages}
               className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-card disabled:hover:text-muted-foreground"
-              aria-label="Next page"
+              aria-label={lang("העמוד הבא", "Next page")}
             >
               <ChevronRight className="h-4 w-4" />
             </button>
