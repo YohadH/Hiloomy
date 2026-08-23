@@ -72,6 +72,9 @@ interface Copy {
   leakHeadBefore: string;
   leakHeadAfter: string;
   leakRows: { title: string; sub: string }[];
+  // Portrait drops the "· potential +₪X/mo" tail — at 390px the full line
+  // wraps to three rows and pushes the second card off the frame.
+  leakRowsShort: { title: string; sub: string }[];
   leakClearTitle: string;
   leakClearSub: string;
   leakClear: string;
@@ -117,6 +120,10 @@ const EN: Copy = {
       title: "Discount codes selling at a loss after product cost",
       sub: "Action: <b>stop or shrink the flagged codes</b> · potential +₪1,901/mo"
     }
+  ],
+  leakRowsShort: [
+    { title: "Commissions on customers you already owned", sub: "<b>Set a reduced returning-customer policy</b>" },
+    { title: "Discount codes selling at a loss", sub: "<b>Stop or shrink the flagged codes</b>" }
   ],
   leakClearTitle: "Ad spend pushing high-return products",
   leakClearSub: "5 campaigns checked — none is pushing a high-return product.",
@@ -169,6 +176,10 @@ const HE: Copy = {
       title: "קודי הנחה שמוכרים בהפסד אחרי עלות המוצר",
       sub: 'פעולה: <b>עצרו או צמצמו את הקודים המסומנים</b> · פוטנציאל <span class="ltr">+₪1,901</span> לחודש'
     }
+  ],
+  leakRowsShort: [
+    { title: "עמלות על לקוחות שכבר היו שלכם", sub: "<b>הגדירו מדיניות מופחתת ללקוחות חוזרים</b>" },
+    { title: "קודי הנחה שמוכרים בהפסד", sub: "<b>עצרו או צמצמו את הקודים המסומנים</b>" }
   ],
   leakClearTitle: "תקציב פרסום שמקדם מוצרים עם אחוז החזרות גבוה",
   leakClearSub: "נבדקו 5 קמפיינים — אף אחד לא מקדם מוצר עם החזרות גבוהות.",
@@ -743,23 +754,12 @@ function mobileDoc(locale: BannerLocale): string {
   .mticks i{width:20px;height:3px;border-radius:2px;background:rgba(20,81,44,.16)}
   .mticks i.on{background:var(--green)}
 
-  .mhead{position:relative;z-index:6;padding:26px 22px 4px;flex:0 0 auto}
+  .mhead{position:relative;z-index:6;padding:18px 18px 0;flex:0 0 auto}
   .mbrand{display:flex;align-items:baseline;gap:1px;font-size:20px;margin-bottom:10px}
   .mbrand svg{height:1.5em;width:auto;align-self:baseline}
   .mbrand .w{font-family:var(--round);font-weight:700;color:#0E4D2C}
   .mbrand .w .dot{color:#F5821F}
-  .mcaps{position:relative;min-height:78px}
-  .mcap{position:absolute;inset-inline:0;top:0;opacity:0;transform:translateY(7px);
-    transition:opacity .26s ease,transform .26s ease;pointer-events:none}
-  .mcap.show{opacity:1;transform:none;transition:opacity .5s ease .3s,transform .5s cubic-bezier(.2,.7,.2,1) .3s}
-  .mcap .eb{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--orange);margin-bottom:7px}
-  .mcap.cold .eb{color:#8a988f}
-  .mcap h2{font-family:var(--display);font-weight:800;font-size:clamp(22px,6.6vw,30px);line-height:1.05;
-    letter-spacing:-.02em;color:var(--green-deep);text-wrap:balance}
-  .mcap.cold h2{color:#41514a}
-  .mcap h2 em{font-style:normal;color:var(--orange)}
-
-  .mstage{position:relative;flex:1;min-height:0;margin:6px 18px 20px}
+  .mstage{position:relative;flex:1;min-height:0;margin:12px 18px 18px}
   .layer{position:absolute;inset:0;opacity:0;transition:opacity .28s ease;pointer-events:none}
   .mframe[data-stage="0"] .l-chaos{opacity:1}
   .mframe[data-stage="1"] .l-chaos{opacity:.18}
@@ -822,14 +822,18 @@ function mobileDoc(locale: BannerLocale): string {
   .gtip-row b{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap;direction:ltr;unicode-bidi:isolate}
   .ltr{direction:ltr;unicode-bidi:isolate;text-align:start;white-space:nowrap}
 
+  /* overflow:hidden is the backstop, but the real guard is min-height:0 on
+     the flex children — without it a text block refuses to shrink below its
+     content and pushes the last row straight out of the card. */
   .leakcard{position:absolute;inset:0;border-radius:16px;background:linear-gradient(180deg,#FFF9F4,#fff 42%);
     border:1px solid rgba(196,85,31,.28);box-shadow:var(--shadow);padding:15px 14px;
-    display:flex;flex-direction:column;gap:9px}
+    display:flex;flex-direction:column;gap:9px;overflow:hidden}
   .lk-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--orange)}
   .lk-head{font-family:var(--display);font-weight:800;font-size:clamp(19px,5.8vw,26px);color:var(--ink);
     letter-spacing:-.02em;line-height:1.06}
   .lk-head .amt{color:var(--leak);direction:ltr;unicode-bidi:isolate}
-  .lk-rows{display:flex;flex-direction:column;gap:9px;margin-top:1px}
+  .lk-rows{display:flex;flex-direction:column;gap:9px;margin-top:1px;flex:1;min-height:0;justify-content:center}
+  .lk-body{min-width:0}
   .lk-row{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;
     background:rgba(196,85,31,.05);border:1px solid rgba(196,85,31,.14);
     transform:translateX(${rtl ? "10px" : "-10px"});opacity:0;transition:opacity .45s ease,transform .45s ease}
@@ -880,12 +884,9 @@ function mobileDoc(locale: BannerLocale): string {
 
   <div class="mhead">
     <div class="mbrand" dir="ltr">${MARK}<span class="w">iloomy<span class="dot">.</span></span></div>
-    <div class="mcaps">
-      <div class="mcap cold" data-cap="0"><div class="eb">${c.caps[0].eb}</div><h2>${c.caps[0].h.replace("<br>", " ")}</h2></div>
-      <div class="mcap" data-cap="2"><div class="eb">${c.caps[1].eb}</div><h2>${c.caps[1].h}</h2></div>
-      <div class="mcap" data-cap="3"><div class="eb">${c.caps[2].eb}</div><h2>${c.caps[2].h}</h2></div>
-      <div class="mcap" data-cap="4"><div class="eb">${c.caps[3].eb}</div><h2>${c.caps[3].h}</h2></div>
-    </div>
+    ${""/* No caption band in portrait: it repeated the page's own h1 sitting
+           directly above, and ate ~a third of a 3:4 frame — which is what
+           pushed the leak card past its own bottom edge. Desktop keeps it. */}
   </div>
 
   <div class="mstage">
@@ -938,12 +939,12 @@ function mobileDoc(locale: BannerLocale): string {
         <div class="lk-rows">
           <div class="lk-row">
             <span class="lk-ic">${ICON_ALERT}</span>
-            <div><div class="lk-t">${c.leakRows[0].title}</div><div class="lk-s">${c.leakRows[0].sub}</div></div>
+            <div class="lk-body"><div class="lk-t">${c.leakRowsShort[0].title}</div><div class="lk-s">${c.leakRowsShort[0].sub}</div></div>
             <div class="lk-amt" data-to="2447" data-prefix="₪">₪0</div>
           </div>
           <div class="lk-row">
             <span class="lk-ic">${ICON_ALERT}</span>
-            <div><div class="lk-t">${c.leakRows[1].title}</div><div class="lk-s">${c.leakRows[1].sub}</div></div>
+            <div class="lk-body"><div class="lk-t">${c.leakRowsShort[1].title}</div><div class="lk-s">${c.leakRowsShort[1].sub}</div></div>
             <div class="lk-amt" data-to="1901" data-prefix="₪">₪0</div>
           </div>
         </div>
