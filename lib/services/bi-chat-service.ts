@@ -112,6 +112,80 @@ export interface RunBiChatTurnInput {
 // isolation tests can inspect them). Days windows are bounded so a typo
 // can't trigger a multi-year scan.
 
+// ── Customer PII gate ───────────────────────────────────────────────────
+//
+// Orders and customers carry names, emails and landing URLs. Those are the
+// merchant's own records, but sending them to the model means sending them
+// to OpenAI as a subprocessor — which touches your privacy policy and, on
+// Shopify, the Protected Customer Data rules.
+//
+// So identity is OFF by default. The tools still return everything needed to
+// analyse behaviour — order counts, lifetime value, returning status — keyed
+// by the Shopify customer id, which the merchant can look up themselves. Set
+// BI_EXPOSE_CUSTOMER_PII=1 to include names and emails, deliberately.
+function customerPiiEnabled(): boolean {
+  return process.env.BI_EXPOSE_CUSTOMER_PII === "1";
+}
+
+// A landing URL can carry an email or a name in its query string, so it is
+// reduced to its path unless PII is enabled.
+function safeLanding(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw) return null;
+  if (customerPiiEnabled()) return raw.slice(0, 300);
+  try {
+    const u = new URL(raw, "https://placeholder.invalid");
+    const utm = ["utm_source", "utm_medium", "utm_campaign"]
+      .map((k) => (u.searchParams.get(k) ? `${k}=${u.searchParams.get(k)}` : null))
+      .filter(Boolean)
+      .join("&");
+    return utm ? `${u.pathname}?${utm}` : u.pathname;
+  } catch {
+    return raw.split("?")[0].slice(0, 200);
+  }
+}
+
+function shapeOrder(o: Record<string, unknown>): Record<string, unknown> {
+  const num = (v: unknown) => Math.round(Number(v ?? 0) * 100) / 100;
+  const customer = o.customer as Record<string, unknown> | null;
+  const lineItems = o.lineItems as Array<Record<string, unknown>> | undefined;
+  const counts = o._count as { lineItems?: number } | undefined;
+
+  return {
+    orderNumber: String(o.orderNumber ?? "—"),
+    date: o.createdAt ? new Date(o.createdAt as Date).toISOString().slice(0, 10) : null,
+    currency: o.currency ?? null,
+    subtotal: num(o.subtotalPrice),
+    discounts: num(o.totalDiscounts),
+    tax: num(o.totalTax),
+    shipping: num(o.totalShipping),
+    refunds: num(o.totalRefunds),
+    total: num(o.totalPrice),
+    financialStatus: o.financialStatus ?? null,
+    fulfillmentStatus: o.fulfillmentStatus ?? null,
+    cancelled: Boolean(o.cancelledAt),
+    channel: o.sourceName ?? null,
+    referringSite: o.referringSite ?? null,
+    landing: safeLanding(o.landingSiteRef),
+    customerRef: customer?.shopifyCustomerId ? String(customer.shopifyCustomerId) : null,
+    customerOrders: customer?.totalOrders ?? null,
+    customerIsReturning: customer?.isReturning ?? null,
+    ...(customerPiiEnabled() && customer
+      ? { customerName: customer.name ?? null, customerEmail: customer.email ?? null }
+      : {}),
+    ...(lineItems
+      ? {
+          items: lineItems.map((li) => ({
+            title: li.title,
+            quantity: li.quantity,
+            refundedQuantity: li.refundedQuantity,
+            subtotal: num(li.lineSubtotal),
+            discount: num(li.lineDiscountAmount)
+          }))
+        }
+      : { itemCount: counts?.lineItems ?? null })
+  };
+}
+
 function daysWindow(days: number): { start: Date; end: Date } {
   const end = new Date();
   const start = new Date(end.getTime() - days * 86_400_000);
@@ -139,6 +213,9 @@ async function executeToolUncached(
   name: string,
   input: Record<string, unknown>
 ): Promise<string> {
+  // Trim float noise before it reaches the model — 12449.830000000002 costs
+  // tokens and invites the model to quote spurious precision.
+  const round2 = (v: number) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : 0);
   const int = (v: unknown, fallback: number, min: number, max: number) => {
     const n = typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : fallback;
     return Math.min(max, Math.max(min, n));
@@ -317,6 +394,236 @@ async function executeToolUncached(
     }
     case "get_open_alerts": {
       result = await listOpenAlerts({ storeId, limit: int(input.limit, 20, 1, 50) });
+      break;
+    }
+    case "get_orders": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = getDb() as any;
+      const single = typeof input.order_number === "string" && input.order_number.trim().length > 0;
+      const wantLines = typeof input.include_line_items === "boolean" ? input.include_line_items : single;
+
+      const select = {
+        orderNumber: true,
+        createdAt: true,
+        currency: true,
+        subtotalPrice: true,
+        totalDiscounts: true,
+        totalTax: true,
+        totalShipping: true,
+        totalRefunds: true,
+        totalPrice: true,
+        financialStatus: true,
+        fulfillmentStatus: true,
+        cancelledAt: true,
+        sourceName: true,
+        referringSite: true,
+        landingSiteRef: true,
+        customer: { select: { shopifyCustomerId: true, totalOrders: true, isReturning: true, email: true, name: true } },
+        ...(wantLines
+          ? {
+              lineItems: {
+                select: { title: true, quantity: true, refundedQuantity: true, lineSubtotal: true, lineDiscountAmount: true },
+                take: 40
+              }
+            }
+          : { _count: { select: { lineItems: true } } })
+      };
+
+      let orders: Array<Record<string, unknown>>;
+      if (single) {
+        const num = (input.order_number as string).trim().replace(/^#/, "");
+        // storeId scopes the lookup — an order number from another tenant
+        // simply does not resolve.
+        orders = await db.order.findMany({ where: { storeId, orderNumber: num }, select, take: 5 });
+      } else {
+        const { start, end } = daysWindow(int(input.days, 30, 1, 365));
+        const where: Record<string, unknown> = { storeId, createdAt: { gte: start, lte: end } };
+        const min = typeof input.min_total === "number" ? input.min_total : null;
+        const max = typeof input.max_total === "number" ? input.max_total : null;
+        if (min !== null || max !== null) {
+          where.totalPrice = { ...(min !== null ? { gte: min } : {}), ...(max !== null ? { lte: max } : {}) };
+        }
+        if (input.refunded_only === true) where.totalRefunds = { gt: 0 };
+        if (input.cancelled_only === true) where.cancelledAt = { not: null };
+        if (typeof input.discount_code === "string" && input.discount_code.trim()) {
+          where.discountUsages = { some: { code: { equals: input.discount_code.trim(), mode: "insensitive" } } };
+        }
+        const orderBy =
+          input.sort_by === "oldest"
+            ? { createdAt: "asc" as const }
+            : input.sort_by === "highest_value"
+              ? { totalPrice: "desc" as const }
+              : input.sort_by === "lowest_value"
+                ? { totalPrice: "asc" as const }
+                : { createdAt: "desc" as const };
+        orders = await db.order.findMany({ where, select, orderBy, take: int(input.limit, 20, 1, 50) });
+      }
+
+      result = {
+        mode: single ? "single_order_lookup" : "order_list",
+        piiIncluded: customerPiiEnabled(),
+        note: customerPiiEnabled()
+          ? "Customer names and emails are included because this store enabled PII for the assistant. Do not repeat them unless the merchant asked about that specific customer."
+          : "Customer names and emails are withheld. customerRef is a stable Shopify customer id — use it to group orders by buyer, and tell the merchant to look the id up in Shopify if they need the person.",
+        count: orders.length,
+        orders: orders.map((o) => shapeOrder(o))
+      };
+      if (single && orders.length === 0) {
+        result = { ...(result as object), note: `No order numbered "${String(input.order_number).trim()}" exists in this store.` };
+      }
+      break;
+    }
+    case "get_customers": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = getDb() as any;
+      const where: Record<string, unknown> = { storeId };
+      if (input.returning_only === true) where.isReturning = true;
+      const minOrders = typeof input.min_orders === "number" ? int(input.min_orders, 1, 1, 100) : null;
+      if (minOrders !== null) where.totalOrders = { gte: minOrders };
+
+      const orderBy =
+        input.sort_by === "order_count"
+          ? { totalOrders: "desc" as const }
+          : input.sort_by === "newest"
+            ? { createdAt: "desc" as const }
+            : input.sort_by === "recent_activity"
+              ? { updatedAt: "desc" as const }
+              : { lifetimeValue: "desc" as const };
+
+      const [rows, totals, returningCount] = await Promise.all([
+        db.customer.findMany({
+          where,
+          orderBy,
+          take: int(input.limit, 15, 1, 50),
+          select: {
+            shopifyCustomerId: true,
+            email: true,
+            name: true,
+            createdAt: true,
+            firstOrderDate: true,
+            totalOrders: true,
+            lifetimeValue: true,
+            isReturning: true
+          }
+        }),
+        db.customer.aggregate({
+          where: { storeId },
+          _count: { _all: true },
+          _avg: { lifetimeValue: true, totalOrders: true },
+          _sum: { lifetimeValue: true }
+        }),
+        db.customer.count({ where: { storeId, isReturning: true } })
+      ]);
+
+      const total = (totals?._count?._all ?? 0) as number;
+      result = {
+        piiIncluded: customerPiiEnabled(),
+        note: customerPiiEnabled()
+          ? "Customer names and emails are included because this store enabled PII for the assistant."
+          : "Names and emails are withheld. customerRef is a stable Shopify customer id the merchant can look up in Shopify.",
+        storeTotals: {
+          customers: total,
+          returningCustomers: returningCount,
+          returningRate: total > 0 ? Math.round((returningCount / total) * 1000) / 1000 : 0,
+          averageLifetimeValue: Math.round(Number(totals?._avg?.lifetimeValue ?? 0) * 100) / 100,
+          averageOrdersPerCustomer: Math.round(Number(totals?._avg?.totalOrders ?? 0) * 100) / 100,
+          totalLifetimeValue: Math.round(Number(totals?._sum?.lifetimeValue ?? 0) * 100) / 100
+        },
+        customers: (rows as Array<Record<string, unknown>>).map((c) => ({
+          customerRef: String(c.shopifyCustomerId ?? "—"),
+          ...(customerPiiEnabled() ? { name: c.name ?? null, email: c.email ?? null } : {}),
+          orders: Number(c.totalOrders ?? 0),
+          lifetimeValue: Math.round(Number(c.lifetimeValue ?? 0) * 100) / 100,
+          firstOrder: c.firstOrderDate ? new Date(c.firstOrderDate as Date).toISOString().slice(0, 10) : null,
+          isReturning: Boolean(c.isReturning)
+        }))
+      };
+      break;
+    }
+    case "get_product_performance": {
+      const { start, end } = daysWindow(int(input.days, 30, 1, 365));
+      const limit = int(input.limit, 10, 1, 25);
+      // Whitelisted — never interpolate a model-supplied string into SQL.
+      const ORDER_BY: Record<string, string> = {
+        net_sales: "net_sales DESC",
+        contribution_margin: "contribution_margin DESC",
+        units: "units DESC",
+        return_rate: "refunds DESC"
+      };
+      const sortKey = typeof input.sort_by === "string" ? input.sort_by : "net_sales";
+      const orderBy = ORDER_BY[sortKey] ?? ORDER_BY.net_sales;
+
+      // Same walk as contribution-margin-service: gross − discounts −
+      // refunds = net sales; net sales − COGS = contribution margin.
+      // Affiliate commission is order-level, not line-level, so it is
+      // excluded here — flagged in the payload so the model doesn't present
+      // this as the final margin when commissions are material.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = getDb() as any;
+      const rows = (await db.$queryRawUnsafe(
+        `SELECT
+           COALESCE(li."productId", 'untracked:' || li.title) AS group_key,
+           MIN(li.title)                                       AS title,
+           SUM(li.quantity - li."refundedQuantity")::int        AS units,
+           SUM(li."lineSubtotal")                               AS gross_sales,
+           SUM(li."lineDiscountAmount")                         AS discounts,
+           SUM(li."refundedSubtotal")                           AS refunds,
+           SUM(li."lineSubtotal" - li."lineDiscountAmount" - li."refundedSubtotal") AS net_sales,
+           SUM(li."estimatedCostAmount")                        AS cogs,
+           SUM(li."lineSubtotal" - li."lineDiscountAmount" - li."refundedSubtotal" - li."estimatedCostAmount") AS contribution_margin,
+           SUM(CASE WHEN li."estimatedCostAmount" > 0 THEN li."lineSubtotal" ELSE 0 END) AS revenue_with_cost
+         FROM "OrderLineItem" li
+         JOIN "Order" o ON o.id = li."orderId"
+         WHERE li."storeId" = $1
+           AND o."createdAt" >= $2
+           AND o."createdAt" <= $3
+         GROUP BY group_key
+         HAVING SUM(li.quantity - li."refundedQuantity") <> 0
+            OR SUM(li."lineSubtotal") <> 0
+         ORDER BY ${orderBy}
+         LIMIT $4`,
+        storeId,
+        start,
+        end,
+        limit
+      )) as Array<Record<string, unknown>>;
+
+      const n = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
+      const totalNet = rows.reduce((sum, r) => sum + n(r.net_sales), 0);
+
+      result = {
+        window: { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) },
+        sortedBy: sortKey,
+        note:
+          "Line-item level. Contribution margin here excludes affiliate commission (order-level) " +
+          "and excludes shipping and tax (pass-through). Products where costCoverage is 0 have no " +
+          "cost inputs — their margin is not trustworthy, say so rather than quoting it.",
+        products: rows.map((r) => {
+          const gross = n(r.gross_sales);
+          const netSales = n(r.net_sales);
+          const refunds = n(r.refunds);
+          return {
+            title: String(r.title ?? "—"),
+            units: n(r.units),
+            grossSales: round2(gross),
+            discounts: round2(n(r.discounts)),
+            refunds: round2(refunds),
+            netSales: round2(netSales),
+            cogs: round2(n(r.cogs)),
+            contributionMargin: round2(n(r.contribution_margin)),
+            marginRate: netSales > 0 ? round2(n(r.contribution_margin) / netSales) : null,
+            shareOfNetSales: totalNet > 0 ? round2(netSales / totalNet) : null,
+            returnRate: gross > 0 ? round2(refunds / gross) : 0,
+            costCoverage: gross > 0 ? round2(n(r.revenue_with_cost) / gross) : 0
+          };
+        })
+      };
+      if (rows.length === 0) {
+        result = {
+          ...(result as object),
+          note: "No line items fall in this window. Do not report this as zero sales — say the window is empty and offer a wider one."
+        };
+      }
       break;
     }
     case "get_competitor_week": {

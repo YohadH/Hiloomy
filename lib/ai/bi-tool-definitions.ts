@@ -169,6 +169,86 @@ export const BI_TOOL_DEFINITIONS = [
     }
   },
   {
+    name: "get_orders",
+    description:
+      "Individual orders. Either a filtered list over a window (date, value range, refunded-only, cancelled-only, discount code, channel) or ONE specific order looked up by its order number. Returns per order: order number, date, totals, discounts, refunds, tax, shipping, financial and fulfilment status, item count, line items, referring site and landing URL, and a customer reference. Use for 'show me the last orders', 'what happened in order 1042', 'which orders were refunded', 'biggest order this month'. Customer names and emails are withheld unless the store has enabled customer PII for the assistant — you will see a stable customer reference instead, which is enough to group orders by buyer.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        order_number: {
+          type: "string",
+          description:
+            "Look up one specific order by its number (with or without a leading #). When set, all other filters are ignored."
+        },
+        days: { type: "integer", minimum: 1, maximum: 365, description: "Window length in days, ending today. Default 30." },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Max orders to return. Default 20." },
+        sort_by: {
+          type: "string",
+          enum: ["newest", "oldest", "highest_value", "lowest_value"],
+          description: "Ordering. Default newest."
+        },
+        min_total: { type: "number", description: "Only orders with total price at or above this." },
+        max_total: { type: "number", description: "Only orders with total price at or below this." },
+        refunded_only: { type: "boolean", description: "Only orders carrying a refund. Default false." },
+        cancelled_only: { type: "boolean", description: "Only cancelled orders. Default false." },
+        discount_code: { type: "string", description: "Only orders that used this discount code." },
+        include_line_items: {
+          type: "boolean",
+          description: "Include each order's line items. Default true for a single-order lookup, false for lists (they get large)."
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: "get_customers",
+    description:
+      "Customers of this store: ranked lists (highest lifetime value, most orders, newest, most recently active) plus store-wide totals — customer count, new vs returning split, average lifetime value and average orders per customer. Returns per customer: a stable reference, order count, lifetime value, first and most recent order dates, and returning status. Use for 'who are my best customers', 'how many repeat buyers', 'what is average customer value'. Names and emails are withheld unless the store has enabled customer PII for the assistant. For cohort retention curves over time use get_retention instead.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "How many customers to return. Default 15." },
+        sort_by: {
+          type: "string",
+          enum: ["lifetime_value", "order_count", "newest", "recent_activity"],
+          description: "Ranking metric. Default lifetime_value."
+        },
+        returning_only: { type: "boolean", description: "Only customers with more than one order. Default false." },
+        min_orders: { type: "integer", minimum: 1, maximum: 100, description: "Only customers with at least this many orders." }
+      },
+      required: []
+    }
+  },
+  {
+    name: "get_product_performance",
+    description:
+      "Per-product sales and profitability over a recent window: net units sold (after returns), gross sales, discounts, refunds, net sales, COGS and contribution margin per product, plus each product's share of the store's net sales and its return rate. Also returns a cost-coverage flag per product so you can say when a margin figure is unreliable because cost inputs are missing. THIS IS THE TOOL FOR ANY QUESTION ABOUT PRODUCTS — best seller, worst seller, what to restock, which product makes money, which product is returned most. Ad-creative names are NOT products; never infer a best seller from campaign or creative names.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        days: {
+          type: "integer",
+          minimum: 1,
+          maximum: 365,
+          description: "Window length in days, ending today. Default 30."
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 25,
+          description: "How many products to return. Default 10."
+        },
+        sort_by: {
+          type: "string",
+          enum: ["net_sales", "contribution_margin", "units", "return_rate"],
+          description:
+            "Ranking metric. Default net_sales. Use contribution_margin for 'most profitable', units for 'best seller by volume', return_rate for 'most returned'."
+        }
+      },
+      required: []
+    }
+  },
+  {
     name: "get_competitor_week",
     description:
       "What the store's tracked competitors did over the last 7 days vs the 7 before: active promos, deepest discount %, free-shipping thresholds, homepage messages, and week-over-week change per competitor (opened/closed/deepened). Only surface what should change this merchant's behavior. Use for questions about competitors.",

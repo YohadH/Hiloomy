@@ -28,6 +28,11 @@
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_BASE_URL = "https://apilayer.rivalsweeper.com/v1";
 
+// Lookback for the ads report. Overridable so the window can be widened in
+// production without a deploy if RivalSweeper's refresh cadence changes
+// again — which is exactly what made this stale in the first place.
+const ADS_WINDOW = process.env.RIVALSWEEPER_ADS_WINDOW || "30d";
+
 export interface RivalSweeperSignals {
   activePromoCount: number;
   // Percent, e.g. 40 = "40% off". Null when no active promo.
@@ -329,17 +334,25 @@ export async function fetchCompetitorActivity(options?: {
     const entries = await Promise.all(
       [...domainMap.entries()].map(async ([host, meta]): Promise<CompetitorActivityEntry> => {
         const dg = meta.guid;
+        // A failed report and an empty one both used to collapse to null, so
+        // "the API is broken" and "there is nothing to report" were
+        // indistinguishable — which is how a wrong window went unnoticed.
+        // Log the failure and keep going.
+        const report = (label: string, path: string) =>
+          getReport(path, timeoutMs).catch((err) => {
+            console.error(`[rivalsweeper] ${label} failed for ${host}:`, err instanceof Error ? err.message : err);
+            return null;
+          });
+
         const [ads, news, links] = await Promise.all([
-          getReport(`/companies/${cg}/domains/${dg}/reports/ads?since=7d&limit=60`, timeoutMs).catch(
-            () => null
-          ),
-          getReport(`/companies/${cg}/domains/${dg}/reports/news?since=14d&limit=3`, timeoutMs).catch(
-            () => null
-          ),
-          getReport(
-            `/companies/${cg}/domains/${dg}/reports/homepage-top-links?since=7d&limit=10`,
-            timeoutMs
-          ).catch(() => null)
+          // 30d, not 7d. RivalSweeper's ad snapshots refresh far less often
+          // than weekly — measured against the live API, `since=7d` returned
+          // 0 records for every monitored domain while `since=30d` returned
+          // 60/60/0/26. The 7d window was reporting "no competitor ads" for
+          // competitors who were in fact advertising the whole time.
+          report("ads", `/companies/${cg}/domains/${dg}/reports/ads?since=${ADS_WINDOW}&limit=60`),
+          report("news", `/companies/${cg}/domains/${dg}/reports/news?since=14d&limit=3`),
+          report("homepage-links", `/companies/${cg}/domains/${dg}/reports/homepage-top-links?since=30d&limit=10`)
         ]);
 
         const headlines: string[] = [];

@@ -33,7 +33,10 @@ const CACHEABLE_TOOLS = new Set([
   "get_discount_effectiveness",
   "get_traffic",
   "get_organic_search",
-  "get_retention"
+  "get_retention",
+  "get_product_performance",
+  "get_orders",
+  "get_customers"
 ]);
 
 export function isCacheableTool(toolName: string): boolean {
