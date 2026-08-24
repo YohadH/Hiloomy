@@ -1,4 +1,4 @@
-// BI analyst chat — direct Anthropic API with store-scoped data tools.
+// BI analyst chat — direct LLM API with store-scoped data tools.
 //
 // Replaces the Cloudflare-tunnel BI gateway for the customer-facing chat
 // widget. The model answers with data it pulls through read-only tools
@@ -9,16 +9,29 @@
 // identifier) from the model.
 //
 // The persona (system prompt) lives in lib/ai/bi-persona.ts — edit there.
+// It is provider-agnostic: both loops below send the same text.
 //
-// Loop shape: manual streaming loop over client.messages.stream() —
-// text deltas are forwarded to the caller (SSE to the widget) while tool
-// turns execute in between, so the user watches the answer form instead
-// of staring at a spinner.
+// ── Providers ──────────────────────────────────────────────────────────
+// OpenAI is the default. Anthropic is kept because the loop already
+// existed and gives us a second provider if OpenAI has an outage.
 //
-// Env: ANTHROPIC_API_KEY (Render dashboard). Absent → callers fall back
-// to the legacy tunnel via isDirectBiConfigured().
+//   BI_CHAT_PROVIDER = "openai" | "anthropic"   (optional override)
+//   OPENAI_API_KEY                              (default provider)
+//   ANTHROPIC_API_KEY                           (used when provider=anthropic)
+//   BI_CHAT_MODEL                               (optional model override)
+//
+// With neither key set the route returns 503 rather than falling back to
+// the tunnel — the tunnel is no longer part of this path.
+//
+// Loop shape is the same for both: stream text deltas to the caller while
+// tool turns execute in between, so the merchant watches the answer form
+// instead of staring at a spinner. What differs is only the wire protocol
+// — Anthropic returns tool_use content blocks and takes tool_result blocks
+// back in a user message; OpenAI returns a tool_calls array and takes one
+// role:"tool" message per call.
 
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { getDb } from "@/lib/server/db";
 import { BI_PERSONA, buildRuntimeContext } from "@/lib/ai/bi-persona";
 import { BI_TOOL_DEFINITIONS } from "@/lib/ai/bi-tool-definitions";
@@ -30,17 +43,50 @@ import { buildCompetitorWeekSection } from "@/lib/services/competitor-intel-serv
 import { buildKpiTrend, type TrendGranularity } from "@/lib/services/kpi-trend-service";
 import { buildDiscountScorecards } from "@/lib/services/discount-scorecard-service";
 import { buildMetaAdsWeeklyReport } from "@/lib/services/meta-ads-report-service";
+import { readCachedToolResult, writeCachedToolResult } from "@/lib/services/bi-tool-cache";
+import { getStoreSnapshotText } from "@/lib/services/bi-store-snapshot";
 
-const MODEL = process.env.BI_CHAT_MODEL || "claude-opus-5";
 const MAX_TOKENS = 16000;
 // Tool round-trips per question. 6 covers "compare two periods across two
 // tools"; anything needing more is a sign the question should be narrowed.
 const MAX_ITERATIONS = 6;
 // Cap serialized tool results so one huge report can't blow the context.
-const TOOL_RESULT_MAX_CHARS = 28_000;
+// Lowered from 28k: at ~3.7 chars/token a single result was ~7,500 tokens,
+// and six rounds could reach ~45,000. Answers cite the top rows, not whole
+// reports — the model asks a narrower question when it needs more.
+const TOOL_RESULT_MAX_CHARS = 10_000;
+
+// Picked against what this account actually serves (GET /v1/models), not a
+// generic default. The BI analyst orchestrates 10 tools over several rounds,
+// reasons about margin, and writes Hebrew — Terra is the balanced tier and
+// handles that; Sol is the frontier tier if answers need more depth, Luna is
+// the cheap tier and too thin for multi-round tool work. Override per
+// environment with BI_CHAT_MODEL.
+const DEFAULT_OPENAI_MODEL = "gpt-5.6-terra";
+const DEFAULT_ANTHROPIC_MODEL = "claude-opus-5";
+
+export type BiChatProvider = "openai" | "anthropic";
+
+// Explicit override wins; otherwise whichever key is present, preferring
+// OpenAI. Returns null when neither is configured so the route can 503
+// instead of throwing halfway through a stream.
+export function resolveBiProvider(): BiChatProvider | null {
+  const explicit = process.env.BI_CHAT_PROVIDER?.trim().toLowerCase();
+  if (explicit === "openai") return process.env.OPENAI_API_KEY ? "openai" : null;
+  if (explicit === "anthropic") return process.env.ANTHROPIC_API_KEY ? "anthropic" : null;
+  if (process.env.OPENAI_API_KEY) return "openai";
+  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+  return null;
+}
 
 export function isDirectBiConfigured(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  return resolveBiProvider() !== null;
+}
+
+function modelFor(provider: BiChatProvider): string {
+  const override = process.env.BI_CHAT_MODEL?.trim();
+  if (override) return override;
+  return provider === "openai" ? DEFAULT_OPENAI_MODEL : DEFAULT_ANTHROPIC_MODEL;
 }
 
 export interface BiChatHistoryEntry {
@@ -74,7 +120,21 @@ function daysWindow(days: number): { start: Date; end: Date } {
 
 // Dispatch a tool call. `input` is the model-provided (already parsed)
 // object; storeId always comes from the session, never from the model.
+// Cache wrapper around the raw dispatch below. Every key is storeId-first —
+// see lib/services/bi-tool-cache.ts for why that is non-negotiable.
 async function executeTool(
+  storeId: string,
+  name: string,
+  input: Record<string, unknown>
+): Promise<string> {
+  const cached = await readCachedToolResult(storeId, name, input);
+  if (cached !== null) return cached;
+  const fresh = await executeToolUncached(storeId, name, input);
+  await writeCachedToolResult(storeId, name, input, fresh);
+  return fresh;
+}
+
+async function executeToolUncached(
   storeId: string,
   name: string,
   input: Record<string, unknown>
@@ -280,7 +340,10 @@ async function executeTool(
 // ── Chat turn ───────────────────────────────────────────────────────────
 
 export async function runBiChatTurn(input: RunBiChatTurnInput): Promise<string> {
-  const client = new Anthropic();
+  const provider = resolveBiProvider();
+  if (!provider) {
+    throw new Error("No BI chat provider configured. Set OPENAI_API_KEY (or ANTHROPIC_API_KEY).");
+  }
 
   const db = getDb();
   const store = (await db.store.findUnique({
@@ -288,20 +351,152 @@ export async function runBiChatTurn(input: RunBiChatTurnInput): Promise<string> 
     select: { name: true, currency: true }
   })) as { name: string; currency: string } | null;
 
+  const baseContext = buildRuntimeContext({
+    locale: input.locale,
+    storeName: store?.name ?? null,
+    currency: store?.currency ?? null,
+    todayIso: new Date().toISOString().slice(0, 10),
+    section: input.section ?? null
+  });
+
+  // Headline figures for THIS store, so routine questions need no tool call.
+  // Best-effort: a failure here costs a tool round, not an answer.
+  const snapshot = await getStoreSnapshotText(input.storeId, store?.currency || "ILS").catch(() => "");
+  const runtimeContext = snapshot ? `${baseContext}\n\n${snapshot}` : baseContext;
+
+  return provider === "openai"
+    ? runOpenAiTurn(input, runtimeContext)
+    : runAnthropicTurn(input, runtimeContext);
+}
+
+// ── OpenAI loop (Responses API) ─────────────────────────────────────────
+//
+// Uses /v1/responses, NOT /v1/chat/completions. Verified against the live
+// API: gpt-5.6 rejects function tools on chat/completions outright —
+//   "Function tools with reasoning_effort are not supported for
+//    gpt-5.6-terra in /v1/chat/completions. To use function tools, use
+//    /v1/responses or set reasoning_effort to 'none'."
+// Disabling reasoning would work but guts the thing that makes this a good
+// analyst, so Responses it is. It carries tools and full reasoning together.
+//
+// Tool shape differs between the two OpenAI surfaces as well as from
+// Anthropic: Anthropic nests the schema under `input_schema`, chat/completions
+// nests it under `function`, and Responses takes it FLAT.
+const OPENAI_TOOLS = BI_TOOL_DEFINITIONS.map((tool) => ({
+  type: "function" as const,
+  name: tool.name,
+  description: tool.description,
+  parameters: tool.input_schema as unknown as Record<string, unknown>,
+  strict: false
+}));
+
+// The Responses streaming event union is wider than the handful of events we
+// act on, so events are narrowed structurally as they arrive.
+interface ResponseStreamEvent {
+  type: string;
+  delta?: string;
+  item?: { type?: string; name?: string; arguments?: string; call_id?: string };
+}
+
+async function runOpenAiTurn(input: RunBiChatTurnInput, runtimeContext: string): Promise<string> {
+  const client = new OpenAI();
+  const model = modelFor("openai");
+
+  // One system message rather than Anthropic's block array — OpenAI caches
+  // long stable prefixes automatically, so there is no breakpoint to place.
+  const conversation: unknown[] = [
+    { role: "system", content: `${BI_PERSONA}\n\n${runtimeContext}` },
+    ...(input.history ?? []).slice(-12).map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.text
+    })),
+    { role: "user", content: input.question }
+  ];
+
+  let finalText = "";
+
+  for (let iteration = 0; iteration < MAX_ITERATIONS; iteration += 1) {
+    // Cast through unknown: the overload returns the non-streaming Response
+    // type because the request object is widened by the `as never` above.
+    const stream = (await client.responses.create({
+      model,
+      input: conversation,
+      tools: OPENAI_TOOLS,
+      max_output_tokens: MAX_TOKENS,
+      stream: true
+    } as never)) as unknown as AsyncIterable<ResponseStreamEvent>;
+
+    let text = "";
+    const calls: { name: string; args: string; callId: string }[] = [];
+
+    for await (const event of stream) {
+      if (event.type === "response.output_text.delta" && event.delta) {
+        text += event.delta;
+        input.onTextDelta?.(event.delta);
+      }
+      // Function calls arrive complete on output_item.done — the Responses
+      // API assembles the streamed argument fragments for us, unlike
+      // chat/completions where they must be concatenated by index.
+      if (event.type === "response.output_item.done" && event.item?.type === "function_call") {
+        calls.push({
+          name: event.item.name ?? "",
+          args: event.item.arguments ?? "{}",
+          callId: event.item.call_id ?? ""
+        });
+      }
+    }
+
+    finalText += text;
+    if (calls.length === 0) break;
+
+    // Every call must get an output back, failures included — the next
+    // request is rejected if any call_id is left unanswered.
+    const results = await Promise.all(
+      calls.map(async (call) => {
+        try {
+          const args = call.args ? (JSON.parse(call.args) as Record<string, unknown>) : {};
+          return { callId: call.callId, output: await executeTool(input.storeId, call.name, args) };
+        } catch (err) {
+          console.error(`[bi-chat] tool ${call.name} failed:`, err);
+          return {
+            callId: call.callId,
+            output: `Tool failed: ${err instanceof Error ? err.message : "unknown error"}`
+          };
+        }
+      })
+    );
+
+    for (const call of calls) {
+      conversation.push({
+        type: "function_call",
+        call_id: call.callId,
+        name: call.name,
+        arguments: call.args
+      });
+    }
+    for (const result of results) {
+      conversation.push({
+        type: "function_call_output",
+        call_id: result.callId,
+        output: result.output
+      });
+    }
+  }
+
+  return finalText.trim();
+}
+
+// ── Anthropic loop ──────────────────────────────────────────────────────
+
+async function runAnthropicTurn(input: RunBiChatTurnInput, runtimeContext: string): Promise<string> {
+  const client = new Anthropic();
+  const MODEL = modelFor("anthropic");
+
   const system: Anthropic.TextBlockParam[] = [
     // Stable persona first, with a cache breakpoint — repeat questions pay
     // ~10% of the input cost for this block.
     { type: "text", text: BI_PERSONA, cache_control: { type: "ephemeral" } },
-    {
-      type: "text",
-      text: buildRuntimeContext({
-        locale: input.locale,
-        storeName: store?.name ?? null,
-        currency: store?.currency ?? null,
-        todayIso: new Date().toISOString().slice(0, 10),
-        section: input.section ?? null
-      })
-    }
+    { type: "text", text: runtimeContext }
   ];
 
   const messages: Anthropic.MessageParam[] = [

@@ -1,30 +1,34 @@
 import { NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth/session";
-import { askBiAgent, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
 import {
   isDirectBiConfigured,
   runBiChatTurn,
   type BiChatHistoryEntry
 } from "@/lib/services/bi-chat-service";
-import { toErrorMessage } from "@/lib/server/errors";
 
 // POST /api/chat/bi — one conversational turn with the BI analyst, from
 // the floating chat widget.
 //
-// Two providers, checked in order:
-//   1. Direct Anthropic API (ANTHROPIC_API_KEY set) — persona + store-scoped
-//      tools in lib/services/bi-chat-service.ts. Streams the answer as
-//      text/plain chunks; the widget renders them as they arrive.
-//   2. Legacy BI gateway tunnel (BI_AGENT_URL/TOKEN) — single JSON response,
-//      30-120s. Kept as fallback until the migration completes.
-// The widget branches on the response Content-Type.
+// Answered by a direct LLM API call with store-scoped tools — OpenAI by
+// default, Anthropic when BI_CHAT_PROVIDER says so. See
+// lib/services/bi-chat-service.ts.
+//
+// The Cloudflare-tunnel BI gateway is NO LONGER in this path. It was a
+// dev-grade hop (ephemeral tunnel URL, shared bearer, single point of
+// failure) and had no business fronting customer traffic. With no provider
+// key configured this returns 503 rather than silently degrading to it.
+//
+// Always streams text/plain so the widget renders the answer as it forms.
 
 export const dynamic = "force-dynamic";
 // Allow long agent turns (Next route segment ceiling, seconds).
 export const maxDuration = 300;
 
-const BI_CHAT_TIMEOUT_MS = 280_000;
-const MAX_HISTORY_ENTRIES = 12;
+// History is resent in full on every turn, so it is pure recurring cost.
+// 12 turns x 4,000 chars was ~13,000 tokens of mostly stale context; 6 x
+// 1,500 keeps follow-ups coherent ("and the month before?") for ~1,200.
+const MAX_HISTORY_ENTRIES = 6;
+const MAX_HISTORY_CHARS = 1_500;
 
 function sanitizeHistory(raw: unknown): BiChatHistoryEntry[] {
   if (!Array.isArray(raw)) return [];
@@ -37,7 +41,7 @@ function sanitizeHistory(raw: unknown): BiChatHistoryEntry[] {
         typeof (m as { text?: unknown }).text === "string"
     )
     .slice(-MAX_HISTORY_ENTRIES)
-    .map((m) => ({ role: m.role as "user" | "agent", text: m.text.slice(0, 4000) }));
+    .map((m) => ({ role: m.role as "user" | "agent", text: m.text.slice(0, MAX_HISTORY_CHARS) }));
 }
 
 export async function POST(request: Request) {
@@ -62,8 +66,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "question is required" }, { status: 400 });
   }
 
-  // ── Direct Anthropic path (streaming) ─────────────────────────────────
-  if (isDirectBiConfigured() && auth.storeId) {
+  if (!isDirectBiConfigured() || !auth.storeId) {
+    return NextResponse.json({ ok: false, error: "bi_unconfigured" }, { status: 503 });
+  }
+
     const storeId = auth.storeId;
     const locale = auth.locale;
     const history = sanitizeHistory(body.history);
@@ -115,16 +121,4 @@ export async function POST(request: Request) {
         "X-Accel-Buffering": "no"
       }
     });
-  }
-
-  // ── Legacy tunnel fallback (single JSON response) ─────────────────────
-  if (!isBiAgentConfigured()) {
-    return NextResponse.json({ ok: false, error: "bi_unconfigured" }, { status: 503 });
-  }
-  try {
-    const answer = await askBiAgent(question, { timeoutMs: BI_CHAT_TIMEOUT_MS });
-    return NextResponse.json({ ok: true, answer });
-  } catch (error) {
-    return NextResponse.json({ ok: false, error: toErrorMessage(error) }, { status: 502 });
-  }
 }

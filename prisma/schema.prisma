@@ -229,6 +229,8 @@ model Store {
   creativeSprints            CreativeSprint[]
   sprintAds                  SprintAd[]
   weeklyReports              WeeklyReport[]
+  biToolCache                BiToolCache[]
+  biStoreSnapshot            BiStoreSnapshot?
   weeklyReportRecipients     WeeklyReportRecipient[]
   searchConsoleMetrics       SearchConsoleMetric[]
   searchConsolePages         SearchConsolePage[]
@@ -935,74 +937,74 @@ model CreatorAttribution {
 }
 
 model AffiliateProgram {
-  id             String            @id @default(cuid())
-  storeId        String
-  name           String
-  status         String            @default("active")
-  commissionRate Decimal           @default(0.10) @db.Decimal(5, 4)
-  signUpLink     String?
+  id                      String            @id @default(cuid())
+  storeId                 String
+  name                    String
+  status                  String            @default("active")
+  commissionRate          Decimal           @default(0.10) @db.Decimal(5, 4)
+  signUpLink              String?
   // ─── Returning-customer commission policy (leakage engine) ───────
   // "full"    — returning customers earn the normal rate (default,
   //             today's behavior).
   // "reduced" — returning customers earn returningCommissionRate.
   // "zero"    — no commission on returning customers.
-  returningCustomerPolicy String   @default("full")
+  returningCustomerPolicy String            @default("full")
   // Rate for the "reduced" policy, 0.00–1.00 fraction of sale. Ignored
   // for other policies.
-  returningCommissionRate Decimal? @db.Decimal(5, 4)
+  returningCommissionRate Decimal?          @db.Decimal(5, 4)
   // Optional win-back carve-out: a returning customer whose PREVIOUS
   // order is at least this many days old counts as re-acquired by the
   // affiliate → the full base rate applies despite the policy.
   reactivationWindowDays  Int?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  store          Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  members        AffiliateMember[]
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  store                   Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  members                 AffiliateMember[]
 
   @@index([storeId, status])
 }
 
 model AffiliateMember {
-  id                  String                      @id @default(cuid())
-  storeId             String
-  programId           String?
-  firstName           String
-  lastName            String
-  email               String
-  status              String                      @default("pending")
-  source              String?
-  country             String?
+  id                     String                      @id @default(cuid())
+  storeId                String
+  programId              String?
+  firstName              String
+  lastName               String
+  email                  String
+  status                 String                      @default("pending")
+  source                 String?
+  country                String?
   // Multi-tenant: was @unique globally — that was a tenant leak (Store A
   // could enumerate Store B's codes, and a code collision across stores
   // would falsely block creation). Scoped uniqueness via @@unique below.
-  affiliateCode       String
-  couponCode          String?
-  referralLink        String?
-  shortLink           String?
-  instagramUsername   String?
-  instagramProfileUrl String?
-  clicksTotal         Int                         @default(0)
-  ordersTotal         Int                         @default(0)
-  salesTotal          Decimal                     @default(0) @db.Decimal(12, 2)
-  commissionTotal     Decimal                     @default(0) @db.Decimal(12, 2)
-  approvedBalance     Decimal                     @default(0) @db.Decimal(12, 2)
+  affiliateCode          String
+  couponCode             String?
+  referralLink           String?
+  shortLink              String?
+  instagramUsername      String?
+  instagramProfileUrl    String?
+  clicksTotal            Int                         @default(0)
+  ordersTotal            Int                         @default(0)
+  salesTotal             Decimal                     @default(0) @db.Decimal(12, 2)
+  commissionTotal        Decimal                     @default(0) @db.Decimal(12, 2)
+  approvedBalance        Decimal                     @default(0) @db.Decimal(12, 2)
   // Per-affiliate commission override. When null, the program's
   // commissionRate is used. Values 0.00–1.00 (fraction of sale).
-  commissionRateOverride Decimal?                 @db.Decimal(5, 4)
+  commissionRateOverride Decimal?                    @db.Decimal(5, 4)
   // Payout instrument free-form ("PayPal: name@…" / "Bit: 05x-…" /
   // "IBAN: IL…"). Not validated — merchants have their own conventions.
-  payoutMethod        String?
-  payoutDetails       String?
-  joinedAt            DateTime                    @default(now())
-  lastLoginAt         DateTime?
-  createdAt           DateTime                    @default(now())
-  updatedAt           DateTime                    @updatedAt
-  store               Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  program             AffiliateProgram?           @relation(fields: [programId], references: [id], onDelete: SetNull)
-  coupons             AffiliateCoupon[]
-  couponAssignments   AffiliateCouponAssignment[]
-  attributions        AffiliateAttribution[]
-  attributionSessions AttributionSession[]
+  payoutMethod           String?
+  payoutDetails          String?
+  joinedAt               DateTime                    @default(now())
+  lastLoginAt            DateTime?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  store                  Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  program                AffiliateProgram?           @relation(fields: [programId], references: [id], onDelete: SetNull)
+  coupons                AffiliateCoupon[]
+  couponAssignments      AffiliateCouponAssignment[]
+  attributions           AffiliateAttribution[]
+  attributionSessions    AttributionSession[]
 
   @@unique([storeId, email])
   @@unique([storeId, affiliateCode])
@@ -1685,42 +1687,42 @@ model SprintAd {
 // replace. The parsed rows live in GanttRow. BI insights are cached as
 // JSON on this row so the UI can re-render without a fresh agent call.
 model GanttSheet {
-  id            String      @id @default(cuid())
-  storeId       String
+  id                  String     @id @default(cuid())
+  storeId             String
   // Operator-visible label, defaults to the uploaded filename.
-  title         String
+  title               String
   // Original filename + content type, for download / debugging.
-  originalName  String
-  contentType   String
-  bytesLength   Int
+  originalName        String
+  contentType         String
+  bytesLength         Int
   // R2/local key — the raw .xlsx is preserved so we can re-parse with
   // future schema improvements without asking the operator to re-upload.
-  storageKey    String?
+  storageKey          String?
   // Span of the parsed rows (min start, max end) — cached for the UI list.
-  rangeStart    DateTime?
-  rangeEnd      DateTime?
+  rangeStart          DateTime?
+  rangeEnd            DateTime?
   // Count of rows that parsed cleanly.
-  rowCount      Int         @default(0)
+  rowCount            Int        @default(0)
   // Distinct roles + categories detected. Stored as JSON string arrays
   // so the UI can render filter chips without re-aggregating.
-  rolesJson     Json        @default("[]")
-  categoriesJson Json       @default("[]")
+  rolesJson           Json       @default("[]")
+  categoriesJson      Json       @default("[]")
   // Every tab in the uploaded workbook + which one we actually parsed.
   // Lets the UI offer a "wrong tab? switch to..." picker without needing
   // to re-open the raw file server-side.
-  sheetNamesJson Json       @default("[]")
-  parsedSheetName String?
+  sheetNamesJson      Json       @default("[]")
+  parsedSheetName     String?
   // Cached BI agent output. Shape:
   //   { generatedAt, summary, insights: [{title, severity, body}], actions: [...] }
-  insightsJson  Json?
+  insightsJson        Json?
   insightsGeneratedAt DateTime?
   // Cached MarketingBrief output (see gantt-brief-generator-service).
-  briefJson     Json?
-  briefGeneratedAt DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  rows          GanttRow[]
+  briefJson           Json?
+  briefGeneratedAt    DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  store               Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  rows                GanttRow[]
 
   @@index([storeId, createdAt(sort: Desc)])
 }
@@ -1730,42 +1732,79 @@ model GanttSheet {
 // `actionType` lets the UI render an "execute" button (create discount,
 // open Creative wizard, etc.). When null, the row is informational only.
 model GanttRow {
-  id           String     @id @default(cuid())
-  sheetId      String
+  id                String     @id @default(cuid())
+  sheetId           String
   // Denormalized for fast multi-tenant queries.
-  storeId      String
+  storeId           String
   // 1-based index inside the source sheet — preserves the operator's
   // intentional ordering even after filtering.
-  rowIndex     Int
-  task         String
-  role         String?
-  category     String?
-  startDate    DateTime?
-  endDate      DateTime?
+  rowIndex          Int
+  task              String
+  role              String?
+  category          String?
+  startDate         DateTime?
+  endDate           DateTime?
   // Free-form status text from the sheet (todo / in progress / done / etc.).
-  status       String?
+  status            String?
   // Optional action wiring. Values we currently understand:
   //   "discount_code" | "creative_image" | "creative_banner" |
   //   "creative_video" | "email_campaign" | "social_post" | "blog_post"
   // The UI maps each to an existing service. Null = no action button.
-  actionType   String?
+  actionType        String?
   // Action-specific payload (discount %, creative brief, etc.) — kept as
   // a JSON blob so different action types can use different schemas.
   actionPayloadJson Json?
   // Execution outcome — recorded when the operator clicks the action
   // button. Shape: { executedAt, providerRef, providerUrl, error }.
-  executionJson Json?
+  executionJson     Json?
   // Raw parsed cells from the row — kept for round-trip + debug. JSON
   // object keyed by lowercased header.
-  rawJson      Json?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  sheet        GanttSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
-  store        Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  rawJson           Json?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  sheet             GanttSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  store             Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([sheetId, rowIndex])
   @@index([sheetId, role])
   @@index([sheetId, category])
   @@index([sheetId, startDate])
   @@index([storeId, startDate])
+}
+
+// Cached BI tool results, so a follow-up question in the same conversation
+// doesn't re-run a 30-day margin rollup that cannot have changed in the
+// intervening minute. Written and read by lib/services/bi-tool-cache.ts.
+//
+// SECURITY: storeId is part of the unique key, not just a column. A cache
+// keyed on (toolName, argsHash) alone would serve one merchant's numbers to
+// another — the isolation guarantee has to survive the optimisation.
+// tests/unit/bi-tool-cache-isolation.test.ts pins this.
+model BiToolCache {
+  id        String   @id @default(cuid())
+  storeId   String
+  toolName  String
+  // sha256 of the canonicalised (key-sorted) tool arguments.
+  argsHash  String
+  payload   String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, toolName, argsHash])
+  @@index([expiresAt])
+}
+
+// Hourly headline figures for a store, injected into the BI analyst's system
+// prompt so routine questions ("how are we doing?") are answered with zero
+// tool calls.
+model BiStoreSnapshot {
+  id          String   @id @default(cuid())
+  storeId     String   @unique
+  // Pre-rendered plain text — the prompt wants prose, not JSON.
+  summaryText String
+  generatedAt DateTime @default(now())
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([generatedAt])
 }
