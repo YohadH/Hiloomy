@@ -21,7 +21,7 @@ export const BI_TOOL_DEFINITIONS = [
           type: "integer",
           minimum: 1,
           maximum: 365,
-          description: "Window length in days, ending today. Default 30."
+          description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window."
         }
       },
       required: []
@@ -60,7 +60,7 @@ export const BI_TOOL_DEFINITIONS = [
           type: "integer",
           minimum: 1,
           maximum: 365,
-          description: "Window length in days, ending today. Default 30."
+          description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window."
         }
       },
       required: []
@@ -77,7 +77,7 @@ export const BI_TOOL_DEFINITIONS = [
           type: "integer",
           minimum: 1,
           maximum: 365,
-          description: "Window length in days, ending today. Default 30."
+          description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window."
         }
       },
       required: []
@@ -111,7 +111,8 @@ export const BI_TOOL_DEFINITIONS = [
           type: "integer",
           minimum: 7,
           maximum: 90,
-          description: "Window length in days, ending today. Default 30."
+          description:
+            "Window length in days, ending today. Default 30. GA4 rolls up daily and this tool has a 7-day MINIMUM — it cannot answer 'today'. For today's sales use get_profit_summary or get_orders with days: 1."
         }
       },
       required: []
@@ -180,7 +181,7 @@ export const BI_TOOL_DEFINITIONS = [
           description:
             "Look up one specific order by its number (with or without a leading #). When set, all other filters are ignored."
         },
-        days: { type: "integer", minimum: 1, maximum: 365, description: "Window length in days, ending today. Default 30." },
+        days: { type: "integer", minimum: 1, maximum: 365, description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window." },
         limit: { type: "integer", minimum: 1, maximum: 50, description: "Max orders to return. Default 20." },
         sort_by: {
           type: "string",
@@ -230,7 +231,7 @@ export const BI_TOOL_DEFINITIONS = [
           type: "integer",
           minimum: 1,
           maximum: 365,
-          description: "Window length in days, ending today. Default 30."
+          description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window."
         },
         limit: {
           type: "integer",

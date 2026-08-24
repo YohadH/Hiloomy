@@ -76,27 +76,54 @@ function BreakdownList({
       </div>
     ) : null;
   }
+  // Two lines per row instead of one. Cramming label + three figures onto a
+  // single line meant the label truncated to nothing in a third-width column,
+  // and the figures ran together into an unreadable string.
+  const top = rows.slice(0, 5);
+  const maxRevenue = Math.max(...top.map((r) => r.revenue), 0);
+
   return (
     <div>
       <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{title}</p>
-      <div className="mt-1.5 space-y-1">
-        {rows.slice(0, 5).map((row) => (
-          <div key={row.key} className="flex items-center justify-between gap-3 text-xs">
-            <span className="min-w-0 flex-1 truncate font-medium" dir="ltr" title={row.key}>
-              {row.key}
-            </span>
-            <span className="shrink-0 tabular-nums text-muted-foreground" dir="ltr">
-              {nf.format(row.sessions)} {lang("ביקורים", "sessions")}
-              {row.transactions > 0 ? (
-                <span className="ms-1.5 font-semibold text-emerald-700">
-                  {row.transactions} {lang("רכישות", "orders")} · ₪{nf.format(row.revenue)}
+      <div className="mt-2 space-y-2.5">
+        {top.map((row) => {
+          const share = maxRevenue > 0 ? Math.max(row.revenue / maxRevenue, row.revenue > 0 ? 0.04 : 0) : 0;
+          return (
+            <div key={row.key} className="text-xs">
+              {/* Sources, UTM values and URLs are Latin — isolate them so the
+                  bidi algorithm can't reorder a URL's query string, but keep
+                  the Hebrew metric labels below in the page's own direction. */}
+              <p className="truncate font-medium text-foreground" dir="ltr" title={row.key}>
+                {row.key}
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                {/* Revenue bar — the panel exists to rank by money earned, so
+                    that is what gets the visual weight. */}
+                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden>
+                  <span
+                    className={`block h-full rounded-full ${row.transactions > 0 ? "bg-emerald-600" : "bg-transparent"}`}
+                    style={{ width: `${Math.round(share * 100)}%` }}
+                  />
                 </span>
-              ) : (
-                <span className="ms-1.5 text-rose-600">{lang("0 רכישות", "0 orders")}</span>
-              )}
-            </span>
-          </div>
-        ))}
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  <bdi>{nf.format(row.sessions)}</bdi> {lang("ביקורים", "sessions")}
+                </span>
+                {row.transactions > 0 ? (
+                  <span className="shrink-0 font-semibold text-emerald-700 tabular-nums">
+                    <bdi>₪{nf.format(row.revenue)}</bdi>
+                    <span className="ms-1 font-normal text-muted-foreground">
+                      (<bdi>{row.transactions}</bdi> {lang("רכישות", "orders")})
+                    </span>
+                  </span>
+                ) : (
+                  <span className="shrink-0 text-[11px] font-medium text-rose-600">
+                    {lang("לא הביא רכישות", "no purchases")}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -237,8 +264,11 @@ export function TrafficSearchSection({
               </p>
             </div>
 
+            {/* Three columns only from lg. At md each column was ~1/3 of the
+                card, which left no room for a landing-page URL beside its
+                figures — every label truncated to a few characters. */}
             {hasBreakdowns ? (
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
                 <BreakdownList
                   title={lang("מקורות (source / medium)", "Sources (source / medium)")}
                   rows={ga4.topSources}
