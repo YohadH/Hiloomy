@@ -50,14 +50,40 @@ export const ORDERS_QUERY = /* GraphQL */ `
           customer {
             id
           }
+          # These interface fields are what let us tell a percentage code
+          # from a free-gift (BOGO) promotion, and a real code from a manual
+          # discount typed in by staff. Without them every discount looked
+          # like the same thing, and per-product margin was unreadable —
+          # a BOGO gift books as a ~100% line discount on the gifted product
+          # while the revenue sits on whatever triggered it.
           discountApplications(first: 20) {
             edges {
               node {
                 __typename
+                allocationMethod
+                targetSelection
+                targetType
+                value {
+                  __typename
+                  ... on PricingPercentageValue {
+                    percentage
+                  }
+                  ... on MoneyV2 {
+                    amount
+                    currencyCode
+                  }
+                }
                 ... on DiscountCodeApplication {
                   code
                 }
                 ... on ManualDiscountApplication {
+                  title
+                  description
+                }
+                ... on AutomaticDiscountApplication {
+                  title
+                }
+                ... on ScriptDiscountApplication {
                   title
                 }
               }

@@ -55,6 +55,8 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
   const [busy, setBusy] = useState(false);
   // Live text of an in-flight streamed BI answer (null = not streaming).
   const [streaming, setStreaming] = useState<string | null>(null);
+  // Tool names, in call order, for the live progress list.
+  const [steps, setSteps] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -126,18 +128,33 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
           // Direct-API path: the answer streams — render it as it arrives.
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
+          // `raw` accumulates everything off the wire, including the tool
+          // frames. `full` is the prose only — what the merchant reads and
+          // what gets stored in history.
+          let raw = "";
           let full = "";
           setStreaming("");
+          setSteps([]);
           try {
             for (;;) {
               const { done, value } = await reader.read();
               if (done) break;
-              full += decoder.decode(value, { stream: true });
+              raw += decoder.decode(value, { stream: true });
+              const split = splitControlFrames(raw);
+              // Keep any trailing partial frame in `raw` so a frame cut
+              // across two chunks isn't rendered as garbage prose.
+              raw = split.pending;
+              if (split.tools.length) {
+                setSteps((prev) => [...prev, ...split.tools]);
+              }
+              full += split.text;
               setStreaming(full);
             }
-            full += decoder.decode();
+            raw += decoder.decode();
+            full += splitControlFrames(raw).text;
           } finally {
             setStreaming(null);
+            setSteps([]);
           }
           pushMessage("bi", {
             role: "agent",
@@ -229,8 +246,34 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
           {thread.map((m, i) => (
             <Bubble key={i} role={m.role} text={m.text} isHe={isHe} />
           ))}
+          {/* Live tool timeline. A turn can run several tool rounds over a
+              minute or more; showing which step is running turns dead air
+              into visible progress, and tells the merchant what the answer
+              is actually grounded in. Completed steps stay listed. */}
+          {active === "bi" && busy && steps.length > 0 ? (
+            <ol className="space-y-1.5 rounded-xl border border-border/70 bg-muted/40 px-3 py-2.5" aria-live="polite">
+              {steps.map((name, i) => {
+                const isLast = i === steps.length - 1;
+                return (
+                  <li key={`${name}-${i}`} className="flex items-center gap-2 text-[11px]">
+                    {isLast ? (
+                      <Loader2 className="h-3 w-3 shrink-0 animate-spin text-emerald-600" aria-hidden />
+                    ) : (
+                      <span className="grid h-3 w-3 shrink-0 place-items-center rounded-full bg-emerald-600 text-[8px] font-bold text-white" aria-hidden>
+                        ✓
+                      </span>
+                    )}
+                    <span className={isLast ? "font-medium text-foreground" : "text-muted-foreground"}>
+                      {toolLabel(name, isHe)}
+                      {isLast ? "…" : ""}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : null}
           {streaming ? <Bubble role="agent" text={streaming} isHe={isHe} /> : null}
-          {busy && !streaming ? (
+          {busy && !streaming && steps.length === 0 ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
               {active === "bi"
@@ -320,6 +363,61 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
       <style>{`@keyframes gg-chat-pop { from { opacity: 0; transform: translateY(8px) scale(0.96); } to { opacity: 1; transform: none; } }`}</style>
     </div>
   );
+}
+
+// Split a raw stream chunk into prose and tool-progress frames.
+//
+// The server interleaves control frames delimited by U+001E RECORD
+// SEPARATOR, a character the model will never produce in prose. Anything
+// after the last delimiter is returned as `pending` because a frame can be
+// cut in half across two network chunks — rendering that half as text would
+// briefly show raw JSON in the answer.
+function splitControlFrames(raw: string): { text: string; tools: string[]; pending: string } {
+  const RS = "";
+  if (!raw.includes(RS)) return { text: raw, tools: [], pending: "" };
+  const parts = raw.split(RS);
+  // An odd number of delimiters means the last frame is still arriving.
+  const incomplete = parts.length % 2 === 0;
+  const pending = incomplete ? RS + parts.pop()! : "";
+  let text = "";
+  const tools: string[] = [];
+  parts.forEach((part, i) => {
+    if (i % 2 === 0) {
+      text += part;
+      return;
+    }
+    try {
+      const frame = JSON.parse(part) as { t?: string; name?: string };
+      if (frame.t === "tool" && frame.name) tools.push(frame.name);
+    } catch {
+      // Not a frame we understand — drop it rather than leak JSON into prose.
+    }
+  });
+  return { text, tools, pending };
+}
+
+// Merchant-facing labels for the tool names. Anything unmapped falls back to
+// a generic line rather than exposing an internal identifier.
+const TOOL_LABELS: Record<string, { he: string; en: string }> = {
+  get_profit_summary: { he: "קורא נתוני רווח", en: "Reading profit data" },
+  get_kpi_trend: { he: "בודק מגמות", en: "Checking trends" },
+  get_channel_performance: { he: "בודק ערוצי מכירה", en: "Checking sales channels" },
+  get_ad_performance: { he: "בודק ביצועי קמפיינים", en: "Checking campaign performance" },
+  get_discount_effectiveness: { he: "בודק קודי הנחה", en: "Checking discount codes" },
+  get_product_performance: { he: "בודק ביצועי מוצרים", en: "Checking product performance" },
+  get_orders: { he: "שולף הזמנות", en: "Fetching orders" },
+  get_customers: { he: "בודק נתוני לקוחות", en: "Checking customer data" },
+  get_traffic: { he: "בודק תנועה באתר", en: "Checking site traffic" },
+  get_organic_search: { he: "בודק חיפוש אורגני", en: "Checking organic search" },
+  get_retention: { he: "בודק שימור לקוחות", en: "Checking retention" },
+  get_open_alerts: { he: "בודק התראות פתוחות", en: "Checking open alerts" },
+  get_competitor_week: { he: "בודק מתחרים", en: "Checking competitors" }
+};
+
+function toolLabel(name: string, isHe: boolean): string {
+  const entry = TOOL_LABELS[name];
+  if (entry) return isHe ? entry.he : entry.en;
+  return isHe ? "מנתח נתונים" : "Analysing data";
 }
 
 function Bubble({ role, text, isHe }: { role: "user" | "agent"; text: string; isHe: boolean }) {

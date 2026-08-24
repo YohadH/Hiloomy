@@ -8,6 +8,14 @@
 //     (it has no `id`), so it CANNOT be a bulk connection — we use the inline
 //     `Order.discountCodes` scalar list instead, then re-shape it into the
 //     `discountApplications.edges[].node.code` form the shared mapper expects.
+//     CONSEQUENCE (2026-08-24): `discountCodes` is a flat list of strings, so it
+//     carries no mechanism — bulk-synced orders get null applicationType /
+//     valueType / targetSelection on DiscountUsage. That reads as "unknown",
+//     never as "percentage", and the incremental paginated sync fills real
+//     values in on the next update to each order. Querying discountApplications
+//     here would need normalizer work: it is a connection, and connections in
+//     bulk mode flatten into separate JSONL lines against a parent that never
+//     appears as its own root record (same reason refundLineItems is omitted).
 //   - `first`/`after` pagination arguments are forbidden — Shopify paginates for us.
 //   - `Order.refunds` is queried as an inline list (no `edges`) so it stays embedded
 //     in the order object rather than being flattened into separate JSONL lines.

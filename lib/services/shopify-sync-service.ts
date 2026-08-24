@@ -568,7 +568,18 @@ async function upsertOrderFromMapped(
         code: discount.code,
         // Per-code, ex-VAT — computed in the mapper from each line's
         // discountAllocations (was: order total split evenly, tax-inclusive).
-        amount: discount.amount ?? mapped.order.totalDiscounts / Math.max(mapped.discounts.length, 1)
+        amount: discount.amount ?? mapped.order.totalDiscounts / Math.max(mapped.discounts.length, 1),
+        // Mechanism, so readers can tell a percentage code from a free-gift
+        // promotion and a real code from a manual staff discount. Null on
+        // rows synced before these columns existed — treat null as unknown.
+        applicationType: discount.applicationType ?? null,
+        allocationMethod: discount.allocationMethod ?? null,
+        targetSelection: discount.targetSelection ?? null,
+        targetType: discount.targetType ?? null,
+        valueType: discount.valueType ?? null,
+        valuePercent: discount.valuePercent ?? null,
+        valueAmount: discount.valueAmount ?? null,
+        title: discount.title ?? null
       }
     });
   }

@@ -325,23 +325,36 @@ export function GanttStudio({
   }, [selectedSheetId]);
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const original = event.target.files?.[0];
-    event.target.value = "";
+    const input = event.target;
+    const original = input.files?.[0];
     if (!original) return;
     setUploadError(null);
     setUploading(true);
     try {
-      // Guard against multipart parsers that choke on non-ASCII filenames
-      // (Hebrew, emoji, etc.) by rewrapping the file with a safe name +
-      // sending the original name as a separate title field so we don't
-      // lose it. Same bytes, safer filename on the wire.
+      // Read the bytes BEFORE anything can release the input's file handle.
+      //
+      // This used to do `input.value = ""` on the line after grabbing the
+      // File, to reset the picker. Clearing the input drops the browser's
+      // backing handle, and the File object — though still a live JS
+      // reference — can serialise as an empty or missing multipart part.
+      // The upload then arrived carrying only `title`, which is exactly the
+      // "No file received" the server reported. The picker is now reset in
+      // `finally`, once the bytes are safely in memory.
+      const bytes = await original.arrayBuffer();
+      if (bytes.byteLength === 0) {
+        throw new Error(
+          isHe
+            ? "הקובץ נקרא ריק. נסו לבחור אותו שוב, או לשמור עותק חדש ולהעלות אותו."
+            : "The file read as empty. Pick it again, or save a fresh copy and upload that."
+        );
+      }
+
+      // Rewrap with an ASCII-safe name. The original name still travels as
+      // `title`, so nothing is lost if the sheet was named in Hebrew.
       const safeName = original.name.replace(/[^\w.\- ]+/g, "_") || "gantt.xlsx";
-      const file =
-        safeName === original.name
-          ? original
-          : new File([original], safeName, {
-              type: original.type || "application/octet-stream"
-            });
+      const file = new File([bytes], safeName, {
+        type: original.type || "application/octet-stream"
+      });
       const fd = new FormData();
       fd.append("file", file);
       fd.append("title", original.name.replace(/\.[^.]+$/, ""));
@@ -357,6 +370,10 @@ export function GanttStudio({
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
+      // Reset the picker only now — doing it up front is what broke the
+      // upload. Also lets the same file be re-selected after a failure,
+      // which a non-empty input would otherwise suppress (no change event).
+      input.value = "";
       setUploading(false);
     }
   };

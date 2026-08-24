@@ -84,7 +84,19 @@ export async function POST(request: Request) {
             question,
             history,
             section,
-            onTextDelta: (delta) => controller.enqueue(encoder.encode(delta))
+            onTextDelta: (delta) => controller.enqueue(encoder.encode(delta)),
+            // Tool-progress frames ride the same text/plain stream, wrapped
+            // in U+001E (RECORD SEPARATOR). A control character the model
+            // will never emit in prose means the widget can split them out
+            // without a second connection or a protocol change — and any
+            // client that doesn't know about them still renders a readable
+            // answer, just without the step list.
+            onToolStart: (toolName) =>
+              // Frames are delimited by U+001E (RECORD SEPARATOR) on both
+              // sides. It is a literal control byte in the template below.
+              controller.enqueue(
+                encoder.encode(`${JSON.stringify({ t: "tool", name: toolName })}`)
+              )
           });
           if (!finalText) {
             controller.enqueue(

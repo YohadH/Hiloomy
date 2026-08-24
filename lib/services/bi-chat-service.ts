@@ -105,6 +105,10 @@ export interface RunBiChatTurnInput {
   section?: string | null;
   // Called with each text delta as the model writes the visible answer.
   onTextDelta?: (delta: string) => void;
+  // Called when the model decides to call a tool, before it runs. A turn can
+  // spend a minute across several tool rounds with nothing on screen — this
+  // is what lets the widget show what it is doing instead of a spinner.
+  onToolStart?: (toolName: string) => void;
 }
 
 // ── Tools ───────────────────────────────────────────────────────────────
@@ -758,6 +762,8 @@ async function runOpenAiTurn(input: RunBiChatTurnInput, runtimeContext: string):
 
     // Every call must get an output back, failures included — the next
     // request is rejected if any call_id is left unanswered.
+    for (const call of calls) input.onToolStart?.(call.name);
+
     const results = await Promise.all(
       calls.map(async (call) => {
         try {
@@ -846,6 +852,7 @@ async function runAnthropicTurn(input: RunBiChatTurnInput, runtimeContext: strin
 
     const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
       toolUseBlocks.map(async (block): Promise<Anthropic.ToolResultBlockParam> => {
+        input.onToolStart?.(block.name);
         try {
           const content = await executeTool(
             input.storeId,

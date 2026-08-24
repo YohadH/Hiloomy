@@ -345,14 +345,52 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
     }];
   });
 
-  const discountCodes = Array.from(
-    new Set<string>(
-      order.discountApplications?.edges
-        ?.map((edge: any) => edge.node)
-        ?.map((discount: any) => String(discount.code ?? discount.title ?? "Untitled discount").trim())
-        ?.filter((code: string) => isAnalyticsDiscountCode(code)) ?? []
-    )
-  );
+  // Keep the whole application node per code, not just the name — the
+  // mechanism fields below are what let readers tell a percentage code from
+  // a free-gift promotion, and a real code from a manual staff discount.
+  // First writer wins on duplicate codes; Shopify does not repeat a code
+  // with different mechanics on one order.
+  const discountNodeByCode = new Map<string, any>();
+  (order.discountApplications?.edges ?? []).forEach((edge: any) => {
+    const node = edge?.node ?? {};
+    const code = String(node.code ?? node.title ?? "Untitled discount").trim();
+    if (!code || !isAnalyticsDiscountCode(code)) return;
+    if (!discountNodeByCode.has(code)) discountNodeByCode.set(code, node);
+  });
+  const discountCodes = Array.from(discountNodeByCode.keys());
+
+  // Shopify's `value` is a union: PricingPercentageValue OR MoneyV2.
+  const readValue = (node: any): {
+    valueType: string | null;
+    valuePercent: number | null;
+    valueAmount: number | null;
+  } => {
+    const value = node?.value;
+    if (!value) return { valueType: null, valuePercent: null, valueAmount: null };
+    if (typeof value.percentage === "number") {
+      return { valueType: "percentage", valuePercent: value.percentage, valueAmount: null };
+    }
+    if (value.amount !== undefined && value.amount !== null) {
+      const parsed = Number(value.amount);
+      return {
+        valueType: "fixed_amount",
+        valuePercent: null,
+        valueAmount: Number.isFinite(parsed) ? roundCurrency(parsed) : null
+      };
+    }
+    return { valueType: null, valuePercent: null, valueAmount: null };
+  };
+
+  // "DiscountCodeApplication" → "code"; keeps the stored value short and
+  // stable if Shopify ever renames the GraphQL types.
+  const readApplicationType = (typename: unknown): string | null => {
+    if (typeof typename !== "string" || !typename) return null;
+    if (typename.startsWith("DiscountCode")) return "code";
+    if (typename.startsWith("Manual")) return "manual";
+    if (typename.startsWith("Automatic")) return "automatic";
+    if (typename.startsWith("Script")) return "script";
+    return typename;
+  };
   // Ex-VAT per-code amount from the line allocations; falls back to an
   // even split of the order's (VAT-stripped) total for the rare order
   // whose allocations carry no application index.
@@ -363,12 +401,24 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
             (1 - orderTotalTax / Math.max(sumOriginalTotal, 1))
         )
       : Number(mappedOrder.totalDiscounts);
-  const mappedDiscounts = discountCodes.map((code) => ({
-    code,
-    amount: discountTotalsByCode.has(code)
-      ? roundCurrency(discountTotalsByCode.get(code) as number)
-      : roundCurrency(orderDiscountNet / Math.max(discountCodes.length, 1))
-  }));
+  const mappedDiscounts = discountCodes.map((code) => {
+    const node = discountNodeByCode.get(code) ?? {};
+    const value = readValue(node);
+    return {
+      code,
+      amount: discountTotalsByCode.has(code)
+        ? roundCurrency(discountTotalsByCode.get(code) as number)
+        : roundCurrency(orderDiscountNet / Math.max(discountCodes.length, 1)),
+      applicationType: readApplicationType(node.__typename),
+      allocationMethod: typeof node.allocationMethod === "string" ? node.allocationMethod : null,
+      targetSelection: typeof node.targetSelection === "string" ? node.targetSelection : null,
+      targetType: typeof node.targetType === "string" ? node.targetType : null,
+      valueType: value.valueType,
+      valuePercent: value.valuePercent,
+      valueAmount: value.valueAmount,
+      title: typeof node.title === "string" ? node.title : null
+    };
+  });
 
   const mappedRefunds = refunds.map((refund: any) => ({
     shopifyRefundId: stripGid(refund.id),

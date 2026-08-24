@@ -103,9 +103,15 @@ export async function POST(request: Request) {
           observed.push(`${name} = string(len=${String(value).length})`);
         }
       }
+      // The old hint here blamed Hebrew filenames. That was a guess, and a
+      // wrong one — the real cause was the picker clearing its own input
+      // before the bytes were read, which invalidated the File client-side
+      // so the part never reached us. Renaming to ASCII changed nothing.
+      // Fixed in components/gantt/gantt-studio.tsx; this stays as a
+      // diagnostic for whatever comes next.
       throw new AppError(
         `No file received. Multipart body carried: ${observed.length ? observed.join("; ") : "(no fields)"}. ` +
-          `If the filename contains Hebrew, try renaming to ASCII (e.g. gantt-july.xlsx) and re-uploading.`,
+          `The file part never arrived — re-pick the file and try again. If it repeats, the browser may be releasing the file before upload.`,
         400
       );
     }

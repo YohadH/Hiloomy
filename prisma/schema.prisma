@@ -634,11 +634,41 @@ model OrderLineItem {
 }
 
 model DiscountUsage {
-  id        String   @id @default(cuid())
-  storeId   String
-  orderId   String
-  code      String
-  amount    Decimal  @default(0) @db.Decimal(12, 2)
+  id      String  @id @default(cuid())
+  storeId String
+  orderId String
+  code    String
+  amount  Decimal @default(0) @db.Decimal(12, 2)
+
+  // ── Mechanism (added 2026-08-24) ──────────────────────────────────────
+  // Storing only (code, amount) made every discount look identical, which
+  // is how the BI analyst read a BOGO free-gift as a failing product: the
+  // gifted item books a ~100% line discount while the revenue that paid
+  // for it sits on whatever triggered the promotion.
+  //
+  // All nullable — rows synced before this existed keep null, and readers
+  // must treat null as "unknown mechanism", never as "percentage".
+
+  // DiscountCodeApplication | ManualDiscountApplication |
+  // AutomaticDiscountApplication | ScriptDiscountApplication
+  // "manual" is the one to watch: it is staff typing a discount at order
+  // creation, NOT a code that can be switched off.
+  applicationType  String?
+  // ACROSS (spread over the order) | EACH (applied per entitled item)
+  allocationMethod String?
+  // ALL | ENTITLED | EXPLICIT — ENTITLED/EXPLICIT means it only hits
+  // specific products, the signature of a gift or product-scoped promo.
+  targetSelection  String?
+  // LINE_ITEM | SHIPPING_LINE
+  targetType       String?
+  // "percentage" | "fixed_amount", with whichever value applies.
+  valueType        String?
+  valuePercent     Decimal? @db.Decimal(6, 2)
+  valueAmount      Decimal? @db.Decimal(12, 2)
+  // Human-readable name for manual/automatic/script discounts, which have
+  // a title instead of a code.
+  title            String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -646,6 +676,7 @@ model DiscountUsage {
 
   @@unique([storeId, orderId, code])
   @@index([storeId, code])
+  @@index([storeId, applicationType])
 }
 
 model Refund {
