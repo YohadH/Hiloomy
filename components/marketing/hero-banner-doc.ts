@@ -19,13 +19,12 @@ export type BannerLocale = "he" | "en";
 // Palette. --green-deep and --orange are pulled from the /welcome page tokens
 // (GREEN #14512C, ORANGE #D1731F) so the banner reads as part of the page and
 // its CTA matches the page's real CTA button. --green stays the brighter
-// chart/accent green and --leak the warmer alert tone; both only ever appear
+// chart/accent green, which only ever appears
 // inside the banner, where nothing sits next to them to clash.
 const PALETTE = `
     --green:#15A34A;
     --green-deep:#14512C;
     --orange:#D1731F;
-    --leak:#C4551F;
     --ink:#201E1D;
     --muted:#5E7267;
     --paper:#FFFFFF;
@@ -50,8 +49,6 @@ const ICON_SHEETS = `<svg viewBox="0 0 48 48"><path d="M17 8h10l9 9v20a3 3 0 0 1
 const ICON_SHOPIFY = `<svg viewBox="0 0 48 48"><path d="M19.5 15.5v-1.6a4.5 4.5 0 0 1 9 0v1.6" fill="none" stroke="#6FAE4B" stroke-width="2.3" stroke-linecap="round"/><path d="M14.5 15.5h19l1.7 21a2.2 2.2 0 0 1-2.2 2.4H15a2.2 2.2 0 0 1-2.2-2.4z" fill="#95BF47"/><text x="24" y="34.5" text-anchor="middle" font-family="Arial, sans-serif" font-weight="800" font-style="italic" font-size="19" fill="#fff">S</text></svg>`;
 const ICON_WOO = `<svg viewBox="5 15 38 19"><text x="24" y="30" text-anchor="middle" font-family="'Baloo 2',Arial,sans-serif" font-weight="800" font-size="16" fill="#fff">Woo</text></svg>`;
 
-const ICON_ALERT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 3v10M12 21a1.4 1.4 0 1 0 0-2.8 1.4 1.4 0 0 0 0 2.8Z" stroke-linecap="round"/></svg>`;
-const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12.5 10 17 19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 interface Copy {
   fonts: string;
@@ -68,16 +65,6 @@ interface Copy {
   tipProfit: string;
   tipProducts: string;
   tipCampaigns: string;
-  leakEyebrow: string;
-  leakHeadBefore: string;
-  leakHeadAfter: string;
-  leakRows: { title: string; sub: string }[];
-  // Portrait drops the "· potential +₪X/mo" tail — at 390px the full line
-  // wraps to three rows and pushes the second card off the frame.
-  leakRowsShort: { title: string; sub: string }[];
-  leakClearTitle: string;
-  leakClearSub: string;
-  leakClear: string;
   fragSessions: string;
   fragRoas: string;
   fragRefund: string;
@@ -92,7 +79,7 @@ const EN: Copy = {
     "family=Baloo+2:wght@500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800",
   display: '"Bricolage Grotesque",Georgia,serif',
   sans: '"Manrope",system-ui,-apple-system,sans-serif',
-  tabs: ["Dashboard", "Profit", "Traffic", "Leaks"],
+  tabs: ["Dashboard", "Profit", "Products", "Reports"],
   period: "Last 30 days",
   kpis: [
     { label: "Total Sales", sub: "before refunds &amp; fees" },
@@ -108,26 +95,6 @@ const EN: Copy = {
   tipProfit: "Profit",
   tipProducts: "Top products",
   tipCampaigns: "Meta Ads campaigns",
-  leakEyebrow: "Hiloomy Leak Scan · Last 30 days",
-  leakHeadBefore: "We found ",
-  leakHeadAfter: " in profit leaks",
-  leakRows: [
-    {
-      title: "Commissions paid on customers you already owned",
-      sub: "Action: <b>set a reduced returning-customer policy</b> · potential +₪1,958/mo"
-    },
-    {
-      title: "Discount codes selling at a loss after product cost",
-      sub: "Action: <b>stop or shrink the flagged codes</b> · potential +₪1,901/mo"
-    }
-  ],
-  leakRowsShort: [
-    { title: "Commissions on customers you already owned", sub: "<b>Set a reduced returning-customer policy</b>" },
-    { title: "Discount codes selling at a loss", sub: "<b>Stop or shrink the flagged codes</b>" }
-  ],
-  leakClearTitle: "Ad spend pushing high-return products",
-  leakClearSub: "5 campaigns checked — none is pushing a high-return product.",
-  leakClear: "Clear",
   fragSessions: "Sessions",
   fragRoas: "ROAS",
   fragRefund: "Refund rate",
@@ -135,8 +102,7 @@ const EN: Copy = {
   caps: [
     { eb: "Meta · Google Ads · GA4 · Shopify · TikTok", h: "When your vision is blurred<br>by all the <em>data</em>…" },
     { eb: "One clear picture", h: "…the full picture comes into <em>focus</em>." },
-    { eb: "Revenue vs profit", h: "Every number, finally <em>in focus</em>." },
-    { eb: "Hiloomy Leak Scan", h: "See exactly where it <em>leaks</em>." }
+    { eb: "Revenue vs profit", h: "Every number, finally <em>in focus</em>." }
   ],
   ctaTag: "Hiloomy makes your vision <em>clear</em>.",
   ctaBtn: "Start free →"
@@ -148,7 +114,7 @@ const HE: Copy = {
   fonts: "family=Baloo+2:wght@500;600;700;800&family=Suez+One&family=Heebo:wght@400;500;600;700;800;900",
   display: '"Suez One",Georgia,serif',
   sans: '"Heebo",system-ui,-apple-system,sans-serif',
-  tabs: ["לוח בקרה", "רווח", "תנועה", "דליפות"],
+  tabs: ["לוח בקרה", "רווח", "מוצרים", "דוחות"],
   period: "30 הימים האחרונים",
   kpis: [
     { label: "סה״כ מכירות", sub: "לפני החזרים ועמלות" },
@@ -164,26 +130,6 @@ const HE: Copy = {
   tipProfit: "רווח",
   tipProducts: "מוצרים מובילים",
   tipCampaigns: "קמפיינים ב־Meta Ads",
-  leakEyebrow: "סריקת דליפות · 30 הימים האחרונים",
-  leakHeadBefore: "מצאנו ",
-  leakHeadAfter: " של דליפות רווח",
-  leakRows: [
-    {
-      title: "עמלות ששולמו על לקוחות שכבר היו שלכם",
-      sub: 'פעולה: <b>הגדירו מדיניות מופחתת ללקוחות חוזרים</b> · פוטנציאל <span class="ltr">+₪1,958</span> לחודש'
-    },
-    {
-      title: "קודי הנחה שמוכרים בהפסד אחרי עלות המוצר",
-      sub: 'פעולה: <b>עצרו או צמצמו את הקודים המסומנים</b> · פוטנציאל <span class="ltr">+₪1,901</span> לחודש'
-    }
-  ],
-  leakRowsShort: [
-    { title: "עמלות על לקוחות שכבר היו שלכם", sub: "<b>הגדירו מדיניות מופחתת ללקוחות חוזרים</b>" },
-    { title: "קודי הנחה שמוכרים בהפסד", sub: "<b>עצרו או צמצמו את הקודים המסומנים</b>" }
-  ],
-  leakClearTitle: "תקציב פרסום שמקדם מוצרים עם אחוז החזרות גבוה",
-  leakClearSub: "נבדקו 5 קמפיינים — אף אחד לא מקדם מוצר עם החזרות גבוהות.",
-  leakClear: "נקי",
   fragSessions: "כניסות",
   fragRoas: "ROAS",
   fragRefund: "אחוז החזרות",
@@ -191,8 +137,7 @@ const HE: Copy = {
   caps: [
     { eb: "Meta · Google Ads · GA4 · Shopify · TikTok", h: "כשכל ה<em>דאטה</em><br>מטשטשת את התמונה…" },
     { eb: "תמונה אחת ברורה", h: "…התמונה המלאה נכנסת ל<em>פוקוס</em>." },
-    { eb: "הכנסות מול רווח", h: "כל מספר, סוף סוף <em>בפוקוס</em>." },
-    { eb: "סריקת דליפות", h: "רואים בדיוק איפה זה <em>דולף</em>." }
+    { eb: "הכנסות מול רווח", h: "כל מספר, סוף סוף <em>בפוקוס</em>." }
   ],
   ctaTag: "Hiloomy הופך את התמונה שלכם ל<em>ברורה</em>.",
   ctaBtn: "מתחילים בחינם ←"
@@ -202,7 +147,21 @@ const copyFor = (locale: BannerLocale) => (locale === "he" ? HE : EN);
 
 // Count-up + stage timeline. Identical for both breakpoints apart from the
 // selectors it drives and the beat durations, so it's generated once.
-function script(frameId: string, kpiSel: string, leakSel: string, capSel: string, tickId: string, reducedStage: string, reducedBeat: number, durations: number[]) {
+interface Beat {
+  stage: number;
+  dur: number;
+  cap?: number;
+  count?: boolean;
+}
+
+function script(
+  frameId: string,
+  kpiSel: string,
+  capSel: string,
+  tickId: string,
+  reducedStage: string,
+  timeline: Beat[]
+) {
   return `
 (function(){
   var f=document.getElementById(${JSON.stringify(frameId)});
@@ -234,28 +193,27 @@ function script(frameId: string, kpiSel: string, leakSel: string, capSel: string
     });
   }
 
-  var ticks=document.getElementById(${JSON.stringify(tickId)});
-  for(var i=0;i<5;i++)ticks.appendChild(document.createElement("i"));
-  var tks=[].slice.call(ticks.children);
-  function mark(b){tks.forEach(function(t,i){t.classList.toggle("on",i<=b);});}
-  var s2b={0:0,1:0,2:1,3:2,4:3,5:4};
-  var D=${JSON.stringify(durations)};
+  // Timeline is passed in rather than hardcoded — stage numbers are sparse
+  // (the Leak Scan beat was removed and the CTA kept its "5"), so the tick
+  // count and stage→beat map are both derived from it.
+  var tl=${JSON.stringify(timeline)};
+  tl.forEach(function(st){ if(st.count) st.onEnter=function(){group(${JSON.stringify(kpiSel)});}; });
 
-  var tl=[
-    {stage:0,dur:D[0],cap:0},
-    {stage:1,dur:D[1]},
-    {stage:2,dur:D[2],cap:2,onEnter:function(){group(${JSON.stringify(kpiSel)});}},
-    {stage:3,dur:D[3],cap:3},
-    {stage:4,dur:D[4],cap:4,onEnter:function(){group(${JSON.stringify(leakSel)});}},
-    {stage:5,dur:D[5]}
-  ];
+  var ticks=document.getElementById(${JSON.stringify(tickId)});
+  var beats=[],s2b={};
+  tl.forEach(function(st){ if(beats.indexOf(st.stage)<0){ s2b[st.stage]=beats.length; beats.push(st.stage); } });
+  // Stage 1 is the sweep — a transition, not its own beat.
+  s2b[1]=0;
+  var nTicks=beats.length-1;
+  for(var i=0;i<nTicks;i++)ticks.appendChild(document.createElement("i"));
+  var tks=[].slice.call(ticks.children);
+  function mark(b){tks.forEach(function(t,i){t.classList.toggle("on",i<=b-0);});}
 
   if(reduce){
     f.setAttribute("data-stage",${JSON.stringify(reducedStage)});
     showCap(2);
     settle(${JSON.stringify(kpiSel)});
-    settle(${JSON.stringify(leakSel)});
-    mark(${reducedBeat});
+    mark(1);
     return;
   }
 
@@ -361,7 +319,7 @@ function desktopDoc(locale: BannerLocale): string {
     transition:opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1);
   }
   .frame[data-stage="2"] .kpis .card,.frame[data-stage="3"] .kpis .card,
-  .frame[data-stage="4"] .kpis .card,.frame[data-stage="5"] .kpis .card{opacity:1;transform:none}
+  .frame[data-stage="5"] .kpis .card{opacity:1;transform:none}
   .kpis .card:nth-child(2){transition-delay:.08s}
   .kpis .card:nth-child(3){transition-delay:.16s}
   .kpis .card:nth-child(4){transition-delay:.24s}
@@ -384,7 +342,7 @@ function desktopDoc(locale: BannerLocale): string {
     padding:clamp(10px,1.6vw,18px);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:8px;
     opacity:0;transform:translateY(14px);transition:opacity .7s ease, transform .7s ease;
   }
-  .frame[data-stage="3"] .chart-card,.frame[data-stage="4"] .chart-card,
+  .frame[data-stage="3"] .chart-card,
   .frame[data-stage="5"] .chart-card{opacity:1;transform:none}
   .cc-head{display:flex;align-items:center;gap:12px}
   .cc-title{font-size:clamp(9px,1.15vw,13.5px);font-weight:700;color:var(--ink)}
@@ -401,11 +359,11 @@ function desktopDoc(locale: BannerLocale): string {
   .rev-line{stroke:var(--green)}
   .prof-line{stroke:var(--orange)}
   .draw{stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 1.5s cubic-bezier(.3,.6,.2,1)}
-  .frame[data-stage="3"] .draw,.frame[data-stage="4"] .draw,.frame[data-stage="5"] .draw{stroke-dashoffset:0}
+  .frame[data-stage="3"] .draw,.frame[data-stage="5"] .draw{stroke-dashoffset:0}
   .area{opacity:0;transition:opacity 1s ease .3s}
-  .frame[data-stage="3"] .area,.frame[data-stage="4"] .area,.frame[data-stage="5"] .area{opacity:1}
+  .frame[data-stage="3"] .area,.frame[data-stage="5"] .area{opacity:1}
   .peak{opacity:0;transition:opacity .5s ease .9s}
-  .frame[data-stage="3"] .peak,.frame[data-stage="4"] .peak,.frame[data-stage="5"] .peak{opacity:1}
+  .frame[data-stage="3"] .peak,.frame[data-stage="5"] .peak{opacity:1}
 
   .cross{position:absolute;left:28%;top:2%;bottom:6%;width:1.5px;
     background:linear-gradient(rgba(20,81,44,0),rgba(20,81,44,.22));opacity:0;transition:opacity .22s ease}
@@ -437,44 +395,13 @@ function desktopDoc(locale: BannerLocale): string {
   /* Product names are Latin brand strings — isolate so RTL can't shuffle them. */
   .ltr{direction:ltr;unicode-bidi:isolate;text-align:start;white-space:nowrap}
 
-  .leak-card{
-    position:absolute;inset:0;border-radius:14px;z-index:10;
-    background:linear-gradient(180deg,#FFF9F4,#FFFFFF 40%);
-    border:1px solid rgba(196,85,31,.28);box-shadow:var(--shadow);
-    padding:clamp(11px,1.7vw,20px);display:flex;flex-direction:column;gap:clamp(7px,1vw,11px);
-    opacity:0;transform:translateY(26px) scale(.985);
-    transition:opacity .6s ease, transform .6s cubic-bezier(.2,.7,.2,1);
-  }
-  .frame[data-stage="4"] .leak-card,.frame[data-stage="5"] .leak-card{opacity:1;transform:none}
-  .lk-eyebrow{font-size:clamp(7px,.9vw,10.5px);font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--orange)}
-  .lk-head{font-family:var(--display);font-weight:800;font-size:clamp(14px,2.5vw,28px);color:var(--ink);letter-spacing:-.02em;line-height:1.05}
-  .lk-head .amt{color:var(--leak);unicode-bidi:isolate;direction:ltr}
-  .lk-rows{display:flex;flex-direction:column;gap:clamp(5px,.75vw,8px);margin-top:2px}
-  .lk-row{display:flex;align-items:center;gap:10px;padding:clamp(6px,.95vw,11px) clamp(8px,1.1vw,13px);
-    border-radius:10px;background:rgba(196,85,31,.05);border:1px solid rgba(196,85,31,.14);
-    opacity:0;transform:translateX(${rtl ? "10px" : "-10px"});transition:opacity .5s ease,transform .5s ease}
-  .frame[data-stage="4"] .lk-row,.frame[data-stage="5"] .lk-row{opacity:1;transform:none}
-  .frame[data-stage="4"] .lk-row:nth-child(2){transition-delay:.14s}
-  .frame[data-stage="4"] .lk-row:nth-child(3){transition-delay:.28s}
-  .lk-row.ok{background:rgba(21,163,74,.05);border-color:rgba(21,163,74,.18)}
-  .lk-ic{width:clamp(16px,2vw,24px);height:clamp(16px,2vw,24px);flex:0 0 auto;border-radius:7px;
-    display:flex;align-items:center;justify-content:center;background:rgba(196,85,31,.14);color:var(--leak)}
-  .lk-row.ok .lk-ic{background:rgba(21,163,74,.14);color:var(--green)}
-  .lk-ic svg{width:58%;height:58%}
-  .lk-body{min-width:0}
-  .lk-t{font-size:clamp(8.5px,1.08vw,13px);font-weight:700;color:var(--ink);line-height:1.15}
-  .lk-s{font-size:clamp(6.8px,.85vw,10px);color:var(--muted);line-height:1.25;margin-top:2px}
-  .lk-s b{color:var(--green-deep);font-weight:700}
-  .lk-amt{margin-inline-start:auto;font-family:var(--display);font-weight:800;font-size:clamp(11px,1.7vw,20px);
-    color:var(--leak);font-variant-numeric:tabular-nums;white-space:nowrap;unicode-bidi:isolate;direction:ltr}
-  .lk-row.ok .lk-amt{color:var(--green);direction:${rtl ? "rtl" : "ltr"}}
 
   /* ================= CHAOS FRAGMENTS ================= */
   .chaos{position:absolute;inset:0;z-index:3;pointer-events:none;transition:opacity .9s ease}
   .frame[data-stage="0"] .chaos{opacity:1}
   .frame[data-stage="1"] .chaos{opacity:.15}
   .frame[data-stage="2"] .chaos,.frame[data-stage="3"] .chaos,
-  .frame[data-stage="4"] .chaos,.frame[data-stage="5"] .chaos{opacity:0}
+  .frame[data-stage="5"] .chaos{opacity:0}
   .frag{position:absolute;border-radius:10px;background:rgba(255,255,255,.75);
     border:1px solid rgba(90,110,100,.25);box-shadow:0 8px 22px rgba(20,40,30,.14);
     filter:grayscale(.85);padding:9px 11px;font-size:10px;color:#5b6b63;font-weight:600;
@@ -540,7 +467,7 @@ function desktopDoc(locale: BannerLocale): string {
   @media (prefers-reduced-motion: reduce){
     .app{filter:none!important;opacity:1!important;transform:none!important}
     .chaos,.sweep{display:none!important}
-    .card,.chart-card,.leak-card,.lk-row{opacity:1!important;transform:none!important}
+    .card,.chart-card{opacity:1!important;transform:none!important}
     .draw{stroke-dashoffset:0!important}.area,.peak{opacity:1!important}
     .intg,.frag{animation:none!important}
   }
@@ -645,36 +572,6 @@ function desktopDoc(locale: BannerLocale): string {
         </div>
       </div>
 
-      <div class="leak-card">
-        <div class="lk-eyebrow">${c.leakEyebrow}</div>
-        <div class="lk-head">${c.leakHeadBefore}<span class="amt" data-to="4348" data-prefix="₪">₪0</span>${c.leakHeadAfter}</div>
-        <div class="lk-rows">
-          <div class="lk-row">
-            <span class="lk-ic">${ICON_ALERT}</span>
-            <div class="lk-body">
-              <div class="lk-t">${c.leakRows[0].title}</div>
-              <div class="lk-s">${c.leakRows[0].sub}</div>
-            </div>
-            <div class="lk-amt" data-to="2447" data-prefix="₪">₪0</div>
-          </div>
-          <div class="lk-row">
-            <span class="lk-ic">${ICON_ALERT}</span>
-            <div class="lk-body">
-              <div class="lk-t">${c.leakRows[1].title}</div>
-              <div class="lk-s">${c.leakRows[1].sub}</div>
-            </div>
-            <div class="lk-amt" data-to="1901" data-prefix="₪">₪0</div>
-          </div>
-          <div class="lk-row ok">
-            <span class="lk-ic">${ICON_CHECK}</span>
-            <div class="lk-body">
-              <div class="lk-t">${c.leakClearTitle}</div>
-              <div class="lk-s">${c.leakClearSub}</div>
-            </div>
-            <div class="lk-amt">${c.leakClear}</div>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -699,7 +596,6 @@ function desktopDoc(locale: BannerLocale): string {
     <div class="cap cold" data-cap="0"><div class="eb">${c.caps[0].eb}</div><h2>${c.caps[0].h}</h2></div>
     <div class="cap" data-cap="2"><div class="eb">${c.caps[1].eb}</div><h2>${c.caps[1].h}</h2></div>
     <div class="cap" data-cap="3"><div class="eb">${c.caps[2].eb}</div><h2>${c.caps[2].h}</h2></div>
-    <div class="cap" data-cap="4"><div class="eb">${c.caps[3].eb}</div><h2>${c.caps[3].h}</h2></div>
   </div>
 
   <div class="cta">
@@ -708,7 +604,13 @@ function desktopDoc(locale: BannerLocale): string {
     <span class="btn">${c.ctaBtn}</span>
   </div>
 </div>
-<script>${script("frame", ".kpis .k-val", ".leak-card [data-to]", ".cap", "ticks", "3", 4, [2600, 1600, 2600, 2600, 3600, 3400])}<\/script>
+<script>${script("frame", ".kpis .k-val", ".cap", "ticks", "3", [
+    { stage: 0, dur: 2600, cap: 0 },
+    { stage: 1, dur: 1600 },
+    { stage: 2, dur: 3000, cap: 2, count: true },
+    { stage: 3, dur: 3800, cap: 3 },
+    { stage: 5, dur: 3400 }
+  ])}<\/script>
 </body>
 </html>`;
 }
@@ -765,7 +667,6 @@ function mobileDoc(locale: BannerLocale): string {
   .mframe[data-stage="1"] .l-chaos{opacity:.18}
   .mframe[data-stage="2"] .l-kpis{opacity:1;transition:opacity .5s ease .28s}
   .mframe[data-stage="3"] .l-graph{opacity:1;transition:opacity .5s ease .28s}
-  .mframe[data-stage="4"] .l-leak{opacity:1;transition:opacity .5s ease .28s}
   .mframe[data-stage="5"] .l-cta{opacity:1;transition:opacity .55s ease .25s}
 
   .intg{position:absolute;width:44px;aspect-ratio:1;border-radius:26%;background:#fff;
@@ -822,32 +723,6 @@ function mobileDoc(locale: BannerLocale): string {
   .gtip-row b{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap;direction:ltr;unicode-bidi:isolate}
   .ltr{direction:ltr;unicode-bidi:isolate;text-align:start;white-space:nowrap}
 
-  /* overflow:hidden is the backstop, but the real guard is min-height:0 on
-     the flex children — without it a text block refuses to shrink below its
-     content and pushes the last row straight out of the card. */
-  .leakcard{position:absolute;inset:0;border-radius:16px;background:linear-gradient(180deg,#FFF9F4,#fff 42%);
-    border:1px solid rgba(196,85,31,.28);box-shadow:var(--shadow);padding:15px 14px;
-    display:flex;flex-direction:column;gap:9px;overflow:hidden}
-  .lk-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--orange)}
-  .lk-head{font-family:var(--display);font-weight:800;font-size:clamp(19px,5.8vw,26px);color:var(--ink);
-    letter-spacing:-.02em;line-height:1.06}
-  .lk-head .amt{color:var(--leak);direction:ltr;unicode-bidi:isolate}
-  .lk-rows{display:flex;flex-direction:column;gap:9px;margin-top:1px;flex:1;min-height:0;justify-content:center}
-  .lk-body{min-width:0}
-  .lk-row{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;
-    background:rgba(196,85,31,.05);border:1px solid rgba(196,85,31,.14);
-    transform:translateX(${rtl ? "10px" : "-10px"});opacity:0;transition:opacity .45s ease,transform .45s ease}
-  .mframe[data-stage="4"] .lk-row{opacity:1;transform:none}
-  .mframe[data-stage="4"] .lk-row:nth-child(1){transition-delay:.34s}
-  .mframe[data-stage="4"] .lk-row:nth-child(2){transition-delay:.46s}
-  .lk-ic{width:26px;height:26px;flex:0 0 auto;border-radius:8px;background:rgba(196,85,31,.14);color:var(--leak);
-    display:flex;align-items:center;justify-content:center}
-  .lk-ic svg{width:58%;height:58%}
-  .lk-t{font-size:12.5px;font-weight:700;color:var(--ink);line-height:1.18}
-  .lk-s{font-size:10px;color:var(--muted);line-height:1.28;margin-top:2px}
-  .lk-s b{color:var(--green-deep);font-weight:700}
-  .lk-amt{margin-inline-start:auto;font-family:var(--display);font-weight:800;font-size:19px;color:var(--leak);
-    font-variant-numeric:tabular-nums;white-space:nowrap;direction:ltr;unicode-bidi:isolate}
 
   .l-cta{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:16px;
     transform:scale(.98);transition:transform .55s cubic-bezier(.2,.7,.2,1) .25s}
@@ -872,7 +747,7 @@ function mobileDoc(locale: BannerLocale): string {
 
   @media (prefers-reduced-motion:reduce){
     .layer{transition:none}.sweep{display:none}
-    .card,.lk-row,.l-cta{transform:none!important;opacity:1!important}
+    .card,.l-cta{transform:none!important;opacity:1!important}
     .gdraw{stroke-dashoffset:0!important}.garea{opacity:1!important}
     .intg,.frag{animation:none!important}
   }
@@ -932,24 +807,6 @@ function mobileDoc(locale: BannerLocale): string {
       </div>
     </div>
 
-    <div class="layer l-leak">
-      <div class="leakcard">
-        <div class="lk-eyebrow">${c.leakEyebrow}</div>
-        <div class="lk-head">${c.leakHeadBefore}<span class="amt" data-to="4348" data-prefix="₪">₪0</span>${c.leakHeadAfter}</div>
-        <div class="lk-rows">
-          <div class="lk-row">
-            <span class="lk-ic">${ICON_ALERT}</span>
-            <div class="lk-body"><div class="lk-t">${c.leakRowsShort[0].title}</div><div class="lk-s">${c.leakRowsShort[0].sub}</div></div>
-            <div class="lk-amt" data-to="2447" data-prefix="₪">₪0</div>
-          </div>
-          <div class="lk-row">
-            <span class="lk-ic">${ICON_ALERT}</span>
-            <div class="lk-body"><div class="lk-t">${c.leakRowsShort[1].title}</div><div class="lk-s">${c.leakRowsShort[1].sub}</div></div>
-            <div class="lk-amt" data-to="1901" data-prefix="₪">₪0</div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <div class="layer l-cta">
       <div class="lock" dir="ltr">${MARK}<span class="lw">iloomy<span class="dot">.</span></span></div>
@@ -960,7 +817,13 @@ function mobileDoc(locale: BannerLocale): string {
     <div class="sweep"></div>
   </div>
 </div>
-<script>${script("mframe", ".l-kpis .k-val", ".l-leak [data-to]", ".mcap", "mticks", "2", 1, [2600, 1400, 3000, 3200, 3600, 3400])}<\/script>
+<script>${script("mframe", ".l-kpis .k-val", ".mcap", "mticks", "2", [
+    { stage: 0, dur: 2600, cap: 0 },
+    { stage: 1, dur: 1400 },
+    { stage: 2, dur: 3200, cap: 2, count: true },
+    { stage: 3, dur: 3800, cap: 3 },
+    { stage: 5, dur: 3400 }
+  ])}<\/script>
 </body>
 </html>`;
 }

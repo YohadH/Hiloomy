@@ -1,4 +1,4 @@
-import { Suez_One, Alef } from "next/font/google";
+import { Rubik, Heebo } from "next/font/google";
 import { getAppLocale, isValidLocale, type AppLocale } from "@/lib/i18n";
 import { PLANS } from "@/lib/billing/plans";
 import { HiloomyLogo, HiloomyMark } from "@/components/ui/logo";
@@ -12,23 +12,37 @@ import {
   type PlanItem
 } from "@/components/marketing/home-interactive";
 import { HeroBanner } from "@/components/marketing/hero-banner";
+import { SectionHead } from "@/components/marketing/section-head";
+import { Faq } from "@/components/marketing/faq";
 
 // Public marketing landing. Served at "/" for anonymous visitors (middleware
 // rewrite) and directly at /welcome. Bilingual (he default, ?lang= override).
-// Design: "the financial broadsheet" — off-white paper, deep green ink,
-// terracotta accents, Suez One display + Alef body, a dateline strip, a
-// sticky three-layer scroll story, an accordion feature grid, a marquee,
-// pricing with a currency toggle, and a dark-green closing band.
+//
+// Design (Aug 2026): replaced the "financial broadsheet" treatment. Off-white
+// paper ground with alternating white bands, oversized geometric-sans
+// headlines at locale-aware tracking, a pill vocabulary for every button and
+// eyebrow, and one repeated section rhythm — <SectionHead> gives every
+// section an eyebrow pill, an H2 and a two-line subhead, which is what makes
+// a long page read as designed rather than assembled.
+//
+// Positioning is "making your vision clear": many disconnected data sources
+// resolved into one picture. The former leak-hunting framing and the ₪5,000
+// guarantee are gone — deliberately, they were promises we couldn't keep.
 
-const displayFont = Suez_One({
+// Rubik + Heebo replace Suez One + Alef here. The look this page is going
+// for is oversized geometric-sans headlines at tight tracking, which a
+// serif display can't do — and both families cover Latin AND Hebrew, so
+// the two locales share one design instead of looking like two sites.
+// Alef also topped out at 700, and this needs 800.
+const displayFont = Rubik({
   subsets: ["latin", "hebrew"],
-  weight: "400",
+  weight: ["500", "600", "700", "800"],
   variable: "--font-hl-display"
 });
 
-const bodyFont = Alef({
+const bodyFont = Heebo({
   subsets: ["latin", "hebrew"],
-  weight: ["400", "700"],
+  weight: ["400", "500", "700"],
   variable: "--font-hl-body"
 });
 
@@ -41,9 +55,9 @@ const DIM = "#605D5D";
 const HAIR = "rgba(32,30,29,.12)";
 
 export const metadata = {
-  title: "Hiloomy — Profit command center for Shopify brands",
+  title: "Hiloomy — Making your vision clear",
   description:
-    "Revenue is the headline. Profit is the story. Hiloomy joins Shopify, Meta Ads, Instagram and your affiliates into one database and hands back the number that stays in the bank. ההכנסות זה כותרת. הרווח זה הסיפור."
+    "Shopify, Meta Ads, Instagram, GA4 and your affiliates in one picture. See what revenue actually stays as profit — per product, per campaign, per discount code. הופכים את התמונה שלכם לברורה."
 };
 
 function getCopy(isHe: boolean) {
@@ -52,15 +66,69 @@ function getCopy(isHe: boolean) {
         nav: { features: "יכולות", how: "איך זה עובד", report: "הדוח השבועי", pricing: "מחירים", security: "אבטחה", login: "התחברות", cta: "צרו משתמש", switchLabel: "EN" },
         dateline: { brand: "Hiloomy · מודיעין רווח לאיקומרס", tag: "רענון כל שעתיים", meta: "גרסה 2026" },
         hero: {
-          title: "מצאו את הכסף שהחנות שלכם מאבדת.",
-          body: "Hiloomy סורק ברציפות את המוצרים, המודעות, ההנחות, השותפים וההחזרים שלכם — ואומר כמה כסף דולף, למה, ומה לעשות. עמלות ששולמו על לקוחות שכבר שלכם, קודים שמוכרים בהפסד, תקציב פרסום על מוצרים שחוזרים — מספר אחד, עם הפעולה שסוגרת כל דליפה.",
-          guarantee: "נמצא לך לפחות ₪5,000 דליפות רווח — או שהחודש הראשון עלינו.",
+          title: "הופכים את התמונה שלכם לברורה.",
+          body: "Shopify, Meta Ads, Instagram, GA4 והשותפים שלכם מגיעים כחמישה סיפורים נפרדים. Hiloomy מחבר אותם לתמונה אחת ומראה כמה מההכנסות באמת נשאר כרווח — לכל מוצר, לכל קמפיין ולכל קוד הנחה.",
+          // Was a ₪5,000 leak guarantee. Replaced with a statement of what we
+          // compute — a promise we can actually keep.
+          guarantee: "מספר אחד שאפשר לסמוך עליו — רווח אחרי עלות מוצר, פרסום, הנחות והחזרות.",
           fine: "ללא כרטיס אשראי · חיבור ב־30 שניות · הרשאות קריאה בלבד",
           ctaSecondary: "איך זה בנוי"
         },
         layers: {
           kicker: "שלוש שכבות",
           title: "נתונים נכנסים. אותות עולים. צמיחה יוצאת."
+        },
+        steps: {
+          kicker: "איך זה עובד",
+          title: "מהתקנה לתמונה מלאה, בשלושה צעדים.",
+          sub: "בלי מיפוי דאטה, בלי צוות אינטגרציה. רוב החנויות מחוברות ורואות מספרים תוך דקה.",
+          items: [
+            {
+              n: "01",
+              t: "מחברים",
+              d: "מתקינים מ־Shopify ומאשרים הרשאות קריאה בלבד. Meta Ads, Instagram ו־GA4 בקליק אחד כל אחד."
+            },
+            {
+              n: "02",
+              t: "מאחדים",
+              d: "אנחנו מושכים הזמנות, עלויות, תקציבי פרסום, הנחות והחזרות למקום אחד — ומיישבים אותם מול המספרים של Shopify עצמה."
+            },
+            {
+              n: "03",
+              t: "מחליטים",
+              d: "כל מסך עונה על שתי שאלות: מה קרה, ומה זה אומר על הרווח — לכל מוצר, לכל קמפיין ולכל קוד הנחה."
+            }
+          ]
+        },
+        faq: {
+          kicker: "שאלות נפוצות",
+          title: "מה שחשוב לדעת לפני שמתחברים.",
+          items: [
+            {
+              q: "מה Hiloomy בעצם מחשב?",
+              a: "רווח תרומה: מכירות נטו אחרי הנחות והחזרות, פחות עלות המוצר ופחות עמלות שותפים, מול תקציב הפרסום. כל מספר ניתן לפתיחה עד להזמנה הבודדת ב־Shopify."
+            },
+            {
+              q: "אתם צריכים הרשאות כתיבה לחנות?",
+              a: "לא. ההרשאות מול Shopify הן קריאה בלבד — Hiloomy לא יכול לשנות מוצרים, הזמנות או לקוחות."
+            },
+            {
+              q: "כמה הנתונים מעודכנים?",
+              a: "הזמנות מסתנכרנות דרך webhooks של Shopify, ויישוב מלא רץ כל שעתיים."
+            },
+            {
+              q: "אילו פלטפורמות מתחברות?",
+              a: "Shopify, Meta Ads, Instagram, Google Analytics 4 ו־Google Search Console. תוכניות שותפים נטענות מקובץ CSV או לפי מיפוי קודי קופון."
+            },
+            {
+              q: "המוצר עובד בעברית?",
+              a: "כן — כולו, כולל הדוח השבועי והמיילים. אפשר להחליף שפה בכל רגע."
+            },
+            {
+              q: "מה קורה אם מבטלים?",
+              a: "מתנתקים מההגדרות והנתונים נמחקים. בלי דמי ייצוא ובלי תקופת שמירה."
+            }
+          ]
         },
         features: {
           kicker: "מה זה עושה בפועל",
@@ -98,13 +166,67 @@ function getCopy(isHe: boolean) {
         nav: { features: "Features", how: "How it works", report: "Weekly report", pricing: "Pricing", security: "Security", login: "Log in", cta: "Create account", switchLabel: "עב" },
         dateline: { brand: "Hiloomy · Ecommerce Profit Intelligence", tag: "Refreshed every two hours", meta: "Edition 2026" },
         hero: {
-          title: "Find the money your store is leaking.",
-          body: "Hiloomy continuously scans your products, ads, discounts, affiliates and returns — and tells you how much money is leaking, why, and what to do next. Commissions paid on customers you already own, codes selling at a loss, ad budget on products that come back — one number, with the action that closes each leak.",
-          guarantee: "We'll find at least ₪5,000 in profit leaks — or your first month is on us.",
+          title: "Making your vision clear.",
+          body: "Shopify, Meta Ads, Instagram, GA4 and your affiliates arrive as five separate stories. Hiloomy joins them into one picture and shows what revenue actually stays as profit — per product, per campaign, per discount code.",
+          // Was a ₪5,000 leak guarantee. Replaced with a statement of what we
+          // compute — a promise we can actually keep.
+          guarantee: "One number you can trust — profit after cost of goods, ads, discounts and returns.",
           fine: "No credit card · Connect in 30 seconds · Read-only scopes",
           ctaSecondary: "How it's built"
         },
         layers: { kicker: "Three layers", title: "Data in. Signals up. Growth out." },
+        steps: {
+          kicker: "How it works",
+          title: "From install to the full picture, in three steps.",
+          sub: "No data mapping, no integration team. Most stores are connected and reading real numbers inside a minute.",
+          items: [
+            {
+              n: "01",
+              t: "Connect",
+              d: "Install from Shopify and approve read-only access. Meta Ads, Instagram and GA4 are one click each."
+            },
+            {
+              n: "02",
+              t: "Unify",
+              d: "We pull orders, costs, ad spend, discounts and returns into one place — and reconcile them against Shopify's own numbers."
+            },
+            {
+              n: "03",
+              t: "Decide",
+              d: "Every screen answers two questions: what happened, and what it means for profit — per product, per campaign, per discount code."
+            }
+          ]
+        },
+        faq: {
+          kicker: "FAQ",
+          title: "What's worth knowing before you connect.",
+          items: [
+            {
+              q: "What does Hiloomy actually calculate?",
+              a: "Contribution profit: net sales after discounts and returns, minus cost of goods and affiliate commission, set against ad spend. Every figure drills down to the individual Shopify order behind it."
+            },
+            {
+              q: "Do you need write access to my store?",
+              a: "No. Shopify scopes are read-only — Hiloomy cannot change products, orders or customers."
+            },
+            {
+              q: "How fresh is the data?",
+              a: "Orders sync through Shopify webhooks, and a full reconciliation runs every two hours."
+            },
+            {
+              q: "Which platforms connect?",
+              a: "Shopify, Meta Ads, Instagram, Google Analytics 4 and Google Search Console. Affiliate programs load from CSV or by coupon-code mapping."
+            },
+            {
+              q: "Does it work in Hebrew?",
+              a: "Yes — the entire product, including the weekly report and the emails. Switch language at any time."
+            },
+            {
+              q: "What happens if I cancel?",
+              a: "Disconnect from Settings and your data is deleted. No export fee, no retention period."
+            }
+          ]
+        },
         features: {
           kicker: "What it actually does",
           title: "Six capabilities. Each answers two questions: what happened, and what to do."
@@ -301,9 +423,20 @@ export default async function WelcomePage({
       style={{ backgroundColor: PAPER, color: INK }}
     >
       <style>{`
+        /* Display tracking is locale-aware and set once, here. Latin display
+           type wants it tight; Hebrew letterforms have no side bearings to
+           spare and collide at anything below zero. Every headline on the
+           page reads this variable rather than hardcoding a value. */
+        :root { --hl-track: ${isHe ? "0" : "-0.045em"}; }
         @keyframes hl-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
         @keyframes hl-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
         .hl-rise { opacity: 0; animation: hl-rise .7s cubic-bezier(.2,.7,.3,1) forwards; }
+        /* Warm wash behind the hero, fading into the page ground. */
+        .hl-hero-wash {
+          background:
+            radial-gradient(110% 70% at 50% -10%, rgba(209,115,31,.13), transparent 62%),
+            linear-gradient(180deg, #FCF7F2 0%, ${PAPER} 62%);
+        }
         @media (prefers-reduced-motion: reduce) {
           .hl-rise { animation: none; opacity: 1; }
           .hl-marquee-track { animation: none !important; }
@@ -318,7 +451,7 @@ export default async function WelcomePage({
           </a>
           <nav className="hidden items-center gap-7 text-sm font-bold md:flex" style={{ color: DIM }}>
             <a href="#features" className="transition-colors hover:text-[#201E1D]">{t.nav.features}</a>
-            <a href="#layers" className="transition-colors hover:text-[#201E1D]">{t.nav.how}</a>
+            <a href="#steps" className="transition-colors hover:text-[#201E1D]">{t.nav.how}</a>
             <a href={`/weekly-report?lang=${locale}`} className="transition-colors hover:text-[#201E1D]">{t.nav.report}</a>
             <a href="#pricing" className="transition-colors hover:text-[#201E1D]">{t.nav.pricing}</a>
             <a href="/security" className="transition-colors hover:text-[#201E1D]">{t.nav.security}</a>
@@ -345,7 +478,7 @@ export default async function WelcomePage({
           <MobileNav
             links={[
               { href: "#features", label: t.nav.features },
-              { href: "#layers", label: t.nav.how },
+              { href: "#steps", label: t.nav.how },
               { href: `/weekly-report?lang=${locale}`, label: t.nav.report },
               { href: "#pricing", label: t.nav.pricing },
               { href: "/security", label: t.nav.security }
@@ -367,88 +500,130 @@ export default async function WelcomePage({
       {/* ── Hero ─────────────────────────────────────────────────────── */}
       {/* Stacked, not the old two-column split: the banner is a 16:9 cinematic
           that needs full width to stay legible. Copy keeps its own measure. */}
-      <section className="mx-auto max-w-6xl px-5 pb-20 pt-12 sm:px-10 sm:pt-16">
-        <div className="max-w-3xl">
+      {/* Centered rather than the reference's left-copy/right-visual split:
+          our hero visual is a full-width 16:9 banner, and a centered column
+          reads identically in LTR and RTL instead of needing two layouts. */}
+      <section className="hl-hero-wash px-5 pb-16 pt-14 sm:px-10 sm:pt-20">
+        <div className="mx-auto flex max-w-4xl flex-col items-center text-center">
+          <span
+            className="hl-rise inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em]"
+            style={{ borderColor: "rgba(209,115,31,.32)", color: ORANGE, backgroundColor: "rgba(209,115,31,.07)", animationDelay: ".04s" }}
+          >
+            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: ORANGE }} />
+            {t.dateline.brand}
+          </span>
           <h1
-            className="hl-rise text-[2.6rem] font-normal leading-[0.98] tracking-tight [font-family:var(--font-hl-display)] [text-wrap:balance] sm:text-6xl"
-            style={{ animationDelay: ".08s", letterSpacing: "-0.02em" }}
+            className="hl-rise mt-6 text-[2.9rem] font-extrabold leading-[1.02] [font-family:var(--font-hl-display)] [text-wrap:balance] sm:text-[4.4rem]"
+            style={{ animationDelay: ".08s", letterSpacing: "var(--hl-track)" }}
           >
             {t.hero.title}
           </h1>
-          <p className="hl-rise mt-7 max-w-xl text-lg leading-relaxed [text-wrap:pretty]" style={{ color: "rgba(32,30,29,.8)", animationDelay: ".18s" }}>
+          <p
+            className="hl-rise mt-6 max-w-2xl text-[1.0625rem] leading-relaxed [text-wrap:pretty] sm:text-lg"
+            style={{ color: "rgba(32,30,29,.72)", animationDelay: ".18s" }}
+          >
             {t.hero.body}
           </p>
-          <div className="hl-rise mt-9 flex flex-wrap items-center gap-3.5" style={{ animationDelay: ".28s" }}>
+          <div className="hl-rise mt-9 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center" style={{ animationDelay: ".28s" }}>
             <a
               href={signupHref}
-              className="rounded-full px-7 py-3.5 text-sm font-bold text-white shadow-lg transition-transform hover:-translate-y-0.5"
-              style={{ backgroundColor: GREEN, boxShadow: "0 14px 30px -12px rgba(20,81,44,.5)" }}
+              className="rounded-full px-8 py-4 text-[15px] font-bold text-white transition-transform hover:-translate-y-0.5"
+              style={{ backgroundColor: GREEN, boxShadow: "0 16px 34px -14px rgba(20,81,44,.55)" }}
             >
               {t.nav.cta}
             </a>
             <a
-              href="#layers"
-              className="rounded-full border px-7 py-3.5 text-sm font-bold transition-colors hover:bg-white"
-              style={{ borderColor: "rgba(32,30,29,.3)", color: INK }}
+              href="#steps"
+              className="rounded-full border bg-white px-8 py-4 text-[15px] font-bold transition-colors hover:bg-[#F2F2F0]"
+              style={{ borderColor: "rgba(32,30,29,.16)", color: INK }}
             >
               {t.hero.ctaSecondary}
             </a>
           </div>
-          <p
-            className="hl-rise mt-5 inline-block rounded-full border px-4 py-2 text-sm font-bold"
-            style={{ borderColor: ORANGE, color: ORANGE, animationDelay: ".33s" }}
-          >
+          <p className="hl-rise mt-6 text-[13px] font-medium" style={{ color: ORANGE, animationDelay: ".33s" }}>
             {t.hero.guarantee}
           </p>
-          <p className="hl-rise mt-4 text-xs" style={{ color: DIM, animationDelay: ".38s" }}>
+          <p className="hl-rise mt-2 text-xs" style={{ color: DIM, animationDelay: ".38s" }}>
             {t.hero.fine}
           </p>
         </div>
 
-        {/* Animated product banner — replaces the former static mock cards. */}
-        <div className="hl-rise mt-12 sm:mt-14" style={{ animationDelay: ".44s" }}>
+        {/* Animated product banner, tilted and lifted off the page the way the
+            reference floats its hero cards. */}
+        <div
+          className="hl-rise mx-auto mt-14 max-w-6xl [transform:perspective(1800px)_rotateX(2.2deg)]"
+          style={{ animationDelay: ".44s" }}
+        >
           <HeroBanner locale={isHe ? "he" : "en"} />
         </div>
       </section>
 
+      {/* ── How it works ─────────────────────────────────────────────── */}
+      <section id="steps" className="scroll-mt-16 bg-white px-5 py-20 sm:px-10 sm:py-24">
+        <div className="mx-auto max-w-6xl">
+          <SectionHead eyebrow={t.steps.kicker} title={t.steps.title} sub={t.steps.sub} />
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
+            {t.steps.items.map((step) => (
+              <div
+                key={step.n}
+                className="rounded-3xl border p-7"
+                style={{ borderColor: HAIR, backgroundColor: PAPER }}
+              >
+                <span
+                  className="inline-flex h-9 items-center rounded-full px-3.5 text-[13px] font-bold tabular-nums text-white"
+                  style={{ backgroundColor: ORANGE }}
+                  dir="ltr"
+                >
+                  {step.n}
+                </span>
+                <h3
+                  className="mt-5 text-xl font-bold [font-family:var(--font-hl-display)]"
+                  style={{ letterSpacing: "var(--hl-track)" }}
+                >
+                  {step.t}
+                </h3>
+                <p className="mt-2.5 text-[15px] leading-relaxed" style={{ color: DIM }}>
+                  {step.d}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-11 flex flex-col items-center gap-3">
+            <a
+              href={signupHref}
+              className="rounded-full px-8 py-4 text-[15px] font-bold text-white transition-transform hover:-translate-y-0.5"
+              style={{ backgroundColor: GREEN, boxShadow: "0 16px 34px -14px rgba(20,81,44,.55)" }}
+            >
+              {t.nav.cta}
+            </a>
+            <p className="text-xs" style={{ color: DIM }}>
+              {t.hero.fine}
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* ── Layers scroll story ──────────────────────────────────────── */}
-      <section id="layers" className="scroll-mt-16 border-t pt-16 sm:pt-20" style={{ borderColor: HAIR }}>
+      <section id="layers" className="scroll-mt-16 pt-20 sm:pt-24">
         <div className="mx-auto max-w-6xl px-5 sm:px-10">
-          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
-            {t.layers.kicker}
-          </p>
-          <h2
-            className="mt-3.5 max-w-2xl text-3xl font-normal leading-[1.04] [font-family:var(--font-hl-display)] sm:text-5xl"
-            style={{ letterSpacing: "-0.02em" }}
-          >
-            {t.layers.title}
-          </h2>
+          <SectionHead eyebrow={t.layers.kicker} title={t.layers.title} />
         </div>
         <LayersScroller layers={layers} />
       </section>
 
       {/* ── Features accordion grid ──────────────────────────────────── */}
-      <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-5 py-20 sm:px-10 sm:py-24">
-        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
-          {t.features.kicker}
-        </p>
-        <h2
-          className="mt-3.5 max-w-2xl text-3xl font-normal leading-[1.04] [font-family:var(--font-hl-display)] sm:text-[2.6rem]"
-          style={{ letterSpacing: "-0.02em" }}
-        >
-          {t.features.title}
-        </h2>
-        <FeaturesGrid features={features} />
+      <section id="features" className="scroll-mt-16 bg-white px-5 py-20 sm:px-10 sm:py-24">
+        <div className="mx-auto max-w-6xl">
+          <SectionHead eyebrow={t.features.kicker} title={t.features.title} />
+          <FeaturesGrid features={features} />
+        </div>
       </section>
 
       {/* ── Integrations marquee ─────────────────────────────────────── */}
-      <section className="border-y py-14 text-center" style={{ borderColor: HAIR, backgroundColor: "#EEF6F1" }}>
-        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
-          {t.integrations.kicker}
-        </p>
-        <h2 className="mx-auto mt-3.5 max-w-2xl px-5 text-2xl font-normal leading-tight [font-family:var(--font-hl-display)] sm:text-3xl">
-          {t.integrations.title}
-        </h2>
+      <section className="py-16 text-center sm:py-20" style={{ backgroundColor: "#EEF6F1" }}>
+        <div className="mx-auto max-w-6xl px-5 sm:px-10">
+          <SectionHead eyebrow={t.integrations.kicker} title={t.integrations.title} />
+        </div>
         <div
           dir="ltr"
           className="mt-10 overflow-hidden"
@@ -472,49 +647,57 @@ export default async function WelcomePage({
       </section>
 
       {/* ── Pricing ──────────────────────────────────────────────────── */}
-      <section id="pricing" className="mx-auto max-w-6xl scroll-mt-16 px-5 py-20 text-center sm:px-10 sm:py-24">
-        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
-          {t.pricing.kicker}
-        </p>
-        <h2 className="mt-3.5 text-3xl font-normal [font-family:var(--font-hl-display)] sm:text-5xl" style={{ letterSpacing: "-0.02em" }}>
-          {t.pricing.title}
-        </h2>
-        <div className="text-start">
-          <PricingPlans
-            plans={plans}
-            isHe={isHe}
-            labels={{ popular: t.pricing.popular, perMonth: t.pricing.perMonth, cta: t.pricing.cta }}
-            signupHref={signupHref}
-          />
+      <section id="pricing" className="scroll-mt-16 bg-white px-5 py-20 sm:px-10 sm:py-24">
+        <div className="mx-auto max-w-6xl">
+          <SectionHead eyebrow={t.pricing.kicker} title={t.pricing.title} />
+          <div className="text-start">
+            <PricingPlans
+              plans={plans}
+              isHe={isHe}
+              labels={{ popular: t.pricing.popular, perMonth: t.pricing.perMonth, cta: t.pricing.cta }}
+              signupHref={signupHref}
+            />
+          </div>
         </div>
       </section>
 
-      {/* ── Security ─────────────────────────────────────────────────── */}
-      <section className="border-t py-16 sm:py-20" style={{ borderColor: HAIR }}>
-        <div className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-10 lg:grid-cols-[1fr_1.2fr]">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: ORANGE }}>
-              {t.security.kicker}
-            </p>
-            <h2 className="mt-3.5 text-3xl font-normal [font-family:var(--font-hl-display)] sm:text-4xl">{t.security.title}</h2>
-            <p className="mt-4 max-w-md text-sm leading-relaxed" style={{ color: DIM }}>
-              {t.security.body}{" "}
-              <a href="/security" className="font-bold underline underline-offset-2" style={{ color: GREEN }}>
-                →
-              </a>
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-px" style={{ backgroundColor: HAIR }}>
+      {/* ── Security bento ───────────────────────────────────────────── */}
+      <section className="px-5 py-20 sm:px-10 sm:py-24">
+        <div className="mx-auto max-w-6xl">
+          <SectionHead eyebrow={t.security.kicker} title={t.security.title} sub={t.security.body} />
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {securityItems.map((item) => (
-              <div key={item.title} className="p-6" style={{ backgroundColor: PAPER }}>
-                <p className="text-base font-bold [font-family:var(--font-hl-display)]" style={{ color: GREEN }}>
+              <div key={item.title} className="rounded-3xl border bg-white p-6" style={{ borderColor: HAIR }}>
+                <p
+                  className="text-[15px] font-bold [font-family:var(--font-hl-display)]"
+                  style={{ color: GREEN, letterSpacing: "var(--hl-track)" }}
+                >
                   {item.title}
                 </p>
-                <p className="mt-1.5 text-xs leading-5" style={{ color: DIM }}>
+                <p className="mt-2 text-[13px] leading-5" style={{ color: DIM }}>
                   {item.body}
                 </p>
               </div>
             ))}
+          </div>
+          <div className="mt-10 flex justify-center">
+            <a
+              href="/security"
+              className="rounded-full border bg-white px-7 py-3.5 text-sm font-bold transition-colors hover:bg-[#F2F2F0]"
+              style={{ borderColor: "rgba(32,30,29,.16)", color: INK }}
+            >
+              {t.nav.security}
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ──────────────────────────────────────────────────────── */}
+      <section id="faq" className="scroll-mt-16 bg-white px-5 py-20 sm:px-10 sm:py-24">
+        <div className="mx-auto max-w-6xl">
+          <SectionHead eyebrow={t.faq.kicker} title={t.faq.title} />
+          <div className="mt-12">
+            <Faq items={t.faq.items} />
           </div>
         </div>
       </section>
@@ -603,6 +786,23 @@ export default async function WelcomePage({
               {t.footer.switchLong}
             </a>
           </div>
+        </div>
+
+        {/* Oversized wordmark closing the page. Always LTR — the brand is a
+            Latin word — and aria-hidden since the logo above already names us. */}
+        <div className="overflow-hidden px-5 pb-6 pt-2 sm:px-10" dir="ltr" aria-hidden>
+          <p
+            className="select-none text-center text-[15vw] font-extrabold leading-[0.82] [font-family:var(--font-hl-display)] sm:text-[13vw]"
+            style={{
+              letterSpacing: "-0.045em",
+              color: "transparent",
+              backgroundImage: "linear-gradient(180deg, rgba(255,255,255,.14), rgba(209,115,31,.30))",
+              WebkitBackgroundClip: "text",
+              backgroundClip: "text"
+            }}
+          >
+            Hiloomy
+          </p>
         </div>
       </footer>
     </div>
