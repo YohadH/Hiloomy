@@ -13,6 +13,7 @@
 
 import { getDb } from "@/lib/server/db";
 import { askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { anthropicChatJson } from "@/lib/clients/anthropic-client";
 import { fetchCompetitorActivity } from "@/lib/clients/rivalsweeper-client";
 import { normalizeDomain } from "@/lib/services/competitor-intel-service";
 import {
@@ -74,6 +75,12 @@ function isValidAnswer(answer: BiBriefAnswer | null | undefined): answer is BiBr
 
 // One background generation at a time per process.
 let biRefreshInFlight = false;
+
+// Direct-API fallback availability — the tunnel is optional when the
+// deployment carries an Anthropic key.
+function isAnthropicDirectAvailable(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
 
 // ── Live intel (RivalSweeper snapshots, per store) ──────────────────────
 //
@@ -416,7 +423,14 @@ export async function getCompetitorBrief(
 
   // Cache miss: kick a background BI generation (fire-and-cache, never
   // blocks this render) and serve the fallback meanwhile.
-  if (isBiAgentConfigured() && !biRefreshInFlight) {
+  //
+  // Provider order: the self-hosted tunnel when configured, else the
+  // Anthropic API directly. Production never had BI_AGENT_URL/TOKEN set
+  // (they aren't even declared in render.yaml), so with the tunnel-only
+  // gate the BI brief could NEVER run there and the owner only ever saw
+  // the generic fallback tips — the Anthropic path unblocks it with the
+  // key that's already deployed.
+  if ((isBiAgentConfigured() || isAnthropicDirectAvailable()) && !biRefreshInFlight) {
     biRefreshInFlight = true;
     void generateBiBrief(intel, storeId, locale)
       .catch((err) =>
@@ -582,13 +596,25 @@ export async function generateBiBrief(
     `(5) המודיעין על המתחרים הוא הקשר לתעדוף — לא תחליף לנתוני האמת.\n` +
     `(6) סגנון: אל תשתמש במקף מחבר בין אותיות שימוש למספרים או מילים לועזיות — ` +
     `כתוב "ב31 אוגוסט", "הROAS", "מ4" (בלי מקף).`;
-  const answer = await askBiAgentJson<BiBriefAnswer>({
-    question,
-    jsonHint:
-      `{"today": [{"action": "...", "why": "...", "how": "...", "target": "... או null"}, ...3 פריטים], ` +
-      `"thisWeek": [{"action": "...", "why": "...", "how": "...", "target": null}, ...3 פריטים]}`,
-    timeoutMs: BI_TIMEOUT_MS
-  });
+  const jsonHint =
+    `{"today": [{"action": "...", "why": "...", "how": "...", "target": "... או null"}, ...3 פריטים], ` +
+    `"thisWeek": [{"action": "...", "why": "...", "how": "...", "target": null}, ...3 פריטים]}`;
+  // Tunnel first (full local agent with tools), Anthropic API second — the
+  // brief's question already carries every live fact it needs, so a direct
+  // one-shot model call produces a real store-specific answer too.
+  const answer = isBiAgentConfigured()
+    ? await askBiAgentJson<BiBriefAnswer>({ question, jsonHint, timeoutMs: BI_TIMEOUT_MS })
+    : await anthropicChatJson<BiBriefAnswer>({
+        messages: [{ role: "user", content: question }],
+        jsonHint,
+        maxTokens: 3000
+      }).catch((err) => {
+        console.warn(
+          "[competitor-brief] anthropic direct generation failed:",
+          err instanceof Error ? err.message : err
+        );
+        return null;
+      });
   if (isValidAnswer(answer)) {
     await writeCache(cacheKey(intel.version, storeId), answer);
     return answer;

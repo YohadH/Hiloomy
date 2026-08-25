@@ -11,6 +11,7 @@ import { DataTable } from "@/components/shared/data-table";
 import { getAppChromeData, getProfitAnalyticsPayload } from "@/lib/services/analytics-service";
 import { buildChannelCacReport } from "@/lib/services/channel-cac-service";
 import { buildCollectionRhythm } from "@/lib/services/collection-rhythm-service";
+import { buildBundleProfitability } from "@/lib/services/bundle-profitability-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { formatCurrency, formatNumber } from "@/lib/utils";
@@ -42,6 +43,14 @@ export default async function ProfitPage() {
   const collectionRhythm = storeId
     ? await buildCollectionRhythm({ storeId }).catch(() => null)
     : null;
+  // Bundle profitability (F-036) — real numbers once the owner mapped kit
+  // components in Settings; empty array until then.
+  const bundleRows = storeId
+    ? await buildBundleProfitability(storeId, {
+        start: selection.start,
+        end: selection.end
+      }).catch(() => [])
+    : [];
 
   // Narrative
   const totalRevenue = profit.productPerformance.reduce((acc, row) => acc + row.revenue, 0);
@@ -526,48 +535,108 @@ export default async function ProfitPage() {
           </section>
         ) : null}
 
-        {/* Bundle / refund placeholders */}
+        {/* Bundles — real profitability once components are mapped (F-036) */}
         <section className="space-y-3">
           <SectionHead
-            eyebrow={locale === "he" ? "בקרוב" : "Coming next"}
+            eyebrow={locale === "he" ? "באנדלים" : "Bundles"}
             title={
               locale === "he"
-                ? "באנדלים והחזרים — מה נציג כאן"
-                : "Bundles & refunds — what we'll surface here"
+                ? "רווחיות מארזים — אחרי עלות המוצרים שבפנים"
+                : "Bundle profitability — after component costs"
             }
             hint={
               locale === "he"
-                ? "כרגע אלה שומרי מקום. הם יופעלו ברגע שנקלוט הרכבי באנדלים וסיבות החזר."
-                : "Currently placeholders. They'll light up once we ingest bundle composition and refund reasons."
+                ? "מארז נמכר כמוצר אחד אבל עולה כמו הסכום של מה שבתוכו. הטבלה מציגה את הרווח האמיתי לפי הרכב שהגדרתם."
+                : "A kit sells as one product but costs the sum of its parts. This table shows real profit from the components you defined."
             }
           />
-          <div className="grid items-start gap-4 md:grid-cols-2">
+          {bundleRows.length > 0 ? (
             <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-1.5">
-                  <CardTitle className="text-base">{dictionary.profit.bundleImpact}</CardTitle>
-                  <HelpTip>{tips.bundleImpact}</HelpTip>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto table-scroll scroll-fade-end">
+                  <table className="w-full border-collapse text-xs">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        {[
+                          locale === "he" ? "מארז" : "Bundle",
+                          locale === "he" ? "יחידות" : "Units",
+                          locale === "he" ? "הכנסה" : "Revenue",
+                          locale === "he" ? "עלות אמיתית (רכיבים)" : "True cost (components)",
+                          locale === "he" ? "רווח אמיתי" : "True profit",
+                          locale === "he" ? "מרווח %" : "Margin %"
+                        ].map((label, i) => (
+                          <th
+                            key={label}
+                            className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ${i === 0 ? "text-start" : "text-end"}`}
+                          >
+                            {label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bundleRows.map((row) => (
+                        <tr key={row.bundleProductId} className="border-t border-border">
+                          <td className="px-3 py-2">
+                            <div className="font-semibold">{row.title}</div>
+                            {row.componentsMissingRealCost > 0 ? (
+                              <div className="text-[10px] text-amber-700">
+                                {locale === "he"
+                                  ? `${row.componentsMissingRealCost} רכיבים עדיין עם עלות משוערת`
+                                  : `${row.componentsMissingRealCost} components still on estimated cost`}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-2 text-end tabular-nums">{row.unitsSold}</td>
+                          <td className="px-3 py-2 text-end tabular-nums">{formatCurrency(row.revenue, currency)}</td>
+                          <td className="px-3 py-2 text-end tabular-nums">
+                            {formatCurrency(row.trueCogs, currency)}
+                            <div className="text-[10px] text-muted-foreground">
+                              {locale === "he"
+                                ? `נרשם קודם: ${formatCurrency(row.bookedCogs, currency)}`
+                                : `previously booked: ${formatCurrency(row.bookedCogs, currency)}`}
+                            </div>
+                          </td>
+                          <td
+                            className={`px-3 py-2 text-end font-semibold tabular-nums ${row.trueProfit < 0 ? "text-rose-700" : "text-emerald-700"}`}
+                          >
+                            {formatCurrency(row.trueProfit, currency)}
+                          </td>
+                          <td className="px-3 py-2 text-end tabular-nums">
+                            {row.trueMarginRate != null ? `${(row.trueMarginRate * 100).toFixed(1)}%` : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <p className="text-sm text-muted-foreground">{dictionary.profit.bundleDescription}</p>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm leading-6 text-muted-foreground">{dictionary.profit.bundleTodo}</p>
               </CardContent>
             </Card>
-            {/* Returns navigation removed per the owner (F-035); the copy no
-                longer claims a live screen under a "coming soon" header
-                (F-037) — the returns analysis lives at /profit/returns via
-                the main navigation. */}
+          ) : (
             <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-1.5">
-                  <CardTitle className="text-base">{dictionary.profit.refundImpact}</CardTitle>
-                  <HelpTip>{tips.refundImpact}</HelpTip>
-                </div>
-                <p className="text-sm text-muted-foreground">{dictionary.profit.refundDescription}</p>
-              </CardHeader>
+              <CardContent className="py-6">
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {locale === "he" ? (
+                    <>
+                      כדי לראות רווחיות אמיתית למארזים, הגדירו פעם אחת מה יש בתוך כל מארז —{" "}
+                      <a href="/settings" className="font-semibold text-emerald-700 hover:text-emerald-800">
+                        הגדרות ← קמפיינים ובאנדלים
+                      </a>
+                      . שווה במיוחד: המוצר הנמכר ביותר שלכם הוא מארז.
+                    </>
+                  ) : (
+                    <>
+                      To see real bundle profitability, define each kit&apos;s components once —{" "}
+                      <a href="/settings" className="font-semibold text-emerald-700 hover:text-emerald-800">
+                        Settings → Campaigns &amp; bundles
+                      </a>
+                      . Especially worth it: your best seller is a bundle.
+                    </>
+                  )}
+                </p>
+              </CardContent>
             </Card>
-          </div>
+          )}
         </section>
       </div>
     </AppShell>

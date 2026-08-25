@@ -26,19 +26,27 @@
 // Leak Scan onboarding funnel.
 
 import { getDb } from "@/lib/server/db";
+import { toNumber } from "@/lib/server/numbers";
 import {
   applyReturningCommissionPolicy,
   classifyUnclassifiedAttributions,
   getCommissionLeakageSummary
 } from "@/lib/services/affiliate-leakage-service";
 import { buildDiscountScorecards } from "@/lib/services/discount-scorecard-service";
-import {
-  buildReturnsIntelligence,
-  extractReturnRisks,
-  findReturnRiskForName
-} from "@/lib/services/returns-intelligence-service";
+import { computeSilentProducts } from "@/lib/services/silent-product-alert-service";
+import { computeSilentAffiliates } from "@/lib/services/silent-affiliate-alert-service";
 
-export type LeakId = "affiliate_leakage" | "underwater_discounts" | "returns_ad_waste";
+// The leak catalog is the OWNER's list of leaks that actually matter
+// (F-004): money burning on things that don't work, and money not being
+// made from things that did work. The old third leg (ad spend on
+// high-return products) was judged "not a valuable check at all" (F-003)
+// and was replaced by the three detectors below.
+export type LeakId =
+  | "affiliate_leakage"
+  | "underwater_discounts"
+  | "roas_burn"
+  | "silent_products"
+  | "silent_affiliates";
 
 export interface LeakItem {
   id: LeakId;
@@ -76,13 +84,15 @@ export async function buildLeakScan(input: { storeId: string; end?: Date }): Pro
   const end = input.end ?? new Date();
   const start = new Date(end.getTime() - WINDOW_DAYS * 86_400_000);
 
-  const [affiliate, discounts, returnsWaste] = await Promise.all([
+  const [affiliate, discounts, roasBurn, silentProducts, silentAffiliates] = await Promise.all([
     affiliateLeg(input.storeId, start, end).catch(() => unavailable("affiliate_leakage")),
     discountLeg(input.storeId, start, end).catch(() => unavailable("underwater_discounts")),
-    returnsAdWasteLeg(input.storeId, end).catch(() => unavailable("returns_ad_waste"))
+    roasBurnLeg(input.storeId, end).catch(() => unavailable("roas_burn")),
+    silentProductsLeg(input.storeId).catch(() => unavailable("silent_products")),
+    silentAffiliatesLeg(input.storeId).catch(() => unavailable("silent_affiliates"))
   ]);
 
-  const items = [affiliate, discounts, returnsWaste];
+  const items = [roasBurn, silentProducts, affiliate, discounts, silentAffiliates];
   const availableItems = items.filter((i) => i.available);
 
   return {
@@ -140,19 +150,49 @@ const LEG_META: Record<LeakId, Pick<LeakItem, "reason" | "action" | "href" | "un
       en: "Set product costs (COGS) to unlock the underwater-discount check."
     }
   },
-  returns_ad_waste: {
+  roas_burn: {
     reason: {
-      he: "תקציב פרסום שנשרף על מוצרים עם החזרות גבוהות",
-      en: "Ad spend pushing products with high return rates"
+      he: "קמפיינים שרצים עם ROAS גרוע — כסף חי שנשרף",
+      en: "Campaigns running at a losing ROAS — live money burning"
     },
     action: {
-      he: "השהו את המוצרים האלה במודעות עד לתיקון מידות/תיאור",
-      en: "Pause these products in ads until sizing/description is fixed"
+      he: "לעצור או לחתוך את הקמפיינים המסומנים היום",
+      en: "Pause or cut the flagged campaigns today"
     },
-    href: "/profit/returns",
+    href: "/dashboard",
     unlockHint: {
-      he: "חברו את Meta Ads כדי לפתוח את בדיקת בזבוז הפרסום על מוצרים חוזרים.",
-      en: "Connect Meta Ads to unlock the returns-ad-waste check."
+      he: "חברו את Meta Ads כדי לפתוח את בדיקת שריפת התקציב.",
+      en: "Connect Meta Ads to unlock the budget-burn check."
+    }
+  },
+  silent_products: {
+    reason: {
+      he: "מוצרים שמכרו טוב והשתתקו — הכנסה מוכחת שנעלמה",
+      en: "Products with a proven sales history that went silent"
+    },
+    action: {
+      he: "להחזיר מלאי/זמינות/תנועה למוצרים המסומנים",
+      en: "Restore stock/availability/traffic to the flagged products"
+    },
+    href: "/profit",
+    unlockHint: {
+      he: "נדרשת היסטוריית מכירות של ~3 חודשים כדי לזהות מוצר שהשתתק.",
+      en: "Needs ~3 months of sales history to spot a product going silent."
+    }
+  },
+  silent_affiliates: {
+    reason: {
+      he: "שותפים שקיבלו מוצרים/עמלות בלי חשיפה בצד השני",
+      en: "Affiliates we invested in with no exposure delivered"
+    },
+    action: {
+      he: "לתאם פרסום או להשהות את הקודים של השותפים המסומנים",
+      en: "Schedule the content or pause the flagged affiliates' codes"
+    },
+    href: "/affiliate-portal",
+    unlockHint: {
+      he: "מופעל כשיש תוכנית שותפים ופרופילים במעקב אינסטגרם.",
+      en: "Unlocks once affiliates exist and their Instagram profiles are tracked."
     }
   }
 };
@@ -247,61 +287,132 @@ async function discountLeg(storeId: string, start: Date, end: Date): Promise<Lea
   };
 }
 
-// ── Leg 3: returns ad waste (needs Meta) ───────────────────────────────
-async function returnsAdWasteLeg(storeId: string, end: Date): Promise<LeakItem> {
+// ── Leg 3: ROAS burn — live spend that returns less than it costs ──────
+async function roasBurnLeg(storeId: string, end: Date): Promise<LeakItem> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = getDb() as any;
-
   const spendStart = new Date(end.getTime() - WINDOW_DAYS * 86_400_000);
-  const campaigns: Array<{ campaignId: string; campaignName: string; _sum: { spend: unknown } }> =
-    await db.metaAdsCampaignInsight.groupBy({
-      by: ["campaignId", "campaignName"],
-      where: {
-        storeId,
-        level: "campaign",
-        dateStart: { gte: spendStart, lte: end }
-      },
-      _sum: { spend: true }
-    });
-  if (campaigns.length === 0) return unavailable("returns_ad_waste");
-
-  const returnsReport = await buildReturnsIntelligence({
-    storeId,
-    start: new Date(end.getTime() - RETURNS_WINDOW_DAYS * 86_400_000),
-    end
+  const rows: Array<{
+    campaignId: string;
+    campaignName: string;
+    _sum: { spend: unknown };
+  }> = await db.metaAdsCampaignInsight.groupBy({
+    by: ["campaignId", "campaignName"],
+    where: { storeId, level: "campaign", dateStart: { gte: spendStart, lte: end } },
+    _sum: { spend: true }
   });
-  const risks = extractReturnRisks(returnsReport);
+  if (rows.length === 0) return unavailable("roas_burn");
 
-  let wasted = 0;
+  // Attributed revenue per campaign = Σ(roas × spend) over daily rows —
+  // needs the raw rows, not the groupBy, because roas varies per day.
+  const daily: Array<{ campaignId: string; spend: unknown; purchaseRoas: unknown }> =
+    await db.metaAdsCampaignInsight.findMany({
+      where: { storeId, level: "campaign", dateStart: { gte: spendStart, lte: end } },
+      select: { campaignId: true, spend: true, purchaseRoas: true }
+    });
+  const perCampaign = new Map<string, { spend: number; revenue: number; hasRoas: boolean }>();
+  for (const d of daily) {
+    const acc = perCampaign.get(d.campaignId) ?? { spend: 0, revenue: 0, hasRoas: false };
+    const spend = toNumber(d.spend);
+    acc.spend += spend;
+    if (d.purchaseRoas != null) {
+      acc.hasRoas = true;
+      acc.revenue += toNumber(d.purchaseRoas) * spend;
+    }
+    perCampaign.set(d.campaignId, acc);
+  }
+  const nameById = new Map(rows.map((r) => [r.campaignId, r.campaignName]));
+
+  let burned = 0;
   const flagged: string[] = [];
-  for (const campaign of campaigns) {
-    const risk = findReturnRiskForName(campaign.campaignName, risks);
-    if (!risk) continue;
-    const spend = campaign._sum.spend == null ? 0 : Number(campaign._sum.spend);
-    // Conservative: the wasted share of spend ≈ the product's return
-    // rate (the fraction of driven sales that come back).
-    wasted += spend * risk.returnRate;
-    if (flagged.length < 3) flagged.push(`${campaign.campaignName} (${Math.round(risk.returnRate * 100)}%)`);
+  let considered = 0;
+  for (const [campaignId, c] of perCampaign) {
+    if (c.spend < 500 || !c.hasRoas) continue; // noise / no attribution data
+    considered += 1;
+    if (c.revenue >= c.spend) continue; // at least breaking even
+    const loss = c.spend - c.revenue;
+    burned += loss;
+    if (flagged.length < 3) {
+      flagged.push(
+        `"${nameById.get(campaignId) ?? campaignId}" (₪${Math.round(loss).toLocaleString("en-US")} הפסד)`
+      );
+    }
   }
 
-  const amount = round(wasted);
+  const amount = round(burned);
   return {
-    id: "returns_ad_waste",
+    id: "roas_burn",
     amount,
-    monthlyImpact: amount,
-    reason: LEG_META.returns_ad_waste.reason,
-    action: LEG_META.returns_ad_waste.action,
-    href: LEG_META.returns_ad_waste.href,
+    monthlyImpact: amount, // pausing stops the burn directly
+    reason: LEG_META.roas_burn.reason,
+    action: LEG_META.roas_burn.action,
+    href: LEG_META.roas_burn.href,
     available: true,
     detail:
       amount > 0
         ? {
-            he: `קמפיינים מסומנים: ${flagged.join(" · ")}`,
-            en: `Flagged campaigns: ${flagged.join(" · ")}`
+            he: `קמפיינים שמחזירים פחות ממה שהם עולים: ${flagged.join(" · ")}`,
+            en: `Campaigns returning less than they cost: ${flagged.join(" · ")}`
           }
         : {
-            he: `${campaigns.length} קמפיינים נבדקו — אף אחד לא מקדם מוצר עם החזרות חריגות.`,
-            en: `${campaigns.length} campaigns checked — none is pushing a high-return product.`
+            he: `${considered} קמפיינים עם הוצאה אמיתית נבדקו — כולם מעל נקודת האיזון.`,
+            en: `${considered} campaigns with real spend checked — all above breakeven.`
+          }
+  };
+}
+
+// ── Leg 4: silent products — proven sellers that went quiet ────────────
+async function silentProductsLeg(storeId: string): Promise<LeakItem> {
+  const offenders = await computeSilentProducts(storeId);
+  const amount = round(offenders.reduce((sum, o) => sum + o.lostEstimate, 0));
+  const names = offenders.slice(0, 2).map((o) => `"${o.title}"`);
+  const oosCount = offenders.filter((o) => o.stock != null && o.stock <= 0).length;
+  return {
+    id: "silent_products",
+    amount,
+    // Restoring availability recaptures most of a proven run-rate — claim
+    // 70%, not all of it (demand can cool on its own).
+    monthlyImpact: round(amount * 0.7 * (30 / 14)),
+    reason: LEG_META.silent_products.reason,
+    action: LEG_META.silent_products.action,
+    href: LEG_META.silent_products.href,
+    available: true,
+    detail:
+      amount > 0
+        ? {
+            he: `${offenders.length} מוצרים שהשתתקו${oosCount > 0 ? ` (${oosCount} מהם אזלו מהמלאי)` : ""}: ${names.join(", ")}`,
+            en: `${offenders.length} products went silent${oosCount > 0 ? ` (${oosCount} out of stock)` : ""}: ${names.join(", ")}`
+          }
+        : {
+            he: "כל המוצרים עם היסטוריית מכירות ממשיכים למכור בקצב שלהם.",
+            en: "Every product with a sales history is still selling at its pace."
+          }
+  };
+}
+
+// ── Leg 5: silent affiliates — investment with no exposure delivered ───
+async function silentAffiliatesLeg(storeId: string): Promise<LeakItem> {
+  const computation = await computeSilentAffiliates(storeId);
+  if (computation.membersConsidered === 0) return unavailable("silent_affiliates");
+  const amount = round(computation.flagged.reduce((sum, f) => sum + f.investment, 0));
+  const names = computation.flagged.slice(0, 2).map((f) => f.name);
+  return {
+    id: "silent_affiliates",
+    amount,
+    monthlyImpact: amount,
+    reason: LEG_META.silent_affiliates.reason,
+    action: LEG_META.silent_affiliates.action,
+    href: LEG_META.silent_affiliates.href,
+    available: true,
+    detail:
+      amount > 0
+        ? {
+            he: `${computation.flagged.length} שותפים בלי תוצר: ${names.join(", ")}${computation.untracked > 0 ? ` · ${computation.untracked} נוספים ללא פרופיל במעקב (לא נבדקו)` : ""}`,
+            en: `${computation.flagged.length} affiliates with no delivery: ${names.join(", ")}${computation.untracked > 0 ? ` · ${computation.untracked} more untracked (not judged)` : ""}`
+          }
+        : {
+            he: `כל השותפים שהשקעתם בהם החודש פרסמו וקיבלו מעורבות${computation.untracked > 0 ? ` (${computation.untracked} ללא פרופיל במעקב — לא נבדקו)` : ""}.`,
+            en: `Every affiliate you invested in this month posted with engagement${computation.untracked > 0 ? ` (${computation.untracked} untracked — not judged)` : ""}.`
           }
   };
 }

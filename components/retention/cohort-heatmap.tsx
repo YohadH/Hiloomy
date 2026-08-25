@@ -16,53 +16,44 @@ function formatMonthLabel(yyyyMm: string, locale: "he" | "en"): string {
 }
 
 /**
- * Enhanced cohort color coding with three zones:
- *  - High values (>= 25%): green ramp — strong retention
- *  - Mid values (5%–25%): neutral indigo ramp
- *  - Low values (> 0% and < 5%): red ramp — poor retention (outlier)
- * The colour scale is full-range (not capped at 60%) so outlier cells
- * stand out clearly at both extremes.
+ * STORE-RELATIVE color coding. The old absolute bands (red under 5%, green
+ * only above 25%) rendered this store — whose real cohort retention runs
+ * 1–6% — as a wall of red: honest, but pattern-blind, and the owner asked
+ * where all the other colors went. The shade now expresses each cell
+ * RELATIVE to the store's own best month (red = your weak months, amber =
+ * middle, green = your strong months), while the number in the cell stays
+ * the true absolute percent.
  */
-function cellShade(rate: number | null): {
+function cellShade(rate: number | null, maxRate: number): {
   bg: string;
   text: string;
 } {
   if (rate == null) return { bg: "#ffffff", text: "#94a3b8" };
   if (rate <= 0) return { bg: "#f8fafc", text: "#cbd5e1" };
 
-  // Low outlier: < 5% retention — red ramp
-  if (rate < 0.05) {
-    // t = 0 (near 0%) → faint rose; t = 1 (5%) → strong rose
-    const t = rate / 0.05;
-    const r = Math.round(255 - (255 - 220) * t); // 255 → 220
-    const g = Math.round(241 - (241 - 38) * t);  // 241 → 38
-    const b = Math.round(242 - (242 - 38) * t);  // 242 → 38
-    const bg = `rgb(${r}, ${g}, ${b})`;
-    const text = t > 0.6 ? "#ffffff" : "#7f1d1d";
-    return { bg, text };
-  }
+  const t = maxRate > 0 ? Math.min(rate / maxRate, 1) : 0;
+  const blend = (
+    from: [number, number, number],
+    to: [number, number, number],
+    p: number
+  ): string =>
+    `rgb(${Math.round(from[0] + (to[0] - from[0]) * p)}, ${Math.round(from[1] + (to[1] - from[1]) * p)}, ${Math.round(from[2] + (to[2] - from[2]) * p)})`;
 
-  // High outlier: >= 25% retention — green ramp
-  if (rate >= 0.25) {
-    // t = 0 (25%) → light emerald; t = 1 (60%+) → strong emerald
-    const t = Math.min((rate - 0.25) / 0.35, 1);
-    const r = Math.round(209 - (209 - 4) * t);  // 209 → 4
-    const g = Math.round(250 - (250 - 120) * t); // 250 → 120
-    const b = Math.round(229 - (229 - 87) * t);  // 229 → 87
-    const bg = `rgb(${r}, ${g}, ${b})`;
-    const text = t > 0.45 ? "#ffffff" : "#14532d";
-    return { bg, text };
+  // Bottom third: light rose → rose. Middle third: amber. Top third:
+  // light emerald → strong emerald.
+  if (t < 1 / 3) {
+    const p = t / (1 / 3);
+    return { bg: blend([255, 241, 242], [252, 165, 165], p), text: "#7f1d1d" };
   }
-
-  // Mid range 5%–25%: indigo ramp (same hue as rest of the dashboard)
-  const t = (rate - 0.05) / 0.20; // 0 at 5%, 1 at 25%
-  // Light end #F0FDF4 → strong end #16A34A
-  const r = Math.round(238 - (238 - 99) * t);
-  const g = Math.round(242 - (242 - 102) * t);
-  const b = Math.round(255 - (255 - 241) * t);
-  const bg = `rgb(${r}, ${g}, ${b})`;
-  const text = t > 0.65 ? "#ffffff" : "#1e293b";
-  return { bg, text };
+  if (t < 2 / 3) {
+    const p = (t - 1 / 3) / (1 / 3);
+    return { bg: blend([254, 243, 199], [252, 211, 77], p), text: "#78350f" };
+  }
+  const p = (t - 2 / 3) / (1 / 3);
+  return {
+    bg: blend([167, 243, 208], [5, 150, 105], p),
+    text: p > 0.55 ? "#ffffff" : "#064e3b"
+  };
 }
 
 export function CohortHeatmap({
@@ -108,8 +99,19 @@ export function CohortHeatmap({
     return base > 0 ? returned / base : null;
   });
 
+  // The store's own best month — the anchor for the relative color scale.
+  let maxRate = 0;
+  for (const row of report.cohorts) {
+    for (let i = 1; i < row.rates.length; i += 1) {
+      const r = row.rates[i];
+      if (r != null && r > maxRate) maxRate = r;
+    }
+  }
+
   return (
     <div className="overflow-x-auto table-scroll scroll-fade-end">
+      {/* Same inline-keyframes pattern as the chat widget's gg-chat-pop. */}
+      <style>{`@keyframes cohort-cell-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }`}</style>
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr>
@@ -150,32 +152,51 @@ export function CohortHeatmap({
                   );
                 }
                 const rate = row.rates[i];
-                const shade = cellShade(rate);
+                const shade = cellShade(rate, maxRate);
                 return (
                   <td
                     key={i}
-                    className="border border-border px-1 py-0.5 text-center align-middle"
-                    style={{ background: shade.bg, color: shade.text }}
-                    title={
-                      rate != null && count != null
-                        ? `${count} ${lang("לקוחות", "customers")} (${(rate * 100).toFixed(1)}%)`
-                        : ""
-                    }
+                    className="group relative border border-border px-1 py-0.5 text-center align-middle transition-transform duration-150 hover:z-20 hover:scale-110 hover:shadow-md"
+                    style={{
+                      background: shade.bg,
+                      color: shade.text,
+                      // Staggered fade-in so the retention decay reads
+                      // left-to-right on load (keyframes in globals.css).
+                      animation: `cohort-cell-in 320ms ease-out ${Math.min(i * 45, 540)}ms backwards`
+                    }}
                   >
                     {rate == null ? (
                       ""
                     ) : (
-                      // Count AND rate in-cell — the owner's question is a
-                      // count question, and it used to live only in a
-                      // tooltip he had to discover (F-062).
-                      <span className="inline-flex flex-col leading-tight">
-                        <span className="text-[11px] font-semibold">
-                          {display === "rate" ? `${Math.round(rate * 100)}%` : String(count)}
+                      <>
+                        {/* Count AND rate in-cell — the owner's question is
+                            a count question (F-062). */}
+                        <span className="inline-flex flex-col leading-tight">
+                          <span className="text-[11px] font-semibold">
+                            {display === "rate" ? `${Math.round(rate * 100)}%` : String(count)}
+                          </span>
+                          <span className="text-[9px] opacity-80">
+                            {display === "rate" ? String(count) : `${Math.round(rate * 100)}%`}
+                          </span>
                         </span>
-                        <span className="text-[9px] opacity-80">
-                          {display === "rate" ? String(count) : `${Math.round(rate * 100)}%`}
+                        {/* Real hover tooltip per cell — the native title
+                            attr was invisible in practice. Pure CSS. */}
+                        <span
+                          className="pointer-events-none absolute start-1/2 top-full z-30 mt-1 hidden w-max max-w-[240px] translate-x-[-50%] rounded-lg border border-border bg-card px-3 py-2 text-start text-[11px] leading-4 text-foreground shadow-xl group-hover:block rtl:translate-x-[50%]"
+                          role="tooltip"
+                        >
+                          <span className="block font-bold">
+                            {lang(
+                              `קבוצת ${formatMonthLabel(row.cohortMonth, locale)} · חודש ${i}`,
+                              `${formatMonthLabel(row.cohortMonth, locale)} cohort · month ${i}`
+                            )}
+                          </span>
+                          {lang(
+                            `${count} מתוך ${row.cohortSize.toLocaleString("he-IL")} לקוחות חזרו להזמין (${(rate * 100).toFixed(1)}%).`,
+                            `${count} of ${row.cohortSize.toLocaleString("en-US")} customers ordered again (${(rate * 100).toFixed(1)}%).`
+                          )}
                         </span>
-                      </span>
+                      </>
                     )}
                   </td>
                 );
@@ -200,23 +221,23 @@ export function CohortHeatmap({
         </tfoot>
       </table>
       <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-        <span>{lang("מקרא:", "Legend:")}</span>
+        <span>{lang("מקרא (יחסי לחנות שלכם):", "Legend (relative to YOUR store):")}</span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-6 rounded-sm" style={{ background: "rgb(220,38,38)" }} />
-          {lang("נמוך מאוד (<5%)", "Very low (<5%)")}
+          <span className="inline-block h-3 w-6 rounded-sm" style={{ background: "rgb(252,165,165)" }} />
+          {lang("החודשים החלשים שלכם", "Your weak months")}
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-6 rounded-sm" style={{ background: "#F0FDF4" }} />
-          {lang("בינוני", "Mid")}
+          <span className="inline-block h-3 w-6 rounded-sm" style={{ background: "rgb(252,211,77)" }} />
+          {lang("בינוני", "Middle")}
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-6 rounded-sm" style={{ background: "rgb(4,120,87)" }} />
-          {lang("גבוה (>25%)", "High (>25%)")}
+          <span className="inline-block h-3 w-6 rounded-sm" style={{ background: "rgb(5,150,105)" }} />
+          {lang(`החזקים שלכם (השיא: ${(maxRate * 100).toFixed(1)}%)`, `Your strong months (peak: ${(maxRate * 100).toFixed(1)}%)`)}
         </span>
         <span className="ms-auto">
           {lang(
-            `${report.cohorts.length} מחזורים · ${report.totalCustomers} לקוחות`,
-            `${report.cohorts.length} cohorts · ${report.totalCustomers} customers`
+            `${report.cohorts.length} מחזורים · ${report.totalCustomers.toLocaleString("he-IL")} לקוחות · כל ההיסטוריה — התצוגה הזו אינה מושפעת מבורר התאריכים`,
+            `${report.cohorts.length} cohorts · ${report.totalCustomers.toLocaleString("en-US")} customers · lifetime view — this chart ignores the date picker`
           )}
         </span>
       </div>

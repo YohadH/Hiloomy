@@ -43,8 +43,8 @@ function strings(isHe: boolean) {
     step1Eyebrow: isHe ? "הכסף" : "The money",
     step1Title: isHe ? "המספרים הראשיים" : "Top-level totals",
     step1Hint: isHe
-      ? "חמישה מספרים שאומרים לכם איך תוכנית השותפים שלכם מתפקדת כרגע."
-      : "Five numbers that tell you how your affiliate program is performing right now.",
+      ? "חמישה מספרים שאומרים לכם איך תוכנית השותפים שלכם מתפקדת כרגע. ההגדרה כאן רחבה: כל הזמנה שיוחסה לשותף דרך לינק, קופון או היקף מעקב — לכן המספרים גדולים משורת ה'משפיעניות' בעמוד הרווחיות, שסופרת רק המרות נושאות עמלה."
+      : "Five numbers that tell you how your affiliate program is performing right now. The definition here is broad — every order attributed via link, coupon, or tracking scope — so these run higher than the profit page's 'Influencers' row, which counts commission-bearing conversions only.",
 
     tileSales: isHe ? "סה״כ מכירות" : "Total sales",
     tileSalesTip: isHe
@@ -164,13 +164,18 @@ function buildBody(
   totals: { totalClicks: number; totalOrders: number; totalCommission: number },
   scopeDescription: string,
   currency: string,
-  conversion: string
+  conversion: string | null
 ): string {
   const clicks = formatNumber(totals.totalClicks);
   const orders = formatNumber(totals.totalOrders);
-  const funnel = isHe
-    ? `${clicks} קליקים → ${orders} הזמנות (${conversion}% המרה).`
-    : `${clicks} clicks → ${orders} orders (${conversion}% conversion).`;
+  const funnel =
+    conversion != null
+      ? isHe
+        ? `${clicks} קליקים → ${orders} הזמנות (${conversion}% המרה).`
+        : `${clicks} clicks → ${orders} orders (${conversion}% conversion).`
+      : isHe
+        ? `${orders} הזמנות משויכות לשותפים (אין עדיין נתוני קליקים).`
+        : `${orders} affiliate-attributed orders (no click data yet).`;
   const commissionLine =
     totals.totalCommission > 0
       ? isHe
@@ -294,8 +299,12 @@ export default async function AffiliatePortalDashboardPage() {
   })();
 
   const tone = totals.totalSales > 0 ? "up" : "neutral";
-  const conversion =
-    totals.totalClicks > 0 ? ((totals.totalOrders / totals.totalClicks) * 100).toFixed(1) : "0.0";
+  // 0 clicks with real orders means NO CLICK DATA, not a 0.0% conversion
+  // rate — rendering the divide-by-zero as a confident rate said "your
+  // links convert terribly" when the truth was "we can't see clicks"
+  // (F-079). null = show "no click data" instead of a number.
+  const conversion: string | null =
+    totals.totalClicks > 0 ? ((totals.totalOrders / totals.totalClicks) * 100).toFixed(1) : null;
   const headline = buildHeadline(isHe, totals, currency);
   const body = buildBody(isHe, totals, dashboard.scope.description, currency, conversion);
   const insights = computeInsights(isHe, dashboard, currency, t);
@@ -338,10 +347,16 @@ export default async function AffiliatePortalDashboardPage() {
             />
             <StatTile
               label={t.tileClicks}
-              value={formatNumber(totals.totalClicks)}
+              value={totals.totalClicks > 0 ? formatNumber(totals.totalClicks) : "—"}
               icon={MousePointerClick}
               tooltip={t.tileClicksTip}
-              hint={`${conversion}% ${t.tileClicksHintSuffix}`}
+              hint={
+                conversion != null
+                  ? `${conversion}% ${t.tileClicksHintSuffix}`
+                  : isHe
+                    ? "אין נתוני קליקים — מעקב הקליקים יופעל כשהלינקים יונפקו מתוך האפליקציה"
+                    : "No click data — click tracking activates once the app issues the links"
+              }
             />
             <StatTile
               label={t.tileAffiliates}

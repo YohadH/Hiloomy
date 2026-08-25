@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { toErrorMessage } from "@/lib/server/errors";
+import { getDb } from "@/lib/server/db";
 import { runIncrementalSync } from "@/lib/services/shopify-sync-service";
 import { syncMetaAdsCampaignInsights } from "@/lib/services/meta-ads-service";
 import { crawlPublicInstagramProfiles } from "@/lib/services/instagram-public-crawler-service";
+import { syncGscData, getGscSelectedSiteUrl } from "@/lib/services/gsc-service";
+import { syncGa4Data, getGa4SelectedProperty } from "@/lib/services/ga4-service";
 import {
   syncCompetitorSignals,
   upsertCompetitorResponseAlerts
@@ -50,7 +53,10 @@ export async function POST(request: Request) {
     .then((selection) => ({ start: selection.start, end: selection.end }))
     .catch(() => null);
 
-  const [shopify, meta, instagram, competitors] = await Promise.allSettled([
+  // ONE apply syncs EVERY platform (owner's ask): Shopify, Meta, Instagram,
+  // competitors, GA4 and Search Console — no page-by-page syncing. Each is
+  // best-effort; a missing connection resolves as a no-op, not a failure.
+  const [shopify, meta, instagram, competitors, ga4, gsc] = await Promise.allSettled([
     runIncrementalSync(storeId),
     syncMetaAdsCampaignInsights({ storeId }),
     crawlPublicInstagramProfiles({ storeId }),
@@ -62,7 +68,22 @@ export async function POST(request: Request) {
         end: new Date()
       }).catch(() => null);
       return res;
-    })
+    }),
+    (async () => {
+      const property = await getGa4SelectedProperty(storeId).catch(() => null);
+      if (!property) return { skipped: true };
+      return syncGa4Data(storeId);
+    })(),
+    (async () => {
+      const db = getDb();
+      const store = (await db.store
+        .findUnique({ where: { id: storeId }, select: { domain: true } })
+        .catch(() => null)) as { domain: string } | null;
+      if (!store) return { skipped: true };
+      const selectedSite = await getGscSelectedSiteUrl(storeId).catch(() => null);
+      const siteUrl = selectedSite ?? `sc-domain:${store.domain}`;
+      return syncGscData(storeId, siteUrl);
+    })()
   ]);
 
   return NextResponse.json({
@@ -71,7 +92,9 @@ export async function POST(request: Request) {
       shopify: describe(shopify),
       meta: describe(meta),
       instagram: describe(instagram),
-      competitors: describe(competitors)
+      competitors: describe(competitors),
+      ga4: describe(ga4),
+      gsc: describe(gsc)
     }
   });
 }

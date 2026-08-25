@@ -23,6 +23,8 @@ import { getOverviewPayload, getAppChromeData } from "@/lib/services/analytics-s
 import { listOpenAlerts } from "@/lib/services/alert-writer-service";
 import { buildStockoutImminentReport } from "@/lib/services/stockout-imminent-service";
 import { buildRoasCollapseReport } from "@/lib/services/roas-collapse-service";
+import { upsertCampaignFunnelAlerts } from "@/lib/services/campaign-funnel-alert-service";
+import { upsertSilentProductAlerts } from "@/lib/services/silent-product-alert-service";
 import { upsertCompetitorResponseAlerts } from "@/lib/services/competitor-intel-service";
 import { getCompetitorBrief } from "@/lib/services/competitor-brief-service";
 import { CompetitorBriefSection } from "@/components/command-center/competitor-brief-section";
@@ -152,6 +154,16 @@ export default async function CommandCenterPage() {
         end: roasWindow.end
       }).catch((e) => {
         console.error("[command-center] roas engine failed:", e);
+        return null;
+      }),
+      // Campaign × commerce joins (F-013/F-004): funnel disconnects and
+      // silent products — cheap groupBys, refreshed on load like the rest.
+      upsertCampaignFunnelAlerts(storeId).catch((e) => {
+        console.error("[command-center] campaign-funnel engine failed:", e);
+        return null;
+      }),
+      upsertSilentProductAlerts(storeId).catch((e) => {
+        console.error("[command-center] silent-product engine failed:", e);
         return null;
       }),
       measureOutcomesForResolvedAlerts({ storeId }).catch((e) => {
@@ -551,6 +563,15 @@ function ClosedLoopSection({
   // dropped the unresolved ones — and "the app couldn't verify" is the
   // honest signal, not noise to hide (F-018).
   const unknowns = items.length - wins - misses;
+  // Running total (F-017): the measured ₪ your actions produced — the
+  // before-vs-after delta when the measurement has one, else the raw
+  // post-action revenue.
+  const measuredImpact = items
+    .filter((i) => i.outcome.verdict === "win")
+    .reduce((sum, i) => {
+      const d = i.outcome.detail as { deltaRevenue?: number; revenue?: number } | undefined;
+      return sum + (typeof d?.deltaRevenue === "number" ? Math.max(0, d.deltaRevenue) : d?.revenue ?? 0);
+    }, 0);
 
   return (
     <section className="space-y-3">
@@ -558,8 +579,8 @@ function ClosedLoopSection({
         eyebrow={lang("הלולאה נסגרת", "Closed loop")}
         title={lang("מה קרה אחרי הפעולה שלכם", "What happened after you acted")}
         hint={lang(
-          `מעקב אחרי ההמלצות שביצעתם לאחרונה. ${wins} הצליחו · ${misses} לא${unknowns > 0 ? ` · ${unknowns} עדיין לא ידוע` : ""} — שווה ללמוד מהכישלונות.`,
-          `Tracking recent recommendations you actioned. ${wins} worked · ${misses} didn't${unknowns > 0 ? ` · ${unknowns} still unknown` : ""} — failures are where the learning is.`
+          `מעקב אחרי ההמלצות שביצעתם לאחרונה. ${wins} הצליחו · ${misses} לא${unknowns > 0 ? ` · ${unknowns} עדיין לא ידוע` : ""}${measuredImpact > 0 ? ` · השפעה שנמדדה: ₪${Math.round(measuredImpact).toLocaleString("en-US")}` : ""} — שווה ללמוד מהכישלונות.`,
+          `Tracking recent recommendations you actioned. ${wins} worked · ${misses} didn't${unknowns > 0 ? ` · ${unknowns} still unknown` : ""}${measuredImpact > 0 ? ` · measured impact: ₪${Math.round(measuredImpact).toLocaleString("en-US")}` : ""} — failures are where the learning is.`
         )}
       />
       <ul className="space-y-2">

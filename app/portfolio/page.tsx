@@ -18,6 +18,8 @@ import { NarrativeBanner } from "@/components/dashboard-v2/narrative-banner";
 import { PortfolioBrandTable } from "@/components/portfolio/portfolio-brand-table";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { buildPortfolioOverview, type BrandStory } from "@/lib/services/portfolio-service";
+import { buildPlatformSpendReport } from "@/lib/services/platform-spend-service";
+import { PlatformSpendTable } from "@/components/portfolio/platform-spend-table";
 import { getAppLocale } from "@/lib/i18n";
 import { heCount } from "@/lib/i18n/he-plural";
 import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
@@ -47,6 +49,12 @@ export default async function PortfolioPage() {
     buildPortfolioOverview({ range: { start: selection.start, end: selection.end } })
   ]);
   const isHe = locale === "he";
+  // Per-platform spend vs income (F-077) — same stores, same window.
+  const platformSpend = await buildPlatformSpendReport({
+    storeIds: portfolio.brands.map((b) => b.storeId),
+    start: selection.start,
+    end: selection.end
+  }).catch(() => null);
 
   const t = isHe
     ? {
@@ -254,6 +262,22 @@ export default async function PortfolioPage() {
               : `${portfolio.totals.activeBrands} of ${portfolio.totals.connectedBrands} connected brand${portfolio.totals.connectedBrands === 1 ? "" : "s"} generated sales this period.`}
           </p>
         </section>
+
+        {/* Per-platform spend vs income (F-077) */}
+        {platformSpend ? (
+          <section className="space-y-3">
+            <SectionHead
+              eyebrow={isHe ? "הוצאות פרסום" : "Ad spend"}
+              title={isHe ? "כמה הוצאנו בכל פלטפורמה — וכמה חזר" : "What each platform cost — and what came back"}
+              hint={
+                isHe
+                  ? "לפי טווח התאריכים שנבחר למעלה. פלטפורמה בלי חיבור מסומנת במפורש — היעדר נתונים אינו היעדר הוצאה."
+                  : "For the date range selected above. Unconnected platforms are marked explicitly — missing data is not zero spend."
+              }
+            />
+            <PlatformSpendTable report={platformSpend} currency={portfolio.currency} isHe={isHe} />
+          </section>
+        ) : null}
 
         {/* Per-brand breakdown */}
         <section className="space-y-3">

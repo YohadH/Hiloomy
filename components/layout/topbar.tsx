@@ -2,7 +2,6 @@ import { Badge } from "@/components/ui/badge";
 import type { Store } from "@/lib/domain/types";
 import type { AppLocale } from "@/lib/i18n";
 import { ReportingPicker } from "@/components/layout/reporting-picker";
-import { SyncNowButton } from "@/components/layout/sync-now-button";
 import { AccountMenu } from "@/components/layout/account-menu";
 import {
   StoreSwitcher,
@@ -91,8 +90,11 @@ export async function Topbar({
           </p>
         </div>
       </div>
+      {/* "סנכרון עכשיו" removed per the owner — applying a date range now
+          syncs EVERY platform in one shot (/api/reporting/refresh), so a
+          separate manual sync button was redundant noise. The 2h cron still
+          covers the background cadence. */}
       <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
-        <SyncNowButton locale={locale === "he" ? "he" : "en"} />
         {auth?.email ? (
           <AccountMenu
             email={auth.email}
@@ -112,7 +114,6 @@ export async function Topbar({
           initialComparisonEnd={controls?.comparison?.endDate ?? ""}
           initialRangeLabel={controls?.dateRangeLabel ?? "Last 30 days"}
           initialComparisonLabel={controls?.comparisonLabel ?? "Previous period"}
-          exportLabel={labels.common.exportSummary}
           locale={locale === "he" ? "he" : "en"}
         />
       </div>

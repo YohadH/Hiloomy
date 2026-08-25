@@ -241,6 +241,8 @@ model Store {
   ganttRows                  GanttRow[]
   competitors                Competitor[]
   competitorSnapshots        CompetitorSnapshot[]
+  campaignProductLinks       CampaignProductLink[]
+  bundleComponents           BundleComponent[]
   createdAt                  DateTime                      @default(now())
   updatedAt                  DateTime                      @updatedAt
 
@@ -470,10 +472,58 @@ model Product {
   variants              ProductVariant[]
   lineItems             OrderLineItem[]
   collectionMemberships ProductCollectionMembership[]
+  campaignLinks         CampaignProductLink[]
+  bundleAsParent        BundleComponent[]             @relation("bundleProduct")
+  bundleAsComponent     BundleComponent[]             @relation("componentProduct")
 
   @@unique([storeId, shopifyProductId])
   @@index([storeId, updatedAt])
   @@index([storeId, productType])
+}
+
+// ── Campaign ↔ product mapping (F-013/F-004) ─────────────────────────────
+// Meta campaign names are free text, so "is a campaign pushing this
+// product?" can't be answered from the data alone. The owner tags each
+// campaign with the products it promotes (Settings → קמפיינים ומוצרים);
+// the alert engines then JOIN live campaign state against commerce state:
+// "campaign still spending on a product about to stock out", "campaign
+// clicks fine but the product isn't selling", etc.
+model CampaignProductLink {
+  id           String   @id @default(cuid())
+  storeId      String
+  // Meta campaignId is stable across renames; the name is denormalized for
+  // display and for matching insights rows.
+  campaignId   String
+  campaignName String
+  productId    String
+  createdAt    DateTime @default(now())
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, campaignId, productId])
+  @@index([storeId, productId])
+}
+
+// ── Bundle composition (F-036) ───────────────────────────────────────────
+// Shopify sells a kit as ONE product and tells us nothing about what's
+// inside it, so bundle profitability was unanswerable — while the store's
+// best seller is a bundle. The owner defines each kit's components once;
+// the profit page then computes the bundle's true COGS as Σ(component
+// effective cost × quantity).
+model BundleComponent {
+  id                 String   @id @default(cuid())
+  storeId            String
+  bundleProductId    String
+  componentProductId String
+  // Units of the component inside ONE kit.
+  quantity           Int      @default(1)
+  createdAt          DateTime @default(now())
+  store              Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  bundle             Product  @relation("bundleProduct", fields: [bundleProductId], references: [id], onDelete: Cascade)
+  component          Product  @relation("componentProduct", fields: [componentProductId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, bundleProductId, componentProductId])
+  @@index([storeId, bundleProductId])
 }
 
 model ShopifyCollection {

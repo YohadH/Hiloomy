@@ -18,6 +18,9 @@ import {
 } from "@/lib/services/affiliate-leakage-service";
 import { upsertUnderwaterDiscountAlerts } from "@/lib/services/discount-scorecard-service";
 import { upsertReturnRateAlerts } from "@/lib/services/returns-intelligence-service";
+import { upsertCampaignFunnelAlerts } from "@/lib/services/campaign-funnel-alert-service";
+import { upsertSilentProductAlerts } from "@/lib/services/silent-product-alert-service";
+import { upsertSilentAffiliateAlerts } from "@/lib/services/silent-affiliate-alert-service";
 
 // Multi-source data refresh — the unified 2-hour cron tick.
 //
@@ -108,6 +111,13 @@ interface PerStoreResult {
     // analyzed) — the "wired correctly, waiting on RivalSweeper" signal.
     skippedNoData?: number;
     alertsUpserted?: number;
+    error?: string;
+  };
+  campaignCommerceAlerts?: {
+    ok: boolean;
+    funnelFired?: number;
+    silentProductsFired?: number;
+    silentAffiliatesFired?: number;
     error?: string;
   };
   affiliateReconcile?: { linked: number; deletedDuplicates: number; stillOrphan: number };
@@ -458,6 +468,31 @@ async function handler(request: Request) {
       } catch (err) {
         console.error(`[refresh-all] returns alert engine failed for ${store.id}:`, err);
         result.returnAlerts = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err)
+        };
+      }
+
+      // ── Campaign × commerce joins (Engines 4-6, F-004/F-013) ──────
+      // 4. Campaign clicks fine but zero purchases → funnel disconnect.
+      // 5. Products with a proven sales history that went silent.
+      // 6. Affiliates we invested in whose tracked feed shows nothing.
+      // Each isolated + idempotent (fingerprint upserts, stale sweeps).
+      try {
+        const [funnel, silentProducts, silentAffiliates] = await Promise.all([
+          upsertCampaignFunnelAlerts(store.id),
+          upsertSilentProductAlerts(store.id),
+          upsertSilentAffiliateAlerts(store.id)
+        ]);
+        result.campaignCommerceAlerts = {
+          ok: true,
+          funnelFired: funnel.fired,
+          silentProductsFired: silentProducts.fired,
+          silentAffiliatesFired: silentAffiliates.fired
+        };
+      } catch (err) {
+        console.error(`[refresh-all] campaign-commerce engines failed for ${store.id}:`, err);
+        result.campaignCommerceAlerts = {
           ok: false,
           error: err instanceof Error ? err.message : String(err)
         };

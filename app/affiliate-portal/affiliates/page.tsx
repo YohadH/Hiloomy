@@ -3,22 +3,34 @@ import { AppShell } from "@/components/layout/app-shell";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { AffiliatePortalNav } from "@/components/affiliate-portal/portal-nav";
 import { getAppChromeData } from "@/lib/services/analytics-service";
-import { getAffiliates } from "@/lib/services/affiliate-portal-service";
+import { getAffiliates, getAffiliateWindowStats } from "@/lib/services/affiliate-portal-service";
 import { DataTable } from "@/components/shared/data-table";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumber, repairMojibake } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
 import { AffiliateDirectoryActions } from "@/components/affiliate-portal/affiliate-directory-actions";
 import { AffiliateInstagramField } from "@/components/affiliate-portal/affiliate-instagram-field";
 
 export default async function AffiliatesPage() {
-  const [chrome, affiliates, locale] = await Promise.all([
+  const [chrome, affiliates, windowStats, locale] = await Promise.all([
     getAppChromeData(),
     getAffiliates(),
+    getAffiliateWindowStats(),
     getAppLocale()
   ]);
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
   const dateLocale = isHe ? "he-IL" : "en-US";
+  // Dates must render in the STORE's timezone — the server-default UTC
+  // render showed midnight-Israel joins as "21:00 the previous day",
+  // rolling every date back one calendar day (F-093).
+  const timeZone = chrome.store.timezone || "Asia/Jerusalem";
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleDateString(dateLocale, {
+      timeZone,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric"
+    });
 
   return (
     <AppShell store={chrome.store} controls={chrome.controls}>
@@ -52,17 +64,24 @@ export default async function AffiliatesPage() {
               </Link>
             )
           },
-          { key: "programName", label: lang("תוכנית", "Program") },
+          {
+            key: "programName",
+            label: lang("תוכנית", "Program"),
+            // repairMojibake: bulk-imported Hebrew arrived double-decoded
+            // (UTF-8 read as Latin-1) — repair on render until the stored
+            // rows are re-encoded (F-091).
+            render: (row) => repairMojibake(row.programName)
+          },
           { key: "status", label: lang("סטטוס", "Status") },
           {
             key: "dateJoined",
             label: lang("הצטרפות", "Joined"),
-            render: (row) => new Date(row.dateJoined).toLocaleString(dateLocale)
+            render: (row) => fmtDate(row.dateJoined)
           },
           {
             key: "lastLogin",
             label: lang("כניסה אחרונה", "Last login"),
-            render: (row) => (row.lastLogin ? new Date(row.lastLogin).toLocaleString(dateLocale) : "-")
+            render: (row) => (row.lastLogin ? fmtDate(row.lastLogin) : "-")
           },
           { key: "source", label: lang("מקור", "Source") },
           {
@@ -79,12 +98,60 @@ export default async function AffiliatesPage() {
           },
           { key: "couponCode", label: lang("קופון", "Coupon"), render: (row) => row.couponCode ?? "-" },
           {
+            // Window-scoped figures (F-082/F-090/F-092): the row columns on
+            // the member are LIFETIME totals; the selected date range is
+            // what the picker promises, so that is what the main numbers
+            // show — lifetime stays as the secondary line.
             key: "sales",
-            label: lang("מכירות", "Sales"),
-            render: (row) => formatCurrency(row.sales, chrome.store.currency)
+            label: lang("מכירות בטווח", "Sales (window)"),
+            render: (row) => {
+              const stats = windowStats.get(row.id);
+              return (
+                <span>
+                  {formatCurrency(stats?.sales ?? 0, chrome.store.currency)}
+                  <br />
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    {lang("כל הזמן: ", "lifetime: ")}
+                    {formatCurrency(row.sales, chrome.store.currency)}
+                  </span>
+                </span>
+              );
+            }
+          },
+          {
+            key: "id",
+            label: lang("הזמנות בטווח", "Orders (window)"),
+            render: (row) => {
+              const stats = windowStats.get(row.id);
+              const orders = stats?.orders ?? 0;
+              const aov = orders > 0 ? (stats?.sales ?? 0) / orders : null;
+              return (
+                <span className="tabular-nums">
+                  {formatNumber(orders)}
+                  {aov != null ? (
+                    <>
+                      <br />
+                      <span className="text-[11px] font-normal text-muted-foreground">
+                        AOV {formatCurrency(aov, chrome.store.currency)}
+                      </span>
+                    </>
+                  ) : null}
+                </span>
+              );
+            }
+          },
+          {
+            key: "commission",
+            label: lang("עמלה בטווח", "Commission (window)"),
+            render: (row) =>
+              formatCurrency(windowStats.get(row.id)?.commission ?? 0, chrome.store.currency)
           }
         ]}
-        rows={affiliates}
+        rows={affiliates.map((a) => ({
+          ...a,
+          firstName: repairMojibake(a.firstName),
+          lastName: repairMojibake(a.lastName)
+        }))}
       />
     </AppShell>
   );

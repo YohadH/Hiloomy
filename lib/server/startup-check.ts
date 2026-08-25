@@ -125,6 +125,16 @@ const EXPECTED_SCHEMA_COLUMNS: Array<{ table: string; column: string; fixWith: s
     table: "DiscountUsage",
     column: "applicationType",
     fixWith: "prisma/migrations/20260825_discount_mechanism/migration.sql"
+  },
+  {
+    table: "CampaignProductLink",
+    column: "campaignId",
+    fixWith: "prisma/migrations/20260825_campaign_links_bundles/migration.sql"
+  },
+  {
+    table: "BundleComponent",
+    column: "bundleProductId",
+    fixWith: "prisma/migrations/20260825_campaign_links_bundles/migration.sql"
   }
 ];
 

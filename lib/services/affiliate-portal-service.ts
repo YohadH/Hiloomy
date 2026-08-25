@@ -929,9 +929,60 @@ export async function getAffiliatePortalDashboard(): Promise<AffiliatePortalDash
   };
 }
 
+export interface AffiliateWindowStats {
+  orders: number;
+  sales: number;
+  commission: number;
+}
+
+/**
+ * Per-affiliate performance INSIDE the selected reporting window (from
+ * AffiliateAttribution), keyed by member id. The member rows themselves
+ * carry LIFETIME columns (ordersTotal/salesTotal) — rendering those under
+ * a date picker produced the 45× inflation of F-082/F-092.
+ */
+export async function getAffiliateWindowStats(): Promise<Map<string, AffiliateWindowStats>> {
+  const db = getDb();
+  const store = await getAffiliateStore();
+  if (!db?.affiliateAttribution || !store) return new Map();
+  const range = await getReportingDateRangeSelection("en");
+  const rows = (await db.affiliateAttribution
+    .groupBy({
+      by: ["affiliateMemberId"],
+      where: { storeId: store.id, occurredAt: { gte: range.start, lte: range.end } },
+      _sum: { salesAmount: true, commissionAmount: true, ordersCount: true }
+    })
+    .catch(() => [])) as Array<{
+    affiliateMemberId: string;
+    _sum: { salesAmount: unknown; commissionAmount: unknown; ordersCount: number | null };
+  }>;
+  return new Map(
+    rows.map((r) => [
+      r.affiliateMemberId,
+      {
+        orders: Number(r._sum.ordersCount ?? 0),
+        sales: toNumber(r._sum.salesAmount),
+        commission: toNumber(r._sum.commissionAmount)
+      }
+    ])
+  );
+}
+
 export async function getAffiliatePrograms() {
   const affiliates = await getAffiliates();
-  return [await loadProgramFromDb(affiliates)];
+  const program = await loadProgramFromDb(affiliates);
+  // The program card's orders/sales follow the SELECTED WINDOW like every
+  // other surface (owner: "make also here that the affiliate will be
+  // synced by the dates" — F-082). The affiliate COUNT stays lifetime and
+  // the page labels it as such.
+  const windowStats = await getAffiliateWindowStats();
+  let orders = 0;
+  let sales = 0;
+  for (const stats of windowStats.values()) {
+    orders += stats.orders;
+    sales += stats.sales;
+  }
+  return [{ ...program, orders, sales }];
 }
 
 export async function getAffiliates() {

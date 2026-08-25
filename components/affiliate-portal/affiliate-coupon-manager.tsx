@@ -114,26 +114,69 @@ function SelectableList({
   onToggle: (id: string) => void;
   emptyLabel: string;
 }) {
+  // Search + selected-only filter (F-095): a bare 150-item checkbox list
+  // meant scrolling blind to pick a handful of products. One shared
+  // upgrade here covers products, collections AND customer segments.
+  const [query, setQuery] = useState("");
+  const [selectedOnly, setSelectedOnly] = useState(false);
+
   if (!items.length) {
     return <p className="text-sm text-muted-foreground">{emptyLabel}</p>;
   }
 
+  const needle = query.trim().toLowerCase();
+  const visible = items.filter(
+    (item) =>
+      (!needle || item.label.toLowerCase().includes(needle)) &&
+      (!selectedOnly || selectedIds.includes(item.id))
+  );
+
   return (
-    <div className="grid max-h-56 gap-2 overflow-y-auto rounded-xl border border-border bg-background p-3 md:grid-cols-2">
-      {items.map((item) => {
-        const checked = selectedIds.includes(item.id);
-        return (
-          <label key={item.id} className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2 text-sm">
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={() => onToggle(item.id)}
-              className="h-4 w-4 rounded border-border"
-            />
-            <span>{item.label}</span>
-          </label>
-        );
-      })}
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="חיפוש..."
+          aria-label="חיפוש ברשימה"
+          className="h-9 min-w-[160px] flex-1 rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-200"
+        />
+        <button
+          type="button"
+          onClick={() => setSelectedOnly((v) => !v)}
+          aria-pressed={selectedOnly}
+          className={
+            selectedOnly
+              ? "h-9 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800"
+              : "h-9 rounded-lg border border-border bg-background px-3 text-xs font-medium text-muted-foreground hover:text-foreground"
+          }
+        >
+          נבחרו ({selectedIds.length})
+        </button>
+      </div>
+      <div className="grid max-h-56 gap-2 overflow-y-auto rounded-xl border border-border bg-background p-3 md:grid-cols-2">
+        {visible.length === 0 ? (
+          <p className="col-span-full py-2 text-center text-sm text-muted-foreground">
+            {selectedOnly ? "עדיין לא נבחרו פריטים." : `אין פריט שתואם ל־"${query.trim()}".`}
+          </p>
+        ) : (
+          visible.map((item) => {
+            const checked = selectedIds.includes(item.id);
+            return (
+              <label key={item.id} className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggle(item.id)}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <span>{item.label}</span>
+              </label>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

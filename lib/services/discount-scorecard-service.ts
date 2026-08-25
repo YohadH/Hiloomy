@@ -296,15 +296,18 @@ export async function buildDiscountScorecards(input: {
     const marginRate = acc.revenue > 0 ? margin / acc.revenue : 0;
     const affiliateName = affiliateByCode.get(code) ?? null;
 
-    // Seeding detection: ~all first-time customers AND the goods were given
-    // away rather than sold at a bad price (net revenue is a rounding error
-    // next to the retail value forgone). A genuine mispriced promo looks the
-    // opposite — mixed customers, meaningful non-zero revenue.
+    // Seeding detection: the goods were GIVEN AWAY rather than sold at a
+    // bad price — net revenue is a rounding error next to the retail value
+    // forgone. When customer linkage exists it must be ~all first-timers;
+    // when it doesn't (newShare null), the giveaway pattern alone decides —
+    // requiring known customers made the flagship false positive (the
+    // affiliate-distribution code) slip back through whenever its orders
+    // weren't customer-linked. A genuine mispriced promo looks the
+    // opposite: mixed customers and meaningful non-zero revenue.
     const classification: DiscountClassification =
-      newShare != null &&
-      newShare >= 0.9 &&
       acc.discountCost > 0 &&
-      acc.revenue <= Math.max(50, acc.discountCost * 0.05)
+      acc.revenue <= Math.max(50, acc.discountCost * 0.05) &&
+      (newShare == null || newShare >= 0.9)
         ? "seeding"
         : "promo";
 

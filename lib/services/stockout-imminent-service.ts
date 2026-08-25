@@ -33,6 +33,7 @@ import {
   resolveStaleAlerts,
   type AlertSeverity
 } from "@/lib/services/alert-writer-service";
+import { getActiveCampaignsByProduct } from "@/lib/services/campaign-product-link-service";
 
 export interface StockoutFlag {
   productId: string;
@@ -244,21 +245,51 @@ export async function buildStockoutImminentReport(
   // Most urgent first.
   flags.sort((a, b) => a.daysToStockout - b.daysToStockout);
 
+  // Campaign awareness (F-013): if a LIVE Meta campaign is still spending
+  // on a product that's about to run out, the alert must say so — the ads
+  // are paying to drive traffic to something about to be unavailable.
+  // Empty map when the owner hasn't tagged campaign↔product links yet.
+  const campaignsByProduct = await getActiveCampaignsByProduct(input.storeId).catch(
+    () => new Map<string, never[]>()
+  );
+
   // Push to alert table + sweep stale.
   const writtenFingerprints: string[] = [];
   for (const f of flags) {
     const fp = `stockout_imminent:${f.productId}`;
     writtenFingerprints.push(fp);
+    const pushingCampaigns = campaignsByProduct.get(f.productId) ?? [];
+    const campaignSpend = pushingCampaigns.reduce((s, c) => s + c.spend, 0);
+    // A live campaign pushing a near-OOS product escalates the tier — this
+    // is budget actively burning toward an unavailable product.
+    const severity: AlertSeverity =
+      pushingCampaigns.length > 0 && f.severity !== "critical"
+        ? f.severity === "high"
+          ? "critical"
+          : "high"
+        : f.severity;
+    const campaignNote =
+      pushingCampaigns.length > 0
+        ? ` · ⚠️ קמפיין פעיל עדיין מפנה תקציב למוצר: ${pushingCampaigns
+            .map((c) => `"${c.campaignName}"`)
+            .join(", ")} (₪${Math.round(campaignSpend).toLocaleString("en-US")} בשבעת הימים האחרונים)`
+        : "";
+    const campaignAction =
+      pushingCampaigns.length > 0
+        ? ` בנוסף: השהו או הסיטו את הקמפיין ${pushingCampaigns
+            .map((c) => `"${c.campaignName}"`)
+            .join(", ")} עד שהמלאי חוזר — כל שקל שם מפנה תנועה למוצר שעומד להיעלם.`
+        : "";
     await upsertAlert({
       storeId: input.storeId,
       type: "stockout_imminent",
       fingerprint: fp,
-      severity: f.severity,
+      severity,
       source: "Shopify",
       detectedBy: "stockout-imminent-service",
       title: `${f.title} עומד להיגמר במלאי`,
-      description: `מלאי נוכחי: ${f.currentInventory} · קצב מכירה יומי: ${f.dailyVelocity.toFixed(1)} · יוצא ממלאי בעוד ${f.daysToStockout.toFixed(1)} ימים · הכנסה ב14 ימים: ₪${Math.round(f.trailingRevenue).toLocaleString("en-US")}.`,
-      recommendedAction: f.suggestedReorder.he,
+      description: `מלאי נוכחי: ${f.currentInventory} · קצב מכירה יומי: ${f.dailyVelocity.toFixed(1)} · יוצא ממלאי בעוד ${f.daysToStockout.toFixed(1)} ימים · הכנסה ב14 ימים: ₪${Math.round(f.trailingRevenue).toLocaleString("en-US")}${campaignNote}.`,
+      recommendedAction: f.suggestedReorder.he + campaignAction,
       metricName: "days_to_stockout",
       currentValue: f.daysToStockout,
       relatedEntityType: "product",
@@ -271,7 +302,8 @@ export async function buildStockoutImminentReport(
         daysToStockout: f.daysToStockout,
         trailingRevenue: f.trailingRevenue,
         trailingUnits: f.trailingUnits,
-        suggestedReorder: f.suggestedReorder
+        suggestedReorder: f.suggestedReorder,
+        activeCampaigns: pushingCampaigns
       },
       periodLabel: `Trailing ${VELOCITY_WINDOW_DAYS}d → ${windowEnd.toISOString().slice(0, 10)}`
     }).catch((err) => {

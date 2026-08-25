@@ -7,6 +7,8 @@ import { CreatorConnectionsManager } from "@/components/settings/creator-connect
 import { MetaAdsConnectionManager } from "@/components/settings/meta-ads-connection-manager";
 import { WeeklyReportRecipientsManager } from "@/components/settings/weekly-report-recipients-manager";
 import { CompetitorSetManager } from "@/components/settings/competitor-set-manager";
+import { CampaignProductManager } from "@/components/settings/campaign-product-manager";
+import { BundleManager } from "@/components/settings/bundle-manager";
 import { GscConnectionManager } from "@/components/settings/gsc-connection-manager";
 import { Ga4ConnectionManager } from "@/components/settings/ga4-connection-manager";
 import { IntegrationsHub, type IntegrationItem } from "@/components/settings/integrations-hub";
@@ -337,6 +339,7 @@ export default async function SettingsPage({
     { id: "reporting", label: lang("דיווח ורווח", "Reporting & profit"), group: lang("דוחות", "Reporting") },
     { id: "weekly-report", label: lang("דוח שבועי", "Weekly report"), group: lang("דוחות", "Reporting") },
     { id: "competitors", label: lang("מתחרים", "Competitors"), group: lang("דוחות", "Reporting") },
+    { id: "mappings", label: lang("קמפיינים ובאנדלים", "Campaigns & bundles"), group: lang("דוחות", "Reporting") },
     ...(orgSummary
       ? [{ id: "organization", label: lang("ארגון וצוות", "Organization & team"), group: lang("חשבון", "Account") }]
       : []),
@@ -441,6 +444,29 @@ export default async function SettingsPage({
                 </CardContent>
               </Card>
             </div>
+            ),
+
+            "mappings": (
+              <div className="space-y-3">
+                <SectionHead
+                  eyebrow={lang("מיפויים", "Mappings")}
+                  title={lang("קמפיינים ובאנדלים", "Campaigns & bundles")}
+                  hint={lang(
+                    "שני מיפויים קצרים שהופכים את ההתראות והרווחיות לחכמות: איזה קמפיין מקדם איזה מוצר, ומה יש בתוך כל מארז.",
+                    "Two short mappings that make the alerts and profit math smart: which campaign pushes which product, and what each kit contains."
+                  )}
+                />
+                <Card>
+                  <CardContent className="pt-6">
+                    <CampaignProductManager isHe={isHe} />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <BundleManager isHe={isHe} />
+                  </CardContent>
+                </Card>
+              </div>
             ),
 
             ...(orgSummary

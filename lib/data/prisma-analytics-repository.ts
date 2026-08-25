@@ -12,7 +12,7 @@ import type {
 } from "@/lib/domain/types";
 import { withOptionalDb } from "@/lib/server/db";
 import { toNumber } from "@/lib/server/numbers";
-import { buildDailyMetrics, buildDiscountUsage, buildProductPerformance, buildRetentionSnapshot } from "@/lib/server/analytics";
+import { buildDailyMetrics, buildDiscountUsage, buildProductPerformance } from "@/lib/server/analytics";
 import { pickAnalyticsDiscountCode, shouldIgnoreOrderForAnalytics } from "@/lib/server/analytics-order-rules";
 import { getReportingDateRangeSelection, getStoreTimeZone } from "@/lib/server/reporting-date-range";
 
@@ -1061,99 +1061,141 @@ export async function getRetentionAnalyticsFromDb(locale: "he" | "en" = "he") {
   const store = await getStoreRecord(undefined);
   if (!store) return null;
   const range = await getActiveRange();
-  const [orders, prevOrders, history, allOrders, products] = await Promise.all([
-    getOrdersForRange(store.id, range.current.start, range.current.end),
-    getOrdersForRange(store.id, range.previous.start, range.previous.end),
-    getCustomerOrderHistory(store.id),
-    // Retention needs LIFETIME order history to compute 1st vs 2nd order
-    // products. We cap at a 3-year window + 20 000 rows so a 5-year-old
-    // store with 100 000 orders doesn't blow the request path. Warn when
-    // capped so it's visible in Sentry breadcrumbs.
-    (async () => {
-      const threeYearsAgo = new Date();
-      threeYearsAgo.setUTCFullYear(threeYearsAgo.getUTCFullYear() - 3);
-      const rows = await withOptionalDb(
-        (db) =>
-          db.order.findMany({
-            where: withAnalyticsOrderFilters({
-              storeId: store.id,
-              createdAt: { gte: threeYearsAgo }
-            }),
-            // Retention only needs dates + line titles/quantities from the
-            // lifetime scan. The full include (every line column + every
-            // discount row) made this the heaviest query in the app and a
-            // prime pool-starver — and a starved pool renders as "0
-            // customers" because withOptionalDb swallows the timeout.
-            select: {
-              id: true,
-              customerId: true,
-              createdAt: true,
-              orderNumber: true,
-              totalRefunds: true,
-              totalPrice: true,
-              totalDiscounts: true,
-              cancelledAt: true,
-              test: true,
-              lineItems: {
-                select: {
-                  id: true,
-                  productId: true,
-                  variantId: true,
-                  title: true,
-                  quantity: true,
-                  lineSubtotal: true,
-                  lineDiscountAmount: true,
-                  estimatedCostAmount: true,
-                  refundedQuantity: true,
-                  refundedSubtotal: true
-                }
-              }
-            },
-            orderBy: { createdAt: "asc" },
-            take: 20000
-          }),
-        []
-      );
-      if (rows.length === 20000) {
-        console.warn(
-          "[prisma-analytics-repository] retention allOrders hit 20000-row cap for store",
-          store.id,
-          "— retention math will be biased toward oldest orders in the window."
-        );
-      }
-      return rows;
-    })(),
-    withOptionalDb(
-      (db) => db.product.findMany({ where: { storeId: store.id }, take: 5000 }),
-      []
-    )
-  ]);
-  const normalizedOrders = mapOrders(orders);
-  const normalizedPrevOrders = mapOrders(prevOrders);
-  const allNormalizedOrders = mapOrders(allOrders);
-  const orderLookup = new Map<string, Order>(allNormalizedOrders.map((order) => [order.id, order]));
-  const snapshot = buildRetentionSnapshot(normalizedOrders, history, orderLookup);
 
+  // AGGREGATE-FIRST (SYS-001): the old path hydrated up to 20 000 lifetime
+  // orders WITH all their line items just to answer four questions the
+  // database can answer itself. On production that starved the 5-connection
+  // pool, the timeouts were swallowed, and this page rendered "0 customers"
+  // while the cohort section (one cheap scalar query) filled fine — the
+  // owner's cleanest SYS-001 reproduction. The snapshot and the 1st/2nd
+  // order panels are now single SQL passes with window functions.
+  const snapshotRows = await withOptionalDb(
+    (db) =>
+      db.$queryRaw`
+        WITH ranked AS (
+          SELECT "customerId", "createdAt",
+                 ROW_NUMBER() OVER (PARTITION BY "customerId" ORDER BY "createdAt") AS rn
+          FROM "Order"
+          WHERE "storeId" = ${store.id}
+            AND "customerId" IS NOT NULL
+            AND "cancelledAt" IS NULL
+            AND test = false
+        ),
+        cust AS (
+          SELECT "customerId",
+                 MIN("createdAt") AS first_at,
+                 MIN(CASE WHEN rn = 2 THEN "createdAt" END) AS second_at,
+                 COUNT(*)::int AS orders_total,
+                 BOOL_OR("createdAt" >= ${range.current.start} AND "createdAt" <= ${range.current.end}) AS in_window
+          FROM ranked
+          GROUP BY "customerId"
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE in_window)::int AS customers_in_period,
+          COUNT(*) FILTER (WHERE in_window AND orders_total > 1)::int AS returning_customers,
+          COUNT(*) FILTER (WHERE first_at >= ${range.current.start} AND first_at <= ${range.current.end})::int AS first_time_in_window,
+          COUNT(*) FILTER (WHERE first_at >= ${range.current.start} AND first_at <= ${range.current.end} AND orders_total >= 2)::int AS first_time_came_back,
+          COUNT(*) FILTER (WHERE second_at >= ${range.current.start} AND second_at <= ${range.current.end})::int AS second_in_window,
+          COALESCE(SUM(EXTRACT(EPOCH FROM (second_at - first_at)) / 86400)
+                   FILTER (WHERE second_at >= ${range.current.start} AND second_at <= ${range.current.end}), 0)::float AS days_to_second_sum
+        FROM cust
+      `,
+    [] as Array<{
+      customers_in_period: number;
+      returning_customers: number;
+      first_time_in_window: number;
+      first_time_came_back: number;
+      second_in_window: number;
+      days_to_second_sum: number;
+    }>
+  );
+  const snapRow = (snapshotRows as Array<Record<string, number>>)[0];
+  const customersInPeriod = Number(snapRow?.customers_in_period ?? 0);
+  const returningCustomers = Number(snapRow?.returning_customers ?? 0);
+  const firstTimeInWindow = Number(snapRow?.first_time_in_window ?? 0);
+  const firstTimeCameBack = Number(snapRow?.first_time_came_back ?? 0);
+  const secondInWindow = Number(snapRow?.second_in_window ?? 0);
+  const snapshot = {
+    newCustomers: Math.max(customersInPeriod - returningCustomers, 0),
+    returningCustomers,
+    repeatPurchaseRate: customersInPeriod > 0 ? (returningCustomers / customersInPeriod) * 100 : 0,
+    secondOrderRate: firstTimeInWindow > 0 ? (firstTimeCameBack / firstTimeInWindow) * 100 : 0,
+    averageDaysToSecondOrder:
+      secondInWindow > 0 ? Number(snapRow?.days_to_second_sum ?? 0) / secondInWindow : 0
+  };
+
+  // 1st vs 2nd order product panels — line titles of every customer's
+  // first and second lifetime orders, aggregated in SQL.
+  const panelRows = await withOptionalDb(
+    (db) =>
+      db.$queryRaw`
+        WITH ranked AS (
+          SELECT id, ROW_NUMBER() OVER (PARTITION BY "customerId" ORDER BY "createdAt") AS rn
+          FROM "Order"
+          WHERE "storeId" = ${store.id}
+            AND "customerId" IS NOT NULL
+            AND "cancelledAt" IS NULL
+            AND test = false
+        )
+        SELECT r.rn::int AS rn, COALESCE(NULLIF(TRIM(li.title), ''), '—') AS title,
+               SUM(li.quantity)::int AS qty
+        FROM ranked r
+        JOIN "OrderLineItem" li ON li."orderId" = r.id
+        WHERE r.rn <= 2
+        GROUP BY r.rn, COALESCE(NULLIF(TRIM(li.title), ''), '—')
+      `,
+    [] as Array<{ rn: number; title: string; qty: number }>
+  );
   const firstOrderProducts = new Map<string, number>();
   const secondOrderProducts = new Map<string, number>();
-  const productLookup = new Map<string, string>(products.map((product: any) => [product.id as string, product.title as string]));
-
-  for (const [, orderIds] of history.entries()) {
-    const firstOrder = orderLookup.get(orderIds[0]);
-    const secondOrder = orderLookup.get(orderIds[1]);
-
-    const unknownProduct = lang("מוצר לא ידוע", "Unknown product");
-
-    firstOrder?.lineItems.forEach((item) => {
-      const title = item.productId ? productLookup.get(item.productId) ?? unknownProduct : unknownProduct;
-      firstOrderProducts.set(title, (firstOrderProducts.get(title) ?? 0) + item.quantity);
-    });
-
-    secondOrder?.lineItems.forEach((item) => {
-      const title = item.productId ? productLookup.get(item.productId) ?? unknownProduct : unknownProduct;
-      secondOrderProducts.set(title, (secondOrderProducts.get(title) ?? 0) + item.quantity);
-    });
+  for (const row of panelRows as Array<{ rn: number; title: string; qty: number }>) {
+    const target = Number(row.rn) === 1 ? firstOrderProducts : secondOrderProducts;
+    target.set(row.title, (target.get(row.title) ?? 0) + Number(row.qty));
   }
+
+  // Daily trend — light scalar orders only (no line items, no discount
+  // rows) for the two windows, plus the scalar per-customer history map
+  // for the returning-order flag.
+  const lightOrders = (gte: Date, lte: Date) =>
+    withOptionalDb(
+      (db) =>
+        db.order.findMany({
+          where: withAnalyticsOrderFilters({ storeId: store.id, createdAt: { gte, lte } }),
+          select: {
+            id: true,
+            customerId: true,
+            createdAt: true,
+            orderNumber: true,
+            totalPrice: true,
+            totalDiscounts: true,
+            totalRefunds: true
+          },
+          orderBy: { createdAt: "asc" }
+        }),
+      []
+    );
+  const [orders, prevOrders, history] = await Promise.all([
+    lightOrders(range.current.start, range.current.end),
+    lightOrders(range.previous.start, range.previous.end),
+    getCustomerOrderHistory(store.id)
+  ]);
+  const toLightOrder = (o: any): Order => ({
+    id: o.id,
+    customerId: o.customerId,
+    createdAt: o.createdAt.toISOString(),
+    orderNumber: o.orderNumber,
+    isRefunded: toNumber(o.totalRefunds) > 0,
+    refundAmount: toNumber(o.totalRefunds),
+    totalPrice: toNumber(o.totalPrice),
+    totalDiscounts: toNumber(o.totalDiscounts),
+    // No line items on the light path — buildDailyMetrics only falls back
+    // to them when the order-level totals are missing, which they never
+    // are (non-nullable columns). The retention chart shows revenue /
+    // orders / returning-share, not COGS-based profit.
+    lineItems: []
+  });
+  const normalizedOrders = (orders as any[]).map(toLightOrder);
+  const normalizedPrevOrders = (prevOrders as any[]).map(toLightOrder);
 
   return {
     snapshot,
@@ -1174,14 +1216,97 @@ export async function getProfitAnalyticsFromDb() {
   const store = await getStoreRecord(undefined);
   if (!store) return null;
   const range = await getActiveRange();
-  const [orders, prevOrders, products, stockLookup, collectionsLookup] = await Promise.all([
-    getOrdersForRange(store.id, range.current.start, range.current.end),
-    getOrdersForRange(store.id, range.previous.start, range.previous.end),
-    withOptionalDb((db) => db.product.findMany({ where: { storeId: store.id } }), []),
-    buildProductStockLookup(store.id),
-    buildProductCollectionsLookup(store.id)
+
+  // AGGREGATE-FIRST (SYS-001): the old path hydrated every order in BOTH
+  // windows with all line items + discount rows, plus an uncapped product
+  // scan — enough concurrent weight to starve the production DB pool, and
+  // a starved pool rendered this whole page as "₪0 / no data" while the
+  // dashboard's cheap aggregate cards stayed correct. groupBy returns the
+  // same numbers without materializing a single order row. Two query
+  // waves, so the pool never sees everything at once.
+  const lineOrderScope = (start: Date, end: Date) => ({
+    storeId: store.id,
+    order: {
+      storeId: store.id,
+      createdAt: { gte: start, lte: end },
+      cancelledAt: null,
+      test: false
+    }
+  });
+
+  const [lineGroups, prevAgg, currCommission, prevCommission] = await Promise.all([
+    withOptionalDb(
+      (db) =>
+        db.orderLineItem.groupBy({
+          by: ["productId", "title"],
+          where: lineOrderScope(range.current.start, range.current.end),
+          _sum: {
+            quantity: true,
+            lineSubtotal: true,
+            lineDiscountAmount: true,
+            estimatedCostAmount: true,
+            refundedQuantity: true,
+            refundedSubtotal: true
+          }
+        }),
+      [] as Array<{
+        productId: string | null;
+        title: string | null;
+        _sum: {
+          quantity: number | null;
+          lineSubtotal: unknown;
+          lineDiscountAmount: unknown;
+          estimatedCostAmount: unknown;
+          refundedQuantity: number | null;
+          refundedSubtotal: unknown;
+        };
+      }>
+    ),
+    withOptionalDb(
+      (db) =>
+        db.orderLineItem.aggregate({
+          where: lineOrderScope(range.previous.start, range.previous.end),
+          _sum: {
+            lineSubtotal: true,
+            lineDiscountAmount: true,
+            estimatedCostAmount: true,
+            refundedSubtotal: true
+          }
+        }),
+      null as {
+        _sum: {
+          lineSubtotal: unknown;
+          lineDiscountAmount: unknown;
+          estimatedCostAmount: unknown;
+          refundedSubtotal: unknown;
+        };
+      } | null
+    ),
+    withOptionalDb(
+      (db) => computeWindowAffiliateCommission(db, store.id, range.current.start, range.current.end),
+      0
+    ),
+    withOptionalDb(
+      (db) => computeWindowAffiliateCommission(db, store.id, range.previous.start, range.previous.end),
+      0
+    )
   ]);
-  const normalizedOrders = mapOrders(orders);
+
+  const [products, stockLookup, collectionsLookup, memberships] = await Promise.all([
+    withOptionalDb(
+      (db) =>
+        db.product.findMany({
+          where: { storeId: store.id },
+          select: { id: true, title: true, collection: true },
+          take: 5000
+        }),
+      []
+    ),
+    buildProductStockLookup(store.id),
+    buildProductCollectionsLookup(store.id),
+    fetchCollectionMemberships(store.id)
+  ]);
+
   const productLookup = new Map<
     string,
     { title: string; collection: string; inventoryQuantity: number | null; collections: string[] }
@@ -1196,67 +1321,115 @@ export async function getProfitAnalyticsFromDb() {
       }
     ])
   );
-  const productPerformance = buildProductPerformance(normalizedOrders, productLookup);
 
-  // Allocate affiliate commission per product so the "Estimated profit"
-  // column actually means "what the brand keeps". Previously a 40%-margin
-  // product paying 10% affiliate read as 40% margin in this page even
-  // though the contribution-margin service already subtracts the same
-  // commission in its own totals. Allocation: split each order's commission
-  // across its line items in proportion to line revenue.
-  const orderIds = normalizedOrders.map((o) => o.id);
-  const attributions = orderIds.length
-    ? await withOptionalDb(
-        (db) =>
-          db.affiliateAttribution.findMany({
-            where: { orderId: { in: orderIds } },
-            select: { orderId: true, commissionAmount: true }
-          }),
-        []
-      )
-    : [];
-  const commByOrder = new Map<string, number>();
-  for (const a of attributions as Array<{ orderId: string | null; commissionAmount: unknown }>) {
-    if (!a.orderId) continue;
-    commByOrder.set(a.orderId, (commByOrder.get(a.orderId) ?? 0) + toNumber(a.commissionAmount));
+  // Rows straight from the aggregate — identical math to
+  // buildProductPerformance (revenue = Σ lineSubtotal; profit = revenue −
+  // discount − refund − cost), including the title fallback for lines
+  // whose Product row is missing (they must never vanish from the table).
+  const grouped = new Map<string, ProductPerformanceRow>();
+  for (const g of lineGroups) {
+    const product = g.productId ? productLookup.get(g.productId) : undefined;
+    const key =
+      product && g.productId ? g.productId : `title:${(g.title ?? "").trim() || "—"}`;
+    const revenue = toNumber(g._sum.lineSubtotal);
+    const discount = toNumber(g._sum.lineDiscountAmount);
+    const refund = toNumber(g._sum.refundedSubtotal);
+    const cost = toNumber(g._sum.estimatedCostAmount);
+    const units = Math.max(
+      0,
+      Number(g._sum.quantity ?? 0) - Number(g._sum.refundedQuantity ?? 0)
+    );
+    const current = grouped.get(key) ?? {
+      productId: key,
+      productTitle: product?.title ?? ((g.title ?? "").trim() || "—"),
+      collection: product?.collection ?? "",
+      collections: product && g.productId ? collectionsLookup.get(g.productId) ?? [] : [],
+      unitsSold: 0,
+      revenue: 0,
+      estimatedProfit: 0,
+      discountImpact: 0,
+      refundImpact: 0,
+      inventoryQuantity:
+        product && g.productId ? stockLookup.get(g.productId)?.quantity ?? null : null
+    };
+    current.unitsSold += units;
+    current.revenue += revenue;
+    current.discountImpact += discount;
+    current.refundImpact += refund;
+    current.estimatedProfit += revenue - discount - refund - cost;
+    grouped.set(key, current);
   }
-  if (commByOrder.size > 0) {
-    const commByProduct = new Map<string, number>();
-    for (const order of normalizedOrders) {
-      const orderComm = commByOrder.get(order.id) ?? 0;
-      if (orderComm <= 0) continue;
-      const orderRev = order.lineItems.reduce(
-        (sum, li) => sum + li.unitPrice * li.quantity,
-        0
-      );
-      if (orderRev <= 0) continue;
-      for (const li of order.lineItems) {
-        if (!li.productId) continue;
-        const lineRev = li.unitPrice * li.quantity;
-        const lineComm = orderComm * (lineRev / orderRev);
-        commByProduct.set(li.productId, (commByProduct.get(li.productId) ?? 0) + lineComm);
-      }
-    }
+  const productPerformance = [...grouped.values()].sort((a, b) => b.revenue - a.revenue);
+
+  // Affiliate commission — allocated pro-rata by product revenue share so
+  // "Estimated profit" means "what the brand keeps". (The old per-order
+  // exact split needed full order hydration; pro-rata keeps the same total
+  // with a small per-product approximation.)
+  const totalRevenueForCommission = productPerformance.reduce((s, r) => s + r.revenue, 0);
+  if (currCommission > 0 && totalRevenueForCommission > 0) {
     for (const row of productPerformance) {
-      const c = commByProduct.get(row.productId);
-      if (c) row.estimatedProfit -= c;
+      row.estimatedProfit -= currCommission * (row.revenue / totalRevenueForCommission);
     }
   }
 
-  // Reuse the already-fetched orders/lookups — the old nested
-  // getCollectionPerformance() call re-hydrated the same window (5 more
-  // queries) and helped starve the 5-connection pool.
-  const collectionPerformance = groupCollectionPerformance(
-    productPerformance,
-    await fetchCollectionMemberships(store.id)
-  );
-  const discountUsage = buildDiscountUsage(normalizedOrders);
+  const collectionPerformance = groupCollectionPerformance(productPerformance, memberships);
 
-  // Compute MoM (previous-period) profit delta for the summary banner.
-  const normalizedPrevOrders = mapOrders(prevOrders);
-  const prevProductPerformance = buildProductPerformance(normalizedPrevOrders, productLookup);
+  // Discount table in ONE SQL pass over DiscountUsage — per-code order
+  // counts and amounts without hydrating orders. Also fixes the old
+  // single-code attribution: an order carrying two codes was previously
+  // booked entirely to whichever code pickAnalyticsDiscountCode preferred.
+  const discountRows = await withOptionalDb(
+    (db) =>
+      db.$queryRaw`
+        SELECT t.code,
+               COUNT(*)::int AS order_count,
+               COALESCE(SUM(t.total_price), 0)::float AS revenue_influenced,
+               COALESCE(SUM(t.discount_amount), 0)::float AS discount_amount
+        FROM (
+          SELECT du.code, du."orderId",
+                 SUM(du.amount) AS discount_amount,
+                 MAX(o."totalPrice") AS total_price
+          FROM "DiscountUsage" du
+          JOIN "Order" o ON o.id = du."orderId"
+          WHERE du."storeId" = ${store.id}
+            AND o."createdAt" >= ${range.current.start}
+            AND o."createdAt" <= ${range.current.end}
+            AND o."cancelledAt" IS NULL
+            AND o.test = false
+          GROUP BY du.code, du."orderId"
+        ) t
+        GROUP BY t.code
+        ORDER BY discount_amount DESC
+      `,
+    [] as Array<{
+      code: string;
+      order_count: number;
+      revenue_influenced: number;
+      discount_amount: number;
+    }>
+  );
+  const discountUsage = (discountRows as Array<{
+    code: string;
+    order_count: number;
+    revenue_influenced: number;
+    discount_amount: number;
+  }>).map((r) => ({
+    code: r.code,
+    orderCount: r.order_count,
+    revenueInfluenced: r.revenue_influenced,
+    discountAmount: r.discount_amount
+  }));
+
+  // MoM profit delta from the previous window's single aggregate (same
+  // formula as the rows, minus that window's commission).
   const currentTotalProfit = productPerformance.reduce((sum, row) => sum + row.estimatedProfit, 0);
-  const prevTotalProfit = prevProductPerformance.reduce((sum, row) => sum + row.estimatedProfit, 0);
+  const prevTotalProfit = prevAgg
+    ? toNumber(prevAgg._sum.lineSubtotal) -
+      toNumber(prevAgg._sum.lineDiscountAmount) -
+      toNumber(prevAgg._sum.refundedSubtotal) -
+      toNumber(prevAgg._sum.estimatedCostAmount) -
+      prevCommission
+    : 0;
   const momProfitDelta: number | null =
     prevTotalProfit !== 0
       ? ((currentTotalProfit - prevTotalProfit) / Math.abs(prevTotalProfit)) * 100

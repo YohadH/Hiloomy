@@ -34,6 +34,7 @@
 //     Center, weekly PDF, offline-status narrative).
 
 import { getDb } from "@/lib/server/db";
+import { getActiveCampaignsByProduct } from "@/lib/services/campaign-product-link-service";
 
 export interface AlertOutcome {
   measuredAt: string; // ISO timestamp when the outcome was computed
@@ -210,57 +211,92 @@ async function measureRestockHeroOutcome(input: {
     };
   }
   const since = alert.resolvedAt as Date;
-  // Pull refundedQuantity + refundedSubtotal alongside the raw totals so
-  // the "win" verdict reflects NET sales (post-refund) — otherwise the
-  // ledger claims success on orders that bounced.
-  const agg = (await db.orderLineItem.aggregate({
-    where: {
-      storeId: input.storeId,
-      productId,
-      order: {
+  const now = new Date();
+  const daysSince = Math.max(1, Math.round((now.getTime() - since.getTime()) / 86_400_000));
+  // Baseline = the SAME length of time immediately before the action, so
+  // "₪1,014 since" becomes a comparison, not a floating number (F-017: a
+  // result with no before, no window, is not evidence the action worked).
+  const baselineStart = new Date(since.getTime() - daysSince * 86_400_000);
+  const windowAgg = (gte: Date, lt?: Date) =>
+    db.orderLineItem.aggregate({
+      where: {
         storeId: input.storeId,
-        createdAt: { gte: since },
-        cancelledAt: null,
-        test: false
+        productId,
+        order: {
+          storeId: input.storeId,
+          createdAt: lt ? { gte, lt } : { gte },
+          cancelledAt: null,
+          test: false
+        }
+      },
+      _sum: {
+        quantity: true,
+        lineSubtotal: true,
+        refundedQuantity: true,
+        refundedSubtotal: true
       }
-    },
-    _sum: {
-      quantity: true,
-      lineSubtotal: true,
-      refundedQuantity: true,
-      refundedSubtotal: true
-    }
-  })) as any;
-  const units = Math.max(
-    Number(agg._sum.quantity ?? 0) - Number(agg._sum.refundedQuantity ?? 0),
-    0
-  );
-  const revenue = Math.max(
-    Number(agg._sum.lineSubtotal ?? 0) - Number(agg._sum.refundedSubtotal ?? 0),
-    0
-  );
+    }) as Promise<any>;
+  // Net (post-refund) on both sides — otherwise the ledger claims success
+  // on orders that bounced.
+  const [agg, baseAgg] = await Promise.all([windowAgg(since), windowAgg(baselineStart, since)]);
+  const netOf = (a: any) => ({
+    units: Math.max(Number(a._sum.quantity ?? 0) - Number(a._sum.refundedQuantity ?? 0), 0),
+    revenue: Math.max(Number(a._sum.lineSubtotal ?? 0) - Number(a._sum.refundedSubtotal ?? 0), 0)
+  });
+  const after = netOf(agg);
+  const before = netOf(baseAgg);
+  const deltaRevenue = after.revenue - before.revenue;
+  const fmt = (n: number) => `₪${Math.round(n).toLocaleString("en-US")}`;
+
   const title = alert.title as string;
   // Strip "חזר למלאי" etc. from the original title to get a clean product name
   const productName = (alert.payloadJson?.sku as string) || title;
-  if (revenue > 0) {
+  if (after.revenue > 0) {
     return {
-      measuredAt: new Date().toISOString(),
+      measuredAt: now.toISOString(),
       verdict: "win",
       summary: {
-        he: `${title} → ${units} יחידות, ₪${Math.round(revenue).toLocaleString("en-US")} מאז שטיפלתם בזה.`,
-        en: `${productName} → ${units} units, ₪${Math.round(revenue).toLocaleString("en-US")} since you closed this.`
+        he: `${title} → ${fmt(after.revenue)} (${after.units} יח') ב־${daysSince} הימים מאז הטיפול, מול ${fmt(before.revenue)} ב־${daysSince} הימים שלפני — ${deltaRevenue >= 0 ? "+" : "-"}${fmt(Math.abs(deltaRevenue))} שמיוחסים לפעולה.`,
+        en: `${productName} → ${fmt(after.revenue)} (${after.units} units) in the ${daysSince} days since you acted, vs ${fmt(before.revenue)} in the ${daysSince} days before — ${deltaRevenue >= 0 ? "+" : "-"}${fmt(Math.abs(deltaRevenue))} attributable to the action.`
       },
-      detail: { units, revenue }
+      detail: { units: after.units, revenue: after.revenue, baselineRevenue: before.revenue, daysSince, deltaRevenue }
     };
   }
+  // Zero sales — answer the "why" the app can see itself instead of
+  // assigning it as homework: is inventory actually live? is any linked
+  // campaign pushing it?
+  const [product, campaignsByProduct] = await Promise.all([
+    db.product.findUnique({
+      where: { id: productId },
+      select: { variants: { select: { inventoryQuantity: true } } }
+    }),
+    getActiveCampaignsByProduct(input.storeId).catch(() => new Map())
+  ]);
+  let stock: number | null = null;
+  for (const v of product?.variants ?? []) {
+    if (v.inventoryQuantity != null) stock = (stock ?? 0) + v.inventoryQuantity;
+  }
+  const liveCampaigns = (campaignsByProduct.get(productId) ?? []) as Array<{ campaignName: string }>;
+  const diagnosisHe =
+    stock != null && stock <= 0
+      ? "בדקנו: המלאי עדיין על 0 — ההזמנה כנראה לא נקלטה."
+      : liveCampaigns.length === 0
+        ? `בדקנו: המלאי זמין (${stock ?? "?"}) אבל אין קמפיין פעיל שמקושר למוצר — אין מה שידחוף אליו תנועה.`
+        : `בדקנו: המלאי זמין (${stock ?? "?"}) והקמפיין ${liveCampaigns.map((c) => `"${c.campaignName}"`).join(", ")} רץ — הבעיה כנראה בעמוד המוצר או בביקוש.`;
+  const diagnosisEn =
+    stock != null && stock <= 0
+      ? "We checked: inventory is still 0 — the reorder likely never landed."
+      : liveCampaigns.length === 0
+        ? `We checked: stock is live (${stock ?? "?"}) but no linked campaign is pushing it — nothing drives traffic there.`
+        : `We checked: stock is live (${stock ?? "?"}) and ${liveCampaigns.map((c) => `"${c.campaignName}"`).join(", ")} is running — the problem is likely the product page or demand.`;
   return {
-    measuredAt: new Date().toISOString(),
+    measuredAt: now.toISOString(),
     verdict: "miss",
     summary: {
-      he: `${title} → 0 מכירות מאז שטיפלתם בזה — בדקו שהמלאי באמת זמין ושיש קמפיין פעיל.`,
-      en: `${productName} → 0 sales since you closed this — check inventory is actually live and a campaign is running.`
+      he: `${title} → 0 מכירות ב־${daysSince} הימים מאז הטיפול (לפני: ${fmt(before.revenue)}). ${diagnosisHe}`,
+      en: `${productName} → 0 sales in the ${daysSince} days since (before: ${fmt(before.revenue)}). ${diagnosisEn}`
     },
-    detail: { units: 0, revenue: 0 }
+    detail: { units: 0, revenue: 0, baselineRevenue: before.revenue, daysSince, stock, liveCampaigns: liveCampaigns.length }
   };
 }
 
@@ -345,14 +381,18 @@ async function measureStockoutImminentOutcome(input: {
       detail: { currentInventory, unitsSold }
     };
   }
+  // Neutral — state exactly what IS known and what would settle it,
+  // instead of the old shrug ("לא ברור אם בוצעה הזמנה") that pushed the
+  // work back to the owner (F-017).
+  const daysSince = Math.max(1, Math.round((Date.now() - since.getTime()) / 86_400_000));
   return {
     measuredAt: new Date().toISOString(),
     verdict: "neutral",
     summary: {
-      he: `${product.title} → מלאי נוכחי ${currentInventory}, ${unitsSold} יחידות נמכרו. לא ברור אם בוצעה הזמנה.`,
-      en: `${product.title} → inventory ${currentInventory}, sold ${unitsSold} since. Reorder status unclear.`
+      he: `${product.title} → המלאי ירד מ־${inventoryAtAlert} ל־${currentInventory} ב־${daysSince} ימים תוך ${unitsSold} מכירות — אין עדיין סימן להזמנת מלאי חדשה. אם הזמנתם, נדע ברגע שהמלאי יעלה.`,
+      en: `${product.title} → inventory went ${inventoryAtAlert} → ${currentInventory} over ${daysSince} days with ${unitsSold} sales — no sign of a restock yet. If you ordered, we'll see it the moment inventory rises.`
     },
-    detail: { currentInventory, unitsSold }
+    detail: { currentInventory, unitsSold, inventoryAtAlert, daysSince }
   };
 }
 
