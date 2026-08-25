@@ -1024,6 +1024,18 @@ model AffiliateProgram {
   status                  String            @default("active")
   commissionRate          Decimal           @default(0.10) @db.Decimal(5, 4)
   signUpLink              String?
+  // ─── In-app signup + branding (HLA-12, added 2026-08-25) ─────────
+  // The public brand word in hiloomy.com/join/{slug}, /r/{slug}/{code}
+  // and /my/{slug}. Globally unique — it is what routes a visitor to
+  // the right brand. Lowercase [a-z0-9-].
+  signupSlug              String?           @unique
+  // Manual review by default; true = new signups start "approved".
+  autoApprove             Boolean           @default(false)
+  brandLogoUrl            String?
+  brandAccentColor        String?
+  signupHeadline          String?
+  signupCopy              String?
+  termsText               String?
   // ─── Returning-customer commission policy (leakage engine) ───────
   // "full"    — returning customers earn the normal rate (default,
   //             today's behavior).

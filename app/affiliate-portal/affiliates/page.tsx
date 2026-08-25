@@ -9,6 +9,7 @@ import { formatCurrency, formatNumber, repairMojibake } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
 import { AffiliateDirectoryActions } from "@/components/affiliate-portal/affiliate-directory-actions";
 import { AffiliateInstagramField } from "@/components/affiliate-portal/affiliate-instagram-field";
+import { AffiliateStatusActions } from "@/components/affiliate-portal/affiliate-status-actions";
 
 export default async function AffiliatesPage() {
   const [chrome, affiliates, windowStats, locale] = await Promise.all([
@@ -72,7 +73,26 @@ export default async function AffiliatesPage() {
             // rows are re-encoded (F-091).
             render: (row) => repairMojibake(row.programName)
           },
-          { key: "status", label: lang("סטטוס", "Status") },
+          {
+            key: "status",
+            label: lang("סטטוס", "Status"),
+            render: (row) => (
+              <div className="space-y-1">
+                <span
+                  className={
+                    row.status === "pending"
+                      ? "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                      : row.status === "denied"
+                        ? "inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800"
+                        : "inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
+                  }
+                >
+                  {row.status}
+                </span>
+                <AffiliateStatusActions affiliateId={row.id} status={row.status} isHe={isHe} />
+              </div>
+            )
+          },
           {
             key: "dateJoined",
             label: lang("הצטרפות", "Joined"),
@@ -145,6 +165,20 @@ export default async function AffiliatesPage() {
             label: lang("עמלה בטווח", "Commission (window)"),
             render: (row) =>
               formatCurrency(windowStats.get(row.id)?.commission ?? 0, chrome.store.currency)
+          },
+          {
+            key: "email",
+            label: lang("קליקים בטווח", "Clicks (window)"),
+            render: (row) => {
+              const clicks = windowStats.get(row.id)?.clicks ?? 0;
+              // No fake zeros: until the tracked links go out, click data
+              // simply doesn't exist (F-078/HLA-11).
+              return clicks > 0 ? (
+                <span className="tabular-nums">{formatNumber(clicks)}</span>
+              ) : (
+                <span className="text-xs text-muted-foreground">—</span>
+              );
+            }
           }
         ]}
         rows={affiliates.map((a) => ({

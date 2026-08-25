@@ -85,6 +85,10 @@ export function PayoutsView({ locale, currency }: { locale: Locale; currency: st
   const [totals, setTotals] = useState<Totals | null>(null);
   const [loading, setLoading] = useState(true);
   const [approvingAll, setApprovingAll] = useState(false);
+  // HLA-01: bulk approval is a two-step act — the first click opens an
+  // itemised confirmation (count, window, per-affiliate breakdown, TOTAL),
+  // the second click sends that exact total for the server to verify.
+  const [confirmingApprove, setConfirmingApprove] = useState(false);
   const [payingMemberId, setPayingMemberId] = useState<string | null>(null);
   const isHe = locale === "he";
 
@@ -110,7 +114,9 @@ export function PayoutsView({ locale, currency }: { locale: Locale; currency: st
   const approveAllPending = async () => {
     setApprovingAll(true);
     try {
-      // Fetch all unpaid attribution ids, then batch-approve.
+      // Fetch all unpaid attribution ids, then batch-approve — carrying the
+      // TOTAL the operator just confirmed on screen. The server recomputes
+      // and rejects on any mismatch or sanity breach (HLA-01).
       const listRes = await fetch(
         "/api/affiliate-portal/conversions/list-ids?payoutStatus=unpaid",
         { cache: "no-store" }
@@ -127,7 +133,11 @@ export function PayoutsView({ locale, currency }: { locale: Locale; currency: st
       const res = await fetch("/api/affiliate-portal/conversions/payout-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attributionIds: ids, targetStatus: "approved" })
+        body: JSON.stringify({
+          attributionIds: ids,
+          targetStatus: "approved",
+          expectedTotal: totals?.unpaidCommission ?? 0
+        })
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
@@ -137,6 +147,7 @@ export function PayoutsView({ locale, currency }: { locale: Locale; currency: st
       toast.error(err, { fallback: t.errorFallback });
     } finally {
       setApprovingAll(false);
+      setConfirmingApprove(false);
     }
   };
 
@@ -224,11 +235,68 @@ export function PayoutsView({ locale, currency }: { locale: Locale; currency: st
         </div>
       ) : null}
 
+      {/* HLA-01: bulk approval requires an itemised confirmation — this is
+          the one control in the app that commits real money. */}
+      {confirmingApprove && totals ? (
+        <div className="space-y-3 rounded-2xl border-2 border-amber-300 bg-amber-50/70 p-4">
+          <p className="text-sm font-bold text-amber-950">
+            {isHe
+              ? `אתם עומדים לאשר לתשלום ${totals.unpaidCount} המרות בסך ${formatCurrency(totals.unpaidCommission, currency)}.`
+              : `You are about to approve ${totals.unpaidCount} conversions totalling ${formatCurrency(totals.unpaidCommission, currency)} for payout.`}
+          </p>
+          <div className="max-h-44 overflow-y-auto rounded-lg border border-amber-200 bg-white/70">
+            <table className="w-full text-xs">
+              <tbody>
+                {(rows ?? [])
+                  .filter((r) => r.unpaidCommission > 0)
+                  .map((r) => (
+                    <tr key={r.affiliateMemberId} className="border-b border-amber-100 last:border-0">
+                      <td className="px-3 py-1.5">{r.firstName} {r.lastName}</td>
+                      <td className="px-3 py-1.5 text-end tabular-nums">
+                        {r.unpaidCount} {isHe ? "המרות" : "conv."}
+                      </td>
+                      <td className="px-3 py-1.5 text-end font-semibold tabular-nums">
+                        {formatCurrency(r.unpaidCommission, currency)}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={approveAllPending}
+              disabled={approvingAll}
+              className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {approvingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {isHe
+                ? `אישור סופי של ${formatCurrency(totals.unpaidCommission, currency)}`
+                : `Confirm approval of ${formatCurrency(totals.unpaidCommission, currency)}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingApprove(false)}
+              disabled={approvingAll}
+              className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {isHe ? "ביטול" : "Cancel"}
+            </button>
+          </div>
+          <p className="text-[11px] text-amber-900">
+            {isHe
+              ? "השרת מאמת את הסכום מחדש מול מסד הנתונים וידחה אישור שחורג מהעמלות שנצברו בפועל בחודש האחרון."
+              : "The server re-verifies this total against the database and rejects approvals exceeding what actually accrued in the last 30 days."}
+          </p>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={approveAllPending}
-          disabled={approvingAll || loading}
+          onClick={() => setConfirmingApprove(true)}
+          disabled={approvingAll || loading || confirmingApprove || (totals?.unpaidCount ?? 0) === 0}
           className={cn(
             "inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:border-emerald-500 disabled:opacity-50"
           )}

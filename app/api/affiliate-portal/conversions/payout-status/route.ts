@@ -21,6 +21,9 @@ interface Body {
   attributionIds?: string[];
   targetStatus?: string;
   note?: string;
+  // HLA-01: the ₪ total the operator confirmed in the UI — required and
+  // verified server-side for non-trivial approvals.
+  expectedTotal?: number;
 }
 
 export async function POST(request: Request) {
@@ -45,7 +48,8 @@ export async function POST(request: Request) {
       storeId,
       attributionIds: body.attributionIds,
       targetStatus: body.targetStatus as PayoutStatus,
-      note: body.note ?? null
+      note: body.note ?? null,
+      expectedTotal: typeof body.expectedTotal === "number" ? body.expectedTotal : undefined
     });
 
     return NextResponse.json({ ok: true, result });

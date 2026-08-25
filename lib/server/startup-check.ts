@@ -135,6 +135,11 @@ const EXPECTED_SCHEMA_COLUMNS: Array<{ table: string; column: string; fixWith: s
     table: "BundleComponent",
     column: "bundleProductId",
     fixWith: "prisma/migrations/20260825_campaign_links_bundles/migration.sql"
+  },
+  {
+    table: "AffiliateProgram",
+    column: "signupSlug",
+    fixWith: "prisma/migrations/20260825_affiliate_signup/migration.sql"
   }
 ];
 

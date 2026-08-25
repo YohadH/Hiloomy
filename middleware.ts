@@ -66,6 +66,15 @@ const PUBLIC_PREFIXES = [
   "/api/webhooks/",
   "/api/cron/",
   "/api/meta/data-deletion",
+  // Affiliate-facing surfaces (HLA-12): public per-brand signup, the short
+  // tracked referral links, and the affiliates' own magic-link portal.
+  // /my/* pages enforce their OWN session (the affiliate cookie) — they're
+  // public only in the sense of not requiring an app (Supabase) login.
+  "/join/",
+  "/r/",
+  "/my/",
+  "/api/join/",
+  "/api/my/",
   // Stripe sends webhooks server-to-server; they're authenticated by
   // signature, not session cookies. Treating this as public lets the
   // signature-verifying handler run.

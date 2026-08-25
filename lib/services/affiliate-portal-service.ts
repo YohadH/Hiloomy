@@ -933,6 +933,7 @@ export interface AffiliateWindowStats {
   orders: number;
   sales: number;
   commission: number;
+  clicks: number;
 }
 
 /**
@@ -946,26 +947,50 @@ export async function getAffiliateWindowStats(): Promise<Map<string, AffiliateWi
   const store = await getAffiliateStore();
   if (!db?.affiliateAttribution || !store) return new Map();
   const range = await getReportingDateRangeSelection("en");
-  const rows = (await db.affiliateAttribution
-    .groupBy({
-      by: ["affiliateMemberId"],
-      where: { storeId: store.id, occurredAt: { gte: range.start, lte: range.end } },
-      _sum: { salesAmount: true, commissionAmount: true, ordersCount: true }
-    })
-    .catch(() => [])) as Array<{
-    affiliateMemberId: string;
-    _sum: { salesAmount: unknown; commissionAmount: unknown; ordersCount: number | null };
-  }>;
-  return new Map(
-    rows.map((r) => [
-      r.affiliateMemberId,
-      {
-        orders: Number(r._sum.ordersCount ?? 0),
-        sales: toNumber(r._sum.salesAmount),
-        commission: toNumber(r._sum.commissionAmount)
-      }
-    ])
-  );
+  const [rows, clickRows] = await Promise.all([
+    db.affiliateAttribution
+      .groupBy({
+        by: ["affiliateMemberId"],
+        where: { storeId: store.id, occurredAt: { gte: range.start, lte: range.end } },
+        _sum: { salesAmount: true, commissionAmount: true, ordersCount: true }
+      })
+      .catch(() => []) as Promise<
+      Array<{
+        affiliateMemberId: string;
+        _sum: { salesAmount: unknown; commissionAmount: unknown; ordersCount: number | null };
+      }>
+    >,
+    (db.attributionSession
+      ? db.attributionSession.groupBy({
+          by: ["affiliateMemberId"],
+          where: {
+            storeId: store.id,
+            affiliateMemberId: { not: null },
+            createdAt: { gte: range.start, lte: range.end }
+          },
+          _count: true
+        })
+      : Promise.resolve([])
+    ).catch(() => []) as Promise<Array<{ affiliateMemberId: string | null; _count: number }>>
+  ]);
+  const clicksByMember = new Map<string, number>();
+  for (const c of clickRows) {
+    if (c.affiliateMemberId) clicksByMember.set(c.affiliateMemberId, Number(c._count ?? 0));
+  }
+  const stats = new Map<string, AffiliateWindowStats>();
+  for (const r of rows) {
+    stats.set(r.affiliateMemberId, {
+      orders: Number(r._sum.ordersCount ?? 0),
+      sales: toNumber(r._sum.salesAmount),
+      commission: toNumber(r._sum.commissionAmount),
+      clicks: clicksByMember.get(r.affiliateMemberId) ?? 0
+    });
+  }
+  // Members with clicks but no conversions yet still deserve a row.
+  for (const [memberId, clicks] of clicksByMember) {
+    if (!stats.has(memberId)) stats.set(memberId, { orders: 0, sales: 0, commission: 0, clicks });
+  }
+  return stats;
 }
 
 export async function getAffiliatePrograms() {

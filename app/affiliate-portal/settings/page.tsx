@@ -4,6 +4,8 @@ import { AffiliatePortalNav } from "@/components/affiliate-portal/portal-nav";
 import { UploadBixGrowCsvButton } from "@/components/affiliate-portal/upload-bixgrow-csv-button";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getAffiliatePortalSettings } from "@/lib/services/affiliate-portal-service";
+import { getSignupSettings } from "@/lib/services/affiliate-signup-service";
+import { SignupSettingsCard } from "@/components/affiliate-portal/signup-settings-card";
 import { getAppLocale } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -13,6 +15,7 @@ export default async function AffiliatePortalSettingsPage() {
     getAffiliatePortalSettings(),
     getAppLocale()
   ]);
+  const signupSettings = await getSignupSettings(chrome.store.id).catch(() => null);
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
   const onOff = (v: boolean) => (v ? lang("מופעל", "Enabled") : lang("כבוי", "Disabled"));
@@ -36,6 +39,7 @@ export default async function AffiliatePortalSettingsPage() {
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
         <div className="space-y-4">
+          {signupSettings ? <SignupSettingsCard initial={signupSettings} isHe={isHe} /> : null}
           <Card>
             <CardHeader>
               <CardTitle>{lang("פורטל השותפים", "Affiliate portal")}</CardTitle>

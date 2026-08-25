@@ -45,12 +45,37 @@ export interface UpdatePayoutStatusInput {
   targetStatus: PayoutStatus;
   // Optional note attached to every row (e.g. "Wise payout #12345").
   note?: string | null;
+  /**
+   * The ₪ total the human SAW and confirmed. Mandatory (and matched
+   * server-side) for non-trivial approvals — see the HLA-01 guards.
+   */
+  expectedTotal?: number;
 }
 
 export interface UpdatePayoutStatusResult {
   updated: number;
   skippedInvalidTransitions: number;
   updatedIds: string[];
+}
+
+// ── HLA-01 payout guards ────────────────────────────────────────────────
+// The payouts page once offered a one-click bulk approval of ₪302,561 —
+// ~78× the period-correct figure — while three independent bugs inflated
+// the number. Approving commission is the one action in this app that
+// commits real money, so bulk approvals are now double-locked SERVER-side
+// (regardless of what any UI sends):
+//   1. Itemised consent: any approval beyond a trivial size must carry
+//      `expectedTotal` — the ₪ figure the human actually saw — and it must
+//      match what the database computes for those rows.
+//   2. Sanity ceiling: an approval whose total exceeds N× the trailing-30d
+//      commission accrual is rejected outright until the numbers reconcile.
+const APPROVE_CONFIRM_MIN_IDS = 25; // above this, expectedTotal is mandatory
+const APPROVE_CONFIRM_MIN_TOTAL = 1000; // ₪ — or above this total
+const APPROVE_TOTAL_TOLERANCE = 1; // ₪ rounding slack on the match
+const APPROVE_SANITY_FLOOR = 500; // ₪ — guard only engages above this
+function approveSanityMultiplier(): number {
+  const parsed = Number(process.env.PAYOUT_GUARD_MULTIPLIER);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
 }
 
 export async function updatePayoutStatus(
@@ -64,6 +89,56 @@ export async function updatePayoutStatus(
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = getDb() as any;
+
+  if (input.targetStatus === "approved") {
+    const agg = (await db.affiliateAttribution.aggregate({
+      where: { storeId: input.storeId, id: { in: input.attributionIds }, payoutStatus: "unpaid" },
+      _sum: { commissionAmount: true },
+      _count: true
+    })) as { _sum: { commissionAmount: unknown }; _count: number };
+    const computedTotal = Number(agg._sum.commissionAmount ?? 0);
+
+    // Guard 2 — sanity ceiling vs what the program actually accrued lately.
+    if (computedTotal > APPROVE_SANITY_FLOOR) {
+      const accrualAgg = (await db.affiliateAttribution.aggregate({
+        where: { storeId: input.storeId, occurredAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
+        _sum: { commissionAmount: true }
+      })) as { _sum: { commissionAmount: unknown } };
+      const accrual30d = Number(accrualAgg._sum.commissionAmount ?? 0);
+      const ceiling = Math.max(accrual30d * approveSanityMultiplier(), APPROVE_SANITY_FLOOR);
+      if (computedTotal > ceiling) {
+        throw new AppError(
+          `Bulk approval blocked: the selection totals ₪${Math.round(computedTotal).toLocaleString("en-US")}, ` +
+            `but only ₪${Math.round(accrual30d).toLocaleString("en-US")} of commission accrued in the last 30 days. ` +
+            `A total beyond ${approveSanityMultiplier()}× the recent accrual is almost certainly a data error — ` +
+            `reconcile the payout figures (or approve per-affiliate in smaller batches) before approving.`,
+          422
+        );
+      }
+    }
+
+    // Guard 1 — itemised consent for anything non-trivial.
+    if (
+      input.attributionIds.length > APPROVE_CONFIRM_MIN_IDS ||
+      computedTotal > APPROVE_CONFIRM_MIN_TOTAL
+    ) {
+      if (typeof input.expectedTotal !== "number" || !Number.isFinite(input.expectedTotal)) {
+        throw new AppError(
+          `This approval covers ${agg._count} conversions totalling ₪${Math.round(computedTotal).toLocaleString("en-US")} — ` +
+            `it requires explicit confirmation of the total (expectedTotal).`,
+          409
+        );
+      }
+      if (Math.abs(input.expectedTotal - computedTotal) > APPROVE_TOTAL_TOLERANCE) {
+        throw new AppError(
+          `The confirmed total (₪${Math.round(input.expectedTotal).toLocaleString("en-US")}) does not match the ` +
+            `database total for these rows (₪${Math.round(computedTotal).toLocaleString("en-US")}). ` +
+            `Refresh the payouts page and confirm again.`,
+          409
+        );
+      }
+    }
+  }
 
   // Fetch current state so we can enforce the transition table.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
