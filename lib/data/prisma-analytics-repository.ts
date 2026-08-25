@@ -4,6 +4,7 @@ import type {
   CollectionPerformanceRow,
   DailyMetric,
   Order,
+  ProductPerformanceRow,
   ProductStockRow,
   StockFlag,
   Store,
@@ -60,6 +61,7 @@ function mapOrders(records: any[]): Order[] {
         id: item.id,
         productId: item.productId,
         variantId: item.variantId,
+        title: item.title ?? null,
         quantity: item.quantity,
         unitPrice: item.quantity ? toNumber(item.lineSubtotal) / item.quantity : 0,
         discountAmount: toNumber(item.lineDiscountAmount),
@@ -568,7 +570,9 @@ export async function getShopifySalesSummaryForWindow(
  * Shopify's Sales report for the active reporting window.
  */
 export async function getShopifyParityOverview(): Promise<ShopifyParityOverview | null> {
-  const store = await getConnectedStoreRecord();
+  // Active-store aware — must resolve the SAME store as the מצב פיננסי card,
+  // or the two "רווח תרומה" figures on the dashboard can diverge (F-010).
+  const store = await getStoreRecord(undefined);
   if (!store) return null;
   const [range, timeZone] = await Promise.all([getActiveRange(), getStoreTimeZone()]);
 
@@ -625,6 +629,122 @@ async function buildProductCollectionsLookup(storeId: string): Promise<Map<strin
     result.set(productId, Array.from(titles).sort((a, b) => a.localeCompare(b)));
   }
   return result;
+}
+
+type CollectionMembershipRow = { productId: string; collection: { id: string; title: string } };
+
+async function fetchCollectionMemberships(storeId: string): Promise<CollectionMembershipRow[]> {
+  return withOptionalDb(
+    (db) =>
+      db.productCollectionMembership.findMany({
+        where: { storeId },
+        select: {
+          productId: true,
+          collection: { select: { id: true, title: true } }
+        }
+      }),
+    [] as CollectionMembershipRow[]
+  );
+}
+
+/**
+ * Group product performance rows into per-collection rows. A product in N
+ * collections contributes 1/N of its revenue/profit to each (so the column
+ * stays additive); products with no membership fall back to the vendor-based
+ * "collection" string bucket. Extracted so the profit payload can reuse its
+ * already-fetched orders instead of re-hydrating them (pool pressure was
+ * rendering /profit empty on the starter instance).
+ */
+function groupCollectionPerformance(
+  performance: ProductPerformanceRow[],
+  memberships: CollectionMembershipRow[]
+): CollectionPerformanceRow[] {
+  if (memberships.length > 0) {
+    // Map productId -> [{ id, title }]
+    const productToCollections = new Map<string, Array<{ id: string; title: string }>>();
+    for (const m of memberships) {
+      const arr = productToCollections.get(m.productId) ?? [];
+      arr.push({ id: m.collection.id, title: m.collection.title });
+      productToCollections.set(m.productId, arr);
+    }
+
+    const grouped = new Map<string, CollectionPerformanceRow>();
+    for (const row of performance) {
+      const productCollections = productToCollections.get(row.productId);
+      if (productCollections && productCollections.length > 0) {
+        // A product can belong to multiple collections — split contribution evenly so
+        // we don't double-count revenue across them.
+        const share = 1 / productCollections.length;
+        for (const collection of productCollections) {
+          const current = grouped.get(collection.id) ?? {
+            collection: collection.title,
+            revenue: 0,
+            estimatedProfit: 0
+          };
+          current.revenue += row.revenue * share;
+          current.estimatedProfit += row.estimatedProfit * share;
+          grouped.set(collection.id, current);
+        }
+      } else {
+        const key = `__uncategorized__:${row.collection || "Uncategorized"}`;
+        const current = grouped.get(key) ?? {
+          collection: row.collection || "Uncategorized",
+          revenue: 0,
+          estimatedProfit: 0
+        };
+        current.revenue += row.revenue;
+        current.estimatedProfit += row.estimatedProfit;
+        grouped.set(key, current);
+      }
+    }
+    return Array.from(grouped.values()).sort((a, b) => b.revenue - a.revenue);
+  }
+
+  // Fallback: case-insensitive + whitespace-stripped bucket key on the vendor-based
+  // "collection" string. "Incense Parfums" and "incenseparfums" collapse into one row.
+  const buckets = new Map<
+    string,
+    { row: CollectionPerformanceRow; displayCounts: Map<string, number> }
+  >();
+
+  for (const row of performance) {
+    const key = String(row.collection ?? "Uncategorized")
+      .toLowerCase()
+      .replace(/\s+/g, "");
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.row.revenue += row.revenue;
+      bucket.row.estimatedProfit += row.estimatedProfit;
+      bucket.displayCounts.set(row.collection, (bucket.displayCounts.get(row.collection) ?? 0) + 1);
+    } else {
+      const counts = new Map<string, number>();
+      counts.set(row.collection, 1);
+      buckets.set(key, {
+        row: { collection: row.collection, revenue: row.revenue, estimatedProfit: row.estimatedProfit },
+        displayCounts: counts
+      });
+    }
+  }
+
+  // Pick the most-used original casing per bucket (with length tie-break)
+  for (const bucket of buckets.values()) {
+    let bestName = bucket.row.collection;
+    let bestCount = -1;
+    for (const [name, count] of bucket.displayCounts.entries()) {
+      if (
+        count > bestCount ||
+        (count === bestCount && name.length > bestName.length)
+      ) {
+        bestName = name;
+        bestCount = count;
+      }
+    }
+    bucket.row.collection = bestName;
+  }
+
+  return Array.from(buckets.values())
+    .map((b) => b.row)
+    .sort((a, b) => b.revenue - a.revenue);
 }
 
 /**
@@ -833,101 +953,8 @@ export const prismaAnalyticsRepository: AnalyticsRepository = {
 
     // Prefer real Shopify collections (smart/manual) when memberships exist.
     // Fall back to the vendor/productType-based "collection" string on the Product row.
-    const memberships = await withOptionalDb(
-      (db) =>
-        db.productCollectionMembership.findMany({
-          where: { storeId: store.id },
-          include: { collection: true }
-        }),
-      [] as Array<{ productId: string; collection: { id: string; title: string } }>
-    );
-
-    if (memberships.length > 0) {
-      // Map productId -> [{ id, title }]
-      const productToCollections = new Map<string, Array<{ id: string; title: string }>>();
-      for (const m of memberships) {
-        const arr = productToCollections.get(m.productId) ?? [];
-        arr.push({ id: m.collection.id, title: m.collection.title });
-        productToCollections.set(m.productId, arr);
-      }
-
-      const grouped = new Map<string, CollectionPerformanceRow>();
-      for (const row of performance) {
-        const productCollections = productToCollections.get(row.productId);
-        if (productCollections && productCollections.length > 0) {
-          // A product can belong to multiple collections — split contribution evenly so
-          // we don't double-count revenue across them.
-          const share = 1 / productCollections.length;
-          for (const collection of productCollections) {
-            const current = grouped.get(collection.id) ?? {
-              collection: collection.title,
-              revenue: 0,
-              estimatedProfit: 0
-            };
-            current.revenue += row.revenue * share;
-            current.estimatedProfit += row.estimatedProfit * share;
-            grouped.set(collection.id, current);
-          }
-        } else {
-          const key = `__uncategorized__:${row.collection || "Uncategorized"}`;
-          const current = grouped.get(key) ?? {
-            collection: row.collection || "Uncategorized",
-            revenue: 0,
-            estimatedProfit: 0
-          };
-          current.revenue += row.revenue;
-          current.estimatedProfit += row.estimatedProfit;
-          grouped.set(key, current);
-        }
-      }
-      return Array.from(grouped.values()).sort((a, b) => b.revenue - a.revenue);
-    }
-
-    // Fallback: case-insensitive + whitespace-stripped bucket key on the vendor-based
-    // "collection" string. "Incense Parfums" and "incenseparfums" collapse into one row.
-    const buckets = new Map<
-      string,
-      { row: CollectionPerformanceRow; displayCounts: Map<string, number> }
-    >();
-
-    for (const row of performance) {
-      const key = String(row.collection ?? "Uncategorized")
-        .toLowerCase()
-        .replace(/\s+/g, "");
-      const bucket = buckets.get(key);
-      if (bucket) {
-        bucket.row.revenue += row.revenue;
-        bucket.row.estimatedProfit += row.estimatedProfit;
-        bucket.displayCounts.set(row.collection, (bucket.displayCounts.get(row.collection) ?? 0) + 1);
-      } else {
-        const counts = new Map<string, number>();
-        counts.set(row.collection, 1);
-        buckets.set(key, {
-          row: { collection: row.collection, revenue: row.revenue, estimatedProfit: row.estimatedProfit },
-          displayCounts: counts
-        });
-      }
-    }
-
-    // Pick the most-used original casing per bucket (with length tie-break)
-    for (const bucket of buckets.values()) {
-      let bestName = bucket.row.collection;
-      let bestCount = -1;
-      for (const [name, count] of bucket.displayCounts.entries()) {
-        if (
-          count > bestCount ||
-          (count === bestCount && name.length > bestName.length)
-        ) {
-          bestName = name;
-          bestCount = count;
-        }
-      }
-      bucket.row.collection = bestName;
-    }
-
-    return Array.from(buckets.values())
-      .map((b) => b.row)
-      .sort((a, b) => b.revenue - a.revenue);
+    const memberships = await fetchCollectionMemberships(store.id);
+    return groupCollectionPerformance(performance, memberships);
   },
 
   async getProductStock(storeId): Promise<ProductStockRow[]> {
@@ -1029,7 +1056,9 @@ export async function hasPrismaAnalyticsData() {
 
 export async function getRetentionAnalyticsFromDb(locale: "he" | "en" = "he") {
   const lang = (he: string, en: string) => (locale === "he" ? he : en);
-  const store = await getConnectedStoreRecord();
+  // Active-store aware — the legacy connected-store pick could resolve a
+  // DIFFERENT store than the cohort section on the same page (SYS-001).
+  const store = await getStoreRecord(undefined);
   if (!store) return null;
   const range = await getActiveRange();
   const [orders, prevOrders, history, allOrders, products] = await Promise.all([
@@ -1050,7 +1079,36 @@ export async function getRetentionAnalyticsFromDb(locale: "he" | "en" = "he") {
               storeId: store.id,
               createdAt: { gte: threeYearsAgo }
             }),
-            include: { lineItems: true, discountUsages: true },
+            // Retention only needs dates + line titles/quantities from the
+            // lifetime scan. The full include (every line column + every
+            // discount row) made this the heaviest query in the app and a
+            // prime pool-starver — and a starved pool renders as "0
+            // customers" because withOptionalDb swallows the timeout.
+            select: {
+              id: true,
+              customerId: true,
+              createdAt: true,
+              orderNumber: true,
+              totalRefunds: true,
+              totalPrice: true,
+              totalDiscounts: true,
+              cancelledAt: true,
+              test: true,
+              lineItems: {
+                select: {
+                  id: true,
+                  productId: true,
+                  variantId: true,
+                  title: true,
+                  quantity: true,
+                  lineSubtotal: true,
+                  lineDiscountAmount: true,
+                  estimatedCostAmount: true,
+                  refundedQuantity: true,
+                  refundedSubtotal: true
+                }
+              }
+            },
             orderBy: { createdAt: "asc" },
             take: 20000
           }),
@@ -1111,7 +1169,9 @@ export async function getRetentionAnalyticsFromDb(locale: "he" | "en" = "he") {
 }
 
 export async function getProfitAnalyticsFromDb() {
-  const store = await getConnectedStoreRecord();
+  // Active-store aware (was the legacy connected-store pick, which ignores
+  // the store switcher and can disagree with every sibling section).
+  const store = await getStoreRecord(undefined);
   if (!store) return null;
   const range = await getActiveRange();
   const [orders, prevOrders, products, stockLookup, collectionsLookup] = await Promise.all([
@@ -1183,7 +1243,13 @@ export async function getProfitAnalyticsFromDb() {
     }
   }
 
-  const collectionPerformance = await prismaAnalyticsRepository.getCollectionPerformance();
+  // Reuse the already-fetched orders/lookups — the old nested
+  // getCollectionPerformance() call re-hydrated the same window (5 more
+  // queries) and helped starve the 5-connection pool.
+  const collectionPerformance = groupCollectionPerformance(
+    productPerformance,
+    await fetchCollectionMemberships(store.id)
+  );
   const discountUsage = buildDiscountUsage(normalizedOrders);
 
   // Compute MoM (previous-period) profit delta for the summary banner.

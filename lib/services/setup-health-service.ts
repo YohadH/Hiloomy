@@ -195,7 +195,7 @@ export async function buildSetupHealth(
       he: `${Math.round(costCoverage * 100)}% מהמוצרים שנמכרו (${productsWithCost}/${productIdsSold.length}) עם עלות מוגדרת. בלי עלויות מדויקות, רווח התרומה משוער בלבד.`,
       en: `${Math.round(costCoverage * 100)}% of sold products (${productsWithCost}/${productIdsSold.length}) have a cost configured. Without accurate costs, contribution margin is estimated only.`
     },
-    fixHref: "/profit/costs",
+    fixHref: "/products/costs",
     fixLabel: { he: "לעדכן עלויות", en: "Update costs" }
   });
 

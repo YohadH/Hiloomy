@@ -17,6 +17,7 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
+import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 
 export const dynamic = "force-dynamic";
 
@@ -104,17 +105,28 @@ function ReturnsTable({
 export default async function ReturnsPage() {
   const locale = await getAppLocale();
   const isHe = locale === "he";
-  const chrome = await getAppChromeData();
+  const [chrome, selection] = await Promise.all([
+    getAppChromeData(),
+    getReportingDateRangeSelection(locale === "he" ? "he" : "en")
+  ]);
   const currency = chrome.store.currency;
 
+  // The selection's instants are store-timezone day boundaries — the old
+  // bare-UTC re-parse shifted the window 3 hours vs every other page.
   const report = await buildReturnsIntelligence({
     storeId: chrome.store.id,
-    start: new Date(`${chrome.controls.startDate}T00:00:00Z`),
-    end: new Date(`${chrome.controls.endDate}T23:59:59Z`)
+    start: selection.start,
+    end: selection.end
   }).catch(() => null);
 
   const avg = report?.storeAvgReturnRate ?? 0;
   const coverage = report?.lineRefundCoverage;
+  // coverage === 0 means refunded MONEY exists (order level) but NONE of it
+  // is attributed to products (line level). The per-product KPIs and
+  // rankings are then structurally unknown — rendering them as literal
+  // zeros produced the self-contradicting "0 units returned · ₪238
+  // refunded" row and a ranking where every product tied at 0 (F-044/F-046).
+  const lineDataUnknown = coverage === 0;
 
   return (
     <AppShell store={chrome.store} controls={chrome.controls}>
@@ -141,28 +153,45 @@ export default async function ReturnsPage() {
         {report ? (
           <>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {/* The ₪ figure is order-level (always real); the three
+                  unit/product KPIs are line-level and UNKNOWN while line
+                  attribution is 0% — show "—", never a fake 0 (F-044). */}
               <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
                 <p className="text-sm text-muted-foreground">{isHe ? "שיעור החזרה ממוצע" : "Store return rate"}</p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums">{(avg * 100).toFixed(1)}%</p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums">
+                  {lineDataUnknown ? "—" : `${(avg * 100).toFixed(1)}%`}
+                </p>
+                {lineDataUnknown ? (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{isHe ? "לא זמין עד סנכרון היסטורי" : "Unavailable until backfill"}</p>
+                ) : null}
               </div>
               <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
                 <p className="text-sm text-muted-foreground">{isHe ? "יחידות שהוחזרו" : "Units returned"}</p>
                 <p className="mt-1 text-2xl font-semibold tabular-nums">
-                  {report.totalUnitsReturned}
+                  {lineDataUnknown ? "—" : report.totalUnitsReturned}
                   <span className="ms-1 text-sm font-normal text-muted-foreground">/ {report.totalUnitsSold}</span>
                 </p>
+                {lineDataUnknown ? (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{isHe ? "לא זמין עד סנכרון היסטורי" : "Unavailable until backfill"}</p>
+                ) : null}
               </div>
               <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
                 <p className="text-sm text-muted-foreground">{isHe ? "כסף שהוחזר" : "Money refunded"}</p>
                 <p className="mt-1 text-2xl font-semibold tabular-nums text-red-700">
                   {formatCurrency(report.totalRefundedAmount, currency)}
                 </p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {isHe ? "נמדד ברמת ההזמנה — תמיד מלא" : "Order-level — always complete"}
+                </p>
               </div>
               <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
                 <p className="text-sm text-muted-foreground">{isHe ? "מוצרים עם החזרות" : "Products with returns"}</p>
                 <p className="mt-1 text-2xl font-semibold tabular-nums">
-                  {report.rows.filter((r) => r.unitsReturned > 0).length}
+                  {lineDataUnknown ? "—" : report.rows.filter((r) => r.unitsReturned > 0).length}
                 </p>
+                {lineDataUnknown ? (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{isHe ? "לא זמין עד סנכרון היסטורי" : "Unavailable until backfill"}</p>
+                ) : null}
               </div>
             </div>
 
@@ -177,39 +206,52 @@ export default async function ReturnsPage() {
               </div>
             ) : null}
 
-            <section className="space-y-3">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
-                {isHe ? "החוזרים הגרועים" : "Worst returners"}
-              </h2>
-              <div className="rounded-2xl border border-border">
-                <ReturnsTable
-                  rows={report.worst}
-                  avg={avg}
-                  currency={currency}
-                  isHe={isHe}
-                  emptyText={
-                    isHe
-                      ? "אין מוצרים עם החזרות בחלון הנבחר (או שאין מספיק נפח). נסו חלון רחב יותר."
-                      : "No products with returns in the selected window (or not enough volume). Try a wider window."
-                  }
-                />
+            {lineDataUnknown ? (
+              // With 0% line attribution every product ties at zero, so a
+              // "best/worst returners" ranking is an arbitrary list dressed
+              // up as a finding. One honest message instead (F-046).
+              <div className="rounded-2xl border border-border/70 bg-muted/30 p-8 text-center text-sm text-muted-foreground">
+                {isHe
+                  ? "דירוג ההחזרות לפי מוצר יופיע אחרי שסנכרון ההחזרות ההיסטורי ישלים את שיוך ההחזרות לפריטים. עד אז אין לנו דרך לדעת אילו מוצרים חזרו — רק כמה כסף הוחזר בסך הכול."
+                  : "Per-product return rankings appear once the historical backfill attributes refunds to line items. Until then we cannot know WHICH products came back — only how much money was refunded in total."}
               </div>
-            </section>
+            ) : (
+              <>
+                <section className="space-y-3">
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                    {isHe ? "החוזרים הגרועים" : "Worst returners"}
+                  </h2>
+                  <div className="rounded-2xl border border-border">
+                    <ReturnsTable
+                      rows={report.worst}
+                      avg={avg}
+                      currency={currency}
+                      isHe={isHe}
+                      emptyText={
+                        isHe
+                          ? "אין מוצרים עם החזרות בחלון הנבחר (או שאין מספיק נפח). נסו חלון רחב יותר."
+                          : "No products with returns in the selected window (or not enough volume). Try a wider window."
+                      }
+                    />
+                  </div>
+                </section>
 
-            <section className="space-y-3">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
-                {isHe ? "החוזרים הטובים (הכי פחות החזרות)" : "Best performers (fewest returns)"}
-              </h2>
-              <div className="rounded-2xl border border-border">
-                <ReturnsTable
-                  rows={report.best}
-                  avg={avg}
-                  currency={currency}
-                  isHe={isHe}
-                  emptyText={isHe ? "אין מספיק נתונים בחלון הנבחר." : "Not enough data in the selected window."}
-                />
-              </div>
-            </section>
+                <section className="space-y-3">
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                    {isHe ? "החוזרים הטובים (הכי פחות החזרות)" : "Best performers (fewest returns)"}
+                  </h2>
+                  <div className="rounded-2xl border border-border">
+                    <ReturnsTable
+                      rows={report.best}
+                      avg={avg}
+                      currency={currency}
+                      isHe={isHe}
+                      emptyText={isHe ? "אין מספיק נתונים בחלון הנבחר." : "Not enough data in the selected window."}
+                    />
+                  </div>
+                </section>
+              </>
+            )}
           </>
         ) : (
           <div className="rounded-2xl border border-border/70 bg-background/70 p-8 text-center text-sm text-muted-foreground">

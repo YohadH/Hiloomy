@@ -173,12 +173,16 @@ async function affiliateLeg(storeId: string, start: Date, end: Date): Promise<Le
 
   const amount = round(summary.returningCustomer.commission);
   const top = summary.topLeakyAffiliates.slice(0, 2).map((a) => a.name).filter((n) => n !== "—");
+  // Recovery is NOT 1:1 — some of these conversions only happened because
+  // the affiliate re-engaged the customer, and win-back carve-outs keep
+  // paying. Claim a conservative 50% and SAY it's a range, instead of the
+  // old confident single figure the owner called unrealistic (F-002).
+  const recoveryLow = round(amount * 0.5);
+  const recoveryHigh = round(amount * 0.8);
   return {
     id: "affiliate_leakage",
     amount,
-    // A zero/reduced returning-rate policy recovers most of this going
-    // forward; win-back carve-outs keep some — claim 80%, not 100%.
-    monthlyImpact: round(amount * 0.8),
+    monthlyImpact: recoveryLow,
     reason: LEG_META.affiliate_leakage.reason,
     action: LEG_META.affiliate_leakage.action,
     href: LEG_META.affiliate_leakage.href,
@@ -186,8 +190,8 @@ async function affiliateLeg(storeId: string, start: Date, end: Date): Promise<Le
     detail:
       amount > 0
         ? {
-            he: `${summary.returningCustomer.conversions} המרות על לקוחות חוזרים (${Math.round(summary.leakageRate * 100)}% מהעמלות)${top.length ? ` · מובילות: ${top.join(", ")}` : ""}`,
-            en: `${summary.returningCustomer.conversions} conversions on returning customers (${Math.round(summary.leakageRate * 100)}% of commissions)${top.length ? ` · top: ${top.join(", ")}` : ""}`
+            he: `${summary.returningCustomer.conversions} המרות על לקוחות חוזרים (${Math.round(summary.leakageRate * 100)}% מהעמלות)${top.length ? ` · מובילות: ${top.join(", ")}` : ""} · חיסכון ריאלי: ₪${recoveryLow.toLocaleString("en-US")}–₪${recoveryHigh.toLocaleString("en-US")} בחודש, לא את כל הסכום`,
+            en: `${summary.returningCustomer.conversions} conversions on returning customers (${Math.round(summary.leakageRate * 100)}% of commissions)${top.length ? ` · top: ${top.join(", ")}` : ""} · realistic recovery: ₪${recoveryLow.toLocaleString("en-US")}–₪${recoveryHigh.toLocaleString("en-US")}/month, not the full amount`
           }
         : {
             he: "לא נמצאה דליפת עמלות בחלון — מצוין.",
@@ -213,7 +217,13 @@ async function discountLeg(storeId: string, start: Date, end: Date): Promise<Lea
   const withCost = report.cards.filter((c) => c.hasCostData);
   if (withCost.length === 0) return unavailable("underwater_discounts");
 
-  const underwater = report.cards.filter((c) => c.verdict === "stop");
+  // Seeding codes (deliberate affiliate/PR giveaways) are marketing spend,
+  // not a leak — flagging them here is the F-001 false positive. The
+  // classification lives in the scorecard (data layer) so this filter and
+  // the alert engine read the same call.
+  const underwater = report.cards.filter(
+    (c) => c.verdict === "stop" && c.classification !== "seeding"
+  );
   const amount = round(underwater.reduce((sum, c) => sum + Math.abs(Math.min(0, c.marginAfterDiscount)), 0));
   const codes = underwater.map((c) => c.code).slice(0, 3);
   return {

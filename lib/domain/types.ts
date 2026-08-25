@@ -1,5 +1,5 @@
 export type DateRangePreset = "7d" | "30d" | "90d";
-export type Severity = "low" | "medium" | "high";
+export type Severity = "low" | "medium" | "high" | "critical";
 export type KpiFormat = "currency" | "percent" | "number";
 export type SyncMode = "initial" | "incremental";
 export type SyncStatus = "idle" | "running" | "success" | "error";
@@ -68,6 +68,8 @@ export interface OrderLineItem {
   id?: string;
   productId?: string | null;
   variantId?: string | null;
+  /** Line title from Shopify — the fallback identity when productId is null. */
+  title?: string | null;
   quantity: number;
   unitPrice: number;
   discountAmount: number;
@@ -116,6 +118,11 @@ export interface KPI {
   value: number;
   /** Period-over-period change. Undefined when no comparison is selected. */
   change?: number;
+  /**
+   * The metric's actual value in the comparison period, so the % chip can
+   * show the real number on hover instead of forcing mental math (F-009).
+   */
+  previousValue?: number;
   format: KpiFormat;
 }
 

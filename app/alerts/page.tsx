@@ -6,6 +6,7 @@ import { AlertCard } from "@/components/dashboard-v2/alert-card";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getAlerts } from "@/lib/services/alert-service";
 import { getAppLocale, getDictionary } from "@/lib/i18n";
+import { heCountPhrase } from "@/lib/i18n/he-plural";
 
 export default async function AlertsPage() {
   const locale = await getAppLocale();
@@ -13,19 +14,21 @@ export default async function AlertsPage() {
   const tips = dictionary.alertsPage.tips;
   const [alerts, chrome] = await Promise.all([getAlerts(), getAppChromeData()]);
 
-  const high = alerts.filter((a) => a.severity === "high");
+  // Urgent tier = critical + high, together. The stored entity-level alerts
+  // carry a "critical" severity the legacy page filters used to drop.
+  const urgent = alerts.filter((a) => a.severity === "critical" || a.severity === "high");
   const medium = alerts.filter((a) => a.severity === "medium");
   const low = alerts.filter((a) => a.severity === "low");
 
-  const tone = high.length > 0 ? "down" : medium.length > 0 ? "neutral" : "up";
+  const tone = urgent.length > 0 ? "down" : medium.length > 0 ? "neutral" : "up";
   const headline =
-    high.length > 0
+    urgent.length > 0
       ? locale === "he"
-        ? `${high.length} התראות בעדיפות גבוהה דורשות תשומת לב היום.`
-        : `${high.length} high-priority alert${high.length === 1 ? "" : "s"} need your attention today.`
+        ? `${heCountPhrase(urgent.length, { one: "התראה אחת", many: "התראות" }, { one: "בעדיפות גבוהה דורשת", many: "בעדיפות גבוהה דורשות" })} תשומת לב היום.`
+        : `${urgent.length} high-priority alert${urgent.length === 1 ? "" : "s"} need your attention today.`
       : medium.length > 0
         ? locale === "he"
-          ? `${medium.length} התראות בעדיפות בינונית לסקירה השבוע.`
+          ? `${heCountPhrase(medium.length, { one: "התראה אחת", many: "התראות" }, { one: "בעדיפות בינונית לסקירה", many: "בעדיפות בינונית לסקירה" })} השבוע.`
           : `${medium.length} medium-priority alert${medium.length === 1 ? "" : "s"} to review this week.`
         : locale === "he"
           ? "הכל תקין — אין התראות דחופות כרגע."
@@ -70,10 +73,10 @@ export default async function AlertsPage() {
           </Card>
         ) : null}
 
-        {high.length > 0 ? (
+        {urgent.length > 0 ? (
           <section className="space-y-3">
             <SectionHead
-              eyebrow={locale === "he" ? "עדיפות — גבוהה" : "Priority — high"}
+              eyebrow={locale === "he" ? "עדיפות — קריטית וגבוהה" : "Priority — critical & high"}
               title={locale === "he" ? "ההתראות הדחופות להיום" : "Today's must-do alerts"}
               hint={
                 locale === "he"
@@ -82,7 +85,7 @@ export default async function AlertsPage() {
               }
             />
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-2">
-              {high.map((alert) => (
+              {urgent.map((alert) => (
                 <AlertCard
                   key={alert.id}
                   alert={alert}

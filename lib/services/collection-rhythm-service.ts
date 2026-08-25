@@ -101,6 +101,14 @@ export async function buildCollectionRhythm(input: {
 
   // Weekday math in the store's local time. `createdAt` is stored as a
   // naive UTC timestamp, so anchor it to UTC first, then shift.
+  // Revenue/COGS are split 1/N across a product's N collections (same
+  // convention as the profit page's collection table) so the rows are
+  // ADDITIVE: summing them can never exceed store revenue. The old
+  // unweighted join counted a product once per membership, and with
+  // overlapping curated collections over one perfume catalog the visible
+  // rows summed to ~21× the store's actual revenue (F-033). Order counts
+  // stay distinct-per-collection — an order can legitimately touch two
+  // collections — and the UI labels them accordingly.
   const grouped: Array<{
     collection_id: string;
     weekday: number;
@@ -110,13 +118,19 @@ export async function buildCollectionRhythm(input: {
   }> = await db.$queryRaw`
     SELECT pcm."collectionId" AS collection_id,
            EXTRACT(DOW FROM (o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone})::int AS weekday,
-           COALESCE(SUM(li."lineSubtotal" - li."lineDiscountAmount"), 0)::float AS revenue,
-           COALESCE(SUM(li."estimatedCostAmount"), 0)::float AS cogs,
+           COALESCE(SUM((li."lineSubtotal" - li."lineDiscountAmount") / mc.membership_count), 0)::float AS revenue,
+           COALESCE(SUM(li."estimatedCostAmount" / mc.membership_count), 0)::float AS cogs,
            COUNT(DISTINCT o.id)::int AS orders
     FROM "OrderLineItem" li
     JOIN "Order" o ON o.id = li."orderId"
     JOIN "ProductCollectionMembership" pcm
       ON pcm."productId" = li."productId" AND pcm."storeId" = li."storeId"
+    JOIN (
+      SELECT "productId", COUNT(*)::float AS membership_count
+      FROM "ProductCollectionMembership"
+      WHERE "storeId" = ${input.storeId}
+      GROUP BY "productId"
+    ) mc ON mc."productId" = li."productId"
     WHERE li."storeId" = ${input.storeId}
       AND li."productId" IS NOT NULL
       AND o."createdAt" >= ${start}

@@ -16,6 +16,7 @@ import {
   classifyUnclassifiedAttributions,
   getCommissionLeakageSummary
 } from "@/lib/services/affiliate-leakage-service";
+import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
 
@@ -268,6 +269,8 @@ export default async function AffiliatePortalDashboardPage() {
     getAffiliatePortalDashboard(),
     getAppLocale()
   ]);
+  // Store-TZ window instants — the bare-UTC re-parse drifted 3h (SYS-001).
+  const selection = await getReportingDateRangeSelection(locale === "he" ? "he" : "en");
   const isHe = locale === "he";
   const t = strings(isHe);
   const totals = dashboard.totals;
@@ -282,8 +285,8 @@ export default async function AffiliatePortalDashboardPage() {
       await applyReturningCommissionPolicy(chrome.store.id).catch(() => null);
       return await getCommissionLeakageSummary({
         storeId: chrome.store.id,
-        start: new Date(`${chrome.controls.startDate}T00:00:00Z`),
-        end: new Date(`${chrome.controls.endDate}T23:59:59Z`)
+        start: selection.start,
+        end: selection.end
       });
     } catch {
       return null;

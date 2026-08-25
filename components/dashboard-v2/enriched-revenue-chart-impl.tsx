@@ -30,7 +30,7 @@ import { saasStrings, type UiLocale } from "@/lib/i18n/saas-strings";
 //     (one per category, stacked vertically). Click target = the chart day.
 //   - Rich tooltip on hover showing all four sections.
 //
-// Indigo (#16A34A) for revenue, blue (#F97316) for profit — the accent
+// Green (#16A34A) for revenue, orange (#F97316) for profit — the accent
 // palette the user liked.
 
 type EnrichedRowBase = DailyMetric & { context?: DailyTrendContextItem };
@@ -178,11 +178,31 @@ function CustomTooltip({
           </div>
         ) : null}
 
+        {/* 🔗 Landing pages — where the day's buyers arrived (F-011) */}
+        {ctx?.landingPages && ctx.landingPages.length > 0 ? (
+          <div>
+            <p className="mb-1 font-semibold text-foreground">🔗 {t.landingPages}</p>
+            <ul className="space-y-0.5 text-muted-foreground">
+              {ctx.landingPages.map((lp) => (
+                <li key={lp.path} className="flex justify-between gap-2">
+                  <span className="truncate" dir="ltr" title={lp.path}>
+                    {lp.path === "/" ? "/" : decodeURIComponent(lp.path.split(/[?#]/)[0])}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-foreground">
+                    {formatCurrency(lp.revenue, currency)} · {lp.sessions} {t.visits}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         {/* No context at all — keep tooltip useful */}
         {(!ctx?.topProducts?.length &&
           !ctx?.campaigns?.length &&
           !ctx?.posts?.length &&
-          !ctx?.discounts?.length) ? (
+          !ctx?.discounts?.length &&
+          !ctx?.landingPages?.length) ? (
           <p className="text-muted-foreground">{t.noEvents}</p>
         ) : null}
       </div>

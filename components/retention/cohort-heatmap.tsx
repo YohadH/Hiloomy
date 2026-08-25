@@ -89,9 +89,24 @@ export function CohortHeatmap({
     );
   }
 
-  // Build the column header set: +0, +1, +2, ... +monthsOut.
+  // Build the column header set: join month, then months 1..monthsOut.
   const cols: number[] = [];
   for (let i = 0; i <= report.monthsOut; i += 1) cols.push(i);
+
+  // Per-column weighted average — "how many come back in month N overall".
+  // The owner's question ("how much for each month") needs a total row, not
+  // just per-cohort cells (F-062).
+  const colAvg: Array<number | null> = cols.map((i) => {
+    if (i === 0) return null;
+    let returned = 0;
+    let base = 0;
+    for (const row of report.cohorts) {
+      if (row.rates[i] == null) continue;
+      returned += row.values[i] ?? 0;
+      base += row.cohortSize;
+    }
+    return base > 0 ? returned / base : null;
+  });
 
   return (
     <div className="overflow-x-auto table-scroll scroll-fade-end">
@@ -99,34 +114,47 @@ export function CohortHeatmap({
         <thead>
           <tr>
             <th className="sticky left-0 z-10 border border-border bg-card px-2 py-1 text-start text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {lang("מחזור (גודל)", "Cohort (size)")}
+              {lang("קבוצת הצטרפות", "Cohort")}
             </th>
             {cols.map((i) => (
               <th
                 key={i}
-                className="border border-border bg-card px-1.5 py-1 text-center text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                className="whitespace-nowrap border border-border bg-card px-1.5 py-1 text-center text-[10px] font-semibold tracking-wide text-muted-foreground"
               >
-                +{i}
+                {/* Plain-language headers — the old "+0 / +1 / +2" told the
+                    reader nothing without the prose above (F-062). */}
+                {i === 0 ? lang("הצטרפו", "Joined") : lang(`חודש ${i}`, `Month ${i}`)}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {report.cohorts.map((row) => (
-            <tr key={row.cohortMonth}>
+            <tr key={row.cohortMonth} className="transition-colors hover:bg-muted/40">
               <td className="sticky left-0 z-10 whitespace-nowrap border border-border bg-card px-2 py-1 text-[11px] font-semibold">
-                {formatMonthLabel(row.cohortMonth, locale)}{" "}
-                <span className="font-normal text-muted-foreground">
-                  ({row.cohortSize})
-                </span>
+                {formatMonthLabel(row.cohortMonth, locale)}
               </td>
               {row.values.map((count, i) => {
+                if (i === 0) {
+                  // The join month is 100% by definition — the darkest cell
+                  // in the old chart carried zero information (F-065).
+                  // Render it neutral, holding the cohort's size.
+                  return (
+                    <td
+                      key={i}
+                      className="whitespace-nowrap border border-border bg-muted/40 px-1 py-1 text-center text-[11px] text-muted-foreground"
+                    >
+                      {row.cohortSize.toLocaleString(isHe ? "he-IL" : "en-US")}{" "}
+                      {lang("לקוחות", "customers")}
+                    </td>
+                  );
+                }
                 const rate = row.rates[i];
                 const shade = cellShade(rate);
                 return (
                   <td
                     key={i}
-                    className="border border-border px-1 py-1 text-center text-[11px] font-medium"
+                    className="border border-border px-1 py-0.5 text-center align-middle"
                     style={{ background: shade.bg, color: shade.text }}
                     title={
                       rate != null && count != null
@@ -134,17 +162,42 @@ export function CohortHeatmap({
                         : ""
                     }
                   >
-                    {rate == null
-                      ? ""
-                      : display === "rate"
-                        ? `${Math.round(rate * 100)}%`
-                        : String(count)}
+                    {rate == null ? (
+                      ""
+                    ) : (
+                      // Count AND rate in-cell — the owner's question is a
+                      // count question, and it used to live only in a
+                      // tooltip he had to discover (F-062).
+                      <span className="inline-flex flex-col leading-tight">
+                        <span className="text-[11px] font-semibold">
+                          {display === "rate" ? `${Math.round(rate * 100)}%` : String(count)}
+                        </span>
+                        <span className="text-[9px] opacity-80">
+                          {display === "rate" ? String(count) : `${Math.round(rate * 100)}%`}
+                        </span>
+                      </span>
+                    )}
                   </td>
                 );
               })}
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr>
+            <td className="sticky left-0 z-10 whitespace-nowrap border border-border bg-card px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+              {lang("ממוצע כולל", "Overall avg")}
+            </td>
+            {cols.map((i) => (
+              <td
+                key={i}
+                className="border border-border bg-muted/30 px-1 py-1 text-center text-[11px] font-semibold text-muted-foreground"
+              >
+                {colAvg[i] == null ? "" : `${(colAvg[i]! * 100).toFixed(1)}%`}
+              </td>
+            ))}
+          </tr>
+        </tfoot>
       </table>
       <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
         <span>{lang("מקרא:", "Legend:")}</span>

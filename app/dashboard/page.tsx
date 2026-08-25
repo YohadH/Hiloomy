@@ -31,7 +31,6 @@ import { buildTrafficSearchSummary } from "@/lib/services/traffic-search-summary
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
 import { buildSetupHealth } from "@/lib/services/setup-health-service";
 import { SetupHealthBadge } from "@/components/setup-health/setup-health-badge";
-import { SetupHealthChecklistCard } from "@/components/setup-health/setup-health-checklist-card";
 import {
   measureOutcomesForResolvedAlerts,
   getRecentlyResolvedWithOutcomes,
@@ -41,6 +40,8 @@ import { CheckCircle2, XCircle, MinusCircle } from "lucide-react";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
+import { heCountPhrase } from "@/lib/i18n/he-plural";
+import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { getDb } from "@/lib/server/db";
 
 /** Priority badge labels and colors, matching Hebrew UX convention. */
@@ -96,11 +97,17 @@ export default async function CommandCenterPage() {
     );
   }
 
-  const [overview, chrome, storeId] = await Promise.all([
+  const [overview, chrome, storeId, selection] = await Promise.all([
     getOverviewPayload(),
     getAppChromeData(),
-    resolveActiveStoreId()
+    resolveActiveStoreId(),
+    // The selection carries the REAL window instants (store-timezone day
+    // boundaries). Re-parsing chrome.controls' display strings as bare UTC
+    // shifted every section below by 3 hours vs the KPI grid — which is how
+    // one dashboard showed two different רווח תרומה numbers (F-010).
+    getReportingDateRangeSelection(isHe ? "he" : "en")
   ]);
+  const windowRange = { start: selection.start, end: selection.end };
 
   // Second-stage onboarding: store is connected but the FIRST sync hasn't
   // completed yet. Gate on actual sync state, never on revenue — a store
@@ -133,10 +140,7 @@ export default async function CommandCenterPage() {
   // ALSO measure outcomes for previously-resolved alerts so the closed
   // loop has fresh data ("you did X last week → here's what happened").
   if (storeId) {
-    const roasWindow = {
-      start: new Date(`${chrome.controls.startDate}T00:00:00Z`),
-      end: new Date(`${chrome.controls.endDate}T23:59:59Z`)
-    };
+    const roasWindow = windowRange;
     await Promise.all([
       buildStockoutImminentReport({ storeId }).catch((e) => {
         console.error("[command-center] stockout engine failed:", e);
@@ -195,10 +199,7 @@ export default async function CommandCenterPage() {
   // selected date window like every other section. Null when neither
   // source has synced data — the section hides entirely.
   const trafficSearch = storeId
-    ? await buildTrafficSearchSummary(storeId, {
-        start: new Date(`${chrome.controls.startDate}T00:00:00Z`),
-        end: new Date(`${chrome.controls.endDate}T23:59:59Z`)
-      }).catch(() => null)
+    ? await buildTrafficSearchSummary(storeId, windowRange).catch(() => null)
     : null;
 
   // Contribution margin for the same window the controls have selected.
@@ -207,8 +208,8 @@ export default async function CommandCenterPage() {
   const contributionMargin = storeId
     ? await buildContributionMargin({
         storeId,
-        start: new Date(`${chrome.controls.startDate}T00:00:00Z`),
-        end: new Date(`${chrome.controls.endDate}T23:59:59Z`)
+        start: windowRange.start,
+        end: windowRange.end
       }).catch(() => null)
     : null;
 
@@ -217,11 +218,7 @@ export default async function CommandCenterPage() {
   // tooltip + event markers so the operator can answer "WHY did
   // revenue move on this day?".
   const trendContext = storeId
-    ? await getDailyTrendContext(
-        storeId,
-        new Date(`${chrome.controls.startDate}T00:00:00Z`),
-        new Date(`${chrome.controls.endDate}T23:59:59Z`)
-      ).catch(() => ({}))
+    ? await getDailyTrendContext(storeId, windowRange.start, windowRange.end).catch(() => ({}))
     : {};
 
   // Pull open alerts from the normalized table. Critical/high get hero
@@ -282,19 +279,6 @@ export default async function CommandCenterPage() {
           <LeakScanHero scan={leakScan} currency={overview.store.currency} isHe={isHe} />
         ) : null}
 
-        {/* ── BUSINESS SUMMARY — 2-3 line glance at current state ────── */}
-        {contributionMargin ? (
-          <BusinessSummaryBlock
-            revenue={contributionMargin.totals.revenue}
-            profit={contributionMargin.totals.contributionMargin}
-            profitRate={contributionMargin.totals.contributionMarginRate}
-            criticalCount={alertCards.filter((a) => a.severity === "critical").length}
-            highCount={alertCards.filter((a) => a.severity === "high").length}
-            currency={overview.store.currency}
-            isHe={isHe}
-          />
-        ) : null}
-
         {/* ── HEADLINE — what's on fire right now + data confidence ───── */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex-1">
@@ -308,9 +292,6 @@ export default async function CommandCenterPage() {
           </div>
           {setupHealth ? <SetupHealthBadge report={setupHealth} locale={locale} /> : null}
         </div>
-
-        {/* ── SETUP CHECKLIST — actionable to-do list until 100% ──────── */}
-        {setupHealth ? <SetupHealthChecklistCard report={setupHealth} locale={locale} /> : null}
 
         {/* ── SECTION — Money snapshot (הכסף) — leads, per CEO order ──── */}
         <section className="space-y-3">
@@ -367,8 +348,11 @@ export default async function CommandCenterPage() {
             eyebrow={lang("מגמה", "Trend")}
             title={lang("הכנסות ורווח יומיים", "Daily revenue & estimated profit")}
             hint={lang(
-              "קו אינדיגו = הכנסה ברוטו, כחול = רווח מוערך. הפער ביניהם הוא המרווח.",
-              "Indigo line = gross revenue, blue = estimated profit. The gap between them is your margin."
+              // No color names here — they rotted once already (the caption
+              // said indigo/blue over a green/orange chart). The in-card
+              // legend right under this carries the colors.
+              "שני קווים: הכנסה ברוטו ורווח מוערך. הפער ביניהם הוא המרווח — המקרא שעל הגרף מראה מי זה מי.",
+              "Two lines: gross revenue and estimated profit. The gap between them is your margin — the chart's legend shows which is which."
             )}
           />
           <Card>
@@ -450,22 +434,29 @@ export default async function CommandCenterPage() {
         ) : null}
 
         {/* ── SECTION — Medium/Low alerts (התראות) ────────────────────── */}
+        {/* Collapsed by default (F-016): this is the NOT-urgent tier, but
+            expanded it took more space than the critical section above —
+            inverting the priority the split is meant to communicate. */}
         {mediumAndLow.length > 0 ? (
-          <section className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <SectionHead
-                eyebrow={lang("השבוע", "This week")}
-                title={lang("התראות לבדיקה", "Alerts to review")}
-                hint={lang("לא דחוף — שווה לבדוק במהלך השבוע.", "Not urgent — check during weekly planning.")}
-              />
-              <PriorityBadge level="important" isHe={isHe} />
-            </div>
-            <div className="grid gap-3 lg:grid-cols-2">
+          <details className="group rounded-2xl border border-border bg-card/40 open:bg-card">
+            <summary className="cursor-pointer list-none rounded-2xl px-5 py-4 hover:bg-muted/40">
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-muted-foreground transition-transform group-open:rotate-90">▸</span>
+                <span className="text-sm font-semibold text-foreground">
+                  {lang(`התראות לבדיקה (${mediumAndLow.length})`, `Alerts to review (${mediumAndLow.length})`)}
+                </span>
+                <PriorityBadge level="important" isHe={isHe} />
+                <span className="text-xs font-normal text-muted-foreground">
+                  {lang("לא דחוף — שווה לבדוק במהלך השבוע. לחצו לפתיחה.", "Not urgent — check during weekly planning. Click to expand.")}
+                </span>
+              </span>
+            </summary>
+            <div className="grid gap-3 border-t border-border px-5 py-4 lg:grid-cols-2">
               {mediumAndLow.map((alert) => (
                 <CommandCenterAlertCard key={alert.id} alert={alert} locale={locale} />
               ))}
             </div>
-          </section>
+          </details>
         ) : null}
 
         {/* ── CLOSED LOOP — "you did X last week → result Y" ──────────── */}
@@ -546,58 +537,6 @@ export default async function CommandCenterPage() {
   );
 }
 
-function BusinessSummaryBlock({
-  revenue,
-  profit,
-  profitRate,
-  criticalCount,
-  highCount,
-  currency,
-  isHe
-}: {
-  revenue: number;
-  profit: number;
-  profitRate: number;
-  criticalCount: number;
-  highCount: number;
-  currency: string;
-  isHe: boolean;
-}) {
-  const lang = (he: string, en: string) => (isHe ? he : en);
-  const fmt = (n: number) => formatCurrency(n, currency);
-  const ratePct = (profitRate * 100).toFixed(1);
-  const alertSummary =
-    criticalCount > 0
-      ? lang(`${criticalCount} קריטיות פתוחות`, `${criticalCount} critical open`)
-      : highCount > 0
-        ? lang(`${highCount} גבוהות פתוחות`, `${highCount} high-priority open`)
-        : lang("אין התראות קריטיות", "No critical alerts");
-
-  return (
-    <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-5 py-4">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-500">
-        {lang("סיכום עסקי", "Business snapshot")}
-      </p>
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-1">
-        <span className="text-base font-bold text-foreground">
-          {lang("מכירות ברוטו", "Gross sales")}: {fmt(revenue)}
-        </span>
-        <span className="text-base font-bold text-foreground">
-          {lang("רווח תרומה", "Contribution profit")}: {fmt(profit)}{" "}
-          <span className="text-sm font-semibold text-muted-foreground">({ratePct}%)</span>
-        </span>
-        <span
-          className={`text-sm font-semibold ${
-            criticalCount > 0 ? "text-red-700" : highCount > 0 ? "text-amber-700" : "text-emerald-700"
-          }`}
-        >
-          {alertSummary}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function ClosedLoopSection({
   items,
   isHe
@@ -608,6 +547,10 @@ function ClosedLoopSection({
   const lang = (he: string, en: string) => (isHe ? he : en);
   const wins = items.filter((i) => i.outcome.verdict === "win").length;
   const misses = items.filter((i) => i.outcome.verdict === "miss").length;
+  // Count EVERY state. The old "2 הצליחו · 1 לא" over 5 rows silently
+  // dropped the unresolved ones — and "the app couldn't verify" is the
+  // honest signal, not noise to hide (F-018).
+  const unknowns = items.length - wins - misses;
 
   return (
     <section className="space-y-3">
@@ -615,8 +558,8 @@ function ClosedLoopSection({
         eyebrow={lang("הלולאה נסגרת", "Closed loop")}
         title={lang("מה קרה אחרי הפעולה שלכם", "What happened after you acted")}
         hint={lang(
-          `מעקב אחרי ההמלצות שביצעתם לאחרונה. ${wins} הצליחו · ${misses} לא — שווה ללמוד מהכישלונות.`,
-          `Tracking recent recommendations you actioned. ${wins} worked · ${misses} didn't — failures are where the learning is.`
+          `מעקב אחרי ההמלצות שביצעתם לאחרונה. ${wins} הצליחו · ${misses} לא${unknowns > 0 ? ` · ${unknowns} עדיין לא ידוע` : ""} — שווה ללמוד מהכישלונות.`,
+          `Tracking recent recommendations you actioned. ${wins} worked · ${misses} didn't${unknowns > 0 ? ` · ${unknowns} still unknown` : ""} — failures are where the learning is.`
         )}
       />
       <ul className="space-y-2">
@@ -697,25 +640,20 @@ function ContributionMarginPanel({
 
   return (
     <div className={`rounded-xl border ${confBg} p-4`}>
-      {/* Mobile: stacked layout (headline on top, breakdown below in 2-col grid).
-          sm+: side-by-side with breakdown growing to fill remaining space. */}
+      {/* F-008 — the hero is GROSS SALES (an exact figure: no badge, no %);
+          the waterfall of deductions follows and רווח תרומה closes the row
+          as its visually-distinct RESULT, carrying the margin % and the
+          accuracy badge (the estimation uncertainty is its, not the
+          revenue's). Keeping the result last preserves the walk:
+          gross − discounts − refunds − COGS − affiliate = contribution. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {lang("רווח תרומה", "Contribution margin")}{" "}
-            <span
-              className={`ms-1 rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${confPill}`}
-            >
-              {q.accuracy}
-            </span>
+            {lang("מכירות ברוטו", "Gross sales")}
           </p>
-          <p className={`mt-1 text-xl sm:text-2xl font-bold ${confText}`}>
-            {fmt(t.contributionMargin)}{" "}
-            <span className="text-sm font-semibold">({ratePct}%)</span>
-          </p>
+          <p className="mt-1 text-xl sm:text-2xl font-bold text-foreground">{fmt(t.revenue)}</p>
         </div>
         <div className="grid w-full grid-cols-2 gap-2 text-[11px] sm:w-auto sm:flex-1 sm:grid-cols-4">
-          <BreakdownTile label={lang("מכירות ברוטו", "Gross sales")} value={fmt(t.revenue)} />
           <BreakdownTile label={lang("הנחות", "Discounts")} value={`-${fmt(t.discounts)}`} />
           <BreakdownTile label={lang("החזרים", "Refunds")} value={`-${fmt(t.refunds)}`} />
           <BreakdownTile label={lang("עלות מוצרים (COGS)", "COGS")} value={`-${fmt(t.cogs)}`} />
@@ -725,6 +663,18 @@ function ContributionMarginPanel({
               value={`-${fmt(t.affiliateCommission)}`}
             />
           ) : null}
+          <div className={`rounded-md border-2 px-2 py-1.5 ${confBg}`}>
+            <p className="text-[9px] uppercase tracking-wider text-muted-foreground">
+              {lang("= רווח תרומה", "= Contribution")}{" "}
+              <span className={`rounded-full px-1 py-0.5 text-[8px] uppercase tracking-wider ${confPill}`}>
+                {q.accuracy}
+              </span>
+            </p>
+            <p className={`mt-0.5 text-sm font-bold ${confText}`}>
+              {fmt(t.contributionMargin)}{" "}
+              <span className="text-[11px] font-semibold">({ratePct}%)</span>
+            </p>
+          </div>
         </div>
       </div>
       <p className="mt-3 text-[11px] leading-4 text-muted-foreground line-clamp-1">
@@ -806,16 +756,16 @@ function CommandCenterHeadline({
           >
             {isCritical
               ? lang(
-                  `🚩 ${criticalCount} התראה${criticalCount === 1 ? " קריטית פתוחה" : "ות קריטיות פתוחות"} — דורש פעולה היום`,
+                  `🚩 ${heCountPhrase(criticalCount, { one: "התראה אחת", many: "התראות" }, { one: "קריטית פתוחה", many: "קריטיות פתוחות" })} — דורש פעולה היום`,
                   `🚩 ${criticalCount} critical alert${criticalCount === 1 ? "" : "s"} — needs action today`
                 )
               : highCount > 0
                 ? lang(
-                    `${highCount} התראה${highCount === 1 ? " גבוהה פתוחה" : "ות גבוהות פתוחות"}`,
+                    heCountPhrase(highCount, { one: "התראה אחת", many: "התראות" }, { one: "גבוהה פתוחה", many: "גבוהות פתוחות" }),
                     `${highCount} high-priority alert${highCount === 1 ? "" : "s"} open`
                   )
                 : lang(
-                    `${mediumCount} התראה${mediumCount === 1 ? "" : "ות"} לבדיקה השבוע`,
+                    `${heCountPhrase(mediumCount, { one: "התראה אחת", many: "התראות" })} לבדיקה השבוע`,
                     `${mediumCount} alert${mediumCount === 1 ? "" : "s"} to review this week`
                   )}
           </p>

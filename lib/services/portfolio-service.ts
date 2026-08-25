@@ -119,24 +119,39 @@ const DEFAULT_WINDOW_DAYS = 30;
 export async function buildPortfolioOverview(input?: {
   windowDays?: number;
   asOf?: Date;
+  /**
+   * The dashboard's selected reporting range. When given it IS the window —
+   * the page used to silently substitute its own hardcoded 30 days for
+   * whatever the user picked, printing a different period than the one
+   * selected (F-072, the QA's "smoking gun").
+   */
+  range?: { start: Date; end: Date };
 }): Promise<PortfolioOverview> {
-  const windowDays = input?.windowDays ?? DEFAULT_WINDOW_DAYS;
   const asOf = input?.asOf ?? new Date();
-  const windowEnd = new Date(asOf);
-  windowEnd.setUTCHours(23, 59, 59, 999);
-  const windowStart = new Date(windowEnd);
-  windowStart.setUTCDate(windowStart.getUTCDate() - (windowDays - 1));
-  windowStart.setUTCHours(0, 0, 0, 0);
+  let windowStart: Date;
+  let windowEnd: Date;
+  let windowDays: number;
+  if (input?.range && input.range.start.getTime() <= input.range.end.getTime()) {
+    windowStart = input.range.start;
+    windowEnd = input.range.end;
+    windowDays = Math.max(
+      1,
+      Math.round((windowEnd.getTime() - windowStart.getTime()) / 86_400_000)
+    );
+  } else {
+    windowDays = input?.windowDays ?? DEFAULT_WINDOW_DAYS;
+    windowEnd = new Date(asOf);
+    windowEnd.setUTCHours(23, 59, 59, 999);
+    windowStart = new Date(windowEnd);
+    windowStart.setUTCDate(windowStart.getUTCDate() - (windowDays - 1));
+    windowStart.setUTCHours(0, 0, 0, 0);
+  }
 
-  // Previous window of equal length, ending the day before windowStart.
-  const previousWindowEnd = new Date(windowStart);
-  previousWindowEnd.setUTCDate(previousWindowEnd.getUTCDate() - 1);
-  previousWindowEnd.setUTCHours(23, 59, 59, 999);
-  const previousWindowStart = new Date(previousWindowEnd);
-  previousWindowStart.setUTCDate(
-    previousWindowStart.getUTCDate() - (windowDays - 1)
+  // Previous window of equal length, ending the instant before windowStart.
+  const previousWindowEnd = new Date(windowStart.getTime() - 1);
+  const previousWindowStart = new Date(
+    previousWindowEnd.getTime() - (windowEnd.getTime() - windowStart.getTime())
   );
-  previousWindowStart.setUTCHours(0, 0, 0, 0);
 
   // Stores in the active org (scoped via listAllStoresForSwitcher which
   // already honors the user's auth context).
@@ -361,7 +376,15 @@ export async function buildPortfolioOverview(input?: {
     totals: {
       totalSales,
       orders,
-      averageOrderValue: orders > 0 ? totalSales / orders : 0,
+      // Shopify-parity AOV (net line-item sales ÷ orders), reconstructed
+      // from each brand's own AOV × orders. The old totalSales/orders used
+      // net + shipping + VAT as the numerator, so with one brand the KPI
+      // (₪373) and the brand row (₪306) contradicted each other on the
+      // same screen (F-073).
+      averageOrderValue:
+        orders > 0
+          ? sumBy(brands, (b) => b.averageOrderValue * b.orders) / orders
+          : 0,
       returningCustomerRate:
         orders > 0 ? (totalReturningOrders / orders) * 100 : 0,
       refundRate: totalSales > 0 ? (totalRefundAmount / totalSales) * 100 : 0,

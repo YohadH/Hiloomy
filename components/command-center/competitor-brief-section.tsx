@@ -117,6 +117,19 @@ export function CompetitorBriefSection({
       </div>
 
       {/* Prescriptions: today / this week */}
+      {/* When the BI agent hasn't answered, the actions below are PRE-WRITTEN
+          generic tips — say so loudly. Rendering them unlabeled made template
+          copy indistinguishable from real analysis (F-023: "the BI insights
+          look like mock data"), which poisons trust in the numbers that ARE
+          real. */}
+      {brief.source === "fallback" ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs leading-5 text-amber-900">
+          {lang(
+            "⚠️ סוכן הBI עדיין לא החזיר ניתוח על הנתונים שלכם — הפעולות למטה הן טיפים כלליים מוכנים מראש, לא מסקנות מהמודיעין. ניתוח אמיתי עם מספרים ושמות יופיע כאן כשהסוכן יסיים.",
+            "⚠️ The BI agent hasn't returned an analysis of your data yet — the actions below are pre-written generic tips, not intel conclusions. A real analysis with numbers and names will replace them when the agent finishes."
+          )}
+        </div>
+      ) : null}
       <div className="grid gap-3 lg:grid-cols-2">
         <Card className="border-emerald-200 bg-emerald-50/40">
           <CardContent className="p-4">

@@ -27,12 +27,18 @@ export async function register() {
   // Fail fast at boot if critical secrets are missing, so a misconfigured
   // deploy dies loudly here instead of silently 500-ing on the first
   // Supabase Auth / credential-decryption request. See lib/server/startup-check.
-  const { assertRequiredEnv, warnOptionalEnv } = await import("@/lib/server/startup-check");
+  const { assertRequiredEnv, warnOptionalEnv, warnSchemaDrift } = await import(
+    "@/lib/server/startup-check"
+  );
   assertRequiredEnv();
   // Non-fatal: warn (don't throw) when optional integration secrets like
   // RESEND_API_KEY are absent, so the weekly-report cron's email delivery
   // degrading to a no-op is visible at boot instead of failing silently.
   warnOptionalEnv();
+  // Non-fatal, async: detect code↔database schema drift (a column the code
+  // writes that the live DB lacks) at boot instead of on the first failing
+  // write. Fire-and-forget so a slow DB can't stall startup.
+  void warnSchemaDrift();
 
   // Unified 2-hour multi-source refresh (Shopify + Meta + Instagram + BixGrow).
   // Supersedes the old Shopify-only cron; the back-compat enable flag in

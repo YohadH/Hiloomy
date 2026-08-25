@@ -537,7 +537,16 @@ async function upsertOrderFromMapped(
           })
         : null;
     }
-    const overrideCost = product?.costOverrideAmount ? Number(product.costOverrideAmount) * lineItem.quantity : null;
+    // Cost precedence must match the costs editor (product-cost-service):
+    // manual override → product's real estimatedCost (Shopify-provided) →
+    // the mapper's ratio fallback. Previously the middle tier was skipped,
+    // so a product with a real Shopify cost was still costed at the ratio
+    // guess and the editor and the profit engine told two different truths.
+    const overrideCost = product?.costOverrideAmount
+      ? Number(product.costOverrideAmount) * lineItem.quantity
+      : product?.estimatedCost && Number(product.estimatedCost) > 0
+        ? Number(product.estimatedCost) * lineItem.quantity
+        : null;
 
     await db.orderLineItem.create({
       data: {

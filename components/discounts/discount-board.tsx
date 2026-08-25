@@ -9,7 +9,7 @@
 // that exists for no reason other than the client/server boundary.
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { ExternalLink, Search } from "lucide-react";
 import type { DiscountScorecard } from "@/lib/services/discount-scorecard-service";
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -36,97 +36,101 @@ function verdictLabel(verdict: DiscountScorecard["verdict"], isHe: boolean) {
   }
 }
 
-function TrendBars({ trend }: { trend: DiscountScorecard["trend"] }) {
-  // Tiny dependency-free sparkline: one bar per day, height ∝ uses.
-  const max = Math.max(1, ...trend.map((t) => t.uses));
-  const days = trend.slice(-21); // keep it readable on long windows
-  return (
-    <div className="flex h-10 items-end gap-[3px]" dir="ltr" aria-hidden="true">
-      {days.map((t) => (
-        <div
-          key={t.date}
-          title={`${t.date}: ${t.uses}`}
-          className="w-2 rounded-sm bg-emerald-600/70"
-          style={{ height: `${Math.max(8, (t.uses / max) * 100)}%` }}
-        />
-      ))}
-    </div>
-  );
-}
-
 function ScorecardCard({
   card,
   currency,
-  isHe
+  isHe,
+  shopifyStoreHandle
 }: {
   card: DiscountScorecard;
   currency: string;
   isHe: boolean;
+  shopifyStoreHandle: string | null;
 }) {
   const aovDelta =
     card.baselineAov != null && card.baselineAov > 0
       ? (card.aov - card.baselineAov) / card.baselineAov
       : null;
+  // The owner asked for TOTALS in plain language (F-055): gross sales
+  // through the code, total discount given, orders — not derived ratios.
+  const grossSales = card.revenue + card.discountCost;
+  const isSeeding = card.classification === "seeding";
   return (
     <div
       className={cn(
         "rounded-2xl border bg-card p-4",
-        card.verdict === "stop" ? "border-red-300" : "border-border/70"
+        card.verdict === "stop" ? "border-red-300" : isSeeding ? "border-violet-200" : "border-border/70"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 truncate font-mono text-sm font-bold tracking-wide">
-            {card.code}
+          <p className="flex flex-wrap items-center gap-2 font-mono text-sm font-bold tracking-wide">
+            <span className="truncate">{card.code}</span>
             {card.affiliateName ? (
               <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 font-sans text-[10px] font-semibold text-emerald-800">
                 {isHe ? `קוד שותפה · ${card.affiliateName}` : `Affiliate · ${card.affiliateName}`}
               </span>
             ) : null}
+            {isSeeding ? (
+              <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 font-sans text-[10px] font-semibold text-violet-800">
+                {isHe ? "חלוקת מוצרים (סידינג)" : "Product seeding"}
+              </span>
+            ) : null}
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {card.uses} {isHe ? "הזמנות" : "orders"} ·{" "}
             {new Date(card.lastUsedAt).toLocaleDateString(isHe ? "he-IL" : "en-US")}{" "}
             {isHe ? "(שימוש אחרון)" : "(last use)"}
             {card.affiliateName ? (isHe ? " · העמלה נספרת בנפרד בפורטל השותפים" : " · commission tracked separately in the affiliate portal") : ""}
           </p>
         </div>
-        <span
-          className={cn(
-            "inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-bold",
-            verdictStyles(card.verdict)
-          )}
-        >
-          {verdictLabel(card.verdict, isHe)}
-        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {shopifyStoreHandle ? (
+            <a
+              href={`https://admin.shopify.com/store/${shopifyStoreHandle}/discounts?query=${encodeURIComponent(card.code)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={isHe ? "פתיחת ההנחה בShopify" : "Open the discount in Shopify"}
+              className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            >
+              <ExternalLink className="h-3 w-3" aria-hidden />
+              Shopify
+            </a>
+          ) : null}
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold",
+              verdictStyles(card.verdict)
+            )}
+          >
+            {verdictLabel(card.verdict, isHe)}
+          </span>
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {isHe ? "הכנסה נטו" : "Net revenue"}
+            {isHe ? "סך מכירות דרך הקוד" : "Total sales via code"}
           </p>
-          <p className="text-sm font-semibold tabular-nums">{formatCurrency(card.revenue, currency)}</p>
+          <p className="text-sm font-semibold tabular-nums">{formatCurrency(grossSales, currency)}</p>
+          <p className="text-[10px] text-muted-foreground">
+            {isHe ? `נטו אחרי ההנחה: ${formatCurrency(card.revenue, currency)}` : `Net after discount: ${formatCurrency(card.revenue, currency)}`}
+          </p>
         </div>
         <div>
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {isHe ? "עלות ההנחה" : "Discount cost"}
+            {isHe ? "הזמנות" : "Orders"}
+          </p>
+          <p className="text-sm font-semibold tabular-nums">{card.uses}</p>
+        </div>
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {/* Retail value forgone, NOT money out of pocket — labeling this
+                "cost" is how a ₪313 giveaway read as a ₪4,472 loss (F-057). */}
+            {isHe ? "סך ההנחה שניתנה (מחיר מדף)" : "Total discount given (list price)"}
           </p>
           <p className="text-sm font-semibold tabular-nums text-orange-700">
             {formatCurrency(card.discountCost, currency)}
-          </p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {isHe ? "שוליים אחרי הנחה" : "Margin after discount"}
-          </p>
-          <p
-            className={cn(
-              "text-sm font-semibold tabular-nums",
-              card.marginAfterDiscount < 0 ? "text-red-700" : "text-emerald-800"
-            )}
-          >
-            {card.hasCostData ? formatCurrency(card.marginAfterDiscount, currency) : "—"}
           </p>
         </div>
         <div>
@@ -139,9 +143,20 @@ function ScorecardCard({
         </div>
       </div>
 
-      <div className="mt-3 flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">
+      <div className="mt-3 space-y-1">
+        <p className="text-xs text-muted-foreground">
+          <span className="font-semibold">
+            {isHe ? "רווח בפועל (נטו פחות עלות מוצרים): " : "Actual profit (net minus COGS): "}
+          </span>
+          <span
+            className={cn(
+              "font-semibold tabular-nums",
+              card.marginAfterDiscount < 0 ? "text-red-700" : "text-emerald-800"
+            )}
+          >
+            {card.hasCostData ? formatCurrency(card.marginAfterDiscount, currency) : "—"}
+          </span>
+          <span className="ms-2">
             AOV {formatCurrency(card.aov, currency)}
             {aovDelta != null ? (
               <span className={cn("ms-1 font-semibold", aovDelta >= 0 ? "text-emerald-700" : "text-red-600")}>
@@ -149,10 +164,9 @@ function ScorecardCard({
                 {Math.round(aovDelta * 100)}% {isHe ? "מול הזמנות ללא הנחה" : "vs non-discounted"})
               </span>
             ) : null}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">{isHe ? card.verdictReason.he : card.verdictReason.en}</p>
-        </div>
-        <TrendBars trend={card.trend} />
+          </span>
+        </p>
+        <p className="text-xs text-muted-foreground">{isHe ? card.verdictReason.he : card.verdictReason.en}</p>
       </div>
     </div>
   );
@@ -166,12 +180,15 @@ export function DiscountBoard({
   active,
   ended,
   currency,
-  isHe
+  isHe,
+  shopifyStoreHandle = null
 }: {
   active: DiscountScorecard[];
   ended: DiscountScorecard[];
   currency: string;
   isHe: boolean;
+  /** myshopify subdomain (e.g. "incenseparfums") for admin deep links. */
+  shopifyStoreHandle?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("critical");
@@ -264,7 +281,7 @@ export function DiscountBoard({
           </h2>
           <div className="grid gap-3 lg:grid-cols-2">
             {activeRows.map((card) => (
-              <ScorecardCard key={card.code} card={card} currency={currency} isHe={isHe} />
+              <ScorecardCard key={card.code} card={card} currency={currency} isHe={isHe} shopifyStoreHandle={shopifyStoreHandle} />
             ))}
           </div>
         </section>
@@ -277,7 +294,7 @@ export function DiscountBoard({
           </h2>
           <div className="grid gap-3 lg:grid-cols-2">
             {endedRows.map((card) => (
-              <ScorecardCard key={card.code} card={card} currency={currency} isHe={isHe} />
+              <ScorecardCard key={card.code} card={card} currency={currency} isHe={isHe} shopifyStoreHandle={shopifyStoreHandle} />
             ))}
           </div>
         </section>

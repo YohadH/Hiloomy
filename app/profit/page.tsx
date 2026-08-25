@@ -12,6 +12,7 @@ import { getAppChromeData, getProfitAnalyticsPayload } from "@/lib/services/anal
 import { buildChannelCacReport } from "@/lib/services/channel-cac-service";
 import { buildCollectionRhythm } from "@/lib/services/collection-rhythm-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
+import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { getAppLocale, getDictionary } from "@/lib/i18n";
 
@@ -20,17 +21,20 @@ export default async function ProfitPage() {
   const dictionary = getDictionary(locale);
   const tips = dictionary.profit.tips;
   const overviewColTips = dictionary.overview.colTips;
-  const [profit, chrome, storeId] = await Promise.all([
+  const [profit, chrome, storeId, selection] = await Promise.all([
     getProfitAnalyticsPayload(),
     getAppChromeData(),
-    resolveActiveStoreId()
+    resolveActiveStoreId(),
+    getReportingDateRangeSelection(locale === "he" ? "he" : "en")
   ]);
   const currency = chrome.store.currency;
+  // The selection's instants are store-timezone day boundaries — the old
+  // bare-UTC re-parse drifted 3 hours vs every other surface (SYS-001).
   const channelCac = storeId
     ? await buildChannelCacReport({
         storeId,
-        start: new Date(`${chrome.controls.startDate}T00:00:00Z`),
-        end: new Date(`${chrome.controls.endDate}T23:59:59Z`)
+        start: selection.start,
+        end: selection.end
       }).catch(() => null)
     : null;
   // Collection rhythm — rolling 12 weeks regardless of the page's date
@@ -74,25 +78,46 @@ export default async function ProfitPage() {
           description={dictionary.profit.description}
         />
 
-        <NarrativeBanner
-          eyebrow={locale === "he" ? "רווחיות במבט מהיר" : "Profit at a glance"}
-          headline={
-            locale === "he"
-              ? `רווח משוער בתקופה: ${formatCurrency(totalProfit, currency)} מתוך ${formatCurrency(totalRevenue, currency)} הכנסה.`
-              : `Estimated profit this period: ${formatCurrency(totalProfit, currency)} on ${formatCurrency(totalRevenue, currency)} revenue.`
-          }
-          body={narrativeBody}
-          tone={totalProfit > 0 ? "up" : "down"}
-          toneLabel={
-            totalProfit > 0
-              ? locale === "he"
-                ? "רווח חיובי"
-                : "Profit positive"
-              : locale === "he"
-                ? "המרווח תחת לחץ"
-                : "Margin pressure"
-          }
-        />
+        {/* Verdict is GATED on data presence: a ₪0/₪0 window used to render
+            "המרווח תחת לחץ" — the app confidently declaring collapsing
+            margins from a divide-by-zero (F-025). No rows → no verdict. */}
+        {totalRevenue > 0 ? (
+          <NarrativeBanner
+            eyebrow={locale === "he" ? "רווחיות במבט מהיר" : "Profit at a glance"}
+            headline={
+              locale === "he"
+                ? `רווח משוער בתקופה: ${formatCurrency(totalProfit, currency)} מתוך ${formatCurrency(totalRevenue, currency)} הכנסה.`
+                : `Estimated profit this period: ${formatCurrency(totalProfit, currency)} on ${formatCurrency(totalRevenue, currency)} revenue.`
+            }
+            body={narrativeBody}
+            tone={totalProfit > 0 ? "up" : "down"}
+            toneLabel={
+              totalProfit > 0
+                ? locale === "he"
+                  ? "רווח חיובי"
+                  : "Profit positive"
+                : locale === "he"
+                  ? "המרווח תחת לחץ"
+                  : "Margin pressure"
+            }
+          />
+        ) : (
+          <NarrativeBanner
+            eyebrow={locale === "he" ? "רווחיות במבט מהיר" : "Profit at a glance"}
+            headline={
+              locale === "he"
+                ? "אין נתוני מכירות בחלון שנבחר — אין מסקנה."
+                : "No sales data in the selected window — no verdict."
+            }
+            body={
+              locale === "he"
+                ? "יכול להיות שהחלון קצר, שהסנכרון עדיין רץ, או שהשליפה נכשלה. הרחיבו את הטווח או הריצו סנכרון; אם המספרים בדשבורד מלאים והעמוד הזה ריק — זו תקלה ששווה לדווח עליה."
+                : "The window may be short, the sync may still be running, or the query fell back. Widen the range or run a sync; if the dashboard shows data while this page is empty — that is a defect worth reporting."
+            }
+            tone="neutral"
+            toneLabel={locale === "he" ? "אין נתונים" : "No data"}
+          />
+        )}
 
         {/* MoM profit summary line */}
         {profit.momProfitDelta !== null ? (
@@ -202,7 +227,7 @@ export default async function ProfitPage() {
                 : "Sortable, paginated tables. Use the page-size toggle if you want to see more rows at once."
             }
             cta={{
-              href: "/profit/costs",
+              href: "/products/costs",
               label: locale === "he" ? "עריכת עלויות מוצרים (COGS) →" : "Edit product costs (COGS) →"
             }}
           />
@@ -529,6 +554,10 @@ export default async function ProfitPage() {
                 <p className="text-sm leading-6 text-muted-foreground">{dictionary.profit.bundleTodo}</p>
               </CardContent>
             </Card>
+            {/* Returns navigation removed per the owner (F-035); the copy no
+                longer claims a live screen under a "coming soon" header
+                (F-037) — the returns analysis lives at /profit/returns via
+                the main navigation. */}
             <Card>
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-1.5">
@@ -537,19 +566,6 @@ export default async function ProfitPage() {
                 </div>
                 <p className="text-sm text-muted-foreground">{dictionary.profit.refundDescription}</p>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm leading-6 text-muted-foreground">
-                  {locale === "he"
-                    ? "אילו מוצרים חוזרים הכי הרבה, איזה וריאנט חריג, וכמה כסף זה עולה — עכשיו כמסך מלא."
-                    : "Which products come back the most, which variant is the outlier, and what it costs — now a full screen."}
-                </p>
-                <a
-                  href="/profit/returns"
-                  className="inline-flex items-center rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800"
-                >
-                  {locale === "he" ? "לניתוח ההחזרות ←" : "Open returns analysis →"}
-                </a>
-              </CardContent>
             </Card>
           </div>
         </section>
@@ -613,7 +629,10 @@ function ChannelCacTable({
               {lang("רווח תרומה", "Contribution")}
             </th>
             <th className="px-3 py-2 text-end text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {lang("מרווח %", "Margin %")}
+              {lang("מרווח % (מוערך)", "Margin % (est.)")}
+            </th>
+            <th className="px-3 py-2 text-end text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {lang("לקוחות חדשים", "New customers")}
             </th>
             <th className="px-3 py-2 text-end text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               CAC
@@ -649,6 +668,10 @@ function ChannelCacTable({
               <td className="px-3 py-2 text-end">
                 {(r.contributionMarginRate * 100).toFixed(1)}%
               </td>
+              {/* CAC's denominator, visible (F-030) — spend ÷ NEW customers,
+                  not orders; without this column the CAC read as wrong math
+                  next to the orders column. */}
+              <td className="px-3 py-2 text-end">{r.newCustomers}</td>
               <td className="px-3 py-2 text-end">
                 {r.cac != null ? fmt(r.cac) : "—"}
               </td>
@@ -659,8 +682,8 @@ function ChannelCacTable({
       </table>
       <div className="border-t border-border bg-slate-50 px-3 py-2 text-[10px] text-muted-foreground">
         {lang(
-          `כיסוי שיוך: ${Math.round(report.attributionCoverage * 100)}% · הקצאת עלות מוצרים (COGS) לכל ערוץ בv1 לפי משקל הכנסה (יחודד בעתיד)`,
-          `Attribution coverage: ${Math.round(report.attributionCoverage * 100)}% · v1 allocates COGS per channel by revenue share (refined in future)`
+          `כיסוי שיוך: ${Math.round(report.attributionCoverage * 100)}% · רווח תרומה = הכנסה − הנחות − החזרים − עלות מוצרים − הוצאת הערוץ (אותה נוסחה כמו בדשבורד) · CAC = הוצאה ÷ לקוחות חדשים · הקצאת עלויות/הנחות לערוץ לפי משקל הכנסה — לכן עמודת המרווח היא הערכה ולא מדידה פר ערוץ (יחודד בעתיד)`,
+          `Attribution coverage: ${Math.round(report.attributionCoverage * 100)}% · Contribution = revenue − discounts − refunds − COGS − channel spend (same formula as the dashboard) · CAC = spend ÷ new customers · costs/discounts allocated by revenue share, so the margin column is an estimate, not a per-channel measurement (refined in future)`
         )}
       </div>
     </div>

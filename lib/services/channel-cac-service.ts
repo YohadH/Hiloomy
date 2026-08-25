@@ -121,20 +121,33 @@ export async function buildChannelCacReport(
   // is "good enough" v1 — accurate per-channel COGS requires re-running
   // the channel classifier on the line items, which we'll do once the
   // channel engine exposes its bucketize() helper.
-  const channelTotals = (await db.orderLineItem.aggregate({
-    where: {
-      storeId: input.storeId,
-      order: {
+  const [channelTotals, refundAgg] = await Promise.all([
+    db.orderLineItem.aggregate({
+      where: {
+        storeId: input.storeId,
+        order: {
+          storeId: input.storeId,
+          createdAt: { gte: input.start, lte: input.end },
+          cancelledAt: null,
+          test: false
+        }
+      },
+      _sum: { estimatedCostAmount: true, lineSubtotal: true, lineDiscountAmount: true }
+    }) as Promise<{ _sum: { estimatedCostAmount: any; lineSubtotal: any; lineDiscountAmount: any } }>,
+    db.order.aggregate({
+      where: {
         storeId: input.storeId,
         createdAt: { gte: input.start, lte: input.end },
         cancelledAt: null,
         test: false
-      }
-    },
-    _sum: { estimatedCostAmount: true, lineSubtotal: true }
-  })) as { _sum: { estimatedCostAmount: any; lineSubtotal: any } };
+      },
+      _sum: { totalRefunds: true }
+    }) as Promise<{ _sum: { totalRefunds: any } }>
+  ]);
   const totalCogs = Number(channelTotals._sum.estimatedCostAmount ?? 0);
   const totalLineRevenue = Number(channelTotals._sum.lineSubtotal ?? 0);
+  const totalDiscounts = Number(channelTotals._sum.lineDiscountAmount ?? 0);
+  const totalRefunds = Number(refundAgg._sum.totalRefunds ?? 0);
 
   const rows: ChannelCacRow[] = channelReport.rows.map((row) => {
     let attributedSpend = 0;
@@ -161,12 +174,21 @@ export async function buildChannelCacReport(
         spendSource = "unknown";
     }
 
-    // Proportional COGS allocation by revenue share. Documented limitation
+    // Proportional allocation by revenue share. Documented limitation
     // above — replace when channel engine exposes per-order classifier.
+    //
+    // The formula MUST match the dashboard's "רווח תרומה" definition:
+    // revenue − discounts − refunds − COGS − channel spend. The old version
+    // skipped discounts and refunds, which quietly turned this column into
+    // "gross profit after COGS" under the contribution-margin name — a 79%
+    // margin here vs 43% on the dashboard for the same store, overstating
+    // every channel and understating paid-channel losses ~40% (F-027).
     const revShare =
       totalLineRevenue > 0 ? row.revenue / totalLineRevenue : 0;
     const cogs = totalCogs * revShare;
-    const contributionMargin = row.revenue - cogs - attributedSpend;
+    const discounts = totalDiscounts * revShare;
+    const refunds = totalRefunds * revShare;
+    const contributionMargin = row.revenue - discounts - refunds - cogs - attributedSpend;
     const contributionMarginRate =
       row.revenue > 0 ? contributionMargin / row.revenue : 0;
 
@@ -223,6 +245,8 @@ export async function buildChannelCacReport(
       cogs: totalCogs,
       contributionMargin:
         channelReport.totals.revenue -
+        totalDiscounts -
+        totalRefunds -
         totalCogs -
         (totalMetaSpend + totalAffiliateCommission)
     },

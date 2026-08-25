@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 const severityStyles: Record<Alert["severity"], string> = {
   low: "bg-accent text-accent-foreground",
   medium: "bg-warning/15 text-warning-foreground",
-  high: "bg-danger/15 text-danger"
+  high: "bg-danger/15 text-danger",
+  critical: "bg-danger/25 text-danger"
 };
 
 export function AlertsPreview({

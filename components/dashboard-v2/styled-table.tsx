@@ -35,8 +35,14 @@ export function StyledTable<T extends object>({
   rowKey?: (row: T, index: number) => string;
   locale?: AppLocale;
 }) {
+  // No "yet" — that word sends people to re-sync when the real causes are
+  // usually the selected range or a failed query, and it hid a real bug
+  // from the owner for a whole QA session (F-020).
   const resolvedEmptyMessage =
-    emptyMessage ?? (locale === "he" ? "אין עדיין נתונים להצגה." : "No data available yet.");
+    emptyMessage ??
+    (locale === "he"
+      ? "אין נתונים בטווח התאריכים שנבחר. נסו טווח רחב יותר — ואם הנתונים מופיעים במקומות אחרים אך לא כאן, זו תקלה ששווה לדווח עליה."
+      : "No data in the selected date range. Try a wider range — and if other sections show data while this one doesn't, that's a defect worth reporting.");
   return (
     <Card>
       <CardContent className="p-0">

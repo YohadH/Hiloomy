@@ -58,7 +58,10 @@ export async function AppShell({
       />
       <main className="flex-1">
         {sub ? <TrialBanner info={sub} locale={locale === "he" ? "he" : "en"} /> : null}
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-4 sm:gap-8 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
+        {/* pb-24 reserves the floating chat launcher's corner (56px FAB +
+            16px offset) so the last block on any page never renders under
+            it — the FAB is fixed and otherwise sits on top of content. */}
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 pt-4 pb-24 sm:gap-8 sm:px-6 sm:pt-6 lg:px-10 lg:pt-8">
           <Topbar
             store={store}
             controls={controls}

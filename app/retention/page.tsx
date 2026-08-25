@@ -31,9 +31,17 @@ export default async function RetentionPage() {
     : null;
 
   // --- KPI health thresholds ---
-  // repeatPurchaseRate > 20% = good, < 10% = warn
+  // repeatPurchaseRate > 20% = good, < 10% = warn — but NEVER a warn badge
+  // when the window simply has no customers (0/0 is absence of data, not a
+  // measured 0%).
   const repeatRateStatus: StatTileStatus =
-    snap.repeatPurchaseRate >= 20 ? "good" : snap.repeatPurchaseRate < 10 ? "warn" : undefined;
+    snap.newCustomers + snap.returningCustomers === 0
+      ? undefined
+      : snap.repeatPurchaseRate >= 20
+        ? "good"
+        : snap.repeatPurchaseRate < 10
+          ? "warn"
+          : undefined;
   // secondOrderRate > 15% = good, < 5% = warn
   const secondOrderStatus: StatTileStatus =
     snap.secondOrderRate >= 15 ? "good" : snap.secondOrderRate < 5 && snap.secondOrderRate > 0 ? "warn" : undefined;
@@ -62,9 +70,20 @@ export default async function RetentionPage() {
           : `The top product in repeat purchases is "${topSecondOrderProduct}".`
         : null;
 
-  // Narrative
+  // Narrative — GATED on data presence. A window with zero customer rows
+  // (empty range, or a query that fell back) must never render "דורש
+  // טיפול"/"בסיכון": the QA found this page confidently declaring a
+  // retention crisis from 0/0 while the real repeat rate was 38.5% (F-060).
+  // An empty page gets ignored; a confident wrong verdict gets believed.
+  const hasWindowData = totalCustomers > 0;
   const repeatRate = snap.repeatPurchaseRate;
-  const tone = repeatRate >= 30 ? "up" : repeatRate >= 15 ? "neutral" : "down";
+  const tone = !hasWindowData
+    ? "neutral"
+    : repeatRate >= 30
+      ? "up"
+      : repeatRate >= 15
+        ? "neutral"
+        : "down";
   const repeatStateLabel =
     locale === "he"
       ? repeatRate >= 30
@@ -77,10 +96,17 @@ export default async function RetentionPage() {
         : repeatRate >= 15
           ? "growing"
           : "needs work";
-  const headline =
-    locale === "he"
+  const headline = !hasWindowData
+    ? locale === "he"
+      ? "אין נתוני לקוחות בחלון שנבחר — אין מסקנה."
+      : "No customer data in the selected window — no verdict."
+    : locale === "he"
       ? `שיעור הרכישה החוזרת עומד על ${repeatRate.toFixed(1)}% — ${repeatStateLabel}.`
       : `Repeat-purchase rate is ${repeatRate.toFixed(1)}% — ${repeatStateLabel}.`;
+  const noDataBody =
+    locale === "he"
+      ? "יכול להיות שהחלון קצר/עתידי, שהסנכרון עדיין רץ, או שהשליפה נכשלה. נסו להרחיב את טווח התאריכים או להריץ סנכרון — אם זה לא משתנה, זו תקלה ולא מציאות עסקית."
+      : "The window may be short/future, the sync may still be running, or the query fell back. Widen the range or run a sync — if nothing changes, this is a defect, not business reality.";
   const body = [
     locale === "he"
       ? `${formatNumber(snap.newCustomers)} לקוחות חדשים ו${formatNumber(snap.returningCustomers)} לקוחות חוזרים הזמינו בחלון הזמן הזה.`
@@ -111,20 +137,24 @@ export default async function RetentionPage() {
         <NarrativeBanner
           eyebrow={locale === "he" ? "דופק השימור" : "Retention pulse"}
           headline={headline}
-          body={body}
+          body={hasWindowData ? body : noDataBody}
           tone={tone}
           toneLabel={
-            tone === "up"
+            !hasWindowData
               ? locale === "he"
-                ? "בריא"
-                : "Healthy"
-              : tone === "down"
+                ? "אין נתונים"
+                : "No data"
+              : tone === "up"
                 ? locale === "he"
-                  ? "בסיכון"
-                  : "At risk"
-                : locale === "he"
-                  ? "לעקוב מקרוב"
-                  : "Watch closely"
+                  ? "בריא"
+                  : "Healthy"
+                : tone === "down"
+                  ? locale === "he"
+                    ? "בסיכון"
+                    : "At risk"
+                  : locale === "he"
+                    ? "לעקוב מקרוב"
+                    : "Watch closely"
           }
         />
 

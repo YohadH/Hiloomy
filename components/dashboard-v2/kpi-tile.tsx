@@ -171,6 +171,23 @@ export function KpiTile({
   const negative = change < 0;
   const ChangeIcon = positive ? ArrowUpRight : negative ? ArrowDownRight : Minus;
 
+  // Hovering the % chip reveals the comparison period's REAL value and the
+  // absolute delta — a bare percentage forces mental math (F-009).
+  const previousTitle =
+    typeof kpi.previousValue === "number"
+      ? (() => {
+          const prevFmt = formatKpiValue({ ...kpi, value: kpi.previousValue as number }, currency);
+          const deltaFmt = formatKpiValue(
+            { ...kpi, value: Math.abs(kpi.value - (kpi.previousValue as number)) },
+            currency
+          );
+          const sign = kpi.value - (kpi.previousValue as number) >= 0 ? "+" : "-";
+          return isHe
+            ? `תקופת ההשוואה: ${prevFmt} · שינוי: ${sign}${deltaFmt}`
+            : `Comparison period: ${prevFmt} · change: ${sign}${deltaFmt}`;
+        })()
+      : undefined;
+
   const inner = (
     <CardContent className="p-5">
       <div className="flex items-start justify-between gap-3">
@@ -179,8 +196,10 @@ export function KpiTile({
         </span>
         {hasChange ? (
           <span
+            title={previousTitle}
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+              previousTitle && "cursor-help",
               positive && "bg-emerald-500/10 text-emerald-700",
               negative && "bg-rose-500/10 text-rose-700",
               !positive && !negative && "bg-muted text-muted-foreground"

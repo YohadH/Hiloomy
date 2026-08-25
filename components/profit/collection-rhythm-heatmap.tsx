@@ -20,8 +20,30 @@ export function CollectionRhythmHeatmap({
 }) {
   const days = isHe ? WEEKDAY_LABELS.he : WEEKDAY_LABELS.en;
 
+  // The explicit date range, so nobody reads a 12-week aggregate as "this
+  // week" — that misread is exactly how the totals looked impossibly high
+  // to the owner (F-034).
+  const fmtDay = (iso: string) =>
+    new Intl.DateTimeFormat(isHe ? "he-IL" : "en-US", {
+      day: "numeric",
+      month: "short"
+    }).format(new Date(iso));
+  const rangeLabel = isHe
+    ? `${fmtDay(report.windowStart)} – ${fmtDay(report.windowEnd)} · ${report.weeks} שבועות`
+    : `${fmtDay(report.windowStart)} – ${fmtDay(report.windowEnd)} · ${report.weeks} weeks`;
+
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-muted-foreground">
+          {isHe
+            ? `כל תא = סך המכירות של הקולקציה ביום הזה בשבוע, מצטבר על פני ${rangeLabel}`
+            : `Each cell = the collection's total sales on that weekday, accumulated over ${rangeLabel}`}
+        </p>
+        <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+          {rangeLabel}
+        </span>
+      </div>
       {report.recommendation ? (
         <div className="rounded-2xl border border-emerald-300 bg-emerald-50/60 px-4 py-3 text-sm font-medium text-emerald-900">
           📅 {isHe ? report.recommendation.he : report.recommendation.en}
@@ -91,8 +113,8 @@ export function CollectionRhythmHeatmap({
       </div>
       <p className="text-xs text-muted-foreground">
         {isHe
-          ? `הכנסה נטו לפי יום בשבוע (אזור זמן ${report.timeZone}), ${report.weeks} השבועות האחרונים. "יום חזק" מוצג רק כשיש מספיק הזמנות ופער אמיתי (30%+ מעל יום ממוצע).`
-          : `Net revenue by weekday (${report.timeZone} time), trailing ${report.weeks} weeks. A "best day" is only shown with enough orders and a real gap (30%+ above an average day).`}
+          ? `הכנסה נטו לפי יום בשבוע (אזור זמן ${report.timeZone}), ${report.weeks} השבועות האחרונים. מוצר שנמצא בכמה קולקציות מחולק שווה ביניהן, כך שהשורות ניתנות לחיבור; מספר ההזמנות הוא הזמנות שנגעו בקולקציה, ולכן הזמנה יכולה להופיע ביותר משורה אחת. "יום חזק" מוצג רק כשיש מספיק הזמנות ופער אמיתי (30%+ מעל יום ממוצע).`
+          : `Net revenue by weekday (${report.timeZone} time), trailing ${report.weeks} weeks. A product in several collections is split evenly between them so the rows are additive; order counts are orders that touched the collection, so one order can appear in more than one row. A "best day" is only shown with enough orders and a real gap (30%+ above an average day).`}
       </p>
     </div>
   );

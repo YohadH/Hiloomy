@@ -58,6 +58,15 @@ export async function withDatabaseFallback<T>(operation: () => Promise<T>, fallb
     return await operation();
   } catch (error) {
     if (isDatabaseConnectionError(error)) {
+      // NEVER fall back silently. A swallowed pool timeout renders as
+      // "the store has no data" — empty tables, 0-customer retention, ₪0
+      // profit — and the QA session proved those zeros get believed and
+      // acted on. The fallback still serves (the page must survive a DB
+      // blip), but the reason is now in the logs instead of invisible.
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[db] query failed, serving fallback value — the page may render EMPTY data: ${message.split("\n")[0]}`
+      );
       return await resolveFallback(fallback);
     }
     throw error;

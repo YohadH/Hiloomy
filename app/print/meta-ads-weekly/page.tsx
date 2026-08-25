@@ -2957,7 +2957,7 @@ function DiscountScorecardSection({
     <section className="pwr-section">
       <h2 className="pwr-section-title">{lang("שיווק מול הנחות — כרטיסי ביצועים", "Marketing vs discounts — scorecards")}</h2>
       <div className="pwr-kpi-row" style={{ marginBottom: 8 }}>
-        <Tile label={lang("עלות הנחות", "Discount cost")} value={fmt(report.totalDiscountCost)} source="S" />
+        <Tile label={lang("שווי הנחות (מחיר מדף)", "Discounts given (list price)")} value={fmt(report.totalDiscountCost)} source="S" />
         <Tile label={lang("הכנסה נטו עם קוד", "Net revenue on codes")} value={fmt(report.totalRevenue)} source="S" />
         <Tile
           label={lang("שוליים אחרי הנחה ועלויות", "Margin after discount & COGS")}
@@ -2984,7 +2984,7 @@ function DiscountScorecardSection({
             <th>{lang("קוד", "Code")}</th>
             <th>{lang("הזמנות", "Orders")}</th>
             <th>{lang("הכנסה נטו", "Net revenue")}</th>
-            <th>{lang("עלות הנחה", "Discount")}</th>
+            <th>{lang("שווי הנחה (מדף)", "Discount (list)")}</th>
             <th>{lang("שוליים", "Margin")}</th>
             <th>{lang("לקוחות חדשים", "New customers")}</th>
             <th>{lang("פסיקה", "Verdict")}</th>

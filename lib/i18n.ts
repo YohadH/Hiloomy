@@ -149,7 +149,7 @@ const dictionaries = {
         "The codebase models second-order analysis as a first-class concept for future automation.",
       cohortView: "Cohort view",
       cohortDescription:
-        "Placeholder section for real cohort retention once order-event histories are connected.",
+        "Live data from your order history: each row follows the customers who joined that month and shows how many came back.",
       avgTimeBetweenOrders: "Average time between first and second order",
       avgTimeDescription:
         "Placeholder for distribution analysis and lifecycle benchmarking.",
@@ -200,7 +200,8 @@ const dictionaries = {
       severity: {
         low: "Low",
         medium: "Medium",
-        high: "High"
+        high: "High",
+        critical: "Critical"
       },
       tips: {
         page: "Each alert is a rule-triggered signal that something material moved. Severity reflects how urgently a founder should look at it.",
@@ -515,7 +516,7 @@ const dictionaries = {
         "הקוד מתייחס לניתוח הזמנה שנייה כקונספט מרכזי כדי לאפשר אוטומציה בהמשך.",
       cohortView: "תצוגת קוהורטים",
       cohortDescription:
-        "אזור שמור לניתוח קוהורטים אמיתי כאשר היסטוריית האירועים של ההזמנות תהיה מחוברת.",
+        "נתונים חיים מהיסטוריית ההזמנות שלכם: כל שורה עוקבת אחרי הלקוחות שהצטרפו באותו חודש ומראה כמה מהם חזרו.",
       avgTimeBetweenOrders: "זמן ממוצע בין הזמנה ראשונה לשנייה",
       avgTimeDescription:
         "אזור שמור לניתוח התפלגות ובנצ'מרקים של מחזור חיים.",
@@ -566,7 +567,8 @@ const dictionaries = {
       severity: {
         low: "נמוכה",
         medium: "בינונית",
-        high: "גבוהה"
+        high: "גבוהה",
+        critical: "קריטית"
       },
       tips: {
         page: "כל התראה היא איתות שמשהו מהותי זז. החומרה משקפת עד כמה דחוף לטפל.",

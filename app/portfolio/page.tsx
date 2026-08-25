@@ -19,6 +19,8 @@ import { PortfolioBrandTable } from "@/components/portfolio/portfolio-brand-tabl
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { buildPortfolioOverview, type BrandStory } from "@/lib/services/portfolio-service";
 import { getAppLocale } from "@/lib/i18n";
+import { heCount } from "@/lib/i18n/he-plural";
+import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { cn } from "@/lib/utils";
 
 // /portfolio — the board / multi-brand operator view.
@@ -35,10 +37,14 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Portfolio" };
 
 export default async function PortfolioPage() {
-  const [chrome, portfolio, locale] = await Promise.all([
+  const locale = await getAppLocale();
+  // The portfolio follows the SAME date picker as every other page — it
+  // used to substitute its own hardcoded 30 days and print a different
+  // period than the one the user selected (F-072).
+  const selection = await getReportingDateRangeSelection(locale === "he" ? "he" : "en");
+  const [chrome, portfolio] = await Promise.all([
     getAppChromeData(),
-    buildPortfolioOverview(),
-    getAppLocale()
+    buildPortfolioOverview({ range: { start: selection.start, end: selection.end } })
   ]);
   const isHe = locale === "he";
 
@@ -127,15 +133,19 @@ export default async function PortfolioPage() {
   const headline = (() => {
     const total = formatCurrency(portfolio.totals.totalSales, portfolio.currency, isHe);
     const change = portfolio.totalSalesChange;
+    const activeLabel = heCount(portfolio.totals.activeBrands, {
+      one: "מותג פעיל אחד",
+      many: "מותגים פעילים"
+    });
     if (change === null) {
       return isHe
-        ? `${portfolio.totals.activeBrands} מותגים פעילים, הכנסה כוללת של ${total} בתקופה.`
-        : `${portfolio.totals.activeBrands} active brands, total revenue ${total} this period.`;
+        ? `${activeLabel}, הכנסה כוללת של ${total} בתקופה.`
+        : `${portfolio.totals.activeBrands} active brand${portfolio.totals.activeBrands === 1 ? "" : "s"}, total revenue ${total} this period.`;
     }
     const arrow = change >= 0 ? (isHe ? "↑" : "↑") : isHe ? "↓" : "↓";
     return isHe
-      ? `${portfolio.totals.activeBrands} מותגים פעילים, הכנסה כוללת ${total}. ${arrow} ${Math.abs(change).toFixed(1)}% לעומת התקופה הקודמת.`
-      : `${portfolio.totals.activeBrands} active brands, total revenue ${total} — ${arrow} ${Math.abs(change).toFixed(1)}% vs the previous window.`;
+      ? `${activeLabel}, הכנסה כוללת ${total}. ${arrow} ${Math.abs(change).toFixed(1)}% לעומת התקופה הקודמת.`
+      : `${portfolio.totals.activeBrands} active brand${portfolio.totals.activeBrands === 1 ? "" : "s"}, total revenue ${total} — ${arrow} ${Math.abs(change).toFixed(1)}% vs the previous window.`;
   })();
   const tone =
     portfolio.totalSalesChange === null
@@ -236,8 +246,12 @@ export default async function PortfolioPage() {
           </div>
           <p className="text-xs text-muted-foreground">
             {isHe
-              ? `${portfolio.totals.activeBrands} מתוך ${portfolio.totals.connectedBrands} מותגים מחוברים יצרו מכירה בתקופה זו.`
-              : `${portfolio.totals.activeBrands} of ${portfolio.totals.connectedBrands} connected brands generated sales this period.`}
+              ? portfolio.totals.connectedBrands === 1
+                ? portfolio.totals.activeBrands === 1
+                  ? "המותג המחובר יצר מכירות בתקופה זו."
+                  : "המותג המחובר לא יצר מכירות בתקופה זו."
+                : `${portfolio.totals.activeBrands} מתוך ${portfolio.totals.connectedBrands} המותגים המחוברים יצרו מכירות בתקופה זו.`
+              : `${portfolio.totals.activeBrands} of ${portfolio.totals.connectedBrands} connected brand${portfolio.totals.connectedBrands === 1 ? "" : "s"} generated sales this period.`}
           </p>
         </section>
 

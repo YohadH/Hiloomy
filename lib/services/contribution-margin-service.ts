@@ -146,48 +146,36 @@ export async function buildContributionMargin(
   );
 
   // ── Quality assessment ────────────────────────────────────────────
-  // Same as v1 — count products that sold in the window but have no cost
-  // configured. Coverage is share of line revenue with non-zero estimated
-  // cost. The parity layer doesn't surface this directly, so we re-query
-  // just the diagnostic; the financial number stays anchored to parity.
-  const lineCoverage = (await db.orderLineItem.aggregate({
-    where: {
-      storeId: input.storeId,
-      order: {
-        storeId: input.storeId,
-        createdAt: { gte: input.start, lte: input.end },
-        cancelledAt: null,
-        test: false
-      },
-      estimatedCostAmount: { gt: 0 }
-    },
-    _sum: { lineSubtotal: true }
-  })) as { _sum: { lineSubtotal: any } };
-  const revenueWithCost = Number(lineCoverage._sum.lineSubtotal ?? 0);
-  const costCoverage = parity.grossSales > 0 ? revenueWithCost / parity.grossSales : 0;
-
-  // Distinct products that sold but had at least one zero-cost line item.
-  // Best-effort — counts product ids appearing on line items with cost <= 0.
-  // (estimatedCostAmount is a non-nullable Decimal that defaults to 0 when
-  // unset, so checking <= 0 catches both "explicitly zero" and "unset".)
-  const missingCostRows = (await db.orderLineItem.findMany({
-    where: {
-      storeId: input.storeId,
-      order: {
-        storeId: input.storeId,
-        createdAt: { gte: input.start, lte: input.end },
-        cancelledAt: null,
-        test: false
-      },
-      estimatedCostAmount: { lte: 0 },
-      productId: { not: null }
-    },
-    select: { productId: true },
-    distinct: ["productId"]
-  })) as Array<{ productId: string | null }>;
-  const productsMissingCost = new Set<string>(
-    missingCostRows.map((r) => r.productId).filter((p): p is string => p != null)
-  ).size;
+  // Coverage = share of the window's line revenue whose PRODUCT has a real
+  // cost (manual override or Shopify-provided estimatedCost). The old test
+  // (`estimatedCostAmount > 0` on the line) counted the sync's ratio-GUESSED
+  // costs as covered, which is how this card claimed "99% coverage, 6
+  // products missing" while the costs page truthfully reported 49% and 78
+  // missing — the app understating its own uncertainty on its most
+  // important number (F-038). Both surfaces now share one definition of
+  // "has a cost": a real one.
+  const coverageRows = (await db.$queryRaw`
+    SELECT
+      COALESCE(SUM(CASE WHEN p."costOverrideAmount" IS NOT NULL OR p."estimatedCost" > 0
+                        THEN li."lineSubtotal" ELSE 0 END), 0)::float AS covered_revenue,
+      COALESCE(SUM(li."lineSubtotal"), 0)::float AS total_revenue,
+      COUNT(DISTINCT CASE WHEN p.id IS NULL OR (p."costOverrideAmount" IS NULL AND (p."estimatedCost" IS NULL OR p."estimatedCost" <= 0))
+                          THEN COALESCE(li."productId", li."title") END)::int AS products_missing
+    FROM "OrderLineItem" li
+    JOIN "Order" o ON o.id = li."orderId"
+    LEFT JOIN "Product" p ON p.id = li."productId"
+    WHERE li."storeId" = ${input.storeId}
+      AND o."createdAt" >= ${input.start}
+      AND o."createdAt" <= ${input.end}
+      AND o."cancelledAt" IS NULL
+      AND o.test = false
+  `.catch(() => [])) as Array<{ covered_revenue: number; total_revenue: number; products_missing: number }>;
+  const coverageRow = coverageRows[0];
+  const costCoverage =
+    coverageRow && coverageRow.total_revenue > 0
+      ? coverageRow.covered_revenue / coverageRow.total_revenue
+      : 0;
+  const productsMissingCost = coverageRow?.products_missing ?? 0;
 
   // Orders without any line-item cost — diagnostic.
   const ordersTotal = parity.orders;
@@ -258,13 +246,19 @@ function buildQualityNotes(input: {
   costCoveragePct: number;
 }): { he: string; en: string } {
   const pieces: { he: string[]; en: string[] } = { he: [], en: [] };
-  pieces.he.push(`רמת דיוק: מוערך · כיסוי עלות מוצרים (COGS) ${input.costCoveragePct}%.`);
+  pieces.he.push(
+    `רמת דיוק: מוערך · ${input.costCoveragePct}% מההכנסה בחלון מגיעה ממוצרים עם עלות אמיתית.`
+  );
   pieces.en.push(
-    `Accuracy: estimated · ${input.costCoveragePct}% of revenue has concrete COGS.`
+    `Accuracy: estimated · ${input.costCoveragePct}% of window revenue comes from products with a real cost.`
   );
   if (input.productsMissingCost > 0) {
-    pieces.he.push(`חסר עלות ל-${input.productsMissingCost} מוצרים.`);
-    pieces.en.push(`Missing exact COGS for ${input.productsMissingCost} products.`);
+    pieces.he.push(
+      `${input.productsMissingCost} מוצרים שנמכרו בחלון עדיין בלי עלות אמיתית (מחושבים לפי יחס ברירת מחדל).`
+    );
+    pieces.en.push(
+      `${input.productsMissingCost} products sold in the window still lack a real cost (falling back to the default ratio).`
+    );
   }
   if (input.ordersWithoutLineItemCost > 0) {
     pieces.he.push(`${input.ordersWithoutLineItemCost} הזמנות ללא עלות פריט.`);

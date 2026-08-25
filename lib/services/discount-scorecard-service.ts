@@ -35,6 +35,16 @@ import {
 
 export type DiscountVerdict = "expand" | "keep" | "stop";
 
+/**
+ * What the code IS, not how it performs. "seeding" = deliberate product
+ * giveaway (affiliate/PR/gifting): ~100% new customers, near-zero net
+ * revenue, meaningful retail value given. Classified at the DATA layer so
+ * every surface (leak scan, alerts, cards) reads the same call — the QA
+ * found the same affiliate giveaway flagged as a "loss" on three separate
+ * surfaces, each needing its own fix (F-052/F-058).
+ */
+export type DiscountClassification = "promo" | "seeding";
+
 export interface DiscountScorecard {
   code: string;
   uses: number; // distinct orders under the code
@@ -56,6 +66,7 @@ export interface DiscountScorecard {
   lastUsedAt: string;
   active: boolean; // used within the trailing 7 days of the window end
   trend: Array<{ date: string; uses: number; discountCost: number }>;
+  classification: DiscountClassification;
   verdict: DiscountVerdict;
   verdictReason: { he: string; en: string };
 }
@@ -285,9 +296,30 @@ export async function buildDiscountScorecards(input: {
     const marginRate = acc.revenue > 0 ? margin / acc.revenue : 0;
     const affiliateName = affiliateByCode.get(code) ?? null;
 
+    // Seeding detection: ~all first-time customers AND the goods were given
+    // away rather than sold at a bad price (net revenue is a rounding error
+    // next to the retail value forgone). A genuine mispriced promo looks the
+    // opposite — mixed customers, meaningful non-zero revenue.
+    const classification: DiscountClassification =
+      newShare != null &&
+      newShare >= 0.9 &&
+      acc.discountCost > 0 &&
+      acc.revenue <= Math.max(50, acc.discountCost * 0.05)
+        ? "seeding"
+        : "promo";
+
     let verdict: DiscountVerdict = "keep";
     let reason: { he: string; en: string };
-    if (hasCostData && margin < 0 && uses >= STOP_MIN_USES) {
+    if (classification === "seeding") {
+      // Never "stop": this is marketing spend, not an underwater promo.
+      // The right question is ROI ("did these seeded orders deliver?"),
+      // and the real cost is the COGS of the gifted goods — not the
+      // retail value.
+      reason = {
+        he: `נראה כמו חלוקת מוצרים מכוונת (סידינג לשותפים/משפיענים): כמעט כל ההזמנות של לקוחות חדשים וכמעט ללא הכנסה. העלות האמיתית היא עלות המוצרים שנמסרו (₪${Math.round(acc.cogs).toLocaleString()}) — השאלה הנכונה היא האם השותפים סיפקו חשיפה בתמורה, לא אם "הקוד מפסיד".`,
+        en: `Looks like deliberate product seeding (affiliate/influencer gifting): almost all orders are first-time customers with near-zero revenue. The real cost is the COGS of the gifted goods (₪${Math.round(acc.cogs).toLocaleString()}) — the right question is whether the partners delivered exposure, not whether "the code loses money".`
+      };
+    } else if (hasCostData && margin < 0 && uses >= STOP_MIN_USES) {
       verdict = "stop";
       reason = affiliateName
         ? {
@@ -347,6 +379,7 @@ export async function buildDiscountScorecards(input: {
       trend: Array.from(acc.byDay.entries())
         .sort(([a], [b]) => (a < b ? -1 : 1))
         .map(([date, v]) => ({ date, uses: v.uses, discountCost: round2(v.discountCost) })),
+      classification,
       verdict,
       verdictReason: reason
     });
@@ -395,8 +428,15 @@ export async function upsertUnderwaterDiscountAlerts(storeId: string): Promise<U
   const start = new Date(end.getTime() - 7 * 86_400_000);
   const report = await buildDiscountScorecards({ storeId, start, end });
 
+  // Seeding codes (deliberate giveaways) never fire here — the same
+  // affiliate-distribution code used to surface as a "critical loss" on
+  // three surfaces at once (F-015/F-052).
   const underwater = report.cards.filter(
-    (c) => c.verdict === "stop" && c.hasCostData && c.uses >= STOP_MIN_USES
+    (c) =>
+      c.verdict === "stop" &&
+      c.classification !== "seeding" &&
+      c.hasCostData &&
+      c.uses >= STOP_MIN_USES
   );
 
   const keepFingerprints: string[] = [];
@@ -415,8 +455,8 @@ export async function upsertUnderwaterDiscountAlerts(storeId: string): Promise<U
       title: `הקוד ${card.code} מוכר בהפסד — ₪${loss.toLocaleString("en-US")} שוליים שליליים בשבוע האחרון`,
       description:
         `${card.uses} הזמנות תחת ${card.code} בשבעת הימים האחרונים: הכנסה נטו ₪${Math.round(card.revenue).toLocaleString("en-US")}, ` +
-        `עלות מוצרים ₪${Math.round(card.cogs).toLocaleString("en-US")}, הנחה ₪${Math.round(card.discountCost).toLocaleString("en-US")} — ` +
-        `כל הזמנה נוספת תחת הקוד מפסידה כסף כרגע.`,
+        `עלות מוצרים ₪${Math.round(card.cogs).toLocaleString("en-US")}, שווי ההנחה במחירי מדף ₪${Math.round(card.discountCost).toLocaleString("en-US")} — ` +
+        `ההפסד בפועל (הכנסה פחות עלות מוצרים) הוא ₪${loss.toLocaleString("en-US")}, וכל הזמנה נוספת מעמיקה אותו.`,
       recommendedAction: `עצרו או הקטינו את הקוד ${card.code} בShopify עכשיו, או העלו מחיר מינימום לשימוש בו.`,
       metricName: "margin_after_discount",
       currentValue: card.marginAfterDiscount,

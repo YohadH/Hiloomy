@@ -111,6 +111,59 @@ export function warnOptionalEnv(): void {
   }
 }
 
+// ── Schema drift detection ──────────────────────────────────────────────
+// schema.prisma once gained the DiscountUsage mechanism columns with no
+// accompanying migration; production (where schema changes are a manual
+// step, see render.yaml) kept the old shape, and the first write touching
+// the new columns 500-ed at runtime ("The column `applicationType` does
+// not exist"). This probe compares the live database against the columns
+// the code is known to depend on and screams at boot instead. Add a row
+// here whenever a schema change ships that production must receive.
+
+const EXPECTED_SCHEMA_COLUMNS: Array<{ table: string; column: string; fixWith: string }> = [
+  {
+    table: "DiscountUsage",
+    column: "applicationType",
+    fixWith: "prisma/migrations/20260825_discount_mechanism/migration.sql"
+  }
+];
+
+/**
+ * Warn loudly (never throw — analytics paths still work) when the live
+ * database is missing a column the deployed code writes. Call once at boot,
+ * fire-and-forget.
+ */
+export async function warnSchemaDrift(): Promise<void> {
+  try {
+    const { getDb } = await import("@/lib/server/db");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = getDb() as any;
+    const tables = [...new Set(EXPECTED_SCHEMA_COLUMNS.map((e) => e.table))];
+    const rows = (await db.$queryRaw`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_name = ANY(${tables})
+    `) as Array<{ table_name: string; column_name: string }>;
+    const present = new Set(rows.map((r) => `${r.table_name}.${r.column_name}`));
+    for (const expected of EXPECTED_SCHEMA_COLUMNS) {
+      if (present.has(`${expected.table}.${expected.column}`)) continue;
+      console.error(
+        `[startup-check] SCHEMA DRIFT: the live database is missing column ` +
+          `"${expected.table}"."${expected.column}" that the deployed code writes. ` +
+          `Every write to that table will fail until the schema is updated. ` +
+          `Apply ${expected.fixWith} (or run \`npx prisma db push\` against the direct DB URL).`
+      );
+    }
+  } catch (err) {
+    // No DB at boot (build step, misconfigured env) — the required-env check
+    // handles that story; this probe just skips.
+    console.warn(
+      "[startup-check] schema drift check skipped:",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
 /**
  * Assert all required env vars are present. Throws a clear Error listing the
  * missing ones if not. Call once at boot so the process dies loudly instead

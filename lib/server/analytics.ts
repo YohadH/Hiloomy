@@ -204,9 +204,15 @@ export function buildProductPerformance(
   for (const order of orders) {
     for (const lineItem of order.lineItems) {
       const productId = lineItem.productId;
-      if (!productId) continue;
-      const product = productLookup.get(productId);
-      if (!product) continue;
+      const product = productId ? productLookup.get(productId) : undefined;
+      // Never drop a sold line just because its Product row is missing.
+      // Orders synced before their product existed carry productId=null
+      // forever (nothing re-links them), and a product deleted in Shopify
+      // takes its row with it — both used to VANISH from every product
+      // table here while the aggregate cards kept counting their revenue
+      // (the "table empty, totals populated" symptom). Fall back to the
+      // line's own title as the row identity instead.
+      const key = product && productId ? productId : `title:${(lineItem.title ?? "").trim() || "—"}`;
 
       const lineRevenue = lineItem.unitPrice * lineItem.quantity;
       // Shopify's "Net items sold" = items sold − items returned. We track
@@ -214,17 +220,17 @@ export function buildProductPerformance(
       // is exact instead of a pro-rated approximation.
       const netUnits = Math.max(0, lineItem.quantity - lineItem.refundedQuantity);
       const refundImpact = lineItem.refundedSubtotal;
-      const current = grouped.get(productId) ?? {
-        productId,
-        productTitle: product.title,
-        collection: product.collection,
-        collections: product.collections ?? [],
+      const current = grouped.get(key) ?? {
+        productId: key,
+        productTitle: product?.title ?? ((lineItem.title ?? "").trim() || "—"),
+        collection: product?.collection ?? "",
+        collections: product?.collections ?? [],
         unitsSold: 0,
         revenue: 0,
         estimatedProfit: 0,
         discountImpact: 0,
         refundImpact: 0,
-        inventoryQuantity: product.inventoryQuantity ?? null
+        inventoryQuantity: product?.inventoryQuantity ?? null
       };
 
       current.unitsSold += netUnits;
@@ -232,7 +238,7 @@ export function buildProductPerformance(
       current.discountImpact += lineItem.discountAmount;
       current.refundImpact += refundImpact;
       current.estimatedProfit += lineRevenue - lineItem.discountAmount - refundImpact - lineItem.estimatedCost;
-      grouped.set(productId, current);
+      grouped.set(key, current);
     }
   }
 

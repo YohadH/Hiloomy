@@ -204,6 +204,17 @@ export function ReportingPicker(props: ReportingPickerProps) {
   const [start, setStart] = useState<string>(props.initialStart);
   const [end, setEnd] = useState<string>(props.initialEnd);
 
+  // Re-sync from the server-rendered props on client-side navigation. The
+  // picker instance survives route changes (same tree position on every
+  // page), so without this the LABEL froze on whatever page it was first
+  // mounted on — two pages could display two different ranges for one and
+  // the same cookie (F-061).
+  useEffect(() => {
+    setPreset(props.initialPreset);
+    setStart(props.initialStart);
+    setEnd(props.initialEnd);
+  }, [props.initialPreset, props.initialStart, props.initialEnd]);
+
   // Pending selection inside the popover (only committed on Apply)
   const [pendingStart, setPendingStart] = useState<Date | null>(parseInputDate(props.initialStart));
   const [pendingEnd, setPendingEnd] = useState<Date | null>(parseInputDate(props.initialEnd));
@@ -504,12 +515,17 @@ export function ReportingPicker(props: ReportingPickerProps) {
 
             {/* CALENDAR */}
             <div className="p-3 sm:p-5">
+              {/* Both inputs are capped at today — the calendar grid always
+                  blocked future clicks, but a TYPED future end date sailed
+                  through and the whole app then reported a window ending in
+                  the future (F-061). Server-side clamp exists too; this is
+                  the immediate feedback. */}
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <input
                   type="date"
                   value={startText}
                   onChange={(e) => handleStartTextChange(e.target.value)}
-                  max={endText || undefined}
+                  max={endText || toInputDate(new Date()) || undefined}
                   className="min-w-0 flex-1 sm:flex-none sm:w-[150px] rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/40"
                   aria-label={isHe ? "תאריך התחלה" : "Start date"}
                 />
@@ -521,6 +537,7 @@ export function ReportingPicker(props: ReportingPickerProps) {
                   value={endText}
                   onChange={(e) => handleEndTextChange(e.target.value)}
                   min={startText || undefined}
+                  max={toInputDate(new Date())}
                   className="min-w-0 flex-1 sm:flex-none sm:w-[150px] rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/40"
                   aria-label={isHe ? "תאריך סיום" : "End date"}
                 />

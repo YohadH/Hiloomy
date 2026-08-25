@@ -7,6 +7,7 @@ import {
   Bell,
   Building2,
   CalendarRange,
+  Coins,
   FileText,
   LayoutDashboard,
   Loader2,
@@ -140,6 +141,13 @@ function getNavigation(
         label: isHe ? "מעקב מוצרים" : "Product follow-ups",
         icon: PackageSearch,
         module: "product-follow-ups"
+      },
+      {
+        // Moved out of /profit per the owner (F-041) — costs are a products
+        // concern; the old /profit/costs URL redirects here.
+        href: "/products/costs",
+        label: isHe ? "עלויות מוצרים" : "Product costs",
+        icon: Coins
       },
       {
         href: "/alerts",
@@ -294,14 +302,9 @@ function NavContent({
           </div>
         ) : null}
       </nav>
-      <div className="px-4 pb-4 pt-6">
-        <div className="rounded-2xl border border-border bg-card/80 p-4">
-          <p className="text-sm font-semibold">{labels.common.automationReady}</p>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {labels.common.automationCopy}
-          </p>
-        </div>
-      </div>
+      {/* The "מוכן לאוטומציה" roadmap block used to live here — removed
+          (F-021): it promised capability instead of delivering information,
+          and the owner asked for it gone. */}
     </div>
   );
 }

@@ -4,12 +4,14 @@ import type { Alert } from "@/lib/domain/types";
 import { cn } from "@/lib/utils";
 
 const SEVERITY_CARD: Record<Alert["severity"], string> = {
+  critical: "border-red-300 bg-red-50/70",
   high: "border-rose-200 bg-rose-50/60",
   medium: "border-amber-200 bg-amber-50/60",
   low: "border-sky-200 bg-sky-50/60"
 };
 
 const SEVERITY_PILL: Record<Alert["severity"], string> = {
+  critical: "bg-red-600 text-white",
   high: "bg-rose-500 text-white",
   medium: "bg-amber-500 text-white",
   low: "bg-sky-500 text-white"

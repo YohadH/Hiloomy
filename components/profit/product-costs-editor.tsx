@@ -52,6 +52,11 @@ export function ProductCostsEditor({
   const [state, setState] = useState<Record<string, SaveState>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
+  // Cost-status filter (F-042): with dozens of products missing a real
+  // cost, "show only what still needs a cost" turns this page from a long
+  // list into a work queue the owner can actually clear.
+  type CostFilter = "all" | "missing" | "manual" | "estimated" | "sold";
+  const [costFilter, setCostFilter] = useState<CostFilter>("all");
 
   // CSV import state.
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,14 +74,39 @@ export function ProductCostsEditor({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
+    const byStatus = rows.filter((r) => {
+      switch (costFilter) {
+        case "missing":
+          return r.costOverrideAmount == null && !(r.estimatedCost > 0);
+        case "manual":
+          return r.costOverrideAmount != null;
+        case "estimated":
+          return r.costOverrideAmount == null && r.estimatedCost > 0;
+        case "sold":
+          return r.unitsSold > 0;
+        default:
+          return true;
+      }
+    });
+    if (!q) return byStatus;
+    return byStatus.filter(
       (r) =>
         r.title.toLowerCase().includes(q) ||
         (r.primarySku ?? "").toLowerCase().includes(q) ||
         r.handle.toLowerCase().includes(q)
     );
-  }, [rows, query]);
+  }, [rows, query, costFilter]);
+
+  const filterCounts = useMemo(
+    () => ({
+      all: rows.length,
+      missing: rows.filter((r) => r.costOverrideAmount == null && !(r.estimatedCost > 0)).length,
+      manual: rows.filter((r) => r.costOverrideAmount != null).length,
+      estimated: rows.filter((r) => r.costOverrideAmount == null && r.estimatedCost > 0).length,
+      sold: rows.filter((r) => r.unitsSold > 0).length
+    }),
+    [rows]
+  );
 
   const draftValue = (r: ProductCostRow) =>
     drafts[r.productId] ?? (r.costOverrideAmount != null ? String(r.costOverrideAmount) : "");
@@ -266,6 +296,31 @@ export function ProductCostsEditor({
               "Type the cost per unit and save. Best-selling products appear first."
             )}
           </p>
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            {(
+              [
+                { key: "all", he: "הכל", en: "All" },
+                { key: "missing", he: "חסרה עלות", en: "Missing cost" },
+                { key: "manual", he: "עלות ידנית", en: "Manual cost" },
+                { key: "estimated", he: "עלות משוערת", en: "Estimated" },
+                { key: "sold", he: "נמכרו בחלון", en: "Sold in window" }
+              ] as const
+            ).map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setCostFilter(f.key)}
+                aria-pressed={costFilter === f.key}
+                className={
+                  costFilter === f.key
+                    ? "rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800"
+                    : "rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                }
+              >
+                {t(f.he, f.en)} ({filterCounts[f.key]})
+              </button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto rounded-lg border border-border">

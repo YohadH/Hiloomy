@@ -18,6 +18,8 @@ export interface DailyTrendContextItem {
   campaigns: Array<{ name: string; spend: number; revenue: number; roas: number | null }>;
   posts: Array<{ creator: string; engagement: number; permalink: string | null; caption: string | null }>;
   discounts: Array<{ code: string; uses: number; amount: number }>;
+  // Where the day's buyers landed — top landing pages from GA4 (F-011).
+  landingPages: Array<{ path: string; sessions: number; orders: number; revenue: number }>;
 }
 
 export type DailyTrendContextMap = Record<string, DailyTrendContextItem>;
@@ -43,7 +45,7 @@ function num(value: unknown): number {
 }
 
 function emptyDay(date: string): DailyTrendContextItem {
-  return { date, topProducts: [], campaigns: [], posts: [], discounts: [] };
+  return { date, topProducts: [], campaigns: [], posts: [], discounts: [], landingPages: [] };
 }
 
 export async function getDailyTrendContext(
@@ -303,6 +305,45 @@ export async function getDailyTrendContext(
     }
   } catch (err) {
     console.error("[daily-trend-context] discounts failed:", err);
+  }
+
+  // ── 5. Landing pages per day (GA4 breakdown, kind="landing") ──────
+  // The tooltip already answers "what sold / what we spent / what codes
+  // ran" — this adds "which page they landed on" (F-011). Ranked by
+  // revenue, sessions as tiebreak; empty until the GA4 breakdown sync runs.
+  try {
+    const rows = (await db.gaTrafficBreakdown.findMany({
+      where: {
+        storeId,
+        kind: "landing",
+        date: { gte: startDate, lte: endDate }
+      },
+      select: { date: true, key: true, sessions: true, transactions: true, revenue: true }
+    })) as Array<{ date: Date; key: string; sessions: number; transactions: number; revenue: any }>;
+
+    const perDay = new Map<string, Map<string, { sessions: number; orders: number; revenue: number }>>();
+    for (const r of rows) {
+      const day = toIsoDay(r.date);
+      let dayMap = perDay.get(day);
+      if (!dayMap) {
+        dayMap = new Map();
+        perDay.set(day, dayMap);
+      }
+      const existing = dayMap.get(r.key) ?? { sessions: 0, orders: 0, revenue: 0 };
+      existing.sessions += num(r.sessions);
+      existing.orders += num(r.transactions);
+      existing.revenue += num(r.revenue);
+      dayMap.set(r.key, existing);
+    }
+    for (const [day, pages] of perDay.entries()) {
+      const top = Array.from(pages.entries())
+        .map(([path, agg]) => ({ path, ...agg }))
+        .sort((a, b) => b.revenue - a.revenue || b.sessions - a.sessions)
+        .slice(0, 3);
+      result[day] = { ...(result[day] ?? emptyDay(day)), landingPages: top };
+    }
+  } catch (err) {
+    console.error("[daily-trend-context] landing pages failed:", err);
   }
 
   return result;

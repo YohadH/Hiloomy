@@ -100,9 +100,18 @@ export async function generateAlerts(): Promise<Alert[]> {
 }
 
 export async function getAlerts(): Promise<Alert[]> {
-  const locale = await getAppLocale();
+  // The alerts page is the ONE canonical inbox: every stored entity-level
+  // alert from the Alert table (stockouts, underwater discounts, commission
+  // leaks, restock heroes...) PLUS the computed period-comparison alerts.
+  // The old code returned the stored rows only when locale === "en" — in
+  // Hebrew (production) the table was queried and then thrown away, so the
+  // dedicated alerts page showed the FEWEST alerts in the app (F-067).
   const repository = await getAnalyticsRepository();
-  const stored = await repository.getAlerts();
-  if (stored.length && locale === "en") return stored;
-  return generateAlerts();
+  const [stored, generated] = await Promise.all([
+    repository.getAlerts().catch(() => [] as Alert[]),
+    generateAlerts().catch(() => [] as Alert[])
+  ]);
+  // The "no anomalies" filler only belongs when there is truly nothing.
+  const trend = stored.length > 0 ? generated.filter((a) => a.id !== "rule-no-alerts") : generated;
+  return [...stored, ...trend];
 }

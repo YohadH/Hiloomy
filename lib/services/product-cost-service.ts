@@ -79,8 +79,16 @@ function marginPct(price: number, unitCost: number): number | null {
  * List every product for a store with its current cost and how much it has
  * sold, so the founder can prioritise the SKUs that actually move the profit
  * needle. Sorted by units sold desc (heaviest movers first), then by title.
+ *
+ * `range` scopes the units-sold / revenue / coverage figures to the
+ * dashboard's selected window. Without it the figures are lifetime — which
+ * is exactly the F-039 bug when the page shows a date picker — so every
+ * page-facing caller should pass the selection.
  */
-export async function listProductCosts(storeId: string): Promise<{
+export async function listProductCosts(
+  storeId: string,
+  range?: { start: Date; end: Date }
+): Promise<{
   rows: ProductCostRow[];
   summary: ProductCostSummary;
 }> {
@@ -103,7 +111,18 @@ export async function listProductCosts(storeId: string): Promise<{
     }),
     db.orderLineItem.groupBy({
       by: ["productId"],
-      where: { storeId, productId: { not: null } },
+      where: {
+        storeId,
+        productId: { not: null },
+        // Same order scope as returns-intelligence-service — the working
+        // reference for range-aware unit counts. Cancelled/test orders are
+        // excluded even in lifetime mode; they were never real sales.
+        order: {
+          cancelledAt: null,
+          test: false,
+          ...(range ? { createdAt: { gte: range.start, lte: range.end } } : {})
+        }
+      },
       _sum: { quantity: true, lineSubtotal: true, lineDiscountAmount: true }
     })
   ]);
@@ -185,6 +204,111 @@ export async function listProductCosts(storeId: string): Promise<{
   return { rows, summary };
 }
 
+// ── Default-ratio calibration (F-040) ────────────────────────────────────
+// The hardcoded 35% fallback was ~3.3× the store's MEASURED cost ratio
+// (real costs run 7–10% of price here), so every product without a cost was
+// assigned triple its plausible cost and profit was systematically
+// understated. Instead of a blind constant, derive the fallback from the
+// store's own measured products and keep Store.defaultCostRatio (which every
+// consumer — sync mapper, summary service, analytics repo — already reads)
+// up to date.
+
+const CALIBRATION_MIN_PRODUCTS = 3;
+const CALIBRATION_MIN_RATIO = 0.03;
+const CALIBRATION_MAX_RATIO = 0.85;
+// Don't churn the column (and the full recost that follows) for sub-point moves.
+const CALIBRATION_APPLY_DELTA = 0.01;
+
+/**
+ * Recompute Store.defaultCostRatio from products that have a REAL cost
+ * (manual override or Shopify-provided estimatedCost), weighted by lifetime
+ * units sold so head SKUs dominate. When the ratio moves by more than a
+ * point, writes the column and re-costs every line item to the same
+ * precedence the editor displays (override → product estimatedCost → ratio),
+ * so the profit engine and the editor stop telling two different truths.
+ *
+ * Runs after any cost edit/import. Best-effort by design — callers should
+ * not fail the user's save if calibration throws.
+ */
+export async function calibrateDefaultCostRatio(storeId: string): Promise<{
+  ratio: number;
+  measuredProducts: number;
+  applied: boolean;
+}> {
+  const db = getDb();
+  const [store, products, sales] = await Promise.all([
+    db.store.findUnique({ where: { id: storeId }, select: { defaultCostRatio: true } }),
+    db.product.findMany({
+      where: { storeId },
+      select: { id: true, price: true, estimatedCost: true, costOverrideAmount: true }
+    }),
+    db.orderLineItem.groupBy({
+      by: ["productId"],
+      where: { storeId, productId: { not: null }, order: { cancelledAt: null, test: false } },
+      _sum: { quantity: true }
+    })
+  ]);
+
+  const unitsByProduct = new Map<string, number>();
+  for (const s of sales as Array<{ productId: string | null; _sum: { quantity: number | null } }>) {
+    if (s.productId) unitsByProduct.set(s.productId, s._sum.quantity ?? 0);
+  }
+
+  let weightedCost = 0;
+  let weightedPrice = 0;
+  let measuredProducts = 0;
+  for (const p of products as Array<{
+    id: string;
+    price: unknown;
+    estimatedCost: unknown;
+    costOverrideAmount: unknown;
+  }>) {
+    const price = toNumber(p.price);
+    if (!(price > 0)) continue;
+    const override = p.costOverrideAmount == null ? null : toNumber(p.costOverrideAmount);
+    const estimated = toNumber(p.estimatedCost);
+    const unitCost = override != null ? override : estimated > 0 ? estimated : null;
+    if (unitCost == null) continue;
+    // +1 so a store with no sales history still calibrates from its catalog.
+    const weight = (unitsByProduct.get(p.id) ?? 0) + 1;
+    weightedCost += unitCost * weight;
+    weightedPrice += price * weight;
+    measuredProducts += 1;
+  }
+
+  const current = store?.defaultCostRatio ? toNumber(store.defaultCostRatio) : 0.35;
+  if (measuredProducts < CALIBRATION_MIN_PRODUCTS || !(weightedPrice > 0)) {
+    return { ratio: current, measuredProducts, applied: false };
+  }
+
+  const ratio = Math.min(
+    CALIBRATION_MAX_RATIO,
+    Math.max(CALIBRATION_MIN_RATIO, Math.round((weightedCost / weightedPrice) * 10000) / 10000)
+  );
+  if (Math.abs(ratio - current) <= CALIBRATION_APPLY_DELTA) {
+    return { ratio: current, measuredProducts, applied: false };
+  }
+
+  await db.store.update({ where: { id: storeId }, data: { defaultCostRatio: ratio } });
+
+  // Re-cost EVERY line to the editor's precedence in one statement:
+  // override × qty → product estimatedCost × qty → net × new ratio.
+  // (Lines with no productId keep their sync-time cost — nothing to join.)
+  await db.$executeRaw`
+    UPDATE "OrderLineItem" AS oli
+    SET "estimatedCostAmount" = ROUND(
+      CASE
+        WHEN p."costOverrideAmount" IS NOT NULL THEN p."costOverrideAmount" * oli."quantity"
+        WHEN p."estimatedCost" > 0 THEN p."estimatedCost" * oli."quantity"
+        ELSE GREATEST(oli."lineSubtotal" - oli."lineDiscountAmount", 0) * ${ratio}::numeric
+      END, 2)
+    FROM "Product" AS p
+    WHERE p."id" = oli."productId" AND oli."storeId" = ${storeId}
+  `;
+
+  return { ratio, measuredProducts, applied: true };
+}
+
 /**
  * Re-cost the already-synced order line items for one product so the Profit
  * page reflects a cost change immediately (the sync only applies the override
@@ -239,6 +363,8 @@ export async function setProductCost(input: {
   storeId: string;
   productId: string;
   costOverrideAmount: number | null;
+  /** Internal: the CSV importer batches many saves and calibrates ONCE at the end. */
+  skipCalibration?: boolean;
 }): Promise<SetProductCostResult> {
   const { storeId, productId } = input;
   const db = getDb();
@@ -270,6 +396,19 @@ export async function setProductCost(input: {
   });
 
   const lineItemsRecosted = await recostLineItemsForProduct(storeId, productId, cost, defaultCostRatio);
+
+  // A cost edit changes the store's measured cost picture — refresh the
+  // fallback ratio (and the estimate-costed lines) so the profit engine
+  // tracks reality instead of the hardcoded 35%. Best-effort: the save
+  // itself already succeeded.
+  if (!input.skipCalibration) {
+    await calibrateDefaultCostRatio(storeId).catch((err) =>
+      console.warn(
+        "[product-cost] ratio calibration failed:",
+        err instanceof Error ? err.message : err
+      )
+    );
+  }
 
   return { ok: true, productId, costOverrideAmount: cost, lineItemsRecosted };
 }
@@ -462,10 +601,18 @@ export async function importProductCostsCsv(input: {
   let cleared = 0;
   let lineItemsRecosted = 0;
   for (const [productId, cost] of desired) {
-    const res = await setProductCost({ storeId, productId, costOverrideAmount: cost });
+    const res = await setProductCost({ storeId, productId, costOverrideAmount: cost, skipCalibration: true });
     lineItemsRecosted += res.lineItemsRecosted;
     if (cost == null) cleared++;
     else updated++;
+  }
+  if (updated > 0 || cleared > 0) {
+    await calibrateDefaultCostRatio(storeId).catch((err) =>
+      console.warn(
+        "[product-cost] post-import ratio calibration failed:",
+        err instanceof Error ? err.message : err
+      )
+    );
   }
 
   return {

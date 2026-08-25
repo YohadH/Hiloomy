@@ -14,7 +14,7 @@ import { formatCurrency } from "@/lib/utils";
 
 /**
  * Light-canvas revenue + estimated profit area chart.
- * Indigo (#16A34A) for revenue, blue (#F97316) for profit — the accent palette
+ * Green (#16A34A) for revenue, orange (#F97316) for profit — the accent palette
  * the user liked, applied to a clean light background.
  */
 export function RevenueChartV2({

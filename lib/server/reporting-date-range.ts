@@ -366,7 +366,9 @@ function resolveComparison(
       };
     }
     case "prev_year_dow": {
-      const lengthDays = Math.round((current.end.getTime() - current.start.getTime()) / 86400000);
+      // floor, not round: end−start for an N-day window is N days − 1ms,
+      // and rounding up produced an N+1-day comparison window.
+      const lengthDays = Math.floor((current.end.getTime() - current.start.getTime()) / 86400000);
       const cur = calFrom(current.start);
       let start: CalendarDate = { ...cur, year: cur.year - 1 };
       const dowDiff = calWeekday(cur) - calWeekday(start);
@@ -431,7 +433,15 @@ export async function getReportingDateRangeSelection(locale: "en" | "he" = "en")
 
   if (preset === "custom") {
     const customStart = state?.start ? parseInputDate(state.start, "start", timeZone) : null;
-    const customEnd = state?.end ? parseInputDate(state.end, "end", timeZone) : null;
+    let customEnd = state?.end ? parseInputDate(state.end, "end", timeZone) : null;
+    // Clamp the end to today (store time). The calendar grid blocks future
+    // clicks but the typed <input type="date"> didn't, so a "16–28 Aug"
+    // window could be applied on Aug 25 and every page quietly reported a
+    // range that ends in the future (F-061).
+    const todayEnd = resolvePreset("today", timeZone).end;
+    if (customEnd && customEnd.getTime() > todayEnd.getTime()) {
+      customEnd = todayEnd;
+    }
     if (customStart && customEnd && customStart <= customEnd) {
       current = { start: customStart, end: customEnd };
     } else {
