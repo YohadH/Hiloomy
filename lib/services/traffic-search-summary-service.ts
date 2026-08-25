@@ -126,7 +126,10 @@ async function buildGa4Half(storeId: string, start: Date, end: Date): Promise<Tr
   };
 }
 
-// Top rows of one breakdown kind for the window, ranked by sessions.
+// Top rows of one breakdown kind for the window, ranked by revenue (the
+// panel answers "which link makes money" — ordering by sessions made the
+// revenue bars read as random noise), with sessions as the tiebreak so
+// high-traffic zero-purchase rows still surface at the bottom as a warning.
 // "(not set)" / "(direct)" campaigns are dropped from the campaign list —
 // they're the absence of a campaign, not a campaign worth reporting.
 async function topBreakdown(
@@ -148,25 +151,31 @@ async function topBreakdown(
         ...(kind === "campaign" ? { key: { notIn: ["(not set)", "(direct)", "(organic)"] } } : {})
       },
       _sum: { sessions: true, transactions: true, revenue: true },
+      // Over-fetch by sessions, rank by revenue in JS — Prisma orders null
+      // sums unpredictably and a top-revenue row is virtually always inside
+      // the top 12 by traffic.
       orderBy: { _sum: { sessions: "desc" } },
-      take: 6
+      take: 12
     })
     .catch(() => [])) as Array<{
     key: string;
     _sum: { sessions: unknown; transactions: unknown; revenue: unknown };
   }>;
 
-  return rows.map((r) => {
-    const sessions = num(r._sum.sessions);
-    const transactions = num(r._sum.transactions);
-    return {
-      key: r.key,
-      sessions,
-      transactions: Math.round(transactions),
-      revenue: Math.round(num(r._sum.revenue)),
-      conversionRate: sessions > 0 ? Math.round((transactions / sessions) * 10000) / 100 : null
-    };
-  });
+  return rows
+    .map((r) => {
+      const sessions = num(r._sum.sessions);
+      const transactions = num(r._sum.transactions);
+      return {
+        key: r.key,
+        sessions,
+        transactions: Math.round(transactions),
+        revenue: Math.round(num(r._sum.revenue)),
+        conversionRate: sessions > 0 ? Math.round((transactions / sessions) * 10000) / 100 : null
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue || b.sessions - a.sessions)
+    .slice(0, 6);
 }
 
 async function buildGscHalf(storeId: string, start: Date, end: Date): Promise<SearchSummaryHalf | null> {

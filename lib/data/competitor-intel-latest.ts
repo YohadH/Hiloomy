@@ -15,6 +15,8 @@ export interface CompetitorIntelEntry {
   move: string;
   // What it means for Incense Parfums (Hebrew, one line).
   implication: string;
+  // ISO date of the most recent check behind this entry (live intel only).
+  lastChecked?: string;
 }
 
 export interface CompetitorIntel {

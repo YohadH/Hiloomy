@@ -54,14 +54,87 @@ function Metric({
   );
 }
 
+// ── Friendly labels ──────────────────────────────────────────────────────
+// GA4 keys are analyst jargon ("(direct) / (none)", "l.instagram.com /
+// referral"). The founder reads a plain-Hebrew name; the raw key stays as a
+// small second line so nothing is hidden.
+
+function sourceName(raw: string, isHe: boolean): string | null {
+  const s = raw.toLowerCase();
+  const t = (he: string, en: string) => (isHe ? he : en);
+  if (s === "(direct)") return t("כניסה ישירה", "Direct");
+  if (/facebook|(^|\W)fb(\W|$)/.test(s)) return t("פייסבוק", "Facebook");
+  if (/instagram|(^|\W)ig(\W|$)/.test(s)) return t("אינסטגרם", "Instagram");
+  if (/google/.test(s)) return t("גוגל", "Google");
+  if (/tiktok/.test(s)) return t("טיקטוק", "TikTok");
+  if (/youtube/.test(s)) return t("יוטיוב", "YouTube");
+  if (/klaviyo|mailchimp|email|newsletter/.test(s)) return t("אימייל", "Email");
+  if (/whatsapp/.test(s)) return t("וואטסאפ", "WhatsApp");
+  if (/bing/.test(s)) return t("בינג", "Bing");
+  return null;
+}
+
+function mediumName(raw: string, isHe: boolean): string | null {
+  const m = raw.toLowerCase();
+  const t = (he: string, en: string) => (isHe ? he : en);
+  if (m === "(none)" || m === "(not set)") return "";
+  if (/cpc|ppc|paid|advantage/.test(m)) return t("פרסום ממומן", "paid ads");
+  if (/organic/.test(m)) return t("חיפוש אורגני", "organic search");
+  if (/referral/.test(m)) return t("מעבר מקישור", "link referral");
+  if (/email/.test(m)) return t("אימייל", "email");
+  if (/social/.test(m)) return t("רשתות חברתיות", "social");
+  return null;
+}
+
+// Returns the friendly display label, or null to fall back to the raw key.
+function friendlyLabel(kind: "source" | "campaign" | "landing", key: string, isHe: boolean): string | null {
+  const t = (he: string, en: string) => (isHe ? he : en);
+  if (key === "(not set)") {
+    return t("לא זוהה מקור", "Unknown source");
+  }
+  if (kind === "source") {
+    const [srcRaw, ...rest] = key.split(" / ");
+    if (srcRaw === "(direct)") {
+      return t("כניסה ישירה (הקלידו כתובת או פתחו ממועדפים)", "Direct (typed the address or used a bookmark)");
+    }
+    const src = sourceName(srcRaw, isHe);
+    const med = rest.length > 0 ? mediumName(rest.join(" / "), isHe) : null;
+    if (src === null) return null;
+    return med ? `${src} — ${med}` : src;
+  }
+  if (kind === "campaign") {
+    if (key === "(referral)") return t("ללא שם קמפיין (מעבר מקישור)", "No campaign name (link referral)");
+    return null; // campaign names are the founder's own — keep as-is
+  }
+  // landing
+  if (key === "/") return t("עמוד הבית", "Homepage");
+  if (key === "/en" || key === "/en/") return t("עמוד הבית באנגלית", "English homepage");
+  return null;
+}
+
+// URLs arrive percent-encoded with variant queries — show a clean, decoded
+// path; the untouched key stays in the tooltip.
+function cleanLandingPath(key: string): string {
+  const path = key.split(/[?#]/)[0];
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 function BreakdownList({
   title,
+  hint,
+  kind,
   rows,
   isHe,
   nf,
   emptyHint
 }: {
   title: string;
+  hint: string;
+  kind: "source" | "campaign" | "landing";
   rows: TrafficBreakdownRow[];
   isHe: boolean;
   nf: Intl.NumberFormat;
@@ -71,7 +144,7 @@ function BreakdownList({
   if (rows.length === 0) {
     return emptyHint ? (
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{title}</p>
+        <p className="text-xs font-bold text-foreground">{title}</p>
         <p className="mt-1 text-xs text-muted-foreground">{emptyHint}</p>
       </div>
     ) : null;
@@ -84,18 +157,31 @@ function BreakdownList({
 
   return (
     <div>
-      <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{title}</p>
-      <div className="mt-2 space-y-2.5">
+      <p className="text-xs font-bold text-foreground">{title}</p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
+      <div className="mt-2 space-y-3">
         {top.map((row) => {
+          // Rows arrive sorted by revenue, so the bars shrink top-to-bottom —
+          // the eye reads a ranking, not noise.
           const share = maxRevenue > 0 ? Math.max(row.revenue / maxRevenue, row.revenue > 0 ? 0.04 : 0) : 0;
+          const friendly = friendlyLabel(kind, row.key, isHe);
+          const rawLabel = kind === "landing" ? cleanLandingPath(row.key) : row.key;
           return (
             <div key={row.key} className="text-xs">
-              {/* Sources, UTM values and URLs are Latin — isolate them so the
-                  bidi algorithm can't reorder a URL's query string, but keep
-                  the Hebrew metric labels below in the page's own direction. */}
-              <p className="truncate font-medium text-foreground" dir="ltr" title={row.key}>
-                {row.key}
-              </p>
+              {friendly ? (
+                <p className="truncate font-medium text-foreground" title={row.key}>
+                  {friendly}
+                  {/* Raw GA4 key alongside, so the friendly name is checkable. */}
+                  <span className="ms-1.5 text-[10px] font-normal text-muted-foreground" dir="ltr">
+                    {row.key}
+                  </span>
+                </p>
+              ) : (
+                /* Latin keys/URLs — isolate so bidi can't reorder them. */
+                <p className="truncate font-medium text-foreground" dir="ltr" title={row.key}>
+                  {rawLabel}
+                </p>
+              )}
               <div className="mt-1 flex items-center gap-2">
                 {/* Revenue bar — the panel exists to rank by money earned, so
                     that is what gets the visual weight. */}
@@ -105,21 +191,22 @@ function BreakdownList({
                     style={{ width: `${Math.round(share * 100)}%` }}
                   />
                 </span>
-                <span className="shrink-0 tabular-nums text-muted-foreground">
-                  <bdi>{nf.format(row.sessions)}</bdi> {lang("ביקורים", "sessions")}
-                </span>
                 {row.transactions > 0 ? (
                   <span className="shrink-0 font-semibold text-emerald-700 tabular-nums">
                     <bdi>₪{nf.format(row.revenue)}</bdi>
                     <span className="ms-1 font-normal text-muted-foreground">
-                      (<bdi>{row.transactions}</bdi> {lang("רכישות", "orders")})
+                      {lang("מ", "from ")}
+                      <bdi>{row.transactions}</bdi> {lang("רכישות", "orders")}
                     </span>
                   </span>
                 ) : (
                   <span className="shrink-0 text-[11px] font-medium text-rose-600">
-                    {lang("לא הביא רכישות", "no purchases")}
+                    {lang("0 רכישות", "0 purchases")}
                   </span>
                 )}
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  <bdi>{nf.format(row.sessions)}</bdi> {lang("ביקורים", "visits")}
+                </span>
               </div>
             </div>
           );
@@ -258,8 +345,8 @@ export function TrafficSearchSection({
               </p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 {lang(
-                  "מקור התנועה, קמפיין ודף הנחיתה — עם הרכישות שכל אחד הביא בפועל, לא רק ביקורים.",
-                  "Traffic source, campaign and landing page — with the purchases each actually produced, not just visits."
+                  "כל עמודה מסודרת לפי כסף: השורה הראשונה הכניסה הכי הרבה, והפס הירוק משווה הכנסה בין השורות. שורה עם הרבה ביקורים ו0 רכישות = תנועה שלא מוכרת.",
+                  "Each column is ranked by money: the top row earned the most, and the green bar compares revenue between rows. A row with many visits and 0 purchases = traffic that doesn't sell."
                 )}
               </p>
             </div>
@@ -270,13 +357,17 @@ export function TrafficSearchSection({
             {hasBreakdowns ? (
               <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
                 <BreakdownList
-                  title={lang("מקורות (source / medium)", "Sources (source / medium)")}
+                  title={lang("מאיפה הגיעו", "Where visitors came from")}
+                  hint={lang("הערוץ שהביא את הביקור (בGA4: source / medium)", "The channel that brought the visit (GA4: source / medium)")}
+                  kind="source"
                   rows={ga4.topSources}
                   isHe={isHe}
                   nf={nf}
                 />
                 <BreakdownList
-                  title={lang("קמפיינים (UTM)", "Campaigns (UTM)")}
+                  title={lang("איזה קמפיין הביא אותם", "Which campaign brought them")}
+                  hint={lang("לפי תיוג utm_campaign שהוספתם לקישורים", "By the utm_campaign tag you added to links")}
+                  kind="campaign"
                   rows={ga4.topCampaigns}
                   isHe={isHe}
                   nf={nf}
@@ -286,7 +377,9 @@ export function TrafficSearchSection({
                   )}
                 />
                 <BreakdownList
-                  title={lang("דפי נחיתה", "Landing pages")}
+                  title={lang("לאיזה דף נחתו", "Which page they landed on")}
+                  hint={lang("הדף הראשון שנפתח בביקור", "The first page opened in the visit")}
+                  kind="landing"
                   rows={ga4.topLandingPages}
                   isHe={isHe}
                   nf={nf}

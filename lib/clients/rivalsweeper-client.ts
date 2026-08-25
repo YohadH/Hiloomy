@@ -303,6 +303,41 @@ function parsePctFromText(text: string | null): number | null {
   return valid.length ? Math.max(...valid) : null;
 }
 
+// Report lookback in days. Callers pass the dashboard's selected date range
+// so a "last 90 days" view pulls 90 days of provider records instead of the
+// default window; clamped to [min, 90] — the provider serves at most ~90d.
+function clampSinceDays(value: number | undefined, min: number): number {
+  if (value === undefined || !Number.isFinite(value)) return min;
+  return Math.min(90, Math.max(min, Math.round(value)));
+}
+
+/** The dashboard's applied reporting window, for date-scoped pulls. */
+export interface ReportDateRange {
+  start: Date;
+  end: Date;
+}
+
+function lookbackDays(range: ReportDateRange | undefined, min: number): number {
+  return clampSinceDays(
+    range ? Math.ceil((Date.now() - range.start.getTime()) / 86_400_000) : undefined,
+    min
+  );
+}
+
+// Date-scoping rule (verified against the live API, 25/08/2026): every
+// record of a crawl shares one captured_at = the crawl date — it says when
+// the provider PHOTOGRAPHED the competitor, not when an ad/promo ran. So a
+// ranged pull keeps records captured up to range.end (a crawl from before
+// the window is the last known state going INTO it), and drops crawls from
+// after the window — those would leak future state into a historical view.
+// Records the provider ships without captured_at can't be placed in time
+// and are dropped from ranged pulls only.
+function capturedWithinEnd(record: ReportRecord, range?: ReportDateRange): boolean {
+  if (!range) return true;
+  const t = Date.parse(String(record.captured_at ?? ""));
+  return Number.isFinite(t) && t <= range.end.getTime();
+}
+
 // ── Competitor activity (ads / news / homepage links) ───────────────────
 // The provider's crawl pipeline fills in stages: raw homepage + ad-library
 // + news data lands FIRST, and the promo/coupon analyses (which feed our
@@ -404,7 +439,8 @@ const FREE_SHIP_RE = /(?:משלוח חינם.{0,12}?|free shipping.{0,12}?)(?:�
 
 export async function fetchAdsDerivedSignals(
   domain: string,
-  timeoutMs = DEFAULT_TIMEOUT_MS
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  range?: ReportDateRange
 ): Promise<RivalSweeperSignals | null> {
   if (isMock()) return null;
   try {
@@ -415,11 +451,14 @@ export async function fetchAdsDerivedSignals(
 
     const auth = await getAccessToken(timeoutMs);
     const ads = await getReport(
-      `/companies/${auth.companyGuid}/domains/${entry.guid}/reports/ads?since=14d&limit=200`,
+      `/companies/${auth.companyGuid}/domains/${entry.guid}/reports/ads?since=${lookbackDays(range, 14)}d&limit=200`,
       timeoutMs
     );
     if (ads.last_refreshed_at == null) return null;
-    const records = ads.records ?? [];
+    const records = (ads.records ?? []).filter((r) => capturedWithinEnd(r, range));
+    // Ranged pull with no crawl at or before the window's end — the window
+    // predates tracking, so there is no signal (not "0 promos").
+    if (range && records.length === 0) return null;
 
     let promoAds = 0;
     let maxPct: number | null = null;
@@ -473,6 +512,10 @@ export interface FetchCompetitorSignalsInput {
   // Injectable for tests / backfills; defaults to now.
   date?: Date;
   timeoutMs?: number;
+  // The dashboard's applied date range. Widens the report lookback to cover
+  // the range and keeps only records captured up to its end, so the signals
+  // describe the selected window rather than the default 7d one.
+  range?: ReportDateRange;
 }
 
 // Returns null in real mode when the provider has no usable data for this
@@ -500,26 +543,30 @@ export async function fetchCompetitorSignals(
   const auth = await getAccessToken(timeoutMs);
   const cg = auth.companyGuid;
   const dg = entry.guid;
+  const since = `${lookbackDays(input.range, 7)}d`;
   const [homepagePromo, markdowns, coupons, freeShipping] = await Promise.all([
-    getReport(`/companies/${cg}/domains/${dg}/reports/homepage-promo?since=7d&limit=100`, timeoutMs),
-    getReport(`/companies/${cg}/domains/${dg}/reports/markdowns?since=7d&limit=100`, timeoutMs),
-    getReport(`/companies/${cg}/reports/coupons?since=7d&limit=200`, timeoutMs),
-    getReport(`/companies/${cg}/reports/free-shipping?since=7d&limit=200`, timeoutMs)
+    getReport(`/companies/${cg}/domains/${dg}/reports/homepage-promo?since=${since}&limit=100`, timeoutMs),
+    getReport(`/companies/${cg}/domains/${dg}/reports/markdowns?since=${since}&limit=100`, timeoutMs),
+    getReport(`/companies/${cg}/reports/coupons?since=${since}&limit=200`, timeoutMs),
+    getReport(`/companies/${cg}/reports/free-shipping?since=${since}&limit=200`, timeoutMs)
   ]);
 
-  // Company-scoped reports: keep only this domain's records.
-  const domainCoupons = (coupons.records ?? []).filter((r) => r.domain_guid === dg);
-  const domainShipping = (freeShipping.records ?? []).filter((r) => r.domain_guid === dg);
-  const promoRecords = homepagePromo.records ?? [];
-  const markdownRecords = markdowns.records ?? [];
+  // Company-scoped reports: keep only this domain's records; ranged pulls
+  // also drop records captured after the window's end.
+  const inWindow = (r: ReportRecord) => capturedWithinEnd(r, input.range);
+  const domainCoupons = (coupons.records ?? []).filter((r) => r.domain_guid === dg && inWindow(r));
+  const domainShipping = (freeShipping.records ?? []).filter((r) => r.domain_guid === dg && inWindow(r));
+  const promoRecords = (homepagePromo.records ?? []).filter(inWindow);
+  const markdownRecords = (markdowns.records ?? []).filter(inWindow);
 
   const everRefreshed = [homepagePromo, markdowns, coupons, freeShipping].some(
     (e) => e.last_refreshed_at != null
   );
   const totalRecords =
     promoRecords.length + markdownRecords.length + domainCoupons.length + domainShipping.length;
-  if (!everRefreshed && totalRecords === 0) {
-    // Monitored but never crawled — no signal, not "no promos".
+  if (totalRecords === 0 && (!everRefreshed || input.range)) {
+    // Never crawled — or a ranged pull with no crawl at or before the
+    // window's end. Either way: no signal for this window, not "no promos".
     return null;
   }
 

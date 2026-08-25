@@ -12,8 +12,11 @@ import { getDb } from "@/lib/server/db";
 import { AppError } from "@/lib/server/errors";
 import {
   fetchAdsDerivedSignals,
+  fetchCompetitorActivity,
   fetchCompetitorSignals,
-  isRivalSweeperConfigured
+  isRivalSweeperConfigured,
+  type CompetitorActivityEntry,
+  type ReportDateRange
 } from "@/lib/clients/rivalsweeper-client";
 import { upsertAlert, type AlertSeverity } from "@/lib/services/alert-writer-service";
 
@@ -294,7 +297,14 @@ export async function removeCompetitor(storeId: string, competitorId: string): P
 // ── Cron sync ───────────────────────────────────────────────────────────
 
 export async function syncCompetitorSignals(
-  storeId: string
+  storeId: string,
+  options?: {
+    // The dashboard's applied date range. The provider's report lookback is
+    // widened to cover it and records are scoped to it, so "last 90 days"
+    // actually describes 90 days — and a past range writes its snapshot onto
+    // the range's end date, where the period views expect it.
+    range?: ReportDateRange | null;
+  }
 ): Promise<{ snapshotsUpserted: number; skippedNoData: number }> {
   const db = getDb() as any;
   const competitors = await db.competitor.findMany({
@@ -304,13 +314,34 @@ export async function syncCompetitorSignals(
   if (competitors.length === 0) return { snapshotsUpserted: 0, skippedNoData: 0 };
 
   const now = new Date();
+  const rawRange = options?.range ?? null;
+  const range: ReportDateRange | undefined =
+    rawRange && rawRange.start.getTime() <= rawRange.end.getTime() && rawRange.start.getTime() < now.getTime()
+      ? { start: rawRange.start, end: rawRange.end.getTime() < now.getTime() ? rawRange.end : now }
+      : undefined;
+  // Snapshot day: today for a current window, the range's end day for a
+  // past one — so applying "אוגוסט 9–24" lands the data inside Aug 9–24.
+  const snapshotBasis = range ? range.end : now;
   const snapshotDate = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    Date.UTC(snapshotBasis.getUTCFullYear(), snapshotBasis.getUTCMonth(), snapshotBasis.getUTCDate())
   );
+  const snapshotIsToday = snapshotDate.getTime() === Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const source =
     process.env.RIVALSWEEPER_MOCK === "true" || !isRivalSweeperConfigured()
       ? "mock"
       : "rivalsweeper";
+
+  // Activity feed (ad library / homepage links / news) — the provider fills
+  // it days before the promo analyses, so it's often the ONLY live signal a
+  // competitor has. Persisted into signalsJson so the dashboard renders it
+  // straight from the DB instead of paying an API round-trip per page load.
+  const activityByDomain = new Map<string, CompetitorActivityEntry>();
+  if (source === "rivalsweeper" && snapshotIsToday) {
+    const activity = await fetchCompetitorActivity({ timeoutMs: 20_000 }).catch(() => null);
+    for (const entry of activity ?? []) {
+      activityByDomain.set(normalizeDomain(entry.domain), entry);
+    }
+  }
 
   let snapshotsUpserted = 0;
   let skippedNoData = 0;
@@ -318,7 +349,10 @@ export async function syncCompetitorSignals(
     let signals = await fetchCompetitorSignals({
       domain: competitor.domain,
       igHandle: competitor.igHandle,
-      date: now
+      // The mock derives its week key from this date, so a past range gets
+      // that week's deterministic signals rather than this week's.
+      date: snapshotBasis,
+      range
     });
     let rowSource = source;
     // Null = the promo-analysis pipeline has no data for this domain yet.
@@ -327,7 +361,7 @@ export async function syncCompetitorSignals(
     // domains while every promo report was empty) — an ad shouting
     // "20% הנחה" is a promo signal with budget behind it.
     if (signals === null) {
-      signals = await fetchAdsDerivedSignals(competitor.domain);
+      signals = await fetchAdsDerivedSignals(competitor.domain, undefined, range);
       if (signals !== null) rowSource = "rivalsweeper-ads";
     }
     // Still null = provider truly has nothing (not monitored / not yet
@@ -337,6 +371,22 @@ export async function syncCompetitorSignals(
       skippedNoData += 1;
       continue;
     }
+    // Activity is the provider's CURRENT state — attach it to today's
+    // snapshot only, never onto a historical range's row.
+    const activity = snapshotIsToday ? activityByDomain.get(normalizeDomain(competitor.domain)) : undefined;
+    const signalsJson = {
+      ...(typeof signals.raw === "object" && signals.raw !== null ? signals.raw : { raw: signals.raw }),
+      ...(activity
+        ? {
+            activity: {
+              adsActive: activity.adsActive,
+              adHeadlines: activity.adHeadlines.slice(0, 3),
+              homepageLinks: activity.homepageLinks.slice(0, 4),
+              news: activity.news.slice(0, 2)
+            }
+          }
+        : {})
+    };
     await db.competitorSnapshot.upsert({
       where: {
         storeId_competitorId_snapshotDate: {
@@ -351,7 +401,7 @@ export async function syncCompetitorSignals(
         maxDiscountPct: signals.maxDiscountPct,
         freeShippingThreshold: signals.freeShippingThreshold,
         homepageMessage: signals.homepageMessage,
-        signalsJson: signals.raw ?? undefined
+        signalsJson
       },
       create: {
         storeId,
@@ -362,7 +412,7 @@ export async function syncCompetitorSignals(
         maxDiscountPct: signals.maxDiscountPct,
         freeShippingThreshold: signals.freeShippingThreshold,
         homepageMessage: signals.homepageMessage,
-        signalsJson: signals.raw ?? undefined
+        signalsJson
       }
     });
     snapshotsUpserted += 1;

@@ -79,6 +79,9 @@ export function CompetitorBriefSection({
       <div className="grid gap-3 sm:grid-cols-2">
         {brief.competitors.map((c) => {
           const tier = TIER_LABEL[c.tier] ?? TIER_LABEL["mid-niche"];
+          // The move line arrives "·"-joined; one long run-on line is
+          // unreadable — each observation gets its own bullet.
+          const moveParts = c.move.split(" · ").map((p) => p.trim()).filter(Boolean);
           return (
             <Card key={c.name}>
               <CardContent className="p-4">
@@ -88,8 +91,25 @@ export function CompetitorBriefSection({
                     {isHe ? tier.he : tier.en}
                   </span>
                 </div>
-                <p className="mt-2 text-sm leading-6 text-foreground">{c.move}</p>
-                <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{c.implication}</p>
+                <ul className="mt-2 space-y-1">
+                  {moveParts.map((part, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-sm leading-6 text-foreground">
+                      <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-emerald-600" aria-hidden />
+                      <span className="min-w-0">{part}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 border-t border-border/60 pt-2 text-xs leading-5 text-muted-foreground">
+                  <span className="font-semibold text-foreground">
+                    {lang("מה זה אומר לכם: ", "What it means for you: ")}
+                  </span>
+                  {c.implication}
+                </p>
+                {c.lastChecked ? (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    {lang(`נבדק לאחרונה: ${c.lastChecked}`, `Last checked: ${c.lastChecked}`)}
+                  </p>
+                ) : null}
               </CardContent>
             </Card>
           );

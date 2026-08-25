@@ -3,6 +3,11 @@ import { toErrorMessage } from "@/lib/server/errors";
 import { runIncrementalSync } from "@/lib/services/shopify-sync-service";
 import { syncMetaAdsCampaignInsights } from "@/lib/services/meta-ads-service";
 import { crawlPublicInstagramProfiles } from "@/lib/services/instagram-public-crawler-service";
+import {
+  syncCompetitorSignals,
+  upsertCompetitorResponseAlerts
+} from "@/lib/services/competitor-intel-service";
+import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { assertStoreInActiveOrg } from "@/lib/auth/guards";
 
 type SourceResult = { ok: boolean; error?: string };
@@ -36,10 +41,28 @@ export async function POST(request: Request) {
     );
   }
 
-  const [shopify, meta, instagram] = await Promise.allSettled([
+  // The picker writes the reporting-date-range cookie BEFORE calling this
+  // route, so the cookie already holds the range the user just applied.
+  // RivalSweeper's pull is scoped to it — "last 90 days" scans 90 days of
+  // competitor records, and a past range lands its snapshot on the range's
+  // end date so the period views find it.
+  const range = await getReportingDateRangeSelection()
+    .then((selection) => ({ start: selection.start, end: selection.end }))
+    .catch(() => null);
+
+  const [shopify, meta, instagram, competitors] = await Promise.allSettled([
     runIncrementalSync(storeId),
     syncMetaAdsCampaignInsights({ storeId }),
-    crawlPublicInstagramProfiles({ storeId })
+    crawlPublicInstagramProfiles({ storeId }),
+    syncCompetitorSignals(storeId, { range }).then(async (res) => {
+      // Fresh snapshots → refresh the competitor-response alert queue too.
+      await upsertCompetitorResponseAlerts({
+        storeId,
+        start: new Date(Date.now() - 7 * 86_400_000),
+        end: new Date()
+      }).catch(() => null);
+      return res;
+    })
   ]);
 
   return NextResponse.json({
@@ -47,7 +70,8 @@ export async function POST(request: Request) {
     results: {
       shopify: describe(shopify),
       meta: describe(meta),
-      instagram: describe(instagram)
+      instagram: describe(instagram),
+      competitors: describe(competitors)
     }
   });
 }

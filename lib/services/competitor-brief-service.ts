@@ -168,6 +168,39 @@ async function buildActivityIntel(
   };
 }
 
+// Activity payload the sync cron embeds in CompetitorSnapshot.signalsJson
+// (ad-library volume, top ad messages, homepage links, news). Parsed
+// defensively — old snapshots simply don't have it.
+interface SnapshotActivity {
+  adsActive: number | null;
+  adHeadlines: string[];
+  homepageLinks: string[];
+  news: Array<{ title: string; source: string; date: string }>;
+}
+
+function activityFromSignals(signalsJson: unknown): SnapshotActivity | null {
+  if (typeof signalsJson !== "object" || signalsJson === null) return null;
+  const a = (signalsJson as Record<string, unknown>).activity;
+  if (typeof a !== "object" || a === null) return null;
+  const o = a as Record<string, unknown>;
+  const strings = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+  return {
+    adsActive: typeof o.adsActive === "number" && Number.isFinite(o.adsActive) ? o.adsActive : null,
+    adHeadlines: strings(o.adHeadlines),
+    homepageLinks: strings(o.homepageLinks),
+    news: Array.isArray(o.news)
+      ? (o.news as Array<Record<string, unknown>>)
+          .filter((n) => n && typeof n.title === "string" && n.title.trim() !== "")
+          .map((n) => ({
+            title: String(n.title),
+            source: typeof n.source === "string" ? n.source : "",
+            date: typeof n.date === "string" ? n.date : ""
+          }))
+      : []
+  };
+}
+
 async function buildLiveIntel(
   storeId: string,
   locale: "he" | "en"
@@ -190,18 +223,22 @@ async function buildLiveIntel(
     select: {
       competitorId: true,
       snapshotDate: true,
+      source: true,
       activePromoCount: true,
       maxDiscountPct: true,
       freeShippingThreshold: true,
-      homepageMessage: true
+      homepageMessage: true,
+      signalsJson: true
     }
   })) as Array<{
     competitorId: string;
     snapshotDate: Date;
+    source: string;
     activePromoCount: number;
     maxDiscountPct: unknown;
     freeShippingThreshold: unknown;
     homepageMessage: string | null;
+    signalsJson: unknown;
   }>;
   // No promo snapshots yet (the provider's promo analyses fill later than
   // its raw crawl) — fall back to live activity data (ads / homepage links
@@ -209,6 +246,7 @@ async function buildLiveIntel(
   if (snaps.length === 0) return buildActivityIntel(competitors, locale);
 
   const num = (v: unknown) => (v == null ? null : Number(v));
+  const nf = new Intl.NumberFormat(isHe ? "he-IL" : "en-US");
   const byCompetitor = new Map<string, typeof snaps>();
   for (const s of snaps) {
     const list = byCompetitor.get(s.competitorId) ?? [];
@@ -233,15 +271,50 @@ async function buildLiveIntel(
 
     const pct = num(latest.maxDiscountPct);
     const ship = num(latest.freeShippingThreshold);
+    const activity = activityFromSignals(latest.signalsJson);
+    // Ads-derived snapshots measure the competitor's ADS, not their site —
+    // "no promos on site" would be a claim the data doesn't make.
+    const fromAds = latest.source === "rivalsweeper-ads";
     const moveParts: string[] = [];
     moveParts.push(
       latest.activePromoCount > 0
-        ? t(`${latest.activePromoCount} מבצעים פעילים באתר`, `${latest.activePromoCount} active promos on site`)
-        : t("אין מבצעים פעילים באתר", "No active promos on site")
+        ? fromAds
+          ? t(`${latest.activePromoCount} מודעות עם מבצע או הנחה`, `${latest.activePromoCount} ads carrying a promo or discount`)
+          : t(`${latest.activePromoCount} מבצעים פעילים באתר`, `${latest.activePromoCount} active promos on site`)
+        : fromAds
+          ? t("לא זוהו מבצעים או הנחות במודעות שלהם", "No promos or discounts detected in their ads")
+          : t("אין מבצעים פעילים באתר", "No active promos on site")
     );
     if (pct != null && pct > 0) moveParts.push(t(`הנחה עד ${Math.round(pct)}%`, `Discounts up to ${Math.round(pct)}%`));
     if (ship != null && ship > 0) moveParts.push(t(`משלוח חינם מעל ₪${Math.round(ship)}`, `Free shipping over ₪${Math.round(ship)}`));
     if (latest.homepageMessage) moveParts.push(t(`בעמוד הבית: "${latest.homepageMessage}"`, `Homepage: "${latest.homepageMessage}"`));
+    if (activity) {
+      if (activity.adsActive != null && activity.adsActive > 0) {
+        moveParts.push(
+          t(
+            `מריצים כ־${nf.format(activity.adsActive)} מודעות בספריית המודעות`,
+            `Running ~${nf.format(activity.adsActive)} ads in the ad library`
+          )
+        );
+      }
+      if (activity.adHeadlines.length > 0) {
+        moveParts.push(
+          t(`המסר המוביל במודעות: "${activity.adHeadlines[0]}"`, `Top ad message: "${activity.adHeadlines[0]}"`)
+        );
+      }
+      if (activity.homepageLinks.length > 0) {
+        // Join with commas, not "·" — the UI splits the move line on "·".
+        moveParts.push(
+          t(
+            `מקדמים בדף הבית: ${activity.homepageLinks.slice(0, 3).join(", ")}`,
+            `Pushing on their homepage: ${activity.homepageLinks.slice(0, 3).join(", ")}`
+          )
+        );
+      }
+      if (activity.news.length > 0) {
+        moveParts.push(t(`בחדשות: "${activity.news[0].title}"`, `In the news: "${activity.news[0].title}"`));
+      }
+    }
 
     // Week-over-week read: this is where the intel becomes an action.
     let implication = t("ללא שינוי מהותי מול הבדיקה הקודמת.", "No material change since the previous check.");
@@ -271,13 +344,19 @@ async function buildLiveIntel(
       );
     } else if (latest.activePromoCount > 0) {
       implication = t("מריצים מבצע פעיל — לעקוב אם הוא הופך לקבוע.", "Running an active promo — watch whether it becomes permanent.");
+    } else if (activity && activity.adsActive != null && activity.adsActive > 0) {
+      implication = t(
+        "מפרסמים בתקציב אמיתי בלי הנחות — המסר שלהם הוא המותג והמוצר. לוודא שהבידול שלכם מולם ברור.",
+        "Advertising with real budget and no discounts — their message is brand and product. Make sure your differentiation against them is clear."
+      );
     }
 
     entries.push({
       name: competitor.name,
       tier: "tracked",
       move: moveParts.join(" · "),
-      implication
+      implication,
+      lastChecked: dateStr
     });
   }
   if (entries.length === 0) return null;
