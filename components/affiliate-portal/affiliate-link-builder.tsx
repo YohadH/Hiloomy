@@ -6,7 +6,7 @@
 // parameters. Pure client-side string building; the heavy lifting lives in
 // app/r/[slug]/[code]/route.ts.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 interface AffiliateOption {
@@ -44,6 +44,8 @@ export function TrackedLinkComposer({
   const [utmMedium, setUtmMedium] = useState("bio");
   const [utmCampaign, setUtmCampaign] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [shortUrl, setShortUrl] = useState<string | null>(null);
+  const [minting, setMinting] = useState(false);
 
   const affiliate = affiliates.find((item) => item.id === affiliateId) ?? affiliates[0];
   const affiliateCoupons = coupons.filter((item) => item.affiliateId === (affiliate?.id ?? ""));
@@ -61,12 +63,57 @@ export function TrackedLinkComposer({
     return `${baseUrl}/r/${slug}/${encodeURIComponent(affiliate.affiliateCode)}${query ? `?${query}` : ""}`;
   }, [affiliate, baseUrl, couponCode, destination, slug, utmCampaign, utmMedium, utmSource]);
 
-  async function handleCopy() {
+  // A minted short link is a snapshot of the fields — editing any field
+  // makes it stale, so drop it and show the live preview again.
+  useEffect(() => {
+    setShortUrl(null);
+  }, [generatedLink]);
+
+  async function handleCopy(link: string) {
     try {
-      await navigator.clipboard.writeText(generatedLink);
+      await navigator.clipboard.writeText(link);
       setMessage(lang("הקישור הועתק ללוח.", "The link was copied to the clipboard."));
     } catch {
       setMessage(lang("לא ניתן להעתיק — העתיקו ידנית.", "Could not copy — please copy manually."));
+    }
+  }
+
+  async function handleMintShortLink() {
+    if (!affiliate || minting) return;
+    setMinting(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/affiliate-portal/short-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          affiliateId: affiliate.id,
+          couponCode: couponCode || null,
+          destinationPath: destination,
+          utmSource,
+          utmMedium,
+          utmCampaign
+        })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.ok || !body?.url) {
+        throw new Error(body?.error ?? lang("יצירת הקישור נכשלה.", "Could not create the short link."));
+      }
+      setShortUrl(body.url);
+      try {
+        await navigator.clipboard.writeText(body.url);
+        setMessage(lang("הקישור הקצר נוצר והועתק ללוח.", "Short link created and copied to the clipboard."));
+      } catch {
+        setMessage(lang("הקישור הקצר נוצר — העתיקו אותו.", "Short link created — copy it below."));
+      }
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : lang("יצירת הקישור נכשלה.", "Could not create the short link.")
+      );
+    } finally {
+      setMinting(false);
     }
   }
 
@@ -182,15 +229,34 @@ export function TrackedLinkComposer({
         </label>
       </div>
 
-      <div className="space-y-2 text-sm">
-        <span className="text-muted-foreground">{lang("הקישור המוכן", "Generated link")}</span>
-        <div dir="ltr" className="rounded-xl border border-border bg-card px-4 py-3 text-xs leading-6 break-all">
-          {generatedLink}
+      {shortUrl ? (
+        <div className="space-y-2 text-sm">
+          <span className="text-muted-foreground">{lang("הקישור הקצר", "Short link")}</span>
+          <div dir="ltr" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium leading-6 break-all dark:border-emerald-800 dark:bg-emerald-950/40">
+            {shortUrl}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-2 text-sm">
+          <span className="text-muted-foreground">{lang("תצוגה מקדימה (הצורה הארוכה)", "Preview (long form)")}</span>
+          <div dir="ltr" className="rounded-xl border border-border bg-card px-4 py-3 text-xs leading-6 break-all">
+            {generatedLink}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" variant="secondary" onClick={handleCopy} disabled={!generatedLink}>
+        <Button type="button" onClick={handleMintShortLink} disabled={minting || !affiliate}>
+          {minting
+            ? lang("יוצר קישור...", "Creating link...")
+            : lang("יצירת קישור קצר", "Create short link")}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => handleCopy(shortUrl ?? generatedLink)}
+          disabled={!shortUrl && !generatedLink}
+        >
           {lang("העתקת קישור", "Copy link")}
         </Button>
         {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}

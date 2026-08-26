@@ -72,6 +72,7 @@ const PUBLIC_PREFIXES = [
   // public only in the sense of not requiring an app (Supabase) login.
   "/join/",
   "/r/",
+  "/l/",
   "/my/",
   "/api/join/",
   "/api/my/",

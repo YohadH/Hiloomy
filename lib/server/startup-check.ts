@@ -140,6 +140,11 @@ const EXPECTED_SCHEMA_COLUMNS: Array<{ table: string; column: string; fixWith: s
     table: "AffiliateProgram",
     column: "signupSlug",
     fixWith: "prisma/migrations/20260825_affiliate_signup/migration.sql"
+  },
+  {
+    table: "AffiliateShortLink",
+    column: "token",
+    fixWith: "prisma/migrations/20260826_affiliate_short_links/migration.sql"
   }
 ];
 

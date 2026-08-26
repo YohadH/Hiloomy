@@ -211,6 +211,7 @@ model Store {
   affiliateMembers           AffiliateMember[]
   affiliateCoupons           AffiliateCoupon[]
   affiliateCouponAssignments AffiliateCouponAssignment[]
+  affiliateShortLinks        AffiliateShortLink[]
   affiliateAttributions      AffiliateAttribution[]
   agentSettings              AgentSettings?
   agentFindings              AgentFinding[]
@@ -1098,10 +1099,36 @@ model AffiliateMember {
   couponAssignments      AffiliateCouponAssignment[]
   attributions           AffiliateAttribution[]
   attributionSessions    AttributionSession[]
+  trackedShortLinks      AffiliateShortLink[]
 
   @@unique([storeId, email])
   @@unique([storeId, affiliateCode])
   @@index([storeId, status])
+}
+
+// ── Short share links (owner request 2026-08-26) ─────────────────────────
+// hiloomy.com/l/{token} — the genuinely short form of the tracked link.
+// The token row stores everything /r/{slug}/{code} takes as query params
+// (coupon, destination, UTMs), so the URL an affiliate shares stays tiny.
+// Token is globally unique because the resolver route has no store context.
+model AffiliateShortLink {
+  id                String          @id @default(cuid())
+  storeId           String
+  affiliateMemberId String
+  token             String          @unique
+  couponCode        String?
+  destinationPath   String          @default("/")
+  utmSource         String?
+  utmMedium         String?
+  utmCampaign       String?
+  // Per-link click counter for quick UI stats; the canonical click record
+  // stays AttributionSession (written by the resolver on every hit).
+  clicks            Int             @default(0)
+  createdAt         DateTime        @default(now())
+  store             Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  affiliateMember   AffiliateMember @relation(fields: [affiliateMemberId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, affiliateMemberId])
 }
 
 model AffiliateCoupon {
