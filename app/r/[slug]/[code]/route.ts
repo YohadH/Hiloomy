@@ -34,11 +34,17 @@ export async function GET(
   const utmSource = url.searchParams.get("utm_source") ?? "affiliate";
   const utmMedium = url.searchParams.get("utm_medium") ?? "referral";
   const utmCampaign = url.searchParams.get("utm_campaign");
+  // Optional coupon auto-apply (?coupon=X15): the redirect goes through
+  // Shopify's /discount/{code} endpoint, which stores the code for checkout.
+  // Restricted charset — the value lands in a URL path.
+  const rawCoupon = url.searchParams.get("coupon")?.trim() ?? "";
+  const coupon = /^[A-Za-z0-9._-]{1,64}$/.test(rawCoupon) ? rawCoupon : null;
 
   try {
     const session = await createAffiliateRedirectSession({
       storeId: context.store.id,
       affiliateCode: decodeURIComponent(code),
+      couponCode: coupon,
       destinationPath,
       sourceUrl: request.headers.get("referer"),
       utmSource,
@@ -49,15 +55,26 @@ export async function GET(
       userAgent: request.headers.get("user-agent")
     });
 
-    const redirectUrl = buildTrackedDestinationUrl({
+    const trackedUrl = buildTrackedDestinationUrl({
       shopDomain: context.store.domain,
       destinationPath,
+      couponCode: coupon,
       affiliateCode: session.affiliate.affiliateCode,
       clickId: session.clickId,
       utmSource,
       utmMedium,
       utmCampaign
     });
+    // With a coupon, hop via /discount/{code}. The tracked path (ref +
+    // agent_click_id + UTMs) rides INSIDE the redirect param, so it reaches
+    // the landing URL no matter which query params Shopify itself forwards.
+    let redirectUrl = trackedUrl;
+    if (coupon) {
+      const tracked = new URL(trackedUrl);
+      redirectUrl = `https://${context.store.domain}/discount/${encodeURIComponent(
+        coupon
+      )}?redirect=${encodeURIComponent(`${tracked.pathname}${tracked.search}`)}`;
+    }
     const response = NextResponse.redirect(redirectUrl, { status: 307 });
     response.cookies.set("aff_click_id", session.clickId, {
       httpOnly: true,
@@ -68,7 +85,11 @@ export async function GET(
     });
     return response;
   } catch {
-    // Unknown code / DB blip — deliver the visitor to the store anyway.
-    return NextResponse.redirect(`https://${context.store.domain}${destinationPath}`, { status: 307 });
+    // Unknown code / DB blip — deliver the visitor to the store anyway,
+    // still applying the promised coupon (unattributed beats broken).
+    const fallback = coupon
+      ? `https://${context.store.domain}/discount/${encodeURIComponent(coupon)}?redirect=${encodeURIComponent(destinationPath)}`
+      : `https://${context.store.domain}${destinationPath}`;
+    return NextResponse.redirect(fallback, { status: 307 });
   }
 }

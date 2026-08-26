@@ -1,124 +1,112 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+// Short tracked-link composer (owner request 2026-08-26). Assembles the
+// hiloomy.com/r/{slug}/{code} link — which counts the click, sets the
+// 30-day cookie, and optionally auto-applies a coupon — with editable UTM
+// parameters. Pure client-side string building; the heavy lifting lives in
+// app/r/[slug]/[code]/route.ts.
 
-interface CouponTemplate {
-  id: string;
-  name: string;
-  discountType: string;
-  value: number;
-}
+import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 interface AffiliateOption {
   id: string;
   firstName: string;
   lastName: string;
   affiliateCode: string;
-  couponCode?: string | null;
 }
 
-export function AffiliateLinkBuilder({
-  baseStoreUrl,
-  templates,
+interface CouponOption {
+  code: string;
+  affiliateId: string;
+}
+
+export function TrackedLinkComposer({
+  baseUrl,
+  slug,
   affiliates,
+  coupons,
   locale = "he"
 }: {
-  baseStoreUrl: string;
-  templates: CouponTemplate[];
+  baseUrl: string;
+  slug: string | null;
   affiliates: AffiliateOption[];
+  coupons: CouponOption[];
   locale?: "he" | "en";
 }) {
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
 
-  const router = useRouter();
   const [affiliateId, setAffiliateId] = useState(affiliates[0]?.id ?? "");
-  const [templateId, setTemplateId] = useState(templates[0]?.id ?? "");
-  const [customCode, setCustomCode] = useState("");
-  const [redirectPath, setRedirectPath] = useState("/");
+  const [couponCode, setCouponCode] = useState("");
+  const [destination, setDestination] = useState("/");
+  const [utmSource, setUtmSource] = useState("instagram");
+  const [utmMedium, setUtmMedium] = useState("bio");
+  const [utmCampaign, setUtmCampaign] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
 
   const affiliate = affiliates.find((item) => item.id === affiliateId) ?? affiliates[0];
-  const selected = templates.find((template) => template.id === templateId) ?? templates[0];
-  const generatedCode = (customCode.trim() || affiliate?.couponCode || `${affiliate?.affiliateCode ?? "AFF"}${Math.round(selected?.value ?? 15)}`).toUpperCase();
+  const affiliateCoupons = coupons.filter((item) => item.affiliateId === (affiliate?.id ?? ""));
 
   const generatedLink = useMemo(() => {
-    if (!affiliate || !selected) return "";
-    const params = new URLSearchParams({
-      ref: affiliate.affiliateCode.toLowerCase(),
-      coupon: generatedCode,
-      destination: redirectPath.startsWith("/") ? redirectPath : `/${redirectPath}` ,
-      utm_source: "affiliate",
-      utm_medium: "creator",
-      utm_campaign: affiliate.affiliateCode.toLowerCase()
-    });
-    return `${baseStoreUrl.replace(/\/$/, "")}/api/affiliate-portal/redirect?${params.toString()}`;
-  }, [affiliate, baseStoreUrl, generatedCode, redirectPath]);
+    if (!slug || !affiliate) return "";
+    const params = new URLSearchParams();
+    if (couponCode) params.set("coupon", couponCode);
+    const path = destination.trim();
+    if (path && path !== "/") params.set("to", path.startsWith("/") ? path : `/${path}`);
+    if (utmSource.trim()) params.set("utm_source", utmSource.trim());
+    if (utmMedium.trim()) params.set("utm_medium", utmMedium.trim());
+    if (utmCampaign.trim()) params.set("utm_campaign", utmCampaign.trim());
+    const query = params.toString();
+    return `${baseUrl}/r/${slug}/${encodeURIComponent(affiliate.affiliateCode)}${query ? `?${query}` : ""}`;
+  }, [affiliate, baseUrl, couponCode, destination, slug, utmCampaign, utmMedium, utmSource]);
 
-  async function handleCreateCoupon() {
-    if (!affiliate || !selected) return;
-    setMessage(null);
-    startTransition(async () => {
-      try {
-        const response = await fetch("/api/affiliate-portal/coupons/create", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            affiliateId: affiliate.id,
-            code: generatedCode,
-            title: selected.name,
-            discountType: selected.discountType,
-            value: selected.value,
-            appliesOncePerCustomer: true,
-            redirectPath
-          })
-        });
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.error ?? lang("יצירת הקופון נכשלה", "Could not create the coupon."));
-        }
-        setMessage(
-          lang(
-            `הקופון ${payload.code} נוצר ב-Shopify ומוכן לשיתוף.`,
-            `Coupon ${payload.code} was created in Shopify and is ready to share.`
-          )
-        );
-        router.refresh();
-      } catch (error) {
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : lang("יצירת הקופון נכשלה", "Could not create the coupon.")
-        );
-      }
-    });
-  }
-
-  async function handleCopyLink() {
+  async function handleCopy() {
     try {
       await navigator.clipboard.writeText(generatedLink);
       setMessage(lang("הקישור הועתק ללוח.", "The link was copied to the clipboard."));
     } catch {
-      setMessage(
-        lang(
-          "לא ניתן להעתיק את הקישור. העתיקו אותו ידנית.",
-          "Could not copy the link. Please copy it manually."
-        )
-      );
+      setMessage(lang("לא ניתן להעתיק — העתיקו ידנית.", "Could not copy — please copy manually."));
     }
+  }
+
+  if (!slug) {
+    return (
+      <div className="rounded-2xl border border-border/70 bg-background/70 p-4 text-sm text-muted-foreground">
+        {lang(
+          "כדי להנפיק קישורים מקוצרים צריך קודם להגדיר כתובת מותג (slug) בהגדרות הפורטל.",
+          "Set the program's signup slug in the portal settings to start issuing short links."
+        )}{" "}
+        <a href="/affiliate-portal/settings" className="font-medium text-primary underline">
+          {lang("להגדרות ←", "Go to settings →")}
+        </a>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-4">
-      <div className="grid gap-3 xl:grid-cols-4">
+      <div>
+        <h3 className="text-sm font-semibold">
+          {lang("קישור מקוצר לשיתוף", "Short share link")}
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          {lang(
+            "הקישור סופר את הקליק, שומר ייחוס ל־30 יום, ומחיל את הקופון שנבחר אוטומטית.",
+            "The link counts the click, keeps 30-day attribution, and auto-applies the selected coupon."
+          )}
+        </p>
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-3">
         <label className="space-y-2 text-sm">
-          <span className="text-muted-foreground">{lang("שותפה", "Affiliate")}</span>
+          <span className="text-muted-foreground">{lang("שותף/ה", "Affiliate")}</span>
           <select
             value={affiliateId}
-            onChange={(event) => setAffiliateId(event.target.value)}
+            onChange={(event) => {
+              setAffiliateId(event.target.value);
+              setCouponCode("");
+            }}
             aria-label={lang("בחירת שותפה", "Select affiliate")}
             className="w-full rounded-xl border border-border bg-background px-4 py-3"
           >
@@ -130,37 +118,27 @@ export function AffiliateLinkBuilder({
           </select>
         </label>
         <label className="space-y-2 text-sm">
-          <span className="text-muted-foreground">{lang("תבנית הנחה", "Discount template")}</span>
+          <span className="text-muted-foreground">{lang("קופון (אופציונלי)", "Coupon (optional)")}</span>
           <select
-            value={templateId}
-            onChange={(event) => setTemplateId(event.target.value)}
-            aria-label={lang("בחירת תבנית הנחה", "Select discount template")}
+            value={couponCode}
+            onChange={(event) => setCouponCode(event.target.value)}
+            aria-label={lang("בחירת קופון", "Select coupon")}
             className="w-full rounded-xl border border-border bg-background px-4 py-3"
           >
-            {templates.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.name} · {template.discountType === "percent" ? `${template.value}%` : `₪${template.value}`}
+            <option value="">{lang("ללא קופון", "No coupon")}</option>
+            {affiliateCoupons.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.code}
               </option>
             ))}
           </select>
         </label>
         <label className="space-y-2 text-sm">
-          <span className="text-muted-foreground">{lang("קוד מותאם", "Custom code")}</span>
+          <span className="text-muted-foreground">{lang("נתיב יעד בחנות", "Destination path")}</span>
           <input
-            value={customCode}
-            onChange={(event) => setCustomCode(event.target.value.toUpperCase())}
-            placeholder={generatedCode}
-            dir="ltr"
-            aria-label={lang("קוד קופון מותאם", "Custom coupon code")}
-            className="w-full rounded-xl border border-border bg-background px-4 py-3"
-          />
-        </label>
-        <label className="space-y-2 text-sm">
-          <span className="text-muted-foreground">{lang("נתיב יעד", "Destination path")}</span>
-          <input
-            value={redirectPath}
-            onChange={(event) => setRedirectPath(event.target.value || "/")}
-            placeholder="/"
+            value={destination}
+            onChange={(event) => setDestination(event.target.value)}
+            placeholder="/products/example"
             dir="ltr"
             aria-label={lang("נתיב יעד בחנות", "Destination path in the store")}
             className="w-full rounded-xl border border-border bg-background px-4 py-3"
@@ -168,25 +146,55 @@ export function AffiliateLinkBuilder({
         </label>
       </div>
 
-      <div className="space-y-2 text-sm">
-        <span className="text-muted-foreground">
-          {lang("קישור הפניה שמחיל את הקופון אוטומטית", "Referral link that applies the coupon automatically")}
-        </span>
-        <div dir="ltr" className="rounded-xl border border-border bg-card px-4 py-3 text-xs leading-6 break-all">{generatedLink}</div>
+      <div className="grid gap-3 xl:grid-cols-3">
+        <label className="space-y-2 text-sm">
+          <span className="text-muted-foreground">utm_source</span>
+          <input
+            value={utmSource}
+            onChange={(event) => setUtmSource(event.target.value)}
+            placeholder="instagram"
+            dir="ltr"
+            aria-label="utm_source"
+            className="w-full rounded-xl border border-border bg-background px-4 py-3"
+          />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="text-muted-foreground">utm_medium</span>
+          <input
+            value={utmMedium}
+            onChange={(event) => setUtmMedium(event.target.value)}
+            placeholder="bio / story / reel"
+            dir="ltr"
+            aria-label="utm_medium"
+            className="w-full rounded-xl border border-border bg-background px-4 py-3"
+          />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="text-muted-foreground">utm_campaign</span>
+          <input
+            value={utmCampaign}
+            onChange={(event) => setUtmCampaign(event.target.value)}
+            placeholder={lang("למשל summer-launch", "e.g. summer-launch")}
+            dir="ltr"
+            aria-label="utm_campaign"
+            className="w-full rounded-xl border border-border bg-background px-4 py-3"
+          />
+        </label>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Button type="button" onClick={handleCreateCoupon} disabled={isPending || !affiliate || !selected}>
-          {isPending
-            ? lang("יוצר קופון...", "Creating coupon...")
-            : lang("הפקת קופון והפעלה ב-Shopify", "Create coupon and activate in Shopify")}
-        </Button>
-        <Button type="button" variant="secondary" onClick={handleCopyLink} disabled={!generatedLink}>
+      <div className="space-y-2 text-sm">
+        <span className="text-muted-foreground">{lang("הקישור המוכן", "Generated link")}</span>
+        <div dir="ltr" className="rounded-xl border border-border bg-card px-4 py-3 text-xs leading-6 break-all">
+          {generatedLink}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="secondary" onClick={handleCopy} disabled={!generatedLink}>
           {lang("העתקת קישור", "Copy link")}
         </Button>
+        {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
       </div>
-
-      {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
     </div>
   );
 }

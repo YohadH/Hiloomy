@@ -7,6 +7,7 @@ import {
   resolveAffiliateSourcePlatform,
   safeTrackingString
 } from "@/lib/services/affiliate-attribution-source";
+import { appBaseUrl } from "@/lib/services/affiliate-signup-service";
 import { resolveOrCreateBaseStore } from "@/lib/services/creator-admin-service";
 import { getStoredShopifyCredentials } from "@/lib/services/shopify-connection-service";
 import { createShopifyClient } from "@/lib/shopify/client";
@@ -198,8 +199,23 @@ function normalizeRedirectTarget(redirectPath?: string) {
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
-function buildApplyLink(storeDomain: string, code: string, affiliateCode: string, redirectPath?: string) {
+function buildApplyLink(
+  storeDomain: string,
+  code: string,
+  affiliateCode: string,
+  redirectPath?: string,
+  signupSlug?: string | null
+) {
   const redirect = normalizeRedirectTarget(redirectPath);
+  // Preferred: the short Hiloomy link — routes through the click tracker
+  // (session row + 30-day cookie) AND auto-applies the coupon via the /r
+  // redirect. The long /discount form below records no click at all, so it
+  // survives only as a fallback for programs without a signup slug.
+  if (signupSlug) {
+    const params = new URLSearchParams({ coupon: code });
+    if (redirect !== "/" && !/^https?:\/\//i.test(redirect)) params.set("to", redirect);
+    return `${appBaseUrl()}/r/${signupSlug}/${encodeURIComponent(affiliateCode)}?${params.toString()}`;
+  }
   return `https://${storeDomain}/discount/${encodeURIComponent(code)}?redirect=${encodeURIComponent(
     redirect
   )}&ref=${encodeURIComponent(affiliateCode)}`;
@@ -219,7 +235,13 @@ async function getCouponAdminContext(storeId?: string) {
     apiVersion: DISCOUNT_API_VERSION
   });
 
-  return { db, store, client };
+  const program = await db.affiliateProgram?.findFirst({
+    where: { storeId: store.id },
+    orderBy: { createdAt: "asc" },
+    select: { signupSlug: true }
+  });
+
+  return { db, store, client, signupSlug: (program?.signupSlug as string | undefined) ?? null };
 }
 
 async function resolveAffiliateOrThrow(context: CouponAdminContext, affiliateId: string) {
@@ -483,7 +505,13 @@ async function createAffiliateCouponWithContext(
 ) {
   const affiliate = preloadedAffiliate ?? (await resolveAffiliateOrThrow(context, input.affiliateId));
   const { createdCode, discountNode } = await createShopifyDiscountWithRetry(context, input);
-  const applyLink = buildApplyLink(context.store.domain, createdCode, affiliate.affiliateCode, input.redirectPath);
+  const applyLink = buildApplyLink(
+    context.store.domain,
+    createdCode,
+    affiliate.affiliateCode,
+    input.redirectPath,
+    context.signupSlug
+  );
   const coupon = await persistCouponAssignment(
     context,
     affiliate,
@@ -511,7 +539,13 @@ async function attachExistingAffiliateCouponWithContext(
 ) {
   const affiliate = await resolveAffiliateOrThrow(context, input.affiliateId);
   const createdCode = normalizeCouponCode(input.code);
-  const applyLink = buildApplyLink(context.store.domain, createdCode, affiliate.affiliateCode, input.redirectPath);
+  const applyLink = buildApplyLink(
+    context.store.domain,
+    createdCode,
+    affiliate.affiliateCode,
+    input.redirectPath,
+    context.signupSlug
+  );
   const coupon = await persistCouponAssignment(
     context,
     affiliate,

@@ -79,7 +79,8 @@ export function AffiliateSignupForm({ slug, accent }: { slug: string; accent: st
       <input
         value={instagram}
         onChange={(e) => setInstagram(e.target.value)}
-        placeholder="@ שם המשתמש באינסטגרם (לא חובה)"
+        placeholder="@ שם המשתמש באינסטגרם או קישור לפרופיל"
+        required
         aria-label="אינסטגרם"
         dir="ltr"
         className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200"

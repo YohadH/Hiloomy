@@ -92,41 +92,32 @@ export async function getProgramBySlug(slug: string): Promise<SignupProgramConte
   };
 }
 
-// ── Readable affiliate codes ────────────────────────────────────────────
-// Codes end up spoken aloud in Reels and typed into bios, so they come
-// from the person's own identity: Instagram handle first, then the email
-// local-part, then the latin part of the name. Uppercased alnum, numeric
-// suffix on collision.
+// ── Affiliate codes ─────────────────────────────────────────────────────
+// Six random digits (owner request 2026-08-26 — replaced the old
+// identity-derived codes like "YOADHAKIMV"): short in shared URLs and no
+// name/handle leaking through the ref parameter. First digit non-zero so
+// the code survives spreadsheets and retyping intact. 900k keyspace per
+// store is plenty for realistic rosters; collisions just redraw.
 
-function codeBase(input: { fullName: string; email: string; instagram?: string | null }): string {
-  const candidates = [
-    (input.instagram ?? "").replace(/^@/, ""),
-    input.email.split("@")[0] ?? "",
-    input.fullName
-  ];
-  for (const candidate of candidates) {
-    const cleaned = candidate.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
-    if (cleaned.length >= 3) return cleaned;
-  }
-  return `AFF${Math.floor(100 + Math.random() * 900)}`;
+function newAffiliateKey(): string {
+  return String(Math.floor(100_000 + Math.random() * 900_000));
 }
 
 async function uniqueAffiliateCode(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
-  storeId: string,
-  base: string
+  storeId: string
 ): Promise<string> {
-  let candidate = base;
   for (let i = 0; i < 20; i += 1) {
+    const candidate = newAffiliateKey();
     const exists = await db.affiliateMember.findFirst({
       where: { storeId, affiliateCode: { equals: candidate, mode: "insensitive" } },
       select: { id: true }
     });
     if (!exists) return candidate;
-    candidate = `${base}${Math.floor(10 + Math.random() * 90)}`.slice(0, 14);
   }
-  return `${base}${Date.now() % 10000}`;
+  // 20 straight collisions ≈ a saturated keyspace — widen instead of failing.
+  return `${newAffiliateKey()}${Date.now() % 1000}`;
 }
 
 // ── Public signup ───────────────────────────────────────────────────────
@@ -156,6 +147,21 @@ export interface RegisterAffiliateResult {
   sessionToken?: string;
 }
 
+// Accepts whatever people actually paste — "@name", "name", or a full
+// profile link (instagram.com/name?igsh=…) — and reduces it to the bare
+// handle. Returns null when nothing resolvable remains, which the caller
+// treats as "field not filled" (it is mandatory).
+function normalizeInstagramHandle(raw: unknown): string | null {
+  let value = String(raw ?? "").trim();
+  if (!value) return null;
+  const urlMatch = value.match(/instagram\.com\/([^/?#\s]+)/i);
+  if (urlMatch) value = urlMatch[1];
+  value = value.replace(/^@+/, "").trim();
+  // Instagram's own handle rules: letters, digits, dots, underscores, ≤30.
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(value)) return null;
+  return value.toLowerCase();
+}
+
 export async function registerAffiliate(input: {
   slug: string;
   fullName?: string;
@@ -169,11 +175,14 @@ export async function registerAffiliate(input: {
 
   const fullName = String(input.fullName ?? "").trim().slice(0, 120);
   const email = String(input.email ?? "").trim().toLowerCase().slice(0, 200);
-  const instagram = input.instagram
-    ? String(input.instagram).trim().replace(/^@/, "").slice(0, 80)
-    : null;
+  const instagram = normalizeInstagramHandle(input.instagram);
   if (fullName.length < 2) throw new AppError("נא למלא שם מלא.", 400);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError("כתובת אימייל לא תקינה.", 400);
+  // Mandatory — the profile URL feeds the content crawler, so a signup
+  // without a resolvable Instagram account is worthless to the program.
+  if (!instagram) {
+    throw new AppError("נא למלא שם משתמש באינסטגרם או קישור לפרופיל (למשל @yourname).", 400);
+  }
 
   // Same email already registered for THIS store → this is a returning
   // affiliate, not a duplicate: hand back a login path instead of erroring.
@@ -194,11 +203,7 @@ export async function registerAffiliate(input: {
   const nameParts = fullName.split(/\s+/);
   const firstName = nameParts[0] ?? fullName;
   const lastName = nameParts.slice(1).join(" ");
-  const affiliateCode = await uniqueAffiliateCode(
-    db,
-    context.store.id,
-    codeBase({ fullName, email, instagram })
-  );
+  const affiliateCode = await uniqueAffiliateCode(db, context.store.id);
   const status = context.program.autoApprove ? "approved" : "pending";
 
   const member = await db.affiliateMember.create({

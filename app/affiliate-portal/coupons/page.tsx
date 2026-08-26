@@ -4,7 +4,9 @@ import { AffiliatePortalNav } from "@/components/affiliate-portal/portal-nav";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getAffiliateCoupons, getAffiliates } from "@/lib/services/affiliate-portal-service";
 import { getAffiliateCouponBuilderOptions } from "@/lib/services/affiliate-portal-admin-service";
+import { appBaseUrl, getSignupSettings } from "@/lib/services/affiliate-signup-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
+import { TrackedLinkComposer } from "@/components/affiliate-portal/affiliate-link-builder";
 import { getAppLocale } from "@/lib/i18n";
 import { DataTable } from "@/components/shared/data-table";
 import { AffiliateCouponManager } from "@/components/affiliate-portal/affiliate-coupon-manager";
@@ -21,6 +23,9 @@ export default async function CouponsPage() {
     getAffiliateCouponBuilderOptions(activeStoreId ?? undefined),
     getAppLocale()
   ]);
+  const signupSettings = activeStoreId
+    ? await getSignupSettings(activeStoreId).catch(() => null)
+    : null;
   const baseStoreUrl = `https://${chrome.store.domain}`;
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
@@ -50,6 +55,19 @@ export default async function CouponsPage() {
         collections={options.collections}
         customerSegments={options.customerSegments}
         defaultMode="single"
+        locale={isHe ? "he" : "en"}
+      />
+
+      <TrackedLinkComposer
+        baseUrl={appBaseUrl()}
+        slug={signupSettings?.signupSlug ?? null}
+        affiliates={affiliates.map((item) => ({
+          id: item.id,
+          firstName: item.firstName,
+          lastName: item.lastName,
+          affiliateCode: item.affiliateCode
+        }))}
+        coupons={coupons.map((item) => ({ code: item.code, affiliateId: item.affiliateId }))}
         locale={isHe ? "he" : "en"}
       />
 
