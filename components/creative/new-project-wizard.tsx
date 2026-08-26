@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Loader2, Upload, Box, ImageIcon, Film, Megaphone, Sparkles, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,11 @@ import {
 } from "@/lib/domain/creative-types";
 import type { CreativeProviderStatus } from "@/lib/services/creative-provider-availability";
 import { ProductPicker, type SelectedProduct } from "@/components/shared/product-picker";
+import {
+  CREATIVE_AGENT_APPLY_EVENT,
+  CREATIVE_AGENT_APPLY_STORAGE
+} from "@/components/creative/creative-agent-panel";
+import type { WizardApplication } from "@/lib/services/creative-agent-chat-service";
 
 const PROVIDER_INFO: Record<CreativeProvider, { labelEn: string; labelHe: string; blurbEn: string; blurbHe: string }> = {
   replicate: {
@@ -247,6 +252,60 @@ export function NewProjectWizard({
       }
     }
   };
+
+  // ── Creative agent hand-off ─────────────────────────────────────────
+  // The chat panel (floating on /creative*) delivers a crafted prompt +
+  // settings: live via CustomEvent while this wizard is open, or via
+  // sessionStorage when it was crafted on another studio page. The prompt
+  // lands in previewAgentText — the same state the "צרו פרומפט עם הסוכן"
+  // button fills — so the existing pin-on-submit flow sends it verbatim.
+  // Refs so the one-time listeners always see the latest state/setters.
+  const applyAgentRef = useRef<(payload: WizardApplication) => void>(() => {});
+  applyAgentRef.current = (payload) => {
+    if (!payload || typeof payload.prompt !== "string" || !payload.prompt.trim()) return;
+    if (payload.creativeType) handleTypeChange(payload.creativeType);
+    // After handleTypeChange: explicit aspect/provider from the agent wins
+    // over the type's defaults.
+    if (payload.aspectRatio) setAspectRatio(payload.aspectRatio);
+    if (payload.provider && providerStatusByName[payload.provider]?.configured) {
+      setProvider(payload.provider);
+    }
+    if (payload.targetCount) {
+      const cap = payload.creativeType === "UGC_VIDEO" ? videoSettings.maxBatch : 100;
+      setTargetCount(Math.max(1, Math.min(cap, payload.targetCount)));
+    }
+    if (payload.projectName) setName(payload.projectName);
+    if (payload.productName) setProductName(payload.productName);
+    if (payload.productDescription) setProductDescription(payload.productDescription);
+    if (payload.tone) setTone(payload.tone);
+    setPreviewAgentError(null);
+    setPreviewAgentText(payload.prompt.trim());
+    setPreviewOpen(true);
+  };
+  const reloadPreviewRef = useRef<() => void>(() => {});
+  reloadPreviewRef.current = () => void loadTemplatePreview();
+
+  useEffect(() => {
+    // Carry-over from another studio page first.
+    try {
+      const raw = sessionStorage.getItem(CREATIVE_AGENT_APPLY_STORAGE);
+      if (raw) {
+        sessionStorage.removeItem(CREATIVE_AGENT_APPLY_STORAGE);
+        applyAgentRef.current(JSON.parse(raw) as WizardApplication);
+        // Rebuild the combined template preview once the applied state has
+        // committed (the ref points at a closure over fresh state by then).
+        setTimeout(() => reloadPreviewRef.current(), 100);
+      }
+    } catch {
+      // malformed payload/storage blocked — the live event still works
+    }
+    const onApply = (event: Event) => {
+      applyAgentRef.current((event as CustomEvent<WizardApplication>).detail);
+      setTimeout(() => reloadPreviewRef.current(), 100);
+    };
+    window.addEventListener(CREATIVE_AGENT_APPLY_EVENT, onApply);
+    return () => window.removeEventListener(CREATIVE_AGENT_APPLY_EVENT, onApply);
+  }, []);
 
   const handleFilesChange = (event: ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(event.target.files ?? []);
