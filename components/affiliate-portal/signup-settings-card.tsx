@@ -5,8 +5,8 @@
 // /join/{slug} (public signup), /r/{slug}/{code} (tracked links, and every
 // member's referral link is regenerated to it), /my/{slug} (affiliate login).
 
-import { useState } from "react";
-import { Check, Copy, Loader2, Save } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Copy, Loader2, Radar, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
 import type { SignupSettings } from "@/lib/services/affiliate-signup-service";
@@ -30,6 +30,48 @@ export function SignupSettingsCard({
   const [termsText, setTermsText] = useState(initial.termsText ?? "");
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  // Storefront tracking (cross-session link attribution): null = checking.
+  const [tracking, setTracking] = useState<{ installed: boolean; snippet: string } | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [showSnippet, setShowSnippet] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/affiliate-portal/tracking-script")
+      .then((res) => res.json())
+      .then((body) => {
+        if (!cancelled && body?.ok) setTracking({ installed: body.installed, snippet: body.snippet });
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const installTracking = async () => {
+    setInstalling(true);
+    try {
+      const res = await fetch("/api/affiliate-portal/tracking-script", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.ok) {
+        // Auto-install refused (scope/API) — fall back to the manual snippet.
+        setShowSnippet(true);
+        throw new Error(body?.error ?? lang("ההתקנה האוטומטית נכשלה", "Auto-install failed"));
+      }
+      setTracking((t) => ({ installed: true, snippet: t?.snippet ?? "" }));
+      toast.success(
+        body.alreadyInstalled
+          ? lang("סקריפט המעקב כבר מותקן בחנות", "Tracking script already installed")
+          : lang("סקריפט המעקב הותקן בחנות", "Tracking script installed on the store")
+      );
+    } catch (err) {
+      toast.error(err, {
+        fallback: lang("ההתקנה האוטומטית נכשלה — הדביקו את הקוד ידנית", "Auto-install failed — paste the code manually")
+      });
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -185,6 +227,76 @@ export function SignupSettingsCard({
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {lang("שמירה והפעלה", "Save & activate")}
         </button>
+
+        <div className="space-y-3 rounded-2xl border border-border/70 bg-background/70 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Radar className="h-4 w-4 text-muted-foreground" />
+              <p className="font-semibold">{lang("מעקב מכירות בחנות", "Storefront sales tracking")}</p>
+            </div>
+            {tracking === null ? (
+              <span className="text-xs text-muted-foreground">{lang("בודק…", "Checking…")}</span>
+            ) : tracking.installed ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                <Check className="h-3 w-3" />
+                {lang("מותקן בחנות", "Installed on the store")}
+              </span>
+            ) : (
+              <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                {lang("לא מותקן", "Not installed")}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {lang(
+              "סקריפט קטן בחנות ששומר את זיהוי הקישור של השותפ/ה גם כשהלקוח/ה קונים ימים אחרי הקליק, בביקור חדש ובלי קופון — כמו המעקב של BixGrow. בלעדיו נתפסות רק רכישות באותו ביקור או עם קופון.",
+              "A small script on the store that keeps the affiliate's link identity even when the customer buys days after the click, in a new visit, without a coupon — BixGrow-style tracking. Without it, only same-visit or coupon purchases are attributed."
+            )}
+          </p>
+          {tracking !== null && !tracking.installed ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={installTracking}
+                disabled={installing}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+              >
+                {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Radar className="h-3.5 w-3.5" />}
+                {lang("התקנה אוטומטית בחנות", "Auto-install on the store")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSnippet((s) => !s)}
+                className="text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+              >
+                {lang("התקנה ידנית (הדבקת קוד)", "Manual install (paste code)")}
+              </button>
+            </div>
+          ) : null}
+          {showSnippet && tracking?.snippet ? (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                {lang(
+                  "Shopify Admin → Online Store → Themes → Edit code → theme.liquid — הדביקו את השורה לפני </head>:",
+                  "Shopify Admin → Online Store → Themes → Edit code → theme.liquid — paste this line before </head>:"
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-2 py-1.5 font-mono text-[11px]" dir="ltr">
+                  {tracking.snippet}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => copy("snippet", tracking.snippet)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-[11px] font-medium hover:bg-muted"
+                >
+                  {copied === "snippet" ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                  {lang("העתקה", "Copy")}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         {settings.joinUrl ? (
           <div className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-950/30">
