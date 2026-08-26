@@ -29,6 +29,9 @@ import { upsertCompetitorResponseAlerts } from "@/lib/services/competitor-intel-
 import { getCompetitorBrief } from "@/lib/services/competitor-brief-service";
 import { CompetitorBriefSection } from "@/components/command-center/competitor-brief-section";
 import { TrafficSearchSection } from "@/components/dashboard/traffic-search-section";
+import { MetaCampaignsSection } from "@/components/dashboard/meta-campaigns-section";
+import { MetaCampaignsInsight } from "@/components/dashboard/meta-campaigns-insight";
+import { getMetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
 import { buildTrafficSearchSummary } from "@/lib/services/traffic-search-summary-service";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
 import { buildSetupHealth } from "@/lib/services/setup-health-service";
@@ -212,6 +215,13 @@ export default async function CommandCenterPage() {
   // source has synced data — the section hides entirely.
   const trafficSearch = storeId
     ? await buildTrafficSearchSummary(storeId, windowRange).catch(() => null)
+    : null;
+
+  // Meta campaigns overview — same selected window. Null (section hides)
+  // when no campaign insights are synced. The BI insight card under it
+  // fetches lazily client-side so the page never waits on an LLM.
+  const metaCampaigns = storeId
+    ? await getMetaCampaignsOverview(storeId, windowRange).catch(() => null)
     : null;
 
   // Contribution margin for the same window the controls have selected.
@@ -423,6 +433,22 @@ export default async function CommandCenterPage() {
               )}
             />
             <TrafficSearchSection summary={trafficSearch} isHe={isHe} />
+          </section>
+        ) : null}
+
+        {/* ── SECTION — Meta campaigns (קמפיינים) ──────────────────────── */}
+        {metaCampaigns ? (
+          <section className="space-y-3">
+            <SectionHead
+              eyebrow={lang("קמפיינים", "Campaigns")}
+              title={lang("הקמפיינים שרצים בMeta — ומה הם מחזירים", "The Meta campaigns running — and what they return")}
+              hint={lang(
+                "הוצאה, רכישות וROAS לכל קמפיין בטווח הנבחר, עם סינון — ותובנת סוכן מתחת.",
+                "Spend, purchases, and ROAS per campaign for the selected window, with filters — and an agent insight below."
+              )}
+            />
+            <MetaCampaignsSection overview={metaCampaigns} isHe={isHe} />
+            <MetaCampaignsInsight isHe={isHe} />
           </section>
         ) : null}
 
