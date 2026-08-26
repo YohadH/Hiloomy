@@ -199,6 +199,9 @@ export function ReportingPicker(props: ReportingPickerProps) {
   const [rangeOpen, setRangeOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  // Brief "✓ synced" confirmation after a successful resync — the sync used
+  // to just vanish with no signal that the data actually landed.
+  const [justSynced, setJustSynced] = useState(false);
 
   const [preset, setPreset] = useState<RangePreset>(props.initialPreset);
   const [start, setStart] = useState<string>(props.initialStart);
@@ -251,21 +254,31 @@ export function ReportingPicker(props: ReportingPickerProps) {
     }
   }, [rangeOpen, start, end, preset]);
 
-  async function resyncDataSources() {
+  async function resyncDataSources(): Promise<boolean> {
     // Pressing Apply / picking a preset means "show me this window as it looks
     // right now", so pull the freshest data from every external source before
     // re-rendering. Best-effort: the endpoint already swallows per-source
     // failures (e.g. Meta/Instagram not connected), and a network error here
     // must still let the page refresh with whatever data we have.
-    if (!props.storeConnected || !props.storeId) return;
+    if (!props.storeConnected || !props.storeId) return false;
+    // Hard timeout so the spinner can NEVER hang forever — the multi-source
+    // sync (Shopify + Meta + Instagram + GA4 + GSC + competitors) can run
+    // long, and a stalled request used to leave "Syncing…" spinning with no
+    // way out. On timeout we abort and still refresh with what we have.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 120_000);
     try {
-      await fetch("/api/reporting/refresh", {
+      const res = await fetch("/api/reporting/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId: props.storeId })
+        body: JSON.stringify({ storeId: props.storeId }),
+        signal: ctrl.signal
       });
+      return res.ok;
     } catch {
-      // ignore — fall through to refresh
+      return false; // timeout or network — fall through to refresh
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -281,10 +294,19 @@ export function ReportingPicker(props: ReportingPickerProps) {
     document.cookie = `reporting-date-range=${encodeURIComponent(JSON.stringify(state))}; path=/; max-age=31536000; samesite=lax`;
     if (options.resync && props.storeConnected && props.storeId) {
       setSyncing(true);
+      setJustSynced(false);
+      let ok = false;
       try {
-        await resyncDataSources();
+        ok = await resyncDataSources();
       } finally {
         setSyncing(false);
+      }
+      if (ok) {
+        // Show the "✓ synced" confirmation and auto-clear it. The page
+        // refresh below runs underneath — the confirmation tells the user
+        // the pull finished even as the fresh data paints in.
+        setJustSynced(true);
+        setTimeout(() => setJustSynced(false), 4000);
       }
     }
     startTransition(() => {
@@ -432,6 +454,15 @@ export function ReportingPicker(props: ReportingPickerProps) {
         >
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           {isHe ? "מסנכרן את Shopify, Meta וInstagram…" : "Syncing Shopify, Meta & Instagram…"}
+        </span>
+      ) : justSynced ? (
+        <span
+          role="status"
+          aria-live="polite"
+          className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-sm font-medium text-emerald-800 shadow-sm"
+        >
+          <Check className="h-4 w-4" aria-hidden />
+          {isHe ? "הנתונים סונכרנו ועודכנו" : "Data synced & updated"}
         </span>
       ) : null}
 

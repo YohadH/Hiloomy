@@ -438,7 +438,7 @@ export default async function CommandCenterPage() {
 
         {/* ── SECTION — Meta campaigns (קמפיינים) ──────────────────────── */}
         {metaCampaigns ? (
-          <section className="space-y-3">
+          <section id="meta-campaigns" className="scroll-mt-24 space-y-3">
             <SectionHead
               eyebrow={lang("קמפיינים", "Campaigns")}
               title={lang("הקמפיינים שרצים בMeta — ומה הם מחזירים", "The Meta campaigns running — and what they return")}

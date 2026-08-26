@@ -159,7 +159,10 @@ const LEG_META: Record<LeakId, Pick<LeakItem, "reason" | "action" | "href" | "un
       he: "לעצור או לחתוך את הקמפיינים המסומנים היום",
       en: "Pause or cut the flagged campaigns today"
     },
-    href: "/dashboard",
+    // Deep-link to the Meta campaigns section on the dashboard (anchor),
+    // NOT "/dashboard" — that just reloaded the page the row lives on and
+    // read as a dead link. The section has a "losing money" filter there.
+    href: "/dashboard#meta-campaigns",
     unlockHint: {
       he: "חברו את Meta Ads כדי לפתוח את בדיקת שריפת התקציב.",
       en: "Connect Meta Ads to unlock the budget-burn check."

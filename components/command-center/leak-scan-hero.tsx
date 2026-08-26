@@ -114,14 +114,14 @@ export function LeakScanHero({
       {leaking ? (
         <>
           <h2 className="mt-2 text-2xl font-bold sm:text-3xl">
-            {isHe ? "מצאנו " : "We found "}
+            {isHe ? "זיהינו " : "We detected "}
             <span className="text-orange-700 tabular-nums">{formatCurrency(scan.total, currency)}</span>
-            {isHe ? " דליפות רווח" : " in profit leaks"}
+            {isHe ? " שדולפים מהרווח" : " leaking from profit"}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {isHe
-              ? "כסף שיוצא מהעסק בלי סיבה — עם הפעולה שסוגרת כל דליפה."
-              : "Money leaving the business for no reason — with the action that closes each leak."}
+              ? `סך הכסף שזוהה כדולף ב־${scan.windowDays} הימים האחרונים — סכום בסיכון, לא הבטחת חיסכון. לכל שורה יש פעולה והערכת השבה משלה; השבה מלאה של כל הסכום לא מובטחת.`
+              : `The money detected leaking over the last ${scan.windowDays} days — an at-risk figure, not a guaranteed saving. Each row has its own action and recovery estimate; recovering the full amount isn't guaranteed.`}
           </p>
         </>
       ) : (
