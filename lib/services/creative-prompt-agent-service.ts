@@ -21,7 +21,8 @@
 // Fail-safe: returns null on any failure. Callers fall back to the
 // deterministic template — never worse than today.
 
-import { askCreativeAgentJson, isBiAgentConfigured, isCreativeAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { askCreativeAgentJson, isCreativeAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 import type { CreativeBrief, CreativeType, CreativeAspectRatio } from "@/lib/domain/creative-types";
 
 // One uploaded image with its role + label. Agent uses this to know
@@ -166,14 +167,17 @@ function buildAgentInstruction(input: CraftPromptInput): string {
 }
 
 export async function craftPromptWithCreativeAgent(input: CraftPromptInput): Promise<string | null> {
-  if (!isCreativeAgentConfigured()) return null;
-  if (process.env.BI_AGENT_DISABLE === "1") return null;
+  const openAiReady = isOpenAiConfigured("creative");
+  if (!openAiReady && !isCreativeAgentConfigured()) return null;
+  if (!openAiReady && process.env.BI_AGENT_DISABLE === "1") return null;
   try {
-    const parsed = await askCreativeAgentJson<{ prompt?: string }>({
-      question: buildAgentInstruction(input),
-      jsonHint: 'object with prompt:string',
-      timeoutMs: 45_000
-    });
+    // OpenAI (Creative account) first — the provider deployed on production
+    // — then the self-hosted creative tunnel as a fallback.
+    const question = buildAgentInstruction(input);
+    const jsonHint = "object with prompt:string";
+    const parsed = openAiReady
+      ? await askOpenAiJson<{ prompt?: string }>({ question, jsonHint, timeoutMs: 45_000, account: "creative" })
+      : await askCreativeAgentJson<{ prompt?: string }>({ question, jsonHint, timeoutMs: 45_000 });
     const prompt = (parsed.prompt ?? "").trim();
     if (!prompt) return null;
     return prompt;

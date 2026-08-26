@@ -20,6 +20,7 @@
 
 import { anthropicChatJson } from "@/lib/clients/anthropic-client";
 import { askCreativeAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 
 export interface SprintBriefProductContext {
   title: string;
@@ -171,13 +172,24 @@ function synthesizePadding(
 //     hiccup never strands a sprint. Set BI_AGENT_DISABLE=1 to skip BI
 //     entirely (useful when comparing outputs).
 async function callLlmForBriefs(prompt: string, perAngle: number, model?: string): Promise<LlmBriefDraft[]> {
+  const jsonHint = `array of ${perAngle} brief objects`;
+  // OpenAI (Creative account) first — the provider deployed on production.
+  if (isOpenAiConfigured("creative")) {
+    try {
+      return await askOpenAiJson<LlmBriefDraft[]>({ question: prompt, jsonHint, timeoutMs: 90_000, account: "creative" });
+    } catch (err) {
+      if (!process.env.ANTHROPIC_API_KEY && !isBiAgentConfigured()) throw err;
+      console.warn("[brief-generator] OpenAI failed, trying fallbacks:", err instanceof Error ? err.message : err);
+    }
+  }
+  // Then the self-hosted creative tunnel, if configured.
   const biDisabled = process.env.BI_AGENT_DISABLE === "1";
   const biAvailable = !biDisabled && isBiAgentConfigured();
   if (biAvailable) {
     try {
       return await askCreativeAgentJson<LlmBriefDraft[]>({
         question: prompt,
-        jsonHint: `array of ${perAngle} brief objects`,
+        jsonHint,
         timeoutMs: 90_000
       });
     } catch (err) {

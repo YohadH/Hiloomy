@@ -13,6 +13,7 @@
 
 import { getDb } from "@/lib/server/db";
 import { askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 import { anthropicChatJson } from "@/lib/clients/anthropic-client";
 import { fetchCompetitorActivity } from "@/lib/clients/rivalsweeper-client";
 import { normalizeDomain } from "@/lib/services/competitor-intel-service";
@@ -424,13 +425,15 @@ export async function getCompetitorBrief(
   // Cache miss: kick a background BI generation (fire-and-cache, never
   // blocks this render) and serve the fallback meanwhile.
   //
-  // Provider order: the self-hosted tunnel when configured, else the
-  // Anthropic API directly. Production never had BI_AGENT_URL/TOKEN set
-  // (they aren't even declared in render.yaml), so with the tunnel-only
-  // gate the BI brief could NEVER run there and the owner only ever saw
-  // the generic fallback tips — the Anthropic path unblocks it with the
-  // key that's already deployed.
-  if ((isBiAgentConfigured() || isAnthropicDirectAvailable()) && !biRefreshInFlight) {
+  // Provider order (see generateBiBrief): OpenAI first — the provider
+  // actually wired on this deployment — then the self-hosted tunnel, then
+  // Anthropic. The gate fires if ANY of the three is available, so an
+  // OpenAI-only deployment (the current one) generates a real brief instead
+  // of being stuck on the generic fallback tips forever.
+  if (
+    (isOpenAiConfigured() || isBiAgentConfigured() || isAnthropicDirectAvailable()) &&
+    !biRefreshInFlight
+  ) {
     biRefreshInFlight = true;
     void generateBiBrief(intel, storeId, locale)
       .catch((err) =>
@@ -599,22 +602,39 @@ export async function generateBiBrief(
   const jsonHint =
     `{"today": [{"action": "...", "why": "...", "how": "...", "target": "... או null"}, ...3 פריטים], ` +
     `"thisWeek": [{"action": "...", "why": "...", "how": "...", "target": null}, ...3 פריטים]}`;
-  // Tunnel first (full local agent with tools), Anthropic API second — the
-  // brief's question already carries every live fact it needs, so a direct
-  // one-shot model call produces a real store-specific answer too.
-  const answer = isBiAgentConfigured()
-    ? await askBiAgentJson<BiBriefAnswer>({ question, jsonHint, timeoutMs: BI_TIMEOUT_MS })
-    : await anthropicChatJson<BiBriefAnswer>({
-        messages: [{ role: "user", content: question }],
-        jsonHint,
-        maxTokens: 3000
-      }).catch((err) => {
-        console.warn(
-          "[competitor-brief] anthropic direct generation failed:",
-          err instanceof Error ? err.message : err
-        );
-        return null;
-      });
+  // Provider waterfall. OpenAI FIRST — it's the BI provider actually wired
+  // on this deployment (same one the chat widget uses via bi-chat-service),
+  // and the brief's question already carries every live fact it needs, so a
+  // one-shot structured call produces a real store-specific answer. The
+  // Cloudflare tunnel (askBiAgentJson) used to be first, but it points at a
+  // self-hosted agent (localhost) that isn't reachable in production, so it
+  // silently failed and the owner only ever saw the generic fallback tips.
+  // Tunnel + Anthropic remain as ordered fallbacks when configured.
+  const attempt = async (
+    label: string,
+    fn: () => Promise<BiBriefAnswer>
+  ): Promise<BiBriefAnswer | null> =>
+    fn().catch((err) => {
+      console.warn(`[competitor-brief] ${label} generation failed:`, err instanceof Error ? err.message : err);
+      return null;
+    });
+
+  let answer: BiBriefAnswer | null = null;
+  if (isOpenAiConfigured()) {
+    answer = await attempt("openai", () =>
+      askOpenAiJson<BiBriefAnswer>({ question, jsonHint, timeoutMs: BI_TIMEOUT_MS, maxOutputTokens: 3000 })
+    );
+  }
+  if (!isValidAnswer(answer) && isBiAgentConfigured()) {
+    answer = await attempt("bi-agent", () =>
+      askBiAgentJson<BiBriefAnswer>({ question, jsonHint, timeoutMs: BI_TIMEOUT_MS })
+    );
+  }
+  if (!isValidAnswer(answer) && isAnthropicDirectAvailable()) {
+    answer = await attempt("anthropic", () =>
+      anthropicChatJson<BiBriefAnswer>({ messages: [{ role: "user", content: question }], jsonHint, maxTokens: 3000 })
+    );
+  }
   if (isValidAnswer(answer)) {
     await writeCache(cacheKey(intel.version, storeId), answer);
     return answer;

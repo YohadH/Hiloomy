@@ -321,15 +321,28 @@ services:
       - key: INSTAGRAM_CLIENT_SECRET
         sync: false
 
-      # ─── Anthropic API (BI analyst chat — direct, no tunnel) ──────────
-      # When set, the chat widget's BI analyst answers via the Anthropic
-      # API with store-scoped data tools (streamed answers, seconds not
-      # minutes). Unset → falls back to the BI_AGENT_URL tunnel. Persona
-      # text lives in lib/ai/bi-persona.ts.
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      # Optional model override for the BI chat (default claude-opus-5).
+      # ─── AI providers (BI + Creative — direct cloud, no local tunnel) ─
+      # TWO SEPARATE OPENAI ACCOUNTS so spend is trackable apart:
+      #   OPENAI_API_KEY               → the BI account. Powers the BI chat
+      #     widget AND all report/insight/competitor-brief generation.
+      #   CREATIVE_CHAT_OPENAI_API_KEY → the Creative account. Powers the
+      #     creative agent chat, sprint/quick-batch briefs, prompt crafting,
+      #     and gantt marketing briefs. Falls back to OPENAI_API_KEY when
+      #     unset (single-account mode).
+      # Model pins (both default to gpt-5.6-terra):
+      #   BI_CHAT_MODEL, CREATIVE_CHAT_MODEL.
+      # OPENAI_API_KEY (the BI account) is declared once under Reports above.
+      # The old BI_AGENT_URL / CREATIVE_AGENT_URL Cloudflare tunnels are now
+      # only fallbacks — they point at self-hosted localhost agents that are
+      # unreachable in production, so leave them UNSET here.
       - key: BI_CHAT_MODEL
+        sync: false
+      - key: CREATIVE_CHAT_OPENAI_API_KEY
+        sync: false
+      - key: CREATIVE_CHAT_MODEL
+        sync: false
+      # Optional outage fallback for the chat widgets (default claude-opus-5).
+      - key: ANTHROPIC_API_KEY
         sync: false
 
       # ─── RivalSweeper (competitor intelligence) ───────────────────────

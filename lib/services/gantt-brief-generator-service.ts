@@ -14,6 +14,7 @@
 //      digested so the agent doesn't have to invent anything.
 
 import { askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -555,7 +556,9 @@ export function auditBriefDiscounts(
 // ─── Public entry ─────────────────────────────────────────────────────
 
 export async function generateMarketingBrief(input: BriefGeneratorInput): Promise<MarketingBrief> {
-  if (!isBiAgentConfigured() || process.env.BI_AGENT_DISABLE === "1") {
+  const openAiReady = isOpenAiConfigured("bi");
+  const tunnelReady = isBiAgentConfigured() && process.env.BI_AGENT_DISABLE !== "1";
+  if (!openAiReady && !tunnelReady) {
     return fallbackBrief(input);
   }
   // Dedupe BEFORE building the agent prompt: the same offer repeated over
@@ -569,11 +572,13 @@ export async function generateMarketingBrief(input: BriefGeneratorInput): Promis
     // hit Cloudflare's cap we lose the ability to return JSON and the
     // client sees an HTML error page (the "char '{' is not expected"
     // parse failure). Keep this below 90s at all costs.
-    const raw = await askBiAgentJson<Partial<MarketingBrief>>({
-      question: buildAgentPrompt(digests, input),
-      jsonHint: "object matching the MarketingBrief schema in the prompt",
-      timeoutMs: 75_000
-    });
+    const question = buildAgentPrompt(digests, input);
+    const jsonHint = "object matching the MarketingBrief schema in the prompt";
+    // OpenAI (BI account) first — the provider deployed on production — then
+    // the self-hosted tunnel as a fallback when configured.
+    const raw = openAiReady
+      ? await askOpenAiJson<Partial<MarketingBrief>>({ question, jsonHint, timeoutMs: 75_000, account: "bi" })
+      : await askBiAgentJson<Partial<MarketingBrief>>({ question, jsonHint, timeoutMs: 75_000 });
     // Merge with fallback so missing keys don't leave the print page
     // rendering `undefined`. Agent fields take precedence when present.
     const fb = fallbackBrief(input);
