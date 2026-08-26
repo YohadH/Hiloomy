@@ -20,13 +20,7 @@
 // by askBiAgentJson under the hood.
 
 import { askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
-
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
-
-interface OpenAIChatResponse {
-  choices?: Array<{ message?: { content?: string } }>;
-  error?: { message?: string };
-}
+import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 
 export interface GenerateInsightsInput {
   systemPrompt: string;
@@ -58,74 +52,47 @@ export async function generateInsightsJson<T>(input: GenerateInsightsInput): Pro
 
 // Same as generateInsightsJson but also returns which provider succeeded.
 // Useful for the print page footer ("Written by Hiloomy BI" vs "OpenAI").
+//
+// Provider order is now OpenAI-FIRST (the BI account actually deployed on
+// production), then the self-hosted BI tunnel when configured. The tunnel
+// points at a localhost agent that isn't reachable in production, so making
+// it primary meant every report silently fell through to it and failed.
 export async function generateInsightsJsonTraced<T>(input: GenerateInsightsInput): Promise<GenerateInsightsResult<T>> {
-  const biActive = isBiAgentConfigured() && process.env.BI_AGENT_DISABLE !== "1";
   const timeoutMs = input.timeoutMs ?? 90_000;
+  const combined = `${input.systemPrompt}\n\n---\n\n${input.userPrompt}`;
+  const biTunnelActive = isBiAgentConfigured() && process.env.BI_AGENT_DISABLE !== "1";
 
-  // ── 1. Try BI agent ────────────────────────────────────────────────
-  if (biActive) {
+  // ── 1. OpenAI (BI account, pinned model via BI_CHAT_MODEL) ─────────
+  if (isOpenAiConfigured("bi")) {
     try {
-      const combined = `${input.systemPrompt}\n\n---\n\n${input.userPrompt}`;
-      const data = await askBiAgentJson<T>({
+      const data = await askOpenAiJson<T>({
         question: combined,
         jsonHint: input.jsonHint,
-        timeoutMs
+        timeoutMs,
+        maxOutputTokens: input.maxTokens ?? 1500,
+        account: "bi"
       });
+      return { data, trace: { provider: "openai" } };
+    } catch (err) {
+      console.warn("[ai-insights] OpenAI failed, trying BI tunnel:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // ── 2. Fall back to the self-hosted BI tunnel, if configured ───────
+  if (biTunnelActive) {
+    try {
+      const data = await askBiAgentJson<T>({ question: combined, jsonHint: input.jsonHint, timeoutMs });
       return { data, trace: { provider: "bi" } };
     } catch (err) {
-      console.warn("[ai-insights] BI agent failed, trying OpenAI:", err instanceof Error ? err.message : err);
+      console.warn("[ai-insights] BI tunnel failed:", err instanceof Error ? err.message : err);
     }
   }
 
-  // ── 2. Fall back to OpenAI ─────────────────────────────────────────
-  const apiKey = (process.env.OPENAI_API_KEY ?? "").trim();
-  if (!apiKey) {
-    return {
-      data: null,
-      trace: { provider: null, reason: biActive ? "bi-failed-no-openai-key" : "no-bi-no-openai-key" }
-    };
-  }
-
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    let parsed: T | null = null;
-    try {
-      const response = await fetch(OPENAI_URL, {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: input.openaiModel ?? "gpt-4o-mini",
-          response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: input.systemPrompt },
-            { role: "user", content: input.userPrompt }
-          ],
-          temperature: input.temperature ?? 0.5,
-          max_tokens: input.maxTokens ?? 900
-        })
-      });
-      if (!response.ok) {
-        return { data: null, trace: { provider: null, reason: `openai-${response.status}` } };
-      }
-      const payload = (await response.json()) as OpenAIChatResponse;
-      if (payload.error) {
-        return { data: null, trace: { provider: null, reason: payload.error.message ?? "openai-error" } };
-      }
-      const raw = payload.choices?.[0]?.message?.content?.trim();
-      if (!raw) {
-        return { data: null, trace: { provider: null, reason: "openai-empty" } };
-      }
-      parsed = JSON.parse(raw) as T;
-    } finally {
-      clearTimeout(timer);
+  return {
+    data: null,
+    trace: {
+      provider: null,
+      reason: isOpenAiConfigured("bi") ? "openai-failed" : "no-openai-key"
     }
-    return { data: parsed, trace: { provider: "openai" } };
-  } catch (err) {
-    return {
-      data: null,
-      trace: { provider: null, reason: err instanceof Error ? err.message : String(err) }
-    };
-  }
+  };
 }

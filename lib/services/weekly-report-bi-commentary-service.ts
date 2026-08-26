@@ -15,7 +15,8 @@
 // Fallback: returns null (and the section just hides) if BI agent is
 // unconfigured OR throws. Never blocks PDF generation.
 
-import { askCreativeAgentJson, askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 import { COMPETITOR_INTEL_LATEST } from "@/lib/data/competitor-intel-latest";
 import type { MetaAdsWeeklyReport } from "@/lib/services/meta-ads-report-service";
 import type { AffiliateDeepDiveReport } from "@/lib/services/affiliate-deep-dive-service";
@@ -226,28 +227,27 @@ function buildPrompt(input: BiWeeklyCommentaryInput, digest: string): string {
 }
 
 export async function generateWeeklyBiCommentary(input: BiWeeklyCommentaryInput): Promise<BiWeeklyCommentary | null> {
-  if (!isBiAgentConfigured()) return null;
+  if (!isOpenAiConfigured("bi") && !isBiAgentConfigured()) return null;
   const digest = buildDigest(input);
   if (digest.trim().length < 30) return null; // no data → no commentary
 
   try {
-    // Prefer the BI analytics agent for this (it's an analytics task, not
-    // a creative one). Falls back to the creative agent if BI returns
-    // a bad shape — both can do JSON output via the same instruction.
-    let parsed: { headline?: string; insights?: string[]; actions?: string[] };
-    try {
-      parsed = await askBiAgentJson<typeof parsed>({
-        question: buildPrompt(input, digest),
-        jsonHint: 'object with headline:string, insights:string[3], actions:string[3]',
-        timeoutMs: 60_000
-      });
-    } catch {
-      parsed = await askCreativeAgentJson<typeof parsed>({
-        question: buildPrompt(input, digest),
-        jsonHint: 'object with headline:string, insights:string[3], actions:string[3]',
-        timeoutMs: 60_000
-      });
+    // This is an analytics task → the BI account. Provider order: OpenAI
+    // (BI account) first — the provider deployed on production — then the
+    // self-hosted BI tunnel if configured. Same JSON contract everywhere.
+    const question = buildPrompt(input, digest);
+    const jsonHint = "object with headline:string, insights:string[3], actions:string[3]";
+    type BiCommentaryShape = { headline?: string; insights?: string[]; actions?: string[] };
+    let parsed: BiCommentaryShape | null = null;
+    if (isOpenAiConfigured("bi")) {
+      parsed = await askOpenAiJson<BiCommentaryShape>({ question, jsonHint, timeoutMs: 60_000, account: "bi" }).catch(
+        () => null
+      );
     }
+    if (!parsed && isBiAgentConfigured()) {
+      parsed = await askBiAgentJson<BiCommentaryShape>({ question, jsonHint, timeoutMs: 60_000 }).catch(() => null);
+    }
+    if (!parsed) return null;
 
     const insights = Array.isArray(parsed.insights) ? parsed.insights.filter(Boolean).slice(0, 5) : [];
     const actions = Array.isArray(parsed.actions) ? parsed.actions.filter(Boolean).slice(0, 5) : [];

@@ -14,7 +14,8 @@ import {
   pollHiggsfieldUntilDone
 } from "@/lib/clients/higgsfield-client";
 import { openaiGenerateImage } from "@/lib/services/creative-ai-openai-service";
-import { askCreativeAgentJson } from "@/lib/clients/bi-agent-client";
+import { askCreativeAgentJson, isCreativeAgentConfigured } from "@/lib/clients/bi-agent-client";
+import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 import { buildStorageKey, putObject, suggestFilename } from "@/lib/services/creative-storage-service";
 import { getDb } from "@/lib/server/db";
 import { assertStoreInActiveOrg } from "@/lib/auth/guards";
@@ -266,12 +267,16 @@ export async function runCreativeQuickBatch(input: QuickBatchInput): Promise<Qui
   const count = Math.max(1, Math.min(10, input.count ?? 5));
   const aspectRatio = input.aspectRatio ?? "9:16";
 
-  // Step 1 — ask the Creative agent for N visual prompts.
-  const drafts = await askCreativeAgentJson<AgentPromptDraft[]>({
-    question: buildCreativePrompt({ ...input, count }),
-    jsonHint: `array of ${count} concept objects`,
-    timeoutMs: 90_000
-  });
+  // Step 1 — ask the Creative agent for N visual prompts. OpenAI (Creative
+  // account) first — the provider deployed on production — then the
+  // self-hosted creative tunnel as a fallback.
+  const promptQuestion = buildCreativePrompt({ ...input, count });
+  const conceptsHint = `array of ${count} concept objects`;
+  const drafts = isOpenAiConfigured("creative")
+    ? await askOpenAiJson<AgentPromptDraft[]>({ question: promptQuestion, jsonHint: conceptsHint, timeoutMs: 90_000, account: "creative" })
+    : isCreativeAgentConfigured()
+      ? await askCreativeAgentJson<AgentPromptDraft[]>({ question: promptQuestion, jsonHint: conceptsHint, timeoutMs: 90_000 })
+      : (() => { throw new AppError("No creative provider configured. Set CREATIVE_CHAT_OPENAI_API_KEY or OPENAI_API_KEY.", 503); })();
   if (!Array.isArray(drafts) || drafts.length === 0) {
     throw new AppError("Creative agent returned no concepts.", 502);
   }
