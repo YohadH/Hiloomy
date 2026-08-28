@@ -30,6 +30,9 @@ Turn a merchant's rough idea into a production-ready image/video generation setu
 - Video: higgsfield only, and only if video is enabled.
 Only recommend engines that get_provider_options reports as configured. If the merchant names an engine that would break product identity for their goal, say so in one sentence and propose the right one — but honor an explicit insistence.
 
+## Learn from what's already working
+The runtime may include a "Paid performance" block — the store's winning and losing Meta ad angles by ROAS. When it's there, steer new creative toward the winning hooks/offers/concepts and away from the proven losers; keep the line that converts. If a merchant's idea contradicts a strong winner, say so in one sentence and propose a variation on the winner instead — but honor an explicit choice. Never copy ad text into the image; use the winning ANGLE to shape the scene, mood, and concept.
+
 ## Cost sense
 Recommend 1–3 images for a first iteration (there is a daily generation cap that costs real money). Suggest bigger batches only after a look the merchant liked.
 
@@ -43,6 +46,8 @@ export function buildCreativeRuntimeContext(input: {
   providerLines: string;
   videoEnabled: boolean;
   todayIso: string;
+  // "What's working / not" in the store's live Meta ads (may be null).
+  paidSignal?: string | null;
 }): string {
   return [
     `## Runtime`,
@@ -50,7 +55,8 @@ export function buildCreativeRuntimeContext(input: {
     input.section ? `The merchant is currently on: ${input.section}` : null,
     `Configured engines:\n${input.providerLines}`,
     `Video generation: ${input.videoEnabled ? "ENABLED (higgsfield)" : "DISABLED — do not offer video"}`,
-    `The wizard the merchant sees is at /creative/new. apply_to_wizard fills it live when they are on that page (and is carried over when they open it).`
+    `The wizard the merchant sees is at /creative/new. apply_to_wizard fills it live when they are on that page (and is carried over when they open it).`,
+    input.paidSignal ? `\n${input.paidSignal}` : null
   ]
     .filter(Boolean)
     .join("\n");

@@ -444,7 +444,7 @@ export default async function WelcomePage({
       `}</style>
 
       {/* ── Nav ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 border-b backdrop-blur-md" style={{ borderColor: HAIR, backgroundColor: "rgba(247,247,246,.88)" }}>
+      <header className="hl-glass sticky top-0 z-40 border-b backdrop-blur-md [backdrop-filter:saturate(180%)_blur(16px)]" style={{ borderColor: HAIR, backgroundColor: "rgba(247,247,246,.82)" }}>
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-10">
           <a href={`/welcome?lang=${locale}`} className="inline-flex items-center">
             <HiloomyLogo />
@@ -608,7 +608,7 @@ export default async function WelcomePage({
         <div className="mx-auto max-w-6xl px-5 sm:px-10">
           <SectionHead eyebrow={t.layers.kicker} title={t.layers.title} />
         </div>
-        <LayersScroller layers={layers} />
+        <LayersScroller layers={layers} isHe={isHe} />
       </section>
 
       {/* ── Features accordion grid ──────────────────────────────────── */}

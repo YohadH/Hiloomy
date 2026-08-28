@@ -27,6 +27,7 @@ import {
   buildCreativeRuntimeContext
 } from "@/lib/ai/creative-agent-persona";
 import { getProviderAvailability } from "@/lib/services/creative-provider-availability";
+import { buildPaidCreativeSignal, formatPaidCreativeSignal } from "@/lib/services/paid-creative-signal-service";
 import { isCreativeVideoEnabled, maxVideoBatchSize } from "@/lib/services/creative-video-config";
 import type {
   CreativeAspectRatio,
@@ -290,10 +291,16 @@ export async function runCreativeAgentTurn(
   const providerLines = getProviderAvailability()
     .map((s) => `- ${s.provider}: ${s.configured ? "configured" : "NOT configured"}`)
     .join("\n");
+  // What's working / not in the store's live Meta ads — so the agent keeps
+  // new creative on the winning line (owner ask 2026-08-28).
+  const paidSignal = await buildPaidCreativeSignal(input.storeId).catch(() => null);
+  const paidSignalText = paidSignal ? formatPaidCreativeSignal(paidSignal) : null;
+
   const baseContext = buildCreativeRuntimeContext({
     locale: input.locale,
     storeName: store?.name ?? null,
     section: input.section ?? null,
+    paidSignal: paidSignalText,
     providerLines,
     videoEnabled: isCreativeVideoEnabled(),
     todayIso: new Date().toISOString().slice(0, 10)

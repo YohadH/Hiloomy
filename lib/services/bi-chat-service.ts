@@ -43,6 +43,7 @@ import { buildCompetitorWeekSection } from "@/lib/services/competitor-intel-serv
 import { buildKpiTrend, type TrendGranularity } from "@/lib/services/kpi-trend-service";
 import { buildDiscountScorecards } from "@/lib/services/discount-scorecard-service";
 import { buildMetaAdsWeeklyReport } from "@/lib/services/meta-ads-report-service";
+import { getMetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
 import { readCachedToolResult, writeCachedToolResult } from "@/lib/services/bi-tool-cache";
 import { getStoreSnapshotText } from "@/lib/services/bi-store-snapshot";
 
@@ -251,10 +252,20 @@ async function executeToolUncached(
     }
     case "get_ad_performance": {
       const { start, end } = daysWindow(int(input.days, 30, 1, 365));
-      const [metaAds, margin] = await Promise.all([
+      const [metaAds, margin, campaignOverview] = await Promise.all([
         buildMetaAdsWeeklyReport({ storeId, start, end }),
-        buildContributionMargin({ storeId, start, end }).catch(() => null)
+        buildContributionMargin({ storeId, start, end }).catch(() => null),
+        // Per-campaign FUNNEL (impressions→link clicks→landing→ATC→checkout→
+        // purchase). The weekly report only carries a brand-level funnel, so
+        // without this the agent can't pinpoint which campaign leaks at which
+        // stage — the exact analysis the dashboard insight now does.
+        getMetaCampaignsOverview(storeId, { start, end }).catch(() => null)
       ]);
+      const marginRate = margin?.totals?.contributionMarginRate ?? null;
+      const breakevenRoas =
+        marginRate && marginRate > 0 && (margin?.quality?.costCoverage ?? 0) >= 0.2
+          ? Math.round((1 / marginRate) * 100) / 100
+          : null;
       result = {
         metaAds:
           metaAds ??
@@ -267,6 +278,24 @@ async function executeToolUncached(
               costCoverage: margin.quality.costCoverage,
               confidence: margin.quality.confidence
             }
+          : null,
+        // Breakeven ROAS = 1 / margin — judge good/bad against THIS, not 3x.
+        breakevenRoas,
+        campaignFunnel: campaignOverview
+          ? campaignOverview.campaigns.map((c) => ({
+              campaign: c.campaignName,
+              spend: c.spend,
+              roas: c.roas,
+              activeRecently: c.activeRecently,
+              funnel: {
+                impressions: c.impressions,
+                linkClicks: c.linkClicks,
+                landingPageViews: c.landingPageViews,
+                addToCart: c.addToCart,
+                initiateCheckout: c.initiateCheckout,
+                purchases: c.purchases
+              }
+            }))
           : null
       };
       break;

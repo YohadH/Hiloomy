@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Menu, X } from "lucide-react";
+import { useLayerSwipe } from "./use-layer-swipe";
 
 // Interactive sections of the marketing landing (/welcome), implementing
 // the "financial broadsheet" redesign: a sticky three-layer scroll story,
@@ -148,12 +149,18 @@ export interface LayerItem {
   panelNote: string;
 }
 
-export function LayersScroller({ layers }: { layers: LayerItem[] }) {
+export function LayersScroller({ layers, isHe = true }: { layers: LayerItem[]; isHe?: boolean }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [active, setActive] = useState(0);
+  // After a throw or a tap, briefly stop the scroll position from re-deriving
+  // `active` — otherwise the spring and the scroll handler fight over it.
+  const lockUntil = useRef(0);
+
+  const swipe = useLayerSwipe(layers.length, active, setActive);
 
   useEffect(() => {
     const onScroll = () => {
+      if (performance.now() < lockUntil.current) return;
       const el = trackRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
@@ -168,6 +175,13 @@ export function LayersScroller({ layers }: { layers: LayerItem[] }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  const selectLayer = (i: number) => {
+    lockUntil.current = performance.now() + 700;
+    setActive(i);
+  };
+
+  const hint = isHe ? "גררו כדי להחליף שכבה" : "Drag to explore";
+
   return (
     <div ref={trackRef} className="relative mx-auto mt-10 h-[300vh] max-w-6xl px-5 sm:px-10 max-lg:h-auto">
       <div className="sticky top-24 h-[78vh] min-h-[520px] max-lg:static max-lg:h-auto max-lg:min-h-0">
@@ -178,8 +192,8 @@ export function LayersScroller({ layers }: { layers: LayerItem[] }) {
               <button
                 key={l.num}
                 type="button"
-                onClick={() => setActive(i)}
-                className="block w-full text-start transition-opacity duration-300"
+                onClick={() => selectLayer(i)}
+                className="block w-full text-start transition-[opacity,transform] duration-300 active:scale-[.99]"
                 style={{ opacity: active === i ? 1 : 0.45 }}
               >
                 <p className="text-xs font-bold tracking-widest" style={{ color: ORANGE }}>
@@ -198,12 +212,55 @@ export function LayersScroller({ layers }: { layers: LayerItem[] }) {
             ))}
           </div>
 
-          {/* Swapping panel (desktop) / stacked panels (mobile) */}
-          <div className="relative h-[430px] max-lg:hidden">
-            {layers.map((l, i) => (
-              <LayerPanel key={l.num} layer={l} active={active === i} absolute />
-            ))}
+          {/* Swapping panel (desktop) — grab-and-throwable, one spring drives
+              scroll + click + drag through a single continuous position. */}
+          <div className="max-lg:hidden">
+            <div
+              ref={swipe.viewportRef}
+              onPointerDown={swipe.surface.onPointerDown}
+              style={swipe.surface.style}
+              className="relative h-[430px] select-none overflow-hidden rounded-2xl"
+            >
+              {layers.map((l, i) => (
+                <div
+                  key={l.num}
+                  ref={swipe.registerPanel(i)}
+                  className="absolute inset-0 will-change-transform"
+                  style={{ opacity: i === 0 ? 1 : 0 }}
+                >
+                  <LayerPanel layer={l} active absolute={false} plain />
+                </div>
+              ))}
+              {/* Grab affordance — quiet, and it steps aside on interaction. */}
+              <div
+                className="hl-glass pointer-events-none absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-3.5 py-1.5 text-[11px] font-bold backdrop-blur-md"
+                style={{ backgroundColor: "rgba(247,247,246,.82)", color: DIM, border: "1px solid rgba(32,30,29,.1)" }}
+              >
+                <DragGlyph />
+                {hint}
+              </div>
+            </div>
+
+            {/* Pager — width encodes the active layer, tappable. */}
+            <div className="mt-5 flex items-center justify-center gap-2">
+              {layers.map((l, i) => (
+                <button
+                  key={l.num}
+                  type="button"
+                  onClick={() => selectLayer(i)}
+                  aria-label={l.name}
+                  aria-current={active === i}
+                  className="h-2 rounded-full transition-all duration-300 active:scale-90"
+                  style={{
+                    width: active === i ? 24 : 8,
+                    backgroundColor: active === i ? ORANGE : "rgba(32,30,29,.2)"
+                  }}
+                />
+              ))}
+            </div>
           </div>
+
+          {/* Stacked panels (mobile) — no drag, everything visible. */}
           <div className="space-y-4 lg:hidden">
             {layers.map((l) => (
               <LayerPanel key={l.num} layer={l} active absolute={false} />
@@ -215,23 +272,36 @@ export function LayersScroller({ layers }: { layers: LayerItem[] }) {
   );
 }
 
+function DragGlyph() {
+  return (
+    <svg width="18" height="12" viewBox="0 0 18 12" fill="none" aria-hidden>
+      <path d="M5 2 1.5 6 5 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M13 2 16.5 6 13 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function LayerPanel({
   layer,
   active,
-  absolute
+  absolute,
+  plain = false
 }: {
   layer: LayerItem;
   active: boolean;
   absolute: boolean;
+  /** When the swipe hook owns the wrapper's transform/opacity, the panel
+   *  itself renders statically so the two don't compound. */
+  plain?: boolean;
 }) {
   return (
     <div
-      className={`${absolute ? "absolute inset-0" : ""} rounded-2xl border bg-white p-7 shadow-xl transition-all duration-500 sm:p-9`}
+      className={`${absolute ? "absolute inset-0" : ""} ${plain ? "h-full" : ""} rounded-2xl border bg-white p-7 shadow-xl sm:p-9 ${plain ? "" : "transition-all duration-500"}`}
       style={{
         borderColor: "rgba(32,30,29,.08)",
-        opacity: active ? 1 : 0,
-        transform: active ? "translateY(0) scale(1)" : "translateY(18px) scale(0.985)",
-        pointerEvents: active ? "auto" : "none",
+        opacity: plain ? 1 : active ? 1 : 0,
+        transform: plain ? undefined : active ? "translateY(0) scale(1)" : "translateY(18px) scale(0.985)",
+        pointerEvents: plain ? undefined : active ? "auto" : "none",
         boxShadow: "0 24px 60px -24px rgba(18,52,31,.25)"
       }}
     >
@@ -356,7 +426,7 @@ export function PricingPlans({
       key={value}
       type="button"
       onClick={() => setCur(value)}
-      className="rounded-full px-4 py-1.5 text-xs font-bold transition-colors"
+      className="rounded-full px-4 py-1.5 text-xs font-bold transition-[background-color,color,transform] active:scale-95"
       style={
         cur === value
           ? { backgroundColor: INK, color: "#fff" }
@@ -421,7 +491,7 @@ export function PricingPlans({
               </ul>
               <a
                 href={signupHref}
-                className="mt-8 block rounded-full border py-3 text-center text-sm font-bold transition-transform hover:-translate-y-0.5"
+                className="mt-8 block rounded-full border py-3 text-center text-sm font-bold transition-transform hover:-translate-y-0.5 active:translate-y-0 active:scale-[.98]"
                 style={
                   popular
                     ? { backgroundColor: GREEN, borderColor: GREEN, color: "#fff" }
