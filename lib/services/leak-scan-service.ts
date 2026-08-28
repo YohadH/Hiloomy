@@ -80,14 +80,24 @@ const RETURNS_WINDOW_DAYS = 60; // returns lag purchases
 
 const round = (v: number) => Math.round(v);
 
-export async function buildLeakScan(input: { storeId: string; end?: Date }): Promise<LeakScanReport> {
+export async function buildLeakScan(input: {
+  storeId: string;
+  // The money-window legs (affiliate, discounts, roas_burn) scan this range.
+  // Passed from the dashboard's date picker so the scan matches every other
+  // surface — e.g. the roas_burn campaign universe equals the Meta campaigns
+  // section instead of a separate fixed 30-day set (the "5 vs 4" mismatch).
+  // Defaults to the trailing 30 days (weekly-report cover, storeless calls).
+  start?: Date;
+  end?: Date;
+}): Promise<LeakScanReport> {
   const end = input.end ?? new Date();
-  const start = new Date(end.getTime() - WINDOW_DAYS * 86_400_000);
+  const start = input.start ?? new Date(end.getTime() - WINDOW_DAYS * 86_400_000);
+  const windowDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
 
   const [affiliate, discounts, roasBurn, silentProducts, silentAffiliates] = await Promise.all([
     affiliateLeg(input.storeId, start, end).catch(() => unavailable("affiliate_leakage")),
     discountLeg(input.storeId, start, end).catch(() => unavailable("underwater_discounts")),
-    roasBurnLeg(input.storeId, end).catch(() => unavailable("roas_burn")),
+    roasBurnLeg(input.storeId, start, end).catch(() => unavailable("roas_burn")),
     silentProductsLeg(input.storeId).catch(() => unavailable("silent_products")),
     silentAffiliatesLeg(input.storeId).catch(() => unavailable("silent_affiliates"))
   ]);
@@ -98,7 +108,7 @@ export async function buildLeakScan(input: { storeId: string; end?: Date }): Pro
   return {
     windowStart: start.toISOString(),
     windowEnd: end.toISOString(),
-    windowDays: WINDOW_DAYS,
+    windowDays,
     total: round(availableItems.reduce((sum, i) => sum + i.amount, 0)),
     items,
     legsAvailable: availableItems.length
@@ -291,10 +301,12 @@ async function discountLeg(storeId: string, start: Date, end: Date): Promise<Lea
 }
 
 // ── Leg 3: ROAS burn — live spend that returns less than it costs ──────
-async function roasBurnLeg(storeId: string, end: Date): Promise<LeakItem> {
+async function roasBurnLeg(storeId: string, start: Date, end: Date): Promise<LeakItem> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = getDb() as any;
-  const spendStart = new Date(end.getTime() - WINDOW_DAYS * 86_400_000);
+  // Scan the SAME window the dashboard's Meta campaigns section uses, so the
+  // campaign set (and the "N campaigns checked" count) reconciles with it.
+  const spendStart = start;
   const rows: Array<{
     campaignId: string;
     campaignName: string;

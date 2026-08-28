@@ -200,8 +200,13 @@ export function ReportingPicker(props: ReportingPickerProps) {
   const [compareOpen, setCompareOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   // Brief "✓ synced" confirmation after a successful resync — the sync used
-  // to just vanish with no signal that the data actually landed.
+  // to just vanish with no signal that the data actually landed. It fires
+  // when the WHOLE operation finishes (fetch + the router.refresh re-render),
+  // not just the fetch, because the refresh can outlast a short timer and the
+  // confirmation would disappear before the fresh page even paints.
   const [justSynced, setJustSynced] = useState(false);
+  const [awaitingRefresh, setAwaitingRefresh] = useState(false);
+  const prevPendingRef = useRef(false);
 
   const [preset, setPreset] = useState<RangePreset>(props.initialPreset);
   const [start, setStart] = useState<string>(props.initialStart);
@@ -254,6 +259,21 @@ export function ReportingPicker(props: ReportingPickerProps) {
     }
   }, [rangeOpen, start, end, preset]);
 
+  // When router.refresh() finishes after a successful sync, isPending falls
+  // true → false. THAT is when the fresh page is on screen, so THAT is when
+  // the "✓ synced" confirmation should appear (for 5s), not when the fetch
+  // resolved.
+  useEffect(() => {
+    const wasPending = prevPendingRef.current;
+    prevPendingRef.current = isPending;
+    if (wasPending && !isPending && awaitingRefresh) {
+      setAwaitingRefresh(false);
+      setJustSynced(true);
+      const timer = setTimeout(() => setJustSynced(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isPending, awaitingRefresh]);
+
   async function resyncDataSources(): Promise<boolean> {
     // Pressing Apply / picking a preset means "show me this window as it looks
     // right now", so pull the freshest data from every external source before
@@ -301,13 +321,11 @@ export function ReportingPicker(props: ReportingPickerProps) {
       } finally {
         setSyncing(false);
       }
-      if (ok) {
-        // Show the "✓ synced" confirmation and auto-clear it. The page
-        // refresh below runs underneath — the confirmation tells the user
-        // the pull finished even as the fresh data paints in.
-        setJustSynced(true);
-        setTimeout(() => setJustSynced(false), 4000);
-      }
+      // Defer the "✓ synced" confirmation until the router.refresh() below
+      // actually finishes (tracked via isPending's falling edge in the
+      // effect). Firing it here would start a 4s timer that the slower RSC
+      // re-render outlasts, so the pill vanished before the page repainted.
+      if (ok) setAwaitingRefresh(true);
     }
     startTransition(() => {
       router.refresh();

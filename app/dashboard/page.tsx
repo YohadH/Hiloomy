@@ -199,9 +199,15 @@ export default async function CommandCenterPage() {
     ? await buildSetupHealth({ storeId }).catch(() => null)
     : null;
 
-  // Leak Scan — the product's headline: one aggregated "₪ you're leaking"
-  // number over the trailing 30 days, independent of the date controls.
-  const leakScan = storeId ? await buildLeakScan({ storeId }).catch(() => null) : null;
+  // Leak Scan — the product's headline "₪ you're leaking" number. Follows
+  // the SELECTED date range (windowRange) so its money-window legs — notably
+  // the roas_burn campaign set — match the Meta campaigns section below,
+  // instead of a separate fixed 30-day window (the "5 vs 4 campaigns"
+  // mismatch the owner flagged). Silent-product/affiliate legs keep their
+  // own longer detection horizons.
+  const leakScan = storeId
+    ? await buildLeakScan({ storeId, start: windowRange.start, end: windowRange.end }).catch(() => null)
+    : null;
 
   // Competitor brief — intel snapshot + BI-prescribed actions (today/this
   // week). storeId lets the generator feed LIVE store facts (product movers,
