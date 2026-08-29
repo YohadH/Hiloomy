@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "node --import tsx --test \"tests/unit/*.test.ts\"",
+    "test:e2e": "playwright test",
     "postinstall": "prisma generate && playwright install chromium",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx prisma/seed.ts"
