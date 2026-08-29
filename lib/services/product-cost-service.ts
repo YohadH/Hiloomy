@@ -204,6 +204,91 @@ export async function listProductCosts(
   return { rows, summary };
 }
 
+// ── Guided COGS onboarding (Launch-QA P0) ────────────────────────────────
+// "Real profit" is only as true as its cost data. Rather than a flat editor
+// of 378 SKUs, surface the TOP-REVENUE products that still lack a real cost —
+// 80% of profit accuracy sits in ~20% of products — so the owner can clear
+// the coverage gap in a 5-minute focused task. Coverage is measured by
+// REVENUE (same definition contribution-margin-service uses for costCoverage)
+// so this card and the profit numbers agree.
+
+export interface CogsOnboardingProduct {
+  productId: string;
+  title: string;
+  primarySku: string | null;
+  price: number;
+  revenue: number;
+  unitsSold: number;
+}
+
+export interface CogsOnboarding {
+  /** 0–1 share of the window's product revenue backed by a REAL cost. */
+  coverage: number;
+  soldProducts: number;
+  soldProductsWithCost: number;
+  revenueCovered: number;
+  revenueMissing: number;
+  defaultCostRatio: number;
+  /** Top-revenue products still missing a real cost — the work queue. */
+  topMissing: CogsOnboardingProduct[];
+  /** Total count of sold products still missing a real cost. */
+  missingCount: number;
+  /** How many top-missing products to cost to cross 90% revenue coverage. */
+  toReachTarget: number;
+}
+
+const COVERAGE_TARGET = 0.9;
+
+export async function buildCogsOnboarding(
+  storeId: string,
+  range?: { start: Date; end: Date },
+  opts?: { limit?: number }
+): Promise<CogsOnboarding> {
+  const { rows, summary } = await listProductCosts(storeId, range);
+  // A product has a REAL cost when a manual override is set OR Shopify gave a
+  // concrete estimatedCost — the ratio fallback does NOT count (that's the
+  // "estimated" state the onboarding exists to eliminate).
+  const hasRealCost = (r: ProductCostRow) => r.costOverrideAmount != null || r.estimatedCost > 0;
+  const sold = rows.filter((r) => r.revenue > 0);
+  const soldRevenue = sold.reduce((s, r) => s + r.revenue, 0);
+  const covered = sold.filter(hasRealCost);
+  const revenueCovered = covered.reduce((s, r) => s + r.revenue, 0);
+  const missing = sold
+    .filter((r) => !hasRealCost(r))
+    .sort((a, b) => b.revenue - a.revenue || b.unitsSold - a.unitsSold);
+  const revenueMissing = missing.reduce((s, r) => s + r.revenue, 0);
+  // No sales in the window → nothing to judge; treat as fully covered so the
+  // onboarding card stays hidden rather than nagging on an empty window.
+  const coverage = soldRevenue > 0 ? revenueCovered / soldRevenue : 1;
+
+  let running = revenueCovered;
+  let toReachTarget = 0;
+  for (const m of missing) {
+    if (soldRevenue > 0 && running / soldRevenue >= COVERAGE_TARGET) break;
+    running += m.revenue;
+    toReachTarget += 1;
+  }
+
+  return {
+    coverage,
+    soldProducts: sold.length,
+    soldProductsWithCost: covered.length,
+    revenueCovered: roundCurrency(revenueCovered),
+    revenueMissing: roundCurrency(revenueMissing),
+    defaultCostRatio: summary.defaultCostRatio,
+    topMissing: missing.slice(0, opts?.limit ?? 8).map((m) => ({
+      productId: m.productId,
+      title: m.title,
+      primarySku: m.primarySku,
+      price: m.price,
+      revenue: m.revenue,
+      unitsSold: m.unitsSold
+    })),
+    missingCount: missing.length,
+    toReachTarget
+  };
+}
+
 // ── Default-ratio calibration (F-040) ────────────────────────────────────
 // The hardcoded 35% fallback was ~3.3× the store's MEASURED cost ratio
 // (real costs run 7–10% of price here), so every product without a cost was

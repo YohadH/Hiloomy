@@ -12,6 +12,9 @@ import { getAppChromeData, getProfitAnalyticsPayload } from "@/lib/services/anal
 import { buildChannelCacReport } from "@/lib/services/channel-cac-service";
 import { buildCollectionRhythm } from "@/lib/services/collection-rhythm-service";
 import { buildBundleProfitability } from "@/lib/services/bundle-profitability-service";
+import { buildCogsOnboarding } from "@/lib/services/product-cost-service";
+import { CogsOnboardingCard } from "@/components/profit/cogs-onboarding-card";
+import { ProfitAccuracyBadge } from "@/components/profit/profit-accuracy-badge";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { formatCurrency, formatNumber } from "@/lib/utils";
@@ -51,6 +54,12 @@ export default async function ProfitPage() {
         end: selection.end
       }).catch(() => [])
     : [];
+  // Guided COGS onboarding + accuracy label: how much of this window's profit
+  // is backed by real product cost vs the default-ratio estimate.
+  const cogs = storeId
+    ? await buildCogsOnboarding(storeId, { start: selection.start, end: selection.end }).catch(() => null)
+    : null;
+  const isHe = locale === "he";
 
   // Narrative
   const totalRevenue = profit.productPerformance.reduce((acc, row) => acc + row.revenue, 0);
@@ -81,11 +90,24 @@ export default async function ProfitPage() {
   return (
     <AppShell store={chrome.store} controls={chrome.controls}>
       <div className="space-y-6 sm:space-y-8">
-        <PageHead
-          eyebrow={dictionary.profit.eyebrow}
-          title={dictionary.profit.title}
-          description={dictionary.profit.description}
-        />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <PageHead
+            eyebrow={dictionary.profit.eyebrow}
+            title={dictionary.profit.title}
+            description={dictionary.profit.description}
+          />
+          {/* Measured-vs-estimated label so a profit figure is never read with
+              more authority than its cost data supports. */}
+          {cogs && totalRevenue > 0 ? (
+            <ProfitAccuracyBadge coverage={cogs.coverage} isHe={isHe} className="mt-1" />
+          ) : null}
+        </div>
+
+        {/* Guided COGS onboarding — top-revenue products still missing a real
+            cost. Only when coverage is short and there's actually work to do. */}
+        {cogs && cogs.coverage < 0.9 && cogs.topMissing.length > 0 ? (
+          <CogsOnboardingCard data={cogs} currency={currency} isHe={isHe} />
+        ) : null}
 
         {/* Verdict is GATED on data presence: a ₪0/₪0 window used to render
             "המרווח תחת לחץ" — the app confidently declaring collapsing
