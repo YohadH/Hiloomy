@@ -22,13 +22,13 @@ export default async function NewCreativeProjectPage() {
           eyebrow: "סטודיו קריאייטיב",
           title: "פרויקט חדש",
           description:
-            "בחרו סוג נכס, העלו את תמונת המוצר ותנו לAI לעשות את העבודה. הגרסה הזו מייצרת תמונה אחת באיכות גבוהה — טעימה ראשונה מהמערכת."
+            "בחרו סוג נכס, העלו את תמונת המוצר ובחרו כמות — הAI מפיק פאקשוטים, פוסטים, מודעות ותוכן UGC באיכות גבוהה."
         }
       : {
           eyebrow: "Creative Studio",
           title: "New project",
           description:
-            "Pick an asset type, upload your product photo, and let AI do the heavy lifting. This milestone generates one high-quality image so you can see the system end-to-end."
+            "Pick an asset type, upload your product photo, and choose how many — the AI produces high-quality packshots, posts, ads, and UGC content."
         };
 
   return (

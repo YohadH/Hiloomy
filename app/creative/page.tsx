@@ -28,13 +28,13 @@ export default async function CreativePage() {
           eyebrow: "סטודיו קריאייטיב",
           title: "יצירה, עריכה וניהול של נכסי תוכן",
           description:
-            "העלו תמונת מוצר ותנו לAI להפיק פאקשוטים, פוסטים לאינסטגרם, מודעות לMeta ותוכן UGC. בשלב הזה המערכת מייצרת תמונה אחת לכל פרויקט — עיבוד באצווה וסרטונים יתווספו בקרוב."
+            "העלו תמונת מוצר ותנו לAI להפיק פאקשוטים, פוסטים לאינסטגרם, מודעות לMeta ותוכן UGC — תמונה בודדת או אצווה שלמה בלחיצה אחת."
         }
       : {
           eyebrow: "Creative Studio",
           title: "Create, edit and manage AI content assets",
           description:
-            "Upload a product image and let AI produce packshots, Instagram posts, Meta ads and UGC content. M1 generates a single image per project — batching and video are coming in the next milestones."
+            "Upload a product image and let AI produce packshots, Instagram posts, Meta ads, and UGC content — a single image or a full batch in one click."
         };
 
   return (

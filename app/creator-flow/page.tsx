@@ -122,10 +122,20 @@ export default async function CreatorFlowPage() {
             />
             <StatTile
               label={dictionary.creator.attributedSales}
-              value={formatCurrency(payload.attributedSales, currency)}
+              // Never lead with a bare ₪0 — an unconnected attribution reads as
+              // "broken" rather than "not set up". Show a dash + a setup hint.
+              value={payload.attributedSales > 0 ? formatCurrency(payload.attributedSales, currency) : "—"}
               icon={ShoppingBag}
               tooltip="Sales matched back to creator posts via referral links, codes, or campaign tags."
-              hint="Linked to specific posts."
+              hint={
+                payload.attributedSales > 0
+                  ? isHe
+                    ? "משויך לפוסטים ספציפיים."
+                    : "Linked to specific posts."
+                  : isHe
+                    ? "עדיין לא מחובר — הגדירו קישורי ייחוס (קוד/לינק) כדי לייחס מכירות לפוסטים."
+                    : "Not connected yet — set up attribution links (code/link) to attribute sales to posts."
+              }
             />
             <StatTile
               label={dictionary.creator.engagementRate}
