@@ -1,7 +1,44 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { withOptionalDb } from "@/lib/server/db";
 
 export const REPORTING_DATE_RANGE_COOKIE = "reporting-date-range";
+
+// Presets the URL may carry (M-9). Kept in sync with the picker's RangePreset.
+const URL_PRESETS = new Set([
+  "today",
+  "yesterday",
+  "last_7",
+  "last_30",
+  "last_90",
+  "wtd",
+  "mtd",
+  "qtd",
+  "ytd",
+  "last_year",
+  "custom"
+]);
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The reporting range read from the URL query (M-9), which takes precedence
+ * over the cookie so a shared or bookmarked link controls the numbers.
+ * `?start=…&end=…` implies a custom range; `?preset=…` selects a named one.
+ * Comparison stays cookie-only for now — the range is the shareable part.
+ */
+function readUrlRange(search: string | null): { preset: RangePreset; start?: string; end?: string } | null {
+  if (!search) return null;
+  const params = new URLSearchParams(search);
+  const start = params.get("start");
+  const end = params.get("end");
+  if (start && end && ISO_DATE_RE.test(start) && ISO_DATE_RE.test(end)) {
+    return { preset: "custom", start, end };
+  }
+  const preset = params.get("preset");
+  if (preset && URL_PRESETS.has(preset)) {
+    return preset === "custom" ? null : { preset: preset as RangePreset };
+  }
+  return null;
+}
 
 const DEFAULT_TIME_ZONE = "UTC";
 
@@ -425,7 +462,21 @@ function readState(raw: string | undefined): ReportingPickerState | null {
 export async function getReportingDateRangeSelection(locale: "en" | "he" = "en"): Promise<ReportingDateRangeSelection> {
   const cookieStore = await cookies();
   const raw = cookieStore.get(REPORTING_DATE_RANGE_COOKIE)?.value;
-  const state = readState(raw);
+  const cookieState = readState(raw);
+  // URL query overrides the cookie (M-9), so a link to a specific window shows
+  // that window. The cookie still carries the range across sidebar navigation
+  // to pages the link didn't set, and holds the comparison selection.
+  const urlRange = await headers()
+    .then((h) => readUrlRange(h.get("x-search")))
+    .catch(() => null);
+  const state: ReportingPickerState | null = urlRange
+    ? {
+        preset: urlRange.preset,
+        start: urlRange.start ?? cookieState?.start ?? "",
+        end: urlRange.end ?? cookieState?.end ?? "",
+        comparison: cookieState?.comparison ?? { mode: "prev_period" }
+      }
+    : cookieState;
   const timeZone = await getStoreTimeZone();
 
   let preset: RangePreset = state?.preset ?? "last_30";

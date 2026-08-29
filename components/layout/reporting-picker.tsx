@@ -327,9 +327,31 @@ export function ReportingPicker(props: ReportingPickerProps) {
       // re-render outlasts, so the pill vanished before the page repainted.
       if (ok) setAwaitingRefresh(true);
     }
-    startTransition(() => {
-      router.refresh();
-    });
+    // A RANGE change (resync) goes into the URL so the window is shareable,
+    // bookmarkable, and Back-navigable (M-9). Comparison-only changes keep a
+    // plain refresh — the range URL is unchanged and comparison lives in the
+    // cookie. The cookie above still persists the range across navigation.
+    if (options.resync) {
+      const params = new URLSearchParams(window.location.search);
+      if (state.preset === "custom") {
+        params.set("preset", "custom");
+        params.set("start", state.start);
+        params.set("end", state.end);
+      } else {
+        params.set("preset", state.preset);
+        params.delete("start");
+        params.delete("end");
+      }
+      startTransition(() => {
+        // Cast: typedRoutes can't type a runtime-built path+query string
+        // (same `as never` convention the repo uses for dynamic routes).
+        router.push(`${window.location.pathname}?${params.toString()}` as never);
+      });
+    } else {
+      startTransition(() => {
+        router.refresh();
+      });
+    }
   }
 
   async function handleApplyRange() {

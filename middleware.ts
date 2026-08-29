@@ -153,6 +153,10 @@ export async function middleware(req: NextRequest) {
   // downstream (especially AppShell's paywall gate) can read it.
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-pathname", req.nextUrl.pathname);
+  // Forward the query string so server components can read the reporting date
+  // range from the URL (shareable / bookmarkable / Back-navigable), not only
+  // from the cookie (M-9).
+  requestHeaders.set("x-search", req.nextUrl.search);
   const res = NextResponse.next({ request: { headers: requestHeaders } });
 
   // Persist an explicit ?lang= choice into the app-locale cookie so the
