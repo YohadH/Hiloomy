@@ -91,12 +91,31 @@ export async function askOpenAiJson<T>(input: {
   const full =
     `${input.question}\n\n---\n${JSON_INSTRUCTION}` +
     (input.jsonHint ? `\n\nFormat hint: ${input.jsonHint}` : "");
+  const maxOutputTokens = input.maxOutputTokens ?? 3000;
 
-  const response = (await client.responses.create({
-    model: modelFor(kind),
-    input: full,
-    max_output_tokens: input.maxOutputTokens ?? 3000
-  } as never)) as unknown as { output_text?: string };
+  const call = (model: string) =>
+    client.responses.create({ model, input: full, max_output_tokens: maxOutputTokens } as never) as unknown as Promise<{
+      output_text?: string;
+    }>;
+
+  const pinned = modelFor(kind);
+  let response: { output_text?: string };
+  try {
+    response = await call(pinned);
+  } catch (err) {
+    // A misconfigured or unavailable pinned model (e.g. a typo'd BI_CHAT_MODEL
+    // on the host) must NOT take down all BI output. Retry once with the
+    // known-good default before giving up — the whole account was silently
+    // dark for a day when the pin was bad.
+    if (pinned !== DEFAULT_MODEL) {
+      console.warn(
+        `[openai-json] model "${pinned}" failed (${err instanceof Error ? err.message : err}); retrying with ${DEFAULT_MODEL}.`
+      );
+      response = await call(DEFAULT_MODEL);
+    } else {
+      throw err;
+    }
+  }
 
   return parseJsonResponse<T>(response.output_text ?? "");
 }

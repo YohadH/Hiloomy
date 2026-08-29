@@ -177,7 +177,18 @@ function buildDigest(input: BiWeeklyCommentaryInput): string {
 
 function buildPrompt(input: BiWeeklyCommentaryInput, digest: string): string {
   const lang = input.locale === "he" ? "Hebrew" : "English";
+  // CRITICAL — the language directive goes FIRST and emphatic. The data digest
+  // and the bold example below are English, so a soft trailing "Output
+  // language" line gets ignored and the model mirrors the English data dump
+  // (same lesson as summary-insights / meta-ads-insights). This is the fix for
+  // the Weekly Summary English-in-a-Hebrew-UI leak.
+  const languageHeader =
+    input.locale === "he"
+      ? "ענה אך ורק בעברית. כל המחרוזות בפלט (headline, insights, actions) חייבות להיות בעברית טבעית של מקצוען. אסור להחזיר אנגלית מלבד שמות קמפיינים/מוצרים ויחידות מידה (₪, %, ×)."
+      : "Respond ONLY in English.";
   return [
+    languageHeader,
+    "",
     `You are the Hiloomy BI agent writing the executive summary for this week's report.`,
     "",
     `Period: ${input.periodStart} → ${input.periodEnd}`,

@@ -279,15 +279,30 @@ function sanitizeInsight(raw: Record<string, unknown>): MetaCampaignsInsight | n
   return { headline, insights, actions, generatedAt: new Date().toISOString() };
 }
 
+const DEFAULT_BI_MODEL = "gpt-5.6-terra";
+
 async function callInsightModel(prompt: string): Promise<string | null> {
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
   if (openaiKey) {
     const client = new OpenAI({ apiKey: openaiKey });
-    const response = (await client.responses.create({
-      model: process.env.BI_CHAT_MODEL?.trim() || "gpt-5.6-terra",
-      input: prompt,
-      max_output_tokens: 4000
-    } as never)) as unknown as { output_text?: string };
+    const call = (model: string) =>
+      client.responses.create({ model, input: prompt, max_output_tokens: 4000 } as never) as unknown as Promise<{
+        output_text?: string;
+      }>;
+    const pinned = process.env.BI_CHAT_MODEL?.trim() || DEFAULT_BI_MODEL;
+    let response: { output_text?: string };
+    try {
+      response = await call(pinned);
+    } catch (err) {
+      // A bad BI_CHAT_MODEL pin must not silently kill the insight — retry
+      // once with the known-good default.
+      if (pinned !== DEFAULT_BI_MODEL) {
+        console.warn(`[meta-campaigns-insight] model "${pinned}" failed; retrying with ${DEFAULT_BI_MODEL}.`);
+        response = await call(DEFAULT_BI_MODEL);
+      } else {
+        throw err;
+      }
+    }
     return response.output_text ?? null;
   }
   const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();

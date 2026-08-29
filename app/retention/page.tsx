@@ -202,7 +202,11 @@ export default async function RetentionPage() {
             />
             <StatTile
               label={dictionary.retention.avgDaysToSecondOrder}
-              value={formatNumber(snap.averageDaysToSecondOrder)}
+              value={
+                Number.isFinite(snap.averageDaysToSecondOrder) && snap.averageDaysToSecondOrder > 0
+                  ? `${formatNumber(Math.round(snap.averageDaysToSecondOrder))} ${locale === "he" ? "ימים" : "days"}`
+                  : "—"
+              }
               icon={CalendarClock}
               tooltip={tips.avgDaysToSecond}
               hint={locale === "he" ? "ימים בין הזמנה ראשונה לשנייה." : "Days between order #1 and #2."}

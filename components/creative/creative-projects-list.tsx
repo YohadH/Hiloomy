@@ -71,6 +71,10 @@ export function CreativeProjectsList({
   // there's no flash of the row that's about to vanish.
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  // Thumbnails whose URL failed to load (missing/expired asset) — fall back to
+  // the type icon instead of a browser broken-image glyph, so a storage gap
+  // reads as "no preview" rather than "the feature is broken".
+  const [brokenThumbs, setBrokenThumbs] = useState<Set<string>>(new Set());
 
   async function handleDelete(e: React.MouseEvent, projectId: string, projectName: string) {
     // The whole card is a Link — stopPropagation + preventDefault so
@@ -169,12 +173,19 @@ export function CreativeProjectsList({
               >
                 <Card className="overflow-hidden transition-shadow group-hover:shadow-md">
                   <div className="relative aspect-square w-full bg-muted">
-                    {project.coverThumbUrl ? (
+                    {project.coverThumbUrl && !brokenThumbs.has(project.id) ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={project.coverThumbUrl}
                         alt={project.name}
                         className="absolute inset-0 h-full w-full object-cover"
+                        onError={() =>
+                          setBrokenThumbs((prev) => {
+                            const next = new Set(prev);
+                            next.add(project.id);
+                            return next;
+                          })
+                        }
                       />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
