@@ -15,7 +15,7 @@ import { getDb } from "@/lib/server/db";
 import { askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
 import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 import { anthropicChatJson } from "@/lib/clients/anthropic-client";
-import { fetchCompetitorActivity } from "@/lib/clients/rivalsweeper-client";
+import { fetchCompetitorActivity, type CompetitorActivityEntry } from "@/lib/clients/rivalsweeper-client";
 import { normalizeDomain } from "@/lib/services/competitor-intel-service";
 import {
   COMPETITOR_INTEL_LATEST,
@@ -97,6 +97,48 @@ function isAnthropicDirectAvailable(): boolean {
 // TENANCY GUARD: fetchCompetitorActivity is COMPANY-scoped (every domain
 // the RivalSweeper account monitors, across all stores) — so we keep only
 // the domains in THIS store's own competitor set before rendering.
+// Render one competitor entry from the LIVE activity feed (ads / homepage /
+// news). Shared by buildActivityIntel and buildLiveIntel's no-snapshot
+// branch, so a competitor without a stored snapshot still appears in the
+// dashboard's competitor set — matching the weekly report (owner: "why isn't
+// it aligned with the weekly report?"). `a` null = monitored but not crawled.
+function renderActivityEntry(
+  competitor: { name: string; domain: string },
+  a: CompetitorActivityEntry | undefined,
+  isHe: boolean
+): CompetitorIntel["competitors"][number] {
+  const t = (he: string, en: string) => (isHe ? he : en);
+  const moveParts: string[] = [];
+  if (a) {
+    if (a.adsActive !== null && a.adsActive > 0) {
+      moveParts.push(t(`כ־${a.adsActive} מודעות פעילות בספריית המודעות`, `~${a.adsActive} active ads in the ad library`));
+    }
+    if (a.adHeadlines.length > 0) {
+      moveParts.push(t(`מסר מוביל: "${a.adHeadlines[0]}"`, `Top ad message: "${a.adHeadlines[0]}"`));
+    }
+    if (a.homepageLinks.length > 0) {
+      moveParts.push(
+        t(`בדף הבית: ${a.homepageLinks.slice(0, 3).join(", ")}`, `Homepage highlights: ${a.homepageLinks.slice(0, 3).join(", ")}`)
+      );
+    }
+    if (a.news.length > 0) {
+      moveParts.push(t(`בחדשות: "${a.news[0].title}"`, `In the news: "${a.news[0].title}"`));
+    }
+  }
+  if (moveParts.length === 0) {
+    moveParts.push(t("במעקב — הסריקה הראשונה עדיין לא הסתיימה", "Monitored — first crawl not finished yet"));
+  }
+  return {
+    name: competitor.name,
+    tier: "tracked",
+    move: moveParts.join(" · "),
+    implication: t(
+      "נתוני פעילות חיים (מודעות, דף בית, חדשות). ניתוח מבצעים והנחות יתווסף כשסריקות המבצעים של הספק יבשילו.",
+      "Live activity data (ads, homepage, news). Promo/discount analysis arrives once the provider's promo scans mature."
+    )
+  };
+}
+
 async function buildActivityIntel(
   competitors: Array<{ id: string; name: string; domain: string }>,
   locale: "he" | "en"
@@ -112,43 +154,7 @@ async function buildActivityIntel(
   for (const competitor of competitors) {
     const a = byDomain.get(normalizeDomain(competitor.domain));
     if (!a) continue;
-    const moveParts: string[] = [];
-    if (a.adsActive !== null && a.adsActive > 0) {
-      moveParts.push(
-        t(
-          `כ־${a.adsActive} מודעות פעילות בספריית המודעות`,
-          `~${a.adsActive} active ads in the ad library`
-        )
-      );
-    }
-    if (a.adHeadlines.length > 0) {
-      moveParts.push(t(`מסר מוביל: "${a.adHeadlines[0]}"`, `Top ad message: "${a.adHeadlines[0]}"`));
-    }
-    if (a.homepageLinks.length > 0) {
-      moveParts.push(
-        t(
-          `בדף הבית: ${a.homepageLinks.slice(0, 3).join(" · ")}`,
-          `Homepage highlights: ${a.homepageLinks.slice(0, 3).join(" · ")}`
-        )
-      );
-    }
-    if (a.news.length > 0) {
-      moveParts.push(t(`בחדשות: "${a.news[0].title}"`, `In the news: "${a.news[0].title}"`));
-    }
-    if (moveParts.length === 0) {
-      moveParts.push(
-        t("במעקב — הסריקה הראשונה עדיין לא הסתיימה", "Monitored — first crawl not finished yet")
-      );
-    }
-    entries.push({
-      name: competitor.name,
-      tier: "tracked",
-      move: moveParts.join(" · "),
-      implication: t(
-        "נתוני פעילות חיים (מודעות, דף בית, חדשות). ניתוח מבצעים והנחות יתווסף כשסריקות המבצעים של הספק יבשילו.",
-        "Live activity data (ads, homepage, news). Promo/discount analysis arrives once the provider's promo scans mature."
-      )
-    });
+    entries.push(renderActivityEntry(competitor, a, isHe));
   }
   if (entries.length === 0) return null;
 
@@ -262,6 +268,17 @@ async function buildLiveIntel(
     byCompetitor.set(s.competitorId, list);
   }
 
+  // Live activity for competitors with NO stored snapshot yet, so the
+  // dashboard lists the SAME full competitor set as the weekly report
+  // instead of hiding the ones the promo crawler hasn't snapshotted (owner:
+  // dashboard showed 2, weekly report showed 5). Only fetched when at least
+  // one active competitor lacks a snapshot — no needless API call otherwise.
+  const missingSnapshot = competitors.some((c) => !byCompetitor.has(c.id));
+  const liveActivity = missingSnapshot
+    ? await fetchCompetitorActivity({ timeoutMs: 12_000 }).catch(() => null)
+    : null;
+  const activityByDomain = new Map((liveActivity ?? []).map((a) => [normalizeDomain(a.domain), a]));
+
   let latestDate = "";
   const entries: CompetitorIntel["competitors"] = [];
   const todayActions: string[] = [];
@@ -269,7 +286,12 @@ async function buildLiveIntel(
 
   for (const competitor of competitors) {
     const rows = byCompetitor.get(competitor.id) ?? [];
-    if (rows.length === 0) continue;
+    if (rows.length === 0) {
+      // No snapshot — show the competitor from its live activity (or a
+      // "monitored, not crawled yet" note) rather than dropping it.
+      entries.push(renderActivityEntry(competitor, activityByDomain.get(normalizeDomain(competitor.domain)), isHe));
+      continue;
+    }
     const latest = rows[0];
     const prev = rows.find(
       (r) => r.snapshotDate.getTime() !== latest.snapshotDate.getTime()
@@ -453,6 +475,45 @@ export async function getCompetitorBrief(
     today: intel.suggestedActions.today.map((s) => ({ action: s })),
     thisWeek: intel.suggestedActions.thisWeek.map((s) => ({ action: s }))
   };
+}
+
+// BLOCKING variant for the client-side loader: awaits BI generation (or
+// serves the cache) instead of fire-and-cache, so the dashboard can show a
+// spinner and swap in the real analysis when it lands — the same UX as the
+// Meta campaigns insight, rather than the static "BI unavailable" banner.
+export interface CompetitorBriefActions {
+  source: "bi-agent" | "fallback";
+  today: BriefAction[];
+  thisWeek: BriefAction[];
+  generatedAt: string;
+}
+
+export async function getCompetitorBriefBlocking(
+  storeId?: string,
+  locale: "he" | "en" = "he"
+): Promise<CompetitorBriefActions | null> {
+  const live = storeId ? await buildLiveIntel(storeId, locale).catch(() => null) : null;
+  const intel = live ?? (storeId ? null : COMPETITOR_INTEL_LATEST);
+  if (!intel) return null;
+
+  const fallback = (): CompetitorBriefActions => ({
+    source: "fallback",
+    today: intel.suggestedActions.today.map((s) => ({ action: s })),
+    thisWeek: intel.suggestedActions.thisWeek.map((s) => ({ action: s })),
+    generatedAt: intel.generatedAt
+  });
+
+  const cached = await readCache(cacheKey(intel.version, storeId));
+  if (cached) {
+    return { source: "bi-agent", today: cached.today, thisWeek: cached.thisWeek, generatedAt: intel.generatedAt };
+  }
+  if (isOpenAiConfigured() || isBiAgentConfigured() || isAnthropicDirectAvailable()) {
+    const answer = await generateBiBrief(intel, storeId, locale).catch(() => null);
+    if (isValidAnswer(answer)) {
+      return { source: "bi-agent", today: answer.today, thisWeek: answer.thisWeek, generatedAt: intel.generatedAt };
+    }
+  }
+  return fallback();
 }
 
 function cacheKey(version: string, storeId?: string): string {
