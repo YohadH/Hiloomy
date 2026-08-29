@@ -3,6 +3,10 @@ import { getAuthContext } from "@/lib/auth/session";
 import { getDb } from "@/lib/server/db";
 import { OrganizationSettingsForm } from "@/components/settings/organization-settings-form";
 import { TeamManagement } from "@/components/settings/team-management";
+import { AppShell } from "@/components/layout/app-shell";
+import { getAppChromeData } from "@/lib/services/analytics-service";
+import { getSubscriptionStatus } from "@/lib/billing/subscription-status";
+import { PLANS } from "@/lib/billing/plans";
 import { getAppLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -10,16 +14,19 @@ export const dynamic = "force-dynamic";
 export default async function OrganizationSettingsPage() {
   const auth = await getAuthContext();
   if (!auth.userId) redirect("/signin?next=/settings/organization" as never);
+  const chrome = await getAppChromeData();
   // Cookie drives UI language (auth.locale drives emails).
   const uiLocale = await getAppLocale();
   const isHe = uiLocale === "he";
   if (!auth.orgId) {
     return (
-      <main dir={isHe ? "rtl" : "ltr"} className="mx-auto max-w-2xl px-4 py-10">
-        <p className="text-sm text-muted-foreground">
-          {isHe ? "אין ארגון פעיל." : "No active organization."}
-        </p>
-      </main>
+      <AppShell store={chrome.store} controls={chrome.controls}>
+        <div dir={isHe ? "rtl" : "ltr"} className="mx-auto w-full max-w-2xl">
+          <p className="text-sm text-muted-foreground">
+            {isHe ? "אין ארגון פעיל." : "No active organization."}
+          </p>
+        </div>
+      </AppShell>
     );
   }
 
@@ -74,6 +81,20 @@ export default async function OrganizationSettingsPage() {
 
   const isAdmin = auth.role === "owner" || auth.role === "admin";
 
+  // Show the EFFECTIVE entitlement (same source as /billing), NOT the raw
+  // org.plan column. With billing disabled this resolves to a paid "agency"
+  // plan with no trial — so the org row must not advertise a "trial" that
+  // ends in two days when the trial isn't real (QA finding).
+  const sub = await getSubscriptionStatus().catch(() => null);
+  const effectivePlan = sub?.plan ?? org.plan;
+  const planLabel =
+    effectivePlan === "starter" || effectivePlan === "growth" || effectivePlan === "agency"
+      ? PLANS[effectivePlan].name[isHe ? "he" : "en"]
+      : isHe
+        ? "תקופת ניסיון"
+        : "Trial";
+  const showTrialEnd = sub?.status === "trial_active" && sub.trialEndsAt != null;
+
   // Team list — memberships + pending invitations.
   const teamData = await Promise.all([
     db.membership.findMany({
@@ -107,7 +128,8 @@ export default async function OrganizationSettingsPage() {
   }>;
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-10">
+    <AppShell store={chrome.store} controls={chrome.controls}>
+      <div className="mx-auto w-full max-w-2xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">{t.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t.subtitle}</p>
@@ -118,10 +140,10 @@ export default async function OrganizationSettingsPage() {
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             {t.plan}
           </p>
-          <p className="mt-1 text-lg font-semibold capitalize">{org.plan}</p>
-          {org.trialEndsAt && org.plan === "trial" ? (
+          <p className="mt-1 text-lg font-semibold">{planLabel}</p>
+          {showTrialEnd ? (
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              {t.trial}: {new Intl.DateTimeFormat(isHe ? "he-IL" : "en-US").format(org.trialEndsAt)}
+              {t.trial}: {new Intl.DateTimeFormat(isHe ? "he-IL" : "en-US").format(sub!.trialEndsAt!)}
             </p>
           ) : null}
         </div>
@@ -171,6 +193,7 @@ export default async function OrganizationSettingsPage() {
           viewerLocale={isHe ? "he" : "en"}
         />
       </div>
-    </main>
+      </div>
+    </AppShell>
   );
 }

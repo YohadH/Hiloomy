@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/auth/session";
 import { getDb } from "@/lib/server/db";
 import { History, User as UserIcon } from "lucide-react";
+import { AppShell } from "@/components/layout/app-shell";
+import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getAppLocale } from "@/lib/i18n";
 
 // Audit log viewer. Owner/admin only — members see "permission required".
@@ -14,6 +16,7 @@ export default async function AuditLogPage() {
   if (!auth.userId) redirect("/signin?next=/settings/audit-log" as never);
   if (!auth.orgId) redirect("/");
 
+  const chrome = await getAppChromeData();
   const isAdmin = auth.role === "owner" || auth.role === "admin";
   // Cookie is the source of truth for UI language (auth.locale drives
   // emails); reading it here keeps this page in step with the app shell.
@@ -21,27 +24,31 @@ export default async function AuditLogPage() {
   const t = locale === "he"
     ? {
         title: "יומן ביקורת",
-        subtitle: "כל הפעולות הקריטיות בארגון — 100 הרשומות האחרונות",
+        subtitle: "פעולות רגישות בארגון — הזמנות צוות, שינויי הרשאות, עדכוני הגדרות וחיוב",
         denied: "רק בעלים ומנהלים יכולים לצפות ביומן הביקורת.",
-        empty: "אין רשומות עדיין.",
+        emptyTitle: "אין עדיין פעולות רגישות לתיעוד.",
+        emptyBody: "כשמישהו יזמין חבר צוות, ישנה הרשאה, יעדכן הגדרות ארגון או יבצע שינוי חיוב — זה יופיע כאן.",
         system: "מערכת"
       }
     : {
         title: "Audit log",
-        subtitle: "All security-relevant org actions, last 100 entries",
+        subtitle: "Security-relevant org actions — team invites, role changes, settings & billing updates",
         denied: "Only owners and admins can view the audit log.",
-        empty: "No entries yet.",
+        emptyTitle: "No security-relevant actions logged yet.",
+        emptyBody: "When someone invites a teammate, changes a role, updates organization settings, or makes a billing change, it will show up here.",
         system: "System"
       };
 
   if (!isAdmin) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-2xl font-bold tracking-tight">{t.title}</h1>
-        <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {t.denied}
-        </p>
-      </main>
+      <AppShell store={chrome.store} controls={chrome.controls}>
+        <div className="mx-auto w-full max-w-3xl">
+          <h1 className="text-2xl font-bold tracking-tight">{t.title}</h1>
+          <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {t.denied}
+          </p>
+        </div>
+      </AppShell>
     );
   }
 
@@ -66,7 +73,8 @@ export default async function AuditLogPage() {
   }>;
 
   return (
-    <main dir={locale === "he" ? "rtl" : "ltr"} className="mx-auto max-w-3xl px-4 py-10">
+    <AppShell store={chrome.store} controls={chrome.controls}>
+    <div dir={locale === "he" ? "rtl" : "ltr"} className="mx-auto w-full max-w-3xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">
           <History className="me-2 inline h-5 w-5 text-muted-foreground" aria-hidden />
@@ -76,9 +84,11 @@ export default async function AuditLogPage() {
       </div>
 
       {events.length === 0 ? (
-        <p className="rounded-md border border-border bg-card p-6 text-sm text-muted-foreground text-center">
-          {t.empty}
-        </p>
+        <div className="rounded-xl border border-border bg-card p-8 text-center">
+          <History className="mx-auto h-8 w-8 text-muted-foreground/50" aria-hidden />
+          <p className="mt-3 text-sm font-semibold text-foreground">{t.emptyTitle}</p>
+          <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground">{t.emptyBody}</p>
+        </div>
       ) : (
         <ol className="space-y-3">
           {events.map((event) => {
@@ -103,6 +113,7 @@ export default async function AuditLogPage() {
           })}
         </ol>
       )}
-    </main>
+    </div>
+    </AppShell>
   );
 }

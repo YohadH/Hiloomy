@@ -5,6 +5,8 @@ import { getDb } from "@/lib/server/db";
 import { PLANS } from "@/lib/billing/plans";
 import { BillingPlanPicker } from "@/components/billing/billing-plan-picker";
 import { billingEnabled } from "@/lib/billing/billing-flag";
+import { AppShell } from "@/components/layout/app-shell";
+import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getAppLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +24,8 @@ export default async function BillingPage() {
     select: { name: true, currency: true }
   })) as { name: string; currency: string } | null;
   if (!org) redirect("/");
+
+  const chrome = await getAppChromeData();
 
   // Cookie first (what the app shell renders from), DB locale as the
   // fallback — otherwise this page could disagree with the surrounding UI.
@@ -43,10 +47,12 @@ export default async function BillingPage() {
             body: "The app is running in development mode. Set BILLING_ENABLED=true in your environment to enable plan selection here."
           };
     return (
-      <main dir={locale === "he" ? "rtl" : "ltr"} className="mx-auto max-w-2xl px-4 py-10">
-        <h1 className="text-2xl font-bold tracking-tight">{disabledCopy.title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{disabledCopy.body}</p>
-      </main>
+      <AppShell store={chrome.store} controls={chrome.controls}>
+        <div dir={locale === "he" ? "rtl" : "ltr"} className="mx-auto w-full max-w-2xl">
+          <h1 className="text-2xl font-bold tracking-tight">{disabledCopy.title}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{disabledCopy.body}</p>
+        </div>
+      </AppShell>
     );
   }
 
@@ -70,7 +76,8 @@ export default async function BillingPage() {
     : (locale === "he" ? "תקופת ניסיון" : "Trial");
 
   return (
-    <main dir={locale === "he" ? "rtl" : "ltr"} className="mx-auto max-w-5xl px-4 py-10">
+    <AppShell store={chrome.store} controls={chrome.controls}>
+    <div dir={locale === "he" ? "rtl" : "ltr"} className="mx-auto w-full max-w-5xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">{t.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t.subtitle}</p>
@@ -100,6 +107,7 @@ export default async function BillingPage() {
       </div>
 
       <BillingPlanPicker locale={locale} currency={currency} currentPlan={sub.plan} />
-    </main>
+    </div>
+    </AppShell>
   );
 }
