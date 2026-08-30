@@ -42,6 +42,28 @@ export async function assertStoreInActiveOrg(storeId: string): Promise<{ orgId: 
 }
 
 /**
+ * Resolve the store a request should act on AND assert org ownership in one
+ * step — the safe replacement for the "if (body.storeId) assert" pattern.
+ *
+ * Pass a client-supplied storeId (body/query/form) or omit it; when absent
+ * we fall back to the caller's active store. The result is ALWAYS run
+ * through assertStoreInActiveOrg, so a request can never touch a store
+ * outside the caller's org — whether it supplied a foreign id or none at
+ * all. Throws 400 when no store resolves, 401/403/404 from the assert.
+ */
+export async function resolveScopedStoreId(clientStoreId?: unknown): Promise<string> {
+  const { resolveActiveStoreId } = await import("@/lib/services/offline-sales-service");
+  const supplied =
+    typeof clientStoreId === "string" && clientStoreId.trim() ? clientStoreId.trim() : null;
+  const storeId = supplied ?? (await resolveActiveStoreId());
+  if (!storeId) {
+    throw new AppError("No active store. Connect or select a brand first.", 400);
+  }
+  await assertStoreInActiveOrg(storeId);
+  return storeId;
+}
+
+/**
  * Authenticated-only variant — for routes that don't operate on a
  * specific store (e.g. account settings, billing). Throws if anonymous.
  */

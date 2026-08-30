@@ -14,7 +14,8 @@
 export const dynamic = "force-dynamic";
 
 import { buildDailyReport, getDailyReportDates, type DailyReportBundle } from "@/lib/services/daily-report-service";
-import { getDb } from "@/lib/server/db";
+import { getAuthContext } from "@/lib/auth/session";
+import { assertStoreInActiveOrg } from "@/lib/auth/guards";
 
 interface SearchParams {
   storeId?: string;
@@ -54,12 +55,23 @@ export default async function DailySummaryPrintPage({
 }) {
   const params = await searchParams;
 
-  // Resolve storeId — URL param is required for headless rendering.
+  // Resolve storeId — the URL param is required (the daily-report cron always
+  // passes it when rendering headlessly). We no longer fall back to "any store
+  // in the database", which would render another tenant's digest.
+  //
+  // When a signed-in user opens this interactively, they may only view their
+  // OWN store — assert org ownership and deny otherwise. The cron path has no
+  // session (getAuthContext throws / returns no userId), so it renders with
+  // the explicit storeId unchanged.
   let storeId = params.storeId?.trim() ?? null;
-  if (!storeId) {
-    const db = getDb();
-    const store = await db.store.findFirst({ select: { id: true } }).catch(() => null);
-    storeId = store?.id ?? null;
+  if (storeId) {
+    const auth = await getAuthContext().catch(() => null);
+    if (auth?.userId) {
+      const allowed = await assertStoreInActiveOrg(storeId)
+        .then(() => true)
+        .catch(() => false);
+      if (!allowed) storeId = null;
+    }
   }
 
   let bundle: DailyReportBundle | null = null;

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { parseOfflineSalesWorkbook } from "@/lib/server/offline-sales-excel-parser";
-import { resolveActiveStoreId, saveOfflineSalesUpload } from "@/lib/services/offline-sales-service";
+import { saveOfflineSalesUpload } from "@/lib/services/offline-sales-service";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 import { getAuthContext } from "@/lib/auth/session";
+import { resolveScopedStoreId } from "@/lib/auth/guards";
 
 export async function POST(request: Request) {
   const auth = await getAuthContext();
@@ -15,14 +16,14 @@ export async function POST(request: Request) {
       throw new AppError("Upload an Excel file (.xlsx) first.", 400);
     }
 
+    // This is a WRITE keyed by storeId — org-check it. Previously a
+    // client-supplied storeId was trusted, letting one tenant write offline
+    // sales into another tenant's brand. resolveScopedStoreId falls back to
+    // the caller's active store and always asserts ownership.
     const storeIdField = formData.get("storeId");
-    const storeId =
-      typeof storeIdField === "string" && storeIdField.trim()
-        ? storeIdField.trim()
-        : await resolveActiveStoreId();
-    if (!storeId) {
-      throw new AppError("Connect a Shopify store before uploading offline sales.", 400);
-    }
+    const storeId = await resolveScopedStoreId(
+      typeof storeIdField === "string" ? storeIdField : null
+    );
 
     const buffer = await file.arrayBuffer();
     const parsed = parseOfflineSalesWorkbook(buffer);

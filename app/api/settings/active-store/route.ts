@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/db";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 import { getAuthContext } from "@/lib/auth/session";
+import { assertStoreInActiveOrg } from "@/lib/auth/guards";
 import { ACTIVE_STORE_COOKIE } from "@/lib/services/offline-sales-service";
 
 // POST /api/settings/active-store
@@ -26,6 +27,12 @@ export async function POST(request: Request) {
     if (!storeId) {
       throw new AppError("storeId is required.", 400);
     }
+
+    // CRITICAL: never set the active-store cookie to a store the caller
+    // doesn't own. Without this, any authenticated user could point their
+    // cookie at another tenant's store id, which the legacy resolution
+    // paths would then trust. Throws 403 on a foreign store.
+    await assertStoreInActiveOrg(storeId);
 
     const db = getDb();
     const store = await db.store.findUnique({

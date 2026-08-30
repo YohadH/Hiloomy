@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { toErrorMessage } from "@/lib/server/errors";
 import { getAuthContext } from "@/lib/auth/session";
+import { resolveScopedStoreId } from "@/lib/auth/guards";
 import { getInternalBaseUrl } from "@/lib/server/base-url";
 import { renderPdfFromUrl } from "@/lib/server/pdf-renderer";
 
@@ -66,6 +67,12 @@ export async function POST(request: Request) {
 
   try {
     const body: ExportBody = await request.json().catch(() => ({}));
+
+    // Org-check the target store before rendering — resolve to the caller's
+    // active store when none is supplied, and reject a foreign storeId (the
+    // print page enforces this too, but fail fast here rather than render a
+    // 404 into a PDF).
+    body.storeId = await resolveScopedStoreId(body.storeId);
 
     const baseUrl = getInternalBaseUrl(request);
     const printUrl = buildPrintUrl(baseUrl, body);

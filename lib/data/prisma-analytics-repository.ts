@@ -135,19 +135,21 @@ async function getStoreRecord(storeId?: string): Promise<any | null> {
   }
 
   // Honor the operator's active-store pick (StoreSwitcher cookie / org
-  // context) before the legacy "first store with a Shopify connection"
-  // fallback. The legacy pick silently ignored the switcher and made any
-  // store WITHOUT a ShopifyConnection row (e.g. the demo store) impossible
-  // to view — the switch POST succeeded, the cookie was set, and the
-  // dashboard still rendered the connected store. Session-less contexts
-  // (crons, webhooks) throw inside resolveActiveStoreId's cookie read and
-  // fall through to the legacy behavior unchanged.
+  // context) before any legacy fallback. CRITICAL: when a signed-in user
+  // resolves but has no active store in their org (mid-onboarding / revoked
+  // membership), FAIL CLOSED — never fall through to "the newest connected
+  // store in the database", which in multi-tenant SaaS renders another
+  // tenant's brand (profit, retention, store name). The legacy global
+  // fallback survives ONLY when there is no auth context at all (crons,
+  // webhooks, or dev without Supabase configured).
+  let authResolved = false;
   try {
-    const { resolveActiveStoreId } = await import("@/lib/services/offline-sales-service");
-    const activeId = await resolveActiveStoreId();
-    if (activeId) {
+    const { getAuthContext } = await import("@/lib/auth/session");
+    const auth = await getAuthContext();
+    authResolved = true;
+    if (auth.orgId && auth.storeId) {
       const active = await withOptionalDb(
-        (db) => db.store.findUnique({ where: { id: activeId } }),
+        (db) => db.store.findUnique({ where: { id: auth.storeId! } }),
         null
       );
       if (active) return active;
@@ -155,6 +157,8 @@ async function getStoreRecord(storeId?: string): Promise<any | null> {
   } catch {
     // No request/auth context — use the legacy fallback below.
   }
+
+  if (authResolved) return null;
 
   return getConnectedStoreRecord();
 }

@@ -177,7 +177,20 @@ export default async function MetaAdsWeeklyPrintPage({
   const isHe = locale === "he";
   const direction: "rtl" | "ltr" = isHe ? "rtl" : "ltr";
 
-  const storeId = params.storeId?.trim() || (await resolveActiveStoreId());
+  // Resolve the target store, then ENFORCE org ownership. Without this, any
+  // signed-in user could pass ?storeId=<another tenant's store> and read that
+  // brand's entire weekly report (spend, ROAS, attribution, affiliates, AI
+  // commentary). auth.orgId is already guaranteed above, so the assert can
+  // only pass for a store in the caller's own org.
+  const requestedStoreId = params.storeId?.trim() || (await resolveActiveStoreId());
+  if (!requestedStoreId) return notFound();
+  try {
+    const { assertStoreInActiveOrg } = await import("@/lib/auth/guards");
+    await assertStoreInActiveOrg(requestedStoreId);
+  } catch {
+    return notFound();
+  }
+  const storeId = requestedStoreId;
 
   // Report depth. The DEFAULT is the concise executive report — summary,
   // insights, actions, competitors and the money tables. `appendix=1` adds

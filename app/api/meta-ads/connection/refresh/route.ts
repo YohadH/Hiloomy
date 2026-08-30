@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 import { refreshMetaAdsAccessToken } from "@/lib/services/meta-ads-service";
-import { assertStoreInActiveOrg } from "@/lib/auth/guards";
+import { resolveScopedStoreId } from "@/lib/auth/guards";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    if (typeof body.storeId === "string" && body.storeId) {
-      await assertStoreInActiveOrg(body.storeId);
-    }
+    const storeId = await resolveScopedStoreId(body.storeId);
     const result = await refreshMetaAdsAccessToken({
-      storeId: typeof body.storeId === "string" ? body.storeId : null,
+      storeId,
       accessToken: typeof body.accessToken === "string" ? body.accessToken : null,
       appId: typeof body.appId === "string" ? body.appId : null,
       appSecret: typeof body.appSecret === "string" ? body.appSecret : null

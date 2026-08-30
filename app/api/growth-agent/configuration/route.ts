@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 import { getGrowthAgentSettings, saveGrowthAgentSettings } from "@/lib/services/growth-agent-service";
-import { assertStoreInActiveOrg } from "@/lib/auth/guards";
+import { assertStoreInActiveOrg, resolveScopedStoreId } from "@/lib/auth/guards";
 import { getAuthContext } from "@/lib/auth/session";
 
 export async function GET(request: Request) {
@@ -9,8 +9,7 @@ export async function GET(request: Request) {
     const auth = await getAuthContext();
     if (!auth.userId) return NextResponse.json({ ok: false, error: "Unauthorized." }, { status: 401 });
     const url = new URL(request.url);
-    const storeId = url.searchParams.get("storeId") ?? undefined;
-    if (storeId) await assertStoreInActiveOrg(storeId);
+    const storeId = await resolveScopedStoreId(url.searchParams.get("storeId"));
     const settings = await getGrowthAgentSettings(storeId);
     return NextResponse.json({ ok: true, settings });
   } catch (error) {

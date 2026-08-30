@@ -93,10 +93,13 @@ async function resolveConnectedGrowthStore(db: any, storeId?: string) {
     return store;
   }
 
-  return db.store.findFirst({
-    where: { connected: true, connection: { isNot: null } },
-    orderBy: { updatedAt: "desc" }
-  });
+  // Fail-closed: NEVER pick "the most-recently-updated store in the whole
+  // database" — in multi-tenant SaaS that hands the caller another tenant's
+  // brand. Every caller now resolves + org-asserts a storeId upstream
+  // (routes via resolveScopedStoreId, crons pass an explicit store.id), so a
+  // missing storeId here is a bug, not a request to guess. Return null and
+  // let getStoreOrThrow raise "connect a store".
+  return null;
 }
 
 async function getStoreOrThrow(storeId?: string, options?: { allowFallback?: boolean }) {

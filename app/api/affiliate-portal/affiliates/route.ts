@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAffiliate } from "@/lib/services/affiliate-portal-directory-service";
 import { toErrorMessage } from "@/lib/server/errors";
-import { assertStoreInActiveOrg } from "@/lib/auth/guards";
+import { resolveScopedStoreId } from "@/lib/auth/guards";
 import { getAuthContext } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
@@ -9,9 +9,12 @@ export async function POST(request: Request) {
     const auth = await getAuthContext();
     if (!auth.userId) return NextResponse.json({ ok: false, error: "Unauthorized." }, { status: 401 });
     const body = await request.json();
-    if (body.storeId) await assertStoreInActiveOrg(body.storeId);
+    // Resolve to the caller's active store when none is supplied, and ALWAYS
+    // org-check the result — never fall through to a global "base store"
+    // (which would write this affiliate's PII into another tenant's brand).
+    const storeId = await resolveScopedStoreId(body.storeId);
     const result = await createAffiliate({
-      storeId: body.storeId,
+      storeId,
       email: body.email,
       firstName: body.firstName,
       lastName: body.lastName,

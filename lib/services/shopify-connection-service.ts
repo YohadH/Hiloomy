@@ -61,13 +61,30 @@ export async function saveShopifyCredentials(input: ShopifyCredentialInput) {
     );
   }
 
+  // Guard against cross-org store takeover. `upsert` keys on the globally
+  // unique `domain`, so re-saving credentials for a domain another org owns
+  // would otherwise silently reparent that store (and its whole data graph)
+  // into the caller's org. Only assign the org when the store is NEW or
+  // currently unassigned (the legitimate orphan-backfill case); refuse to
+  // move a store that already belongs to a different org.
+  const existingStore = await db.store.findUnique({
+    where: { domain: shopDomain },
+    select: { id: true, orgId: true }
+  });
+  if (existingStore?.orgId && existingStore.orgId !== orgId) {
+    throw new AppError(
+      "This store is already connected to a different organization and can't be moved by re-connecting. Contact support to transfer it.",
+      409
+    );
+  }
+  const shouldAssignOrg = Boolean(orgId) && (!existingStore || !existingStore.orgId);
+
   const store = await db.store.upsert({
     where: { domain: shopDomain },
     update: {
-      // Don't move a store between orgs on a re-save — only set it
-      // when it's currently unassigned (handles the orphan-backfill
-      // case for stores connected before this fix).
-      ...(orgId ? { org: { connect: { id: orgId } } } : {}),
+      // Only (re)assign the org for a currently-unassigned store — never
+      // reparent one that already belongs to an org (checked above).
+      ...(shouldAssignOrg ? { org: { connect: { id: orgId! } } } : {}),
       name: tested.storePreview.name,
       shopifyShopId: tested.storePreview.shopifyShopId,
       currency: tested.storePreview.currency,
@@ -183,11 +200,13 @@ export async function getStoredShopifyCredentials(storeId: string) {
 }
 
 export async function getShopifyConnectionSummary(storeId?: string): Promise<ShopifyConnectionSummary | null> {
+  // Require an explicit storeId. The old no-arg branch did a global
+  // `findFirst` that returned another tenant's connection (shop domain,
+  // token-last-4, sync status). Callers always have a store id in hand
+  // (settings page passes chrome.store.id); no id → nothing to summarize.
+  if (!storeId) return null;
   const store: any = await withOptionalDb(
-    (db) =>
-      storeId
-        ? db.store.findUnique({ where: { id: storeId }, include: { connection: true } })
-        : db.store.findFirst({ where: { connected: true, connection: { isNot: null } }, include: { connection: true }, orderBy: { updatedAt: "desc" } }),
+    (db) => db.store.findUnique({ where: { id: storeId }, include: { connection: true } }),
     null
   );
 

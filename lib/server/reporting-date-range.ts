@@ -48,11 +48,23 @@ const DEFAULT_TIME_ZONE = "UTC";
  * with UTC `createdAt`, so e.g. "May 1" in Asia/Jerusalem is 2026-04-30T21:00Z
  * .. 2026-05-01T20:59:59Z — not the server-local midnight we used before.
  */
-export async function getStoreTimeZone(): Promise<string> {
+export async function getStoreTimeZone(storeId?: string): Promise<string> {
   return withOptionalDb(async (db) => {
-    const store = await db.store.findFirst({
-      where: { connected: true, connection: { isNot: null } },
-      orderBy: { updatedAt: "desc" },
+    // Resolve the store whose timezone we want: an explicit id, else the
+    // caller's ACTIVE store. Never `findFirst` across all stores — that would
+    // compute one brand's date windows from another tenant's timezone.
+    let targetId = storeId ?? null;
+    if (!targetId) {
+      try {
+        const { resolveActiveStoreId } = await import("@/lib/services/offline-sales-service");
+        targetId = await resolveActiveStoreId();
+      } catch {
+        targetId = null;
+      }
+    }
+    if (!targetId) return DEFAULT_TIME_ZONE;
+    const store = await db.store.findUnique({
+      where: { id: targetId },
       select: { timezone: true }
     });
     return store?.timezone || DEFAULT_TIME_ZONE;

@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 import { buildMarketingPlannerDataReadiness } from "@/lib/services/marketing-planner-readiness-service";
-import { assertStoreInActiveOrg } from "@/lib/auth/guards";
+import { resolveScopedStoreId } from "@/lib/auth/guards";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    if (typeof body.storeId === "string" && body.storeId) {
-      await assertStoreInActiveOrg(body.storeId);
-    }
+    const storeId = await resolveScopedStoreId(body.storeId);
     const result = await buildMarketingPlannerDataReadiness({
-      storeId: typeof body.storeId === "string" ? body.storeId : null,
+      storeId,
       planningMonth: typeof body.planningMonth === "string" ? body.planningMonth : "",
       refresh: body.refresh === true
     });

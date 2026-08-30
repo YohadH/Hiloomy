@@ -3,6 +3,7 @@ import { AppError, toErrorMessage } from "@/lib/server/errors";
 import type { MarketingBrand, MarketingPlannerExecutionMode, MarketingPlannerFocus } from "@/lib/domain/marketing-planner-types";
 import { generateMarketingPlannerWorkbook } from "@/lib/services/marketing-planner-service";
 import { getAuthContext } from "@/lib/auth/session";
+import { resolveScopedStoreId } from "@/lib/auth/guards";
 
 function isBrand(value: FormDataEntryValue | null): value is MarketingBrand {
   return value === "Incense" || value === "After";
@@ -38,12 +39,17 @@ export async function POST(request: Request) {
       throw new AppError("בחרו חודש תכנון לפני יצירת הגאנט.", 400);
     }
 
+    // Never trust the client storeId: resolve to the caller's active store
+    // when absent and org-check it, so a plan can't be generated over
+    // another tenant's Shopify data.
+    const scopedStoreId = await resolveScopedStoreId(typeof storeId === "string" ? storeId : null);
+
     const result = await generateMarketingPlannerWorkbook(
       {
         brand,
         planningMonth,
         briefText: typeof briefText === "string" ? briefText : "",
-        storeId: typeof storeId === "string" ? storeId : null,
+        storeId: scopedStoreId,
         focusChannels: typeof focusChannels === "string" ? focusChannels : "",
         focusMode: isFocusMode(focusMode) ? focusMode : "balanced",
         executionMode: isExecutionMode(executionMode) ? executionMode : "recommend_only",

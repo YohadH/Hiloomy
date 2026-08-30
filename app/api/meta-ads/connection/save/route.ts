@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 import { saveMetaAdsConnection } from "@/lib/services/meta-ads-service";
-import { assertStoreInActiveOrg } from "@/lib/auth/guards";
+import { resolveScopedStoreId } from "@/lib/auth/guards";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    if (typeof body.storeId === "string" && body.storeId) {
-      await assertStoreInActiveOrg(body.storeId);
-    }
+    // WRITE: resolve to the caller's active store when none is given, and
+    // always org-check — never let a Meta ad account/token be written onto
+    // another tenant's store.
+    const storeId = await resolveScopedStoreId(body.storeId);
     const result = await saveMetaAdsConnection({
-      storeId: typeof body.storeId === "string" ? body.storeId : null,
+      storeId,
       accessToken: typeof body.accessToken === "string" ? body.accessToken : "",
       adAccountId: typeof body.adAccountId === "string" ? body.adAccountId : "",
       appId: typeof body.appId === "string" ? body.appId : null,

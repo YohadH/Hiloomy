@@ -88,6 +88,11 @@ export async function getAuthContext(): Promise<AuthContext> {
       id: true,
       locale: true,
       memberships: {
+        // Deterministic order so the "default" active org (memberships[0],
+        // used when no active_org_id cookie is set) is stable across requests
+        // for a multi-org user — otherwise which brand's data they see could
+        // flip request to request. Most-recently-created org wins.
+        orderBy: { org: { createdAt: "desc" } },
         select: {
           orgId: true,
           role: true,

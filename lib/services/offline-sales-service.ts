@@ -15,9 +15,11 @@ export async function resolveActiveStoreId(): Promise<string | null> {
   //      background jobs) — pick the most recently updated connected store
   //      anywhere. This keeps cron paths working until 1E sweep promotes
   //      them all to org-aware.
+  let authResolved = false;
   try {
     const { getAuthContext } = await import("@/lib/auth/session");
     const auth = await getAuthContext();
+    authResolved = true;
     if (auth.orgId) {
       // Honor the user's active store within their active org.
       return auth.storeId ?? null;
@@ -26,8 +28,15 @@ export async function resolveActiveStoreId(): Promise<string | null> {
     // No auth context (e.g. webhook handler). Fall through to legacy path.
   }
 
-  // Legacy path — single-tenant fallback. Kept until every caller is
-  // org-aware.
+  // Fail-closed: auth RESOLVED but the user has no org (mid-onboarding or
+  // revoked membership). Do NOT fall through to the unscoped "any store"
+  // query below — that would hand this user another tenant's store. Same
+  // rule as listAllStoresForSwitcher. The legacy path survives ONLY when
+  // the auth module itself is unavailable (webhooks/cron/dev single-tenant).
+  if (authResolved) return null;
+
+  // Legacy path — single-tenant fallback. Reached only with NO auth context
+  // (webhooks, crons, background jobs, or dev without Supabase configured).
   const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
   const fromCookie = cookieStore.get(ACTIVE_STORE_COOKIE)?.value?.trim();
