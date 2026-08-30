@@ -8,6 +8,8 @@ import { authStrings, type AuthLocale } from "./auth-strings";
 import { GoogleSignInButton } from "./google-signin-button";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Matches the hint the field shows: 8+ chars, at least one uppercase, one digit.
+const PASSWORD_RE = /^(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 export function SignupForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
   const router = useRouter();
@@ -21,6 +23,8 @@ export function SignupForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [agreedTerms, setAgreedTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -41,7 +45,9 @@ export function SignupForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
     if (!email) return setError(t.errors.emailRequired);
     if (!EMAIL_RE.test(email)) return setError(t.errors.emailInvalid);
     if (!password) return setError(t.errors.passwordRequired);
-    if (password.length < 8) return setError(t.errors.passwordTooShort);
+    if (!PASSWORD_RE.test(password)) return setError(t.errors.passwordWeak);
+    if (password !== confirmPassword) return setError(t.errors.passwordMismatch);
+    if (!agreedTerms) return setError(t.errors.termsRequired);
 
     setSubmitting(true);
     try {
@@ -143,6 +149,43 @@ export function SignupForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
           <p className="mt-1 text-[11px] text-muted-foreground">{t.passwordHint}</p>
         </label>
 
+        <label className="block">
+          <span className="block text-sm font-medium mb-1">{t.confirmPasswordLabel}</span>
+          <div className="relative">
+            <Lock className="absolute top-1/2 -translate-y-1/2 start-3 w-4 h-4 text-muted-foreground" aria-hidden />
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder={t.confirmPasswordPlaceholder}
+              autoComplete="new-password"
+              className="w-full ps-9 pe-3 py-2.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
+              required
+              minLength={8}
+              aria-invalid={confirmPassword.length > 0 && confirmPassword !== password}
+            />
+          </div>
+          {confirmPassword.length > 0 && confirmPassword !== password ? (
+            <p className="mt-1 text-[11px] text-rose-600">{t.errors.passwordMismatch}</p>
+          ) : null}
+        </label>
+
+        <label className="flex items-start gap-2 text-[12px] leading-5 text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={agreedTerms}
+            onChange={(e) => setAgreedTerms(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-green-700 focus:ring-green-300"
+            required
+          />
+          <span>
+            {t.termsCheckbox}{" "}
+            <a href="/terms" className="underline hover:text-foreground">{t.termsLink}</a>{" "}
+            {t.and}{" "}
+            <a href="/privacy" className="underline hover:text-foreground">{t.privacyLink}</a>.
+          </span>
+        </label>
+
         {error ? (
           <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 flex items-start gap-2">
             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden />
@@ -158,13 +201,6 @@ export function SignupForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           {submitting ? t.submitting : t.submit}
         </button>
-
-        <p className="text-[11px] text-center text-muted-foreground leading-5">
-          {t.terms}{" "}
-          <a href="/terms" className="underline hover:text-foreground">{t.termsLink}</a>{" "}
-          {t.and}{" "}
-          <a href="/privacy" className="underline hover:text-foreground">{t.privacyLink}</a>.
-        </p>
       </form>
 
       <div className="mt-6 pt-6 border-t border-border/70 text-center text-sm text-muted-foreground">
