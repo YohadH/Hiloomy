@@ -77,8 +77,49 @@ model Organization {
   stores               Store[]
   invitations          Invitation[]
   auditEvents          AuditEvent[]
+  storeOnboardings     StoreOnboarding[]
 
   @@index([plan])
+}
+
+// Admin-managed store onboarding for design partners / multi-brand setups
+// (HLA — 2026 custom-distribution model). Holds the per-store Shopify app
+// credentials (Client ID + Secret) and the TARGET org a store should land
+// in, registered BEFORE the merchant installs. The OAuth install/callback
+// resolves the right app credentials by shopDomain, and the callback binds
+// the new Store to `targetOrgId` — so a partner can click "Install" without
+// being signed into Hiloomy and the store still lands in the correct org.
+//
+// Why this exists: as of 2026 Shopify removed copyable admin custom-app
+// tokens, and the client-credentials grant only works for stores in your
+// OWN Shopify org. Connecting an external partner store therefore requires
+// the authorization-code (OAuth) grant with that store's own app creds.
+model StoreOnboarding {
+  id                 String       @id @default(cuid())
+  // The store this onboarding is for. Globally unique — one active
+  // onboarding per shop.
+  shopDomain         String       @unique
+  // The custom-distribution app's Client ID (public) + Client Secret
+  // (encrypted at rest with AES-GCM, same helper as other secrets).
+  appClientId        String
+  appClientSecretEnc String
+  // Where the connected store should land. For a design partner this is a
+  // freshly-created isolated org; for the operator's own store it's their
+  // existing org.
+  targetOrgId        String
+  targetOrg          Organization @relation(fields: [targetOrgId], references: [id], onDelete: Cascade)
+  // For design partners: the email invited as owner of the new org.
+  invitedEmail       String?
+  // Who set this up (the operator). Nullable so a deleted user doesn't
+  // cascade-delete the onboarding.
+  createdByUserId    String?
+  // "pending" until the OAuth install completes, then "connected".
+  status             String       @default("pending")
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([targetOrgId])
+  @@index([status])
 }
 
 // Audit log — records security-relevant mutations so owners can answer

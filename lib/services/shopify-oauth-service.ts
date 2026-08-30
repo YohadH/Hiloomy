@@ -85,7 +85,64 @@ const CONFIG_CACHE_TTL_MS = 60 * 1000;
  * Settings UI (writes to DB) or set them as Render env vars. Either
  * works; DB wins if both are set.
  */
-async function getOauthConfig(): Promise<ShopifyOauthConfig> {
+function resolveScopes(): string {
+  const configuredScopes = process.env.SHOPIFY_OAUTH_SCOPES?.trim();
+  return configuredScopes && configuredScopes.length
+    ? configuredScopes.split(",").map((scope) => scope.trim()).filter(Boolean).join(",")
+    : DEFAULT_SCOPES.join(",");
+}
+
+/**
+ * Per-SHOP OAuth config — for stores registered via admin-managed onboarding
+ * (design partners / multi-brand). Each such store carries its OWN
+ * custom-distribution app's Client ID/Secret in StoreOnboarding, so the
+ * authorize URL, HMAC check, and token exchange all use that app's creds
+ * rather than the single global public app. Returns null when the shop has
+ * no onboarding record (→ caller falls back to the global config).
+ */
+async function getPerShopOauthConfig(shopDomain: string): Promise<ShopifyOauthConfig | null> {
+  const appUrl = process.env.APP_URL?.trim();
+  if (!appUrl) return null;
+  try {
+    const { getDb } = await import("@/lib/server/db");
+    const { decryptSecret } = await import("@/lib/security/encryption");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = getDb() as any;
+    if (!db?.storeOnboarding) return null;
+    const row = (await db.storeOnboarding.findUnique({
+      where: { shopDomain },
+      select: { appClientId: true, appClientSecretEnc: true }
+    })) as { appClientId: string; appClientSecretEnc: string } | null;
+    if (!row?.appClientId || !row?.appClientSecretEnc) return null;
+    const base = appUrl.replace(/\/$/, "");
+    return {
+      clientId: row.appClientId.trim(),
+      clientSecret: decryptSecret(row.appClientSecretEnc).trim(),
+      appUrl: base,
+      scopes: resolveScopes(),
+      redirectUri: `${base}/api/shopify/oauth/callback`
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the OAuth config for a given shop: the shop's own registered app
+ * credentials if it was set up via managed onboarding, otherwise the global
+ * public app. Every OAuth step (authorize, state, HMAC, token exchange)
+ * MUST resolve through here with the shop in hand so a multi-app deployment
+ * signs/verifies with the correct app secret.
+ */
+async function getOauthConfigForShop(shopDomain?: string | null): Promise<ShopifyOauthConfig> {
+  if (shopDomain) {
+    const perShop = await getPerShopOauthConfig(shopDomain);
+    if (perShop) return perShop;
+  }
+  return getGlobalOauthConfig();
+}
+
+async function getGlobalOauthConfig(): Promise<ShopifyOauthConfig> {
   if (configCache && Date.now() - configCache.loadedAt < CONFIG_CACHE_TTL_MS) {
     return configCache.value;
   }
@@ -183,8 +240,8 @@ export async function buildInstallRedirect(shopInput: string | null | undefined)
   state: string;
   signedState: string;
 }> {
-  const { clientId, clientSecret, scopes, redirectUri } = await getOauthConfig();
   const shopDomain = normalizeOauthShopDomain(shopInput);
+  const { clientId, clientSecret, scopes, redirectUri } = await getOauthConfigForShop(shopDomain);
   const state = generateOauthState();
 
   // OFFLINE (permanent) token grant — REQUIRED for background sync.
@@ -226,7 +283,7 @@ export async function verifyOauthState(input: {
   returnedState: string | null;
   signedStateCookie: string | null;
 }): Promise<boolean> {
-  const { clientSecret } = await getOauthConfig();
+  const { clientSecret } = await getOauthConfigForShop(input.shopDomain);
   const returnedState = input.returnedState?.trim();
   const cookie = input.signedStateCookie?.trim();
   if (!returnedState || !cookie) return false;
@@ -255,7 +312,9 @@ function timingSafeEqualStrings(a: string, b: string): boolean {
  * `key=value` pairs with `&`, HMAC-SHA256 with the app's client secret, hex.
  */
 export async function verifyOauthHmac(searchParams: URLSearchParams): Promise<boolean> {
-  const { clientSecret } = await getOauthConfig();
+  // Resolve the app secret for THIS shop — a managed-onboarding store signs
+  // with its own custom-distribution app, not the global public app.
+  const { clientSecret } = await getOauthConfigForShop(searchParams.get("shop"));
   const providedHmac = searchParams.get("hmac");
   if (!providedHmac) return false;
 
@@ -370,7 +429,7 @@ export async function registerOrderWebhooks(input: {
  * POST https://{shop}/admin/oauth/access_token  { client_id, client_secret, code }
  */
 export async function exchangeShopifyCode(shopDomain: string, code: string): Promise<TokenExchangeResult> {
-  const { clientId, clientSecret } = await getOauthConfig();
+  const { clientId, clientSecret } = await getOauthConfigForShop(shopDomain);
   const cleanCode = code.trim();
   if (!cleanCode) {
     throw new AppError("Shopify did not return an authorization code.", 400);
@@ -435,21 +494,36 @@ export async function persistOauthConnection(input: {
   const encryptedToken = encryptSecret(input.accessToken);
   const tokenLastFour = input.accessToken.slice(-4);
 
-  // Bind to active user's org so the store appears in their switcher.
-  // OAuth callbacks always run inside an authenticated request (the
-  // user clicked "Install via Shopify" while signed in), so we expect
-  // an org here. Fail loudly if missing — that's a real bug, not a
-  // silent orphan.
-  let orgId: string | null = null;
-  try {
-    const auth = await getAuthContext();
-    orgId = auth.orgId ?? null;
-  } catch {
-    orgId = null;
+  // Where does this store land?
+  //   1. A managed-onboarding record (design partner / multi-brand) pins the
+  //      TARGET org up front — so the store binds to the RIGHT org even when
+  //      the person clicking "Install" is the merchant, not signed into
+  //      Hiloomy at all. This is what makes admin-driven onboarding work.
+  //   2. Otherwise (self-serve install by a signed-in operator) fall back to
+  //      the installer's active org.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dbAny = db as any;
+  const onboarding = dbAny.storeOnboarding
+    ? ((await dbAny.storeOnboarding
+        .findUnique({
+          where: { shopDomain: input.shopDomain },
+          select: { id: true, targetOrgId: true }
+        })
+        .catch(() => null)) as { id: string; targetOrgId: string } | null)
+    : null;
+
+  let orgId: string | null = onboarding?.targetOrgId ?? null;
+  if (!orgId) {
+    try {
+      const auth = await getAuthContext();
+      orgId = auth.orgId ?? null;
+    } catch {
+      orgId = null;
+    }
   }
   if (!orgId) {
     throw new AppError(
-      "No active organization for the current user. Sign in and re-install.",
+      "No active organization for this store. Register the store under Settings → Design partners, or sign in and re-install.",
       401
     );
   }
@@ -526,6 +600,14 @@ export async function persistOauthConnection(input: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[shopify-oauth] Webhook registration/persist step failed for ${input.shopDomain}: ${message}`);
+  }
+
+  // Mark the managed-onboarding record connected so the operator's
+  // "Design partners" list flips from pending → connected.
+  if (onboarding) {
+    await dbAny.storeOnboarding
+      .update({ where: { id: onboarding.id }, data: { status: "connected" } })
+      .catch(() => null);
   }
 
   // Land the founder on the brand they just connected.

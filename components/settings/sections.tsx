@@ -216,6 +216,14 @@ export function OrganizationSection({ org, isHe }: { org: OrgSummary; isHe: bool
           >
             {lang("+ חיבור מותג נוסף", "+ Connect another brand")}
           </Link>
+          {org.role === "owner" || org.role === "admin" ? (
+            <Link
+              href={"/settings/partners" as never}
+              className="inline-flex items-center rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-green-300 hover:text-foreground"
+            >
+              {lang("שותפי עיצוב", "Design partners")}
+            </Link>
+          ) : null}
         </div>
       </CardContent>
     </Card>
