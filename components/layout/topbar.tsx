@@ -7,7 +7,8 @@ import {
   StoreSwitcher,
   type StoreSwitcherStore
 } from "@/components/layout/store-switcher";
-import { getAuthContext } from "@/lib/auth/session";
+import { OrgSwitcher } from "@/components/layout/org-switcher";
+import { getAuthContext, listUserOrgsForSwitcher } from "@/lib/auth/session";
 import { getDb } from "@/lib/server/db";
 
 export interface TopbarControls {
@@ -59,6 +60,9 @@ export async function Topbar({
       // ignore
     }
   }
+  // Orgs the user can switch between (own + any they were invited into).
+  // Renders as a switcher only when there's more than one.
+  const userOrgs = await listUserOrgsForSwitcher().catch(() => []);
   return (
     <div className="flex flex-col gap-4 border-b border-border/70 pb-5 sm:pb-6 lg:flex-row lg:items-center lg:justify-between">
       <div className="space-y-2 min-w-0">
@@ -95,6 +99,9 @@ export async function Topbar({
           separate manual sync button was redundant noise. The 2h cron still
           covers the background cadence. */}
       <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
+        {userOrgs.length > 1 ? (
+          <OrgSwitcher orgs={userOrgs} locale={locale === "he" ? "he" : "en"} />
+        ) : null}
         {auth?.email ? (
           <AccountMenu
             email={auth.email}

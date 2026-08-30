@@ -146,12 +146,23 @@ export async function getAuthContext(): Promise<AuthContext> {
   const cookieOrgId = jar.get(ACTIVE_ORG_COOKIE)?.value ?? null;
   const cookieStoreId = jar.get(ACTIVE_STORE_COOKIE)?.value ?? null;
 
-  // Pick the active org: cookie if valid, otherwise the user's first.
+  // Pick the active org. Priority:
+  //   1. the active_org_id cookie, if it names an org the user belongs to
+  //   2. otherwise the first membership whose org actually HAS a store
+  //   3. otherwise the first membership (deterministic — memberships are
+  //      ordered most-recently-created-org first)
+  //
+  // Step 2 is what keeps an invited teammate out of the "connect a store"
+  // trap: every signup auto-creates an empty personal org, so a member
+  // invited into someone else's (populated) org would otherwise default
+  // into their own empty one and be shown onboarding. Preferring an org
+  // with stores lands them where the data is.
   const memberships = dbUser.memberships;
   const cookieMembership = cookieOrgId
     ? memberships.find((m) => m.orgId === cookieOrgId)
     : undefined;
-  const activeMembership = cookieMembership ?? memberships[0] ?? null;
+  const membershipWithStores = memberships.find((m) => m.org.stores.length > 0);
+  const activeMembership = cookieMembership ?? membershipWithStores ?? memberships[0] ?? null;
 
   // Pick the active store within the active org: cookie if valid,
   // otherwise the first store in the org.
@@ -174,6 +185,51 @@ export async function getAuthContext(): Promise<AuthContext> {
     role: (activeMembership?.role as "owner" | "admin" | "member" | null) ?? null,
     storeId: activeStoreId
   };
+}
+
+export interface UserOrgOption {
+  orgId: string;
+  name: string;
+  storeCount: number;
+  role: string;
+  isActive: boolean;
+}
+
+/**
+ * Every organization the current user belongs to, for the org switcher.
+ * Marks which one is currently active. Returns [] for anonymous users.
+ */
+export async function listUserOrgsForSwitcher(): Promise<UserOrgOption[]> {
+  const auth = await getAuthContext().catch(() => null);
+  if (!auth?.userId) return [];
+  const db = getDb();
+  const user = (await db.user.findUnique({
+    where: { id: auth.userId },
+    select: {
+      memberships: {
+        orderBy: { org: { createdAt: "desc" } },
+        select: {
+          role: true,
+          org: {
+            select: { id: true, name: true, _count: { select: { stores: true } } }
+          }
+        }
+      }
+    }
+  })) as {
+    memberships: Array<{
+      role: string;
+      org: { id: string; name: string; _count: { stores: number } };
+    }>;
+  } | null;
+  if (!user) return [];
+  return user.memberships.map((m) => ({
+    orgId: m.org.id,
+    name: m.org.name,
+    storeCount: m.org._count.stores,
+    role: m.role,
+    isActive: m.org.id === auth.orgId
+  }));
 }
 
 /**
