@@ -53,7 +53,10 @@ function ScorecardCard({
       : null;
   // The owner asked for TOTALS in plain language (F-055): gross sales
   // through the code, total discount given, orders — not derived ratios.
-  const grossSales = card.revenue + card.discountCost;
+  // Σ lineSubtotal over the code's DISTINCT orders (ex-VAT), computed in the
+  // service — not revenue + discountCost, which drifted whenever an order's
+  // line discounts and its DiscountUsage rows disagreed (H-10).
+  const grossSales = card.grossSales;
   const isSeeding = card.classification === "seeding";
   return (
     <div
@@ -156,7 +159,14 @@ function ScorecardCard({
           >
             {card.hasCostData ? formatCurrency(card.marginAfterDiscount, currency) : "—"}
           </span>
-          <span className="ms-2">
+          <span
+            className="ms-2"
+            title={
+              isHe
+                ? "סל ממוצע נטו: הכנסת מוצרים אחרי ההנחה, ללא מע\"מ ומשלוח, חלקי ההזמנות תחת הקוד — אותה הגדרה כמו ה-AOV בדשבורד."
+                : "Net AOV: product revenue after the discount, excluding VAT and shipping, ÷ orders under the code — the same definition as the dashboard's AOV."
+            }
+          >
             AOV {formatCurrency(card.aov, currency)}
             {aovDelta != null ? (
               <span className={cn("ms-1 font-semibold", aovDelta >= 0 ? "text-emerald-700" : "text-red-600")}>

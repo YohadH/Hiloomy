@@ -17,6 +17,7 @@
 
 import { getDb } from "@/lib/server/db";
 import { toNumber, roundCurrency } from "@/lib/server/numbers";
+import { computeCostCoverage } from "@/lib/services/cost-coverage";
 import { parseCsv } from "@/lib/services/affiliate-conversion-import-service";
 
 export interface ProductCostRow {
@@ -256,15 +257,33 @@ export async function buildCogsOnboarding(
   const missing = sold
     .filter((r) => !hasRealCost(r))
     .sort((a, b) => b.revenue - a.revenue || b.unitsSold - a.unitsSold);
-  const revenueMissing = missing.reduce((s, r) => s + r.revenue, 0);
+  let revenueMissing = missing.reduce((s, r) => s + r.revenue, 0);
   // No sales in the window → nothing to judge; treat as fully covered so the
   // onboarding card stays hidden rather than nagging on an empty window.
-  const coverage = soldRevenue > 0 ? revenueCovered / soldRevenue : 1;
+  let coverage = soldRevenue > 0 ? revenueCovered / soldRevenue : 1;
+  let coverageBase = soldRevenue;
+  let coverageCovered = revenueCovered;
 
-  let running = revenueCovered;
+  // Window mode: quote the SAME coverage the dashboard's profit card quotes
+  // (computeCostCoverage — gross line revenue, unknown products count as
+  // uncovered). This page's badge said 22% while the dashboard said 40% for
+  // one window because this path weighted by NET product revenue and skipped
+  // title-only lines (M-10). The per-product rows below stay net (they rank
+  // what to cost next); only the headline share is unified.
+  if (range) {
+    const shared = await computeCostCoverage(storeId, range.start, range.end);
+    if (shared.totalRevenue > 0) {
+      coverage = shared.coverage;
+      coverageBase = shared.totalRevenue;
+      coverageCovered = shared.coveredRevenue;
+      revenueMissing = Math.max(0, shared.totalRevenue - shared.coveredRevenue);
+    }
+  }
+
+  let running = coverageCovered;
   let toReachTarget = 0;
   for (const m of missing) {
-    if (soldRevenue > 0 && running / soldRevenue >= COVERAGE_TARGET) break;
+    if (coverageBase > 0 && running / coverageBase >= COVERAGE_TARGET) break;
     running += m.revenue;
     toReachTarget += 1;
   }
@@ -273,7 +292,7 @@ export async function buildCogsOnboarding(
     coverage,
     soldProducts: sold.length,
     soldProductsWithCost: covered.length,
-    revenueCovered: roundCurrency(revenueCovered),
+    revenueCovered: roundCurrency(coverageCovered),
     revenueMissing: roundCurrency(revenueMissing),
     defaultCostRatio: summary.defaultCostRatio,
     topMissing: missing.slice(0, opts?.limit ?? 8).map((m) => ({

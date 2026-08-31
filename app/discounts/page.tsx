@@ -85,7 +85,7 @@ export default async function DiscountsPage() {
           <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
             <p className="text-sm text-muted-foreground">{isHe ? "מכירות ברוטו מהזמנות עם קוד" : "Gross sales on coded orders"}</p>
             <p className="mt-1 text-2xl font-semibold tabular-nums">
-              {formatCurrency(report.totalRevenue + report.totalDiscountCost, currency)}
+              {formatCurrency(report.totalGrossSales, currency)}
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               {isHe

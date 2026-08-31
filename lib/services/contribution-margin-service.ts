@@ -34,6 +34,7 @@
 //                 overrides. (Tier 3.)
 
 import { getDb } from "@/lib/server/db";
+import { computeCostCoverage } from "@/lib/services/cost-coverage";
 import {
   computeWindowAffiliateCommission,
   getShopifySalesSummaryForWindow
@@ -152,30 +153,13 @@ export async function buildContributionMargin(
   // costs as covered, which is how this card claimed "99% coverage, 6
   // products missing" while the costs page truthfully reported 49% and 78
   // missing — the app understating its own uncertainty on its most
-  // important number (F-038). Both surfaces now share one definition of
-  // "has a cost": a real one.
-  const coverageRows = (await db.$queryRaw`
-    SELECT
-      COALESCE(SUM(CASE WHEN p."costOverrideAmount" IS NOT NULL OR p."estimatedCost" > 0
-                        THEN li."lineSubtotal" ELSE 0 END), 0)::float AS covered_revenue,
-      COALESCE(SUM(li."lineSubtotal"), 0)::float AS total_revenue,
-      COUNT(DISTINCT CASE WHEN p.id IS NULL OR (p."costOverrideAmount" IS NULL AND (p."estimatedCost" IS NULL OR p."estimatedCost" <= 0))
-                          THEN COALESCE(li."productId", li."title") END)::int AS products_missing
-    FROM "OrderLineItem" li
-    JOIN "Order" o ON o.id = li."orderId"
-    LEFT JOIN "Product" p ON p.id = li."productId"
-    WHERE li."storeId" = ${input.storeId}
-      AND o."createdAt" >= ${input.start}
-      AND o."createdAt" <= ${input.end}
-      AND o."cancelledAt" IS NULL
-      AND o.test = false
-  `.catch(() => [])) as Array<{ covered_revenue: number; total_revenue: number; products_missing: number }>;
-  const coverageRow = coverageRows[0];
-  const costCoverage =
-    coverageRow && coverageRow.total_revenue > 0
-      ? coverageRow.covered_revenue / coverageRow.total_revenue
-      : 0;
-  const productsMissingCost = coverageRow?.products_missing ?? 0;
+  // important number (F-038). Every surface now shares one definition of
+  // "has a cost": a real one — via computeCostCoverage (M-10: the same
+  // helper feeds /profit's badge and onboarding card, so the dashboard and
+  // /profit can no longer quote different coverage for one window).
+  const coverageResult = await computeCostCoverage(input.storeId, input.start, input.end);
+  const costCoverage = coverageResult.coverage;
+  const productsMissingCost = coverageResult.productsMissing;
 
   // Orders without any line-item cost — diagnostic.
   const ordersTotal = parity.orders;
@@ -266,7 +250,11 @@ function buildQualityNotes(input: {
       `${input.ordersWithoutLineItemCost} orders without line-item cost.`
     );
   }
-  pieces.he.push("מכירות ברוטו לפי Shopify Gross sales — לפני הנחות; 'סך מכירות' בכרטיס למטה כולל משלוח ומע\"מ, תואם Shopify.");
-  pieces.en.push("Gross sales matches Shopify's Gross sales (pre-discount); the 'Total sales' card below adds shipping + tax, matching Shopify.");
+  // A definition, not a claim of equality: the QA reconciled this figure
+  // against Shopify at the same moment and found it short (orders still
+  // syncing, cross-window refunds) while the UI asserted "matches". State
+  // the formula and let the numbers speak.
+  pieces.he.push("מכירות ברוטו מחושבות לפי הגדרת Shopify Gross sales — מחיר × כמות, לפני הנחות, ללא מע\"מ; 'סך מכירות' בכרטיס למטה מוסיף משלוח ומע\"מ כמו ב-Shopify. פער קטן מול Shopify נובע בדרך כלל מהזמנות שטרם סונכרנו.");
+  pieces.en.push("Gross sales follows Shopify's Gross sales definition — price × quantity, pre-discount, ex-VAT; the 'Total sales' card below adds shipping + tax the way Shopify does. A small gap vs Shopify usually means orders still syncing.");
   return { he: pieces.he.join(" "), en: pieces.en.join(" ") };
 }

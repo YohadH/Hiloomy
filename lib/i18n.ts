@@ -137,39 +137,42 @@ const dictionaries = {
         "The retention layer is built around first orders, second orders, and returning customer signals so the service can evolve into a genuine operator workflow rather than a shallow repeat-rate widget.",
       newCustomers: "New customers",
       returningCustomers: "Returning customers",
-      repeatPurchaseRate: "Repeat purchase rate",
+      // Named for what it computes: returning customers ÷ customers in the
+      // window. It was labelled "repeat purchase rate (lifetime)" while the
+      // number was the in-window share — one label was wrong (QA run 3).
+      repeatPurchaseRate: "Returning-customer share",
       secondOrderRate: "Second-order rate",
       avgDaysToSecondOrder: "Avg days to second order",
-      repeatRateOverTime: "Repeat purchase rate over time",
+      repeatRateOverTime: "Returning-customer share over time",
       newVsReturning: "New vs returning customers",
       newVsReturningDescription: "Current reporting window mix.",
       topFirstOrderProducts: "Top products in first orders",
       topSecondOrderProducts: "Top products in second orders",
       topSecondOrderDescription:
-        "The codebase models second-order analysis as a first-class concept for future automation.",
+        "What customers come back for — the products carrying your repeat business.",
       cohortView: "Cohort view",
       cohortDescription:
         "Live data from your order history: each row follows the customers who joined that month and shows how many came back.",
       avgTimeBetweenOrders: "Average time between first and second order",
       avgTimeDescription:
-        "Placeholder for distribution analysis and lifecycle benchmarking.",
+        "How long the second purchase takes on average — the pace of your customer lifecycle.",
       avgTimeTodo:
-        "TODO: Use Shopify order timelines plus AI summary generation to surface lifecycle opportunities and second-order drop-off risk automatically.",
+        "Under 60 days is fast for beauty; over 120 usually means the second order needs a nudge (replenishment reminder, post-purchase offer).",
       newLabel: "New",
       returningLabel: "Returning",
       tips: {
         page: "Retention is what compounds — second orders, repeat rate, and time-to-second-order tell you whether the store has real lifetime value.",
         newCustomers: "Customers who placed their very first order in this window.",
         returningCustomers: "Customers in this window who already had at least one prior order.",
-        repeatRate: "Share of customers who have placed more than one lifetime order. Higher = stickier brand.",
-        secondOrderRate: "Of customers whose first order falls in the window, what % came back for a second one.",
+        repeatRate: "Returning customers ÷ all customers who ordered in this window. The dashboard's returning rate counts orders; this counts customers — the two differ slightly by design.",
+        secondOrderRate: "Of customers whose first order falls in the window, what % came back for a second one. Only meaningful on a window longer than your typical repeat cycle — in a 7-day window it is structurally ~0.",
         avgDaysToSecond: "Average days between a customer's first and second order. Shorter = faster lifecycle.",
         repeatRateChart: "Daily returning-customer share. Watch for downward trends — they precede LTV problems.",
         newVsReturning: "Mix of new vs. returning customers in the current window. A healthy DTC mix is usually 30–50% returning.",
         topFirstOrder: "Products customers buy first — your best acquisition SKUs.",
         topSecondOrder: "Products customers come back for — your best retention SKUs.",
-        cohort: "Reserved for true cohort retention curves once order history is fully connected.",
-        avgTime: "Reserved for distribution analysis (median, p90) of first → second order lag."
+        cohort: "Each row is the customers who first ordered in that month; each cell is the share of them who ordered again N months later.",
+        avgTime: "Average days between a customer's first and second order."
       }
     },
     weeklySummary: {
@@ -504,39 +507,39 @@ const dictionaries = {
         "שכבת שימור הלקוחות בנויה סביב הזמנה ראשונה, הזמנה שנייה ולקוחות חוזרים, כדי להפוך את המוצר לכלי תפעולי אמיתי ולא רק וידג'ט שטחי של רכישה חוזרת.",
       newCustomers: "לקוחות חדשים",
       returningCustomers: "לקוחות חוזרים",
-      repeatPurchaseRate: "שיעור רכישה חוזרת",
+      repeatPurchaseRate: "נתח לקוחות חוזרים",
       secondOrderRate: "שיעור הזמנה שנייה",
       avgDaysToSecondOrder: "ממוצע ימים להזמנה שנייה",
-      repeatRateOverTime: "שיעור רכישה חוזרת לאורך זמן",
+      repeatRateOverTime: "נתח לקוחות חוזרים לאורך זמן",
       newVsReturning: "חדשים מול חוזרים",
       newVsReturningDescription: "התמהיל בחלון הדיווח הנוכחי.",
       topFirstOrderProducts: "המוצרים המובילים בהזמנה ראשונה",
       topSecondOrderProducts: "המוצרים המובילים בהזמנה שנייה",
       topSecondOrderDescription:
-        "הקוד מתייחס לניתוח הזמנה שנייה כקונספט מרכזי כדי לאפשר אוטומציה בהמשך.",
+        "מה הלקוחות חוזרים לקנות — המוצרים שנושאים את הרכישות החוזרות שלכם.",
       cohortView: "תצוגת קוהורטים",
       cohortDescription:
         "נתונים חיים מהיסטוריית ההזמנות שלכם: כל שורה עוקבת אחרי הלקוחות שהצטרפו באותו חודש ומראה כמה מהם חזרו.",
       avgTimeBetweenOrders: "זמן ממוצע בין הזמנה ראשונה לשנייה",
       avgTimeDescription:
-        "אזור שמור לניתוח התפלגות ובנצ'מרקים של מחזור חיים.",
+        "כמה זמן לוקח ללקוח להגיע לרכישה השנייה בממוצע — קצב מחזור החיים של הלקוחות שלכם.",
       avgTimeTodo:
-        "TODO: להשתמש בציר הזמן של הזמנות Shopify ובשכבת הסיכום כדי לזהות אוטומטית הזדמנויות להזמנה שנייה וסיכון לירידה.",
+        "מתחת ל-60 יום זה מהיר לעולם הביוטי; מעל 120 בדרך כלל אומר שההזמנה השנייה צריכה דחיפה (תזכורת חידוש, הצעה אחרי רכישה).",
       newLabel: "חדשים",
       returningLabel: "חוזרים",
       tips: {
         page: "שימור לקוחות הוא מה שמצטבר — הזמנה שנייה, רכישה חוזרת וזמן עד הזמנה שנייה מספרים אם לחנות יש אורך חיים לקוח אמיתי.",
         newCustomers: "לקוחות שביצעו את ההזמנה הראשונה שלהם בחלון הזמן הזה.",
         returningCustomers: "לקוחות שכבר הייתה להם הזמנה אחת קודמת לפחות.",
-        repeatRate: "אחוז הלקוחות עם יותר מהזמנה אחת אי פעם. גבוה = מותג דביק.",
-        secondOrderRate: "מתוך מי שהזמינו לראשונה בחלון, כמה חזרו להזמנה שנייה.",
+        repeatRate: "לקוחות חוזרים חלקי כל הלקוחות שהזמינו בחלון הזה. בדשבורד שיעור החוזרים נספר לפי הזמנות; כאן לפי לקוחות — הבדל קטן, במכוון.",
+        secondOrderRate: "מתוך מי שהזמינו לראשונה בחלון, כמה חזרו להזמנה שנייה. משמעותי רק בחלון ארוך ממחזור הרכישה החוזרת שלכם — בחלון של 7 ימים זה מבנית ~0.",
         avgDaysToSecond: "ממוצע ימים בין הזמנה ראשונה לשנייה. קצר יותר = מחזור חיים מהיר יותר.",
         repeatRateChart: "אחוז יומי של לקוחות חוזרים. ירידות כאן בדרך כלל מקדימות בעיות אורך חיים לקוח.",
         newVsReturning: "התמהיל בין לקוחות חדשים לחוזרים בחלון הנוכחי. מותג DTC (מכירה ישירה לצרכן / Direct to Consumer) בריא בדרך כלל מציג 30%-50% חוזרים.",
         topFirstOrder: "המוצרים שלקוחות קונים ראשונים — נקודות הכניסה הטובות ביותר.",
         topSecondOrder: "המוצרים שלקוחות חוזרים אליהם — מנועי שימור הלקוחות.",
-        cohort: "אזור שמור לעקומות שימור לקוחות אמיתיות לפי קוהורט כשההיסטוריה תחובר במלואה.",
-        avgTime: "אזור שמור להתפלגות (חציון, p90 — אחוזון 90 / 90th percentile) של פער הזמן בין הזמנה ראשונה לשנייה."
+        cohort: "כל שורה היא הלקוחות שהזמינו לראשונה באותו חודש; כל תא הוא אחוז מהם שהזמינו שוב N חודשים אחר כך.",
+        avgTime: "ממוצע ימים בין ההזמנה הראשונה לשנייה של לקוח."
       }
     },
     weeklySummary: {

@@ -1,3 +1,4 @@
+import { isSafeScrapedText, safeScrapedText, safeScrapedTexts } from "@/lib/server/scraped-text-safety";
 // Competitor brief — the Command Center's "מתחרים" section.
 //
 // Takes the latest competitor-intel snapshot (lib/data/competitor-intel-latest)
@@ -113,8 +114,11 @@ function renderActivityEntry(
     if (a.adsActive !== null && a.adsActive > 0) {
       moveParts.push(t(`כ־${a.adsActive} מודעות פעילות בספריית המודעות`, `~${a.adsActive} active ads in the ad library`));
     }
-    if (a.adHeadlines.length > 0) {
-      moveParts.push(t(`מסר מוביל: "${a.adHeadlines[0]}"`, `Top ad message: "${a.adHeadlines[0]}"`));
+    // Scraped ad copy is unfiltered upstream — never quote it unscreened
+    // (explicit adult copy reached the Command Center; see scraped-text-safety).
+    const topHeadline = safeScrapedTexts(a.adHeadlines)[0];
+    if (topHeadline) {
+      moveParts.push(t(`מסר מוביל: "${topHeadline}"`, `Top ad message: "${topHeadline}"`));
     }
     if (a.homepageLinks.length > 0) {
       moveParts.push(
@@ -201,11 +205,13 @@ function activityFromSignals(signalsJson: unknown): SnapshotActivity | null {
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
   return {
     adsActive: typeof o.adsActive === "number" && Number.isFinite(o.adsActive) ? o.adsActive : null,
-    adHeadlines: strings(o.adHeadlines),
+    // Screened at READ time as well as at write time, so snapshots stored
+    // before the filter existed can't resurface explicit copy.
+    adHeadlines: safeScrapedTexts(strings(o.adHeadlines)),
     homepageLinks: strings(o.homepageLinks),
     news: Array.isArray(o.news)
       ? (o.news as Array<Record<string, unknown>>)
-          .filter((n) => n && typeof n.title === "string" && n.title.trim() !== "")
+          .filter((n) => n && typeof n.title === "string" && n.title.trim() !== "" && isSafeScrapedText(n.title))
           .map((n) => ({
             title: String(n.title),
             source: typeof n.source === "string" ? n.source : "",
@@ -317,7 +323,8 @@ async function buildLiveIntel(
     );
     if (pct != null && pct > 0) moveParts.push(t(`הנחה עד ${Math.round(pct)}%`, `Discounts up to ${Math.round(pct)}%`));
     if (ship != null && ship > 0) moveParts.push(t(`משלוח חינם מעל ₪${Math.round(ship)}`, `Free shipping over ₪${Math.round(ship)}`));
-    if (latest.homepageMessage) moveParts.push(t(`בעמוד הבית: "${latest.homepageMessage}"`, `Homepage: "${latest.homepageMessage}"`));
+    const homepageMessage = safeScrapedText(latest.homepageMessage);
+    if (homepageMessage) moveParts.push(t(`בעמוד הבית: "${homepageMessage}"`, `Homepage: "${homepageMessage}"`));
     if (activity) {
       if (activity.adsActive != null && activity.adsActive > 0) {
         moveParts.push(

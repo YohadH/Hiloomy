@@ -110,8 +110,8 @@ export function CohortHeatmap({
 
   return (
     <div className="overflow-x-auto table-scroll scroll-fade-end">
-      {/* Same inline-keyframes pattern as the chat widget's gg-chat-pop. */}
-      <style>{`@keyframes cohort-cell-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }`}</style>
+      {/* `cohort-cell-in` keyframes live in app/globals.css — an inline
+          <style> here leaked its text into copy-paste / text extraction. */}
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr>

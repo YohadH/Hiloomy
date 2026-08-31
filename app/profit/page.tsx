@@ -118,7 +118,15 @@ export default async function ProfitPage() {
           {/* Measured-vs-estimated label so a profit figure is never read with
               more authority than its cost data supports. */}
           {cogs && totalRevenue > 0 ? (
-            <ProfitAccuracyBadge coverage={cogs.coverage} isHe={isHe} className="mt-1" />
+            // Same coverage object the dashboard's profit card renders, so
+            // the two pages cannot quote different shares for one window
+            // (M-10). cogs.coverage is computed by the same helper; the
+            // fallback only matters if the contribution call failed.
+            <ProfitAccuracyBadge
+              coverage={contribution?.quality.costCoverage ?? cogs.coverage}
+              isHe={isHe}
+              className="mt-1"
+            />
           ) : null}
         </div>
 

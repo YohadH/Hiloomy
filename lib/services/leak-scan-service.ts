@@ -290,8 +290,8 @@ async function discountLeg(storeId: string, start: Date, end: Date): Promise<Lea
     detail:
       amount > 0
         ? {
-            he: `${underwater.length} קודים הפסדיים: ${codes.join(", ")}`,
-            en: `${underwater.length} loss-making codes: ${codes.join(", ")}`
+            he: underwater.length === 1 ? `קוד הפסדי אחד: ${codes.join(", ")}` : `${underwater.length} קודים הפסדיים: ${codes.join(", ")}`,
+            en: `${underwater.length} loss-making ${underwater.length === 1 ? "code" : "codes"}: ${codes.join(", ")}`
           }
         : {
             he: `${withCost.length} קודים נבדקו — כולם רווחיים.`,

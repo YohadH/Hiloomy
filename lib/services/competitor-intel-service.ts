@@ -8,6 +8,7 @@
 // buildCompetitorWeekSection() which diffs this week against last week via
 // the pure computeCompetitorChange() below (unit-tested).
 
+import { safeScrapedText, safeScrapedTexts } from "@/lib/server/scraped-text-safety";
 import { getDb } from "@/lib/server/db";
 import { AppError } from "@/lib/server/errors";
 import {
@@ -126,7 +127,7 @@ export function aggregateWeekDays(days: CompetitorDayRow[]): CompetitorWeekAggre
     latestPromoCount: latest.activePromoCount,
     latestDiscountPct: latest.maxDiscountPct,
     latestFreeShippingThreshold: latest.freeShippingThreshold,
-    latestMessage: latest.homepageMessage,
+    latestMessage: safeScrapedText(latest.homepageMessage),
     promoStartDate
   };
 }
@@ -380,7 +381,8 @@ export async function syncCompetitorSignals(
         ? {
             activity: {
               adsActive: activity.adsActive,
-              adHeadlines: activity.adHeadlines.slice(0, 3),
+              // Screened before persisting — scraped ad copy is unfiltered.
+              adHeadlines: safeScrapedTexts(activity.adHeadlines).slice(0, 3),
               homepageLinks: activity.homepageLinks.slice(0, 4),
               news: activity.news.slice(0, 2)
             }
@@ -400,7 +402,7 @@ export async function syncCompetitorSignals(
         activePromoCount: signals.activePromoCount,
         maxDiscountPct: signals.maxDiscountPct,
         freeShippingThreshold: signals.freeShippingThreshold,
-        homepageMessage: signals.homepageMessage,
+        homepageMessage: safeScrapedText(signals.homepageMessage),
         signalsJson
       },
       create: {
@@ -411,7 +413,7 @@ export async function syncCompetitorSignals(
         activePromoCount: signals.activePromoCount,
         maxDiscountPct: signals.maxDiscountPct,
         freeShippingThreshold: signals.freeShippingThreshold,
-        homepageMessage: signals.homepageMessage,
+        homepageMessage: safeScrapedText(signals.homepageMessage),
         signalsJson
       }
     });

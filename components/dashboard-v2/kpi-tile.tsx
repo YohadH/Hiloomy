@@ -92,9 +92,14 @@ function explainKpi(label: string, isHe: boolean): { hint: string; tooltip: stri
           "ממוצע הכסף לכל רכישה — שימושי להחלטות אפסייל.",
           "Average dollars per checkout — useful for upsell decisions."
         ),
+        // Names the actual formula. The tile's value is net sales (gross −
+        // discounts − returns) ÷ orders — Shopify's AOV definition — while
+        // the revenue tile beside it shows Total sales (net + shipping +
+        // VAT), so "Total revenue ÷ orders" was arithmetically false on the
+        // same screen (86,785 ÷ 263 ≠ 266; portfolio finding, run 3).
         tooltip: lang(
-          "סך המכירות ÷ סך ההזמנות בטווח הזה.",
-          "Total revenue ÷ total orders in this window."
+          "מכירות נטו (ברוטו − הנחות − החזרות, ללא משלוח ומע\"מ) ÷ סך ההזמנות בטווח — כמו הגדרת ה-AOV של Shopify. לכן זה לא 'סך המכירות' חלקי הזמנות.",
+          "Net sales (gross − discounts − returns, excluding shipping and VAT) ÷ orders in this window — Shopify's AOV definition. That is why it is not 'Total sales' ÷ orders."
         )
       };
     case "discount":

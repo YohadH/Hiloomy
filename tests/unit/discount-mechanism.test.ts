@@ -45,7 +45,7 @@ function orderWith(applications: unknown[]) {
   };
 }
 
-const find = (mapped: { discounts: { code: string }[] }, code: string) =>
+const find = (mapped: ReturnType<typeof mapOrderNode>, code: string) =>
   mapped.discounts.find((d) => d.code === code);
 
 test("a percentage code records its type and percentage", () => {

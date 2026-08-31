@@ -192,8 +192,11 @@ export async function buildSetupHealth(
     status: costCoverage >= 0.9 ? "pass" : costCoverage >= 0.5 ? "warning" : "fail",
     title: { he: "עלויות מוצרים מוגדרות", en: "Product costs configured" },
     description: {
-      he: `${Math.round(costCoverage * 100)}% מהמוצרים שנמכרו (${productsWithCost}/${productIdsSold.length}) עם עלות מוגדרת. בלי עלויות מדויקות, רווח התרומה משוער בלבד.`,
-      en: `${Math.round(costCoverage * 100)}% of sold products (${productsWithCost}/${productIdsSold.length}) have a cost configured. Without accurate costs, contribution margin is estimated only.`
+      // Says what it counts: PRODUCTS, ALL-TIME. The dashboard and /profit
+      // quote a different (revenue-weighted, window-scoped) share — both are
+      // right, and the labels now say which is which (M-10).
+      he: `${Math.round(costCoverage * 100)}% מהמוצרים שנמכרו אי פעם (${productsWithCost}/${productIdsSold.length}) עם עלות אמיתית — ספירת מוצרים, כל הזמנים. הדשבורד ועמוד הרווח מציגים כיסוי לפי הכנסה בחלון הנבחר. בלי עלויות מדויקות, רווח התרומה משוער בלבד.`,
+      en: `${Math.round(costCoverage * 100)}% of products ever sold (${productsWithCost}/${productIdsSold.length}) have a real cost — product count, all time. The dashboard and profit page show revenue-weighted coverage for the selected window. Without accurate costs, contribution margin is estimated only.`
     },
     fixHref: "/products/costs",
     fixLabel: { he: "לעדכן עלויות", en: "Update costs" }

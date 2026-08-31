@@ -1,3 +1,4 @@
+import { safeScrapedText, safeScrapedTexts } from "@/lib/server/scraped-text-safety";
 // RivalSweeper API Layer client — competitor promo/pricing feed powering the
 // weekly report's "what did competitors do this week" section.
 //
@@ -401,7 +402,9 @@ export async function fetchCompetitorActivity(options?: {
           domain: host,
           name: meta.name,
           adsActive: ads?.page?.total ?? null,
-          adHeadlines: headlines,
+          // Ad-library copy is whatever the competitor runs — screen it here
+          // at the source so no consumer can quote explicit text.
+          adHeadlines: safeScrapedTexts(headlines),
           news: (news?.records ?? []).map((r) => ({
             title: pickText(r.payload ?? {}, ["title"]) ?? "",
             source: String(r.payload?.["source"] ?? r.source ?? ""),
@@ -491,7 +494,7 @@ export async function fetchAdsDerivedSignals(
       activePromoCount: promoAds,
       maxDiscountPct: maxPct,
       freeShippingThreshold: shippingThreshold,
-      homepageMessage: topPromoHeadline,
+      homepageMessage: safeScrapedText(topPromoHeadline),
       raw: {
         source: "ads-derived",
         adsTotal: ads.page?.total ?? records.length,
@@ -594,7 +597,7 @@ export async function fetchCompetitorSignals(
     activePromoCount: promoRecords.length + domainCoupons.length,
     maxDiscountPct: pctCandidates.length ? Math.max(...pctCandidates) : null,
     freeShippingThreshold: thresholds.length ? Math.min(...thresholds) : null,
-    homepageMessage: newestPromo ? pickText(newestPromo.payload ?? {}, TEXT_KEYS) : null,
+    homepageMessage: newestPromo ? safeScrapedText(pickText(newestPromo.payload ?? {}, TEXT_KEYS)) : null,
     raw: {
       provider: "rivalsweeper",
       domainGuid: dg,

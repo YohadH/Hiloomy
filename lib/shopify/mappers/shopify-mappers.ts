@@ -125,6 +125,11 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
     if (!taxesIncluded) return amountInclusiveOrExclusive;
     return roundCurrency(Math.max(0, amountInclusiveOrExclusive - lineTax));
   }
+  // Refund line items carry their own totalTaxSet, so the subtraction is
+  // exact (no rate derivation needed as for sale lines).
+  function refundLineNet(subtotal: number, tax: number) {
+    return stripTax(subtotal, tax);
+  }
 
   // Pre-compute per-line refunded quantity/value keyed by the line's Shopify
   // GID so we can attribute refunds back to the line that was refunded
@@ -136,9 +141,14 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
       const lineGid = rli.lineItem?.id;
       if (!lineGid) continue;
       const current = refundedByLine.get(lineGid) ?? { quantity: 0, subtotal: 0, tax: 0 };
+      const rliSubtotal = amount(rli.subtotalSet?.shopMoney);
+      const rliTax = amount(rli.totalTaxSet?.shopMoney);
       current.quantity += Number(rli.quantity ?? 0);
-      current.subtotal += amount(rli.subtotalSet?.shopMoney);
-      current.tax += amount(rli.totalTaxSet?.shopMoney);
+      // Raw (tax-inclusive on tax-inclusive stores); the per-line
+      // refundedSubtotal below strips `tax` from it. The per-REFUND total
+      // (mappedRefunds.refundedLineItemsAmount) did NOT strip it — see there.
+      current.subtotal += rliSubtotal;
+      current.tax += rliTax;
       refundedByLine.set(lineGid, current);
     }
   }
@@ -423,11 +433,25 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
   const mappedRefunds = refunds.map((refund: any) => ({
     shopifyRefundId: stripGid(refund.id),
     refundedAmount: amount(refund.totalRefundedSet?.shopMoney),
-    refundedLineItemsAmount:
+    // Line-items-only refund value, ex-VAT. For tax-inclusive stores
+    // RefundLineItem.subtotalSet is the tax-INCLUSIVE line value and was
+    // summed raw here, making refunds the one VAT-inclusive term in an
+    // otherwise ex-VAT contribution walk — returns sat above Shopify's
+    // net-of-tax "Returns" by a constant offset (the +₪518, R-03). This is
+    // the field the dashboard, /profit and /profit/returns subtract from
+    // ex-VAT gross sales, so it must be on the same basis (per-line
+    // refundedSubtotal already was).
+    refundedLineItemsAmount: roundCurrency(
       refund.refundLineItems?.edges?.reduce(
-        (total: number, edge: any) => total + amount(edge.node.subtotalSet?.shopMoney),
+        (total: number, edge: any) =>
+          total +
+          refundLineNet(
+            amount(edge.node?.subtotalSet?.shopMoney),
+            amount(edge.node?.totalTaxSet?.shopMoney)
+          ),
         0
-      ) ?? 0,
+      ) ?? 0
+    ),
     createdAt: new Date(refund.createdAt)
   }));
 

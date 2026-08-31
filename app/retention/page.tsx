@@ -42,9 +42,22 @@ export default async function RetentionPage() {
         : snap.repeatPurchaseRate < 10
           ? "warn"
           : undefined;
-  // secondOrderRate > 15% = good, < 5% = warn
+  // secondOrderRate > 15% = good, < 5% = warn — but only when the window is
+  // long enough for a second order to have happened at all. In a 7-day
+  // window with a ~300-day average repeat cycle the rate is structurally
+  // ~0; a warning icon there reads as a business emergency and is a
+  // windowing artifact (QA run 3). Require ≥ 60 days AND at least the
+  // store's own average time-to-second-order.
+  const windowDays = retention.dailyMetrics.length;
+  const secondOrderMeasurable =
+    windowDays >= 60 &&
+    (snap.averageDaysToSecondOrder <= 0 || windowDays >= snap.averageDaysToSecondOrder);
   const secondOrderStatus: StatTileStatus =
-    snap.secondOrderRate >= 15 ? "good" : snap.secondOrderRate < 5 && snap.secondOrderRate > 0 ? "warn" : undefined;
+    snap.secondOrderRate >= 15
+      ? "good"
+      : secondOrderMeasurable && snap.secondOrderRate < 5 && snap.secondOrderRate > 0
+        ? "warn"
+        : undefined;
   // averageDaysToSecondOrder: shorter is better; < 45 days = good, > 120 days = warn
   const avgDaysStatus: StatTileStatus =
     snap.averageDaysToSecondOrder > 0
@@ -101,8 +114,8 @@ export default async function RetentionPage() {
       ? "אין נתוני לקוחות בחלון שנבחר — אין מסקנה."
       : "No customer data in the selected window — no verdict."
     : locale === "he"
-      ? `שיעור הרכישה החוזרת עומד על ${repeatRate.toFixed(1)}% — ${repeatStateLabel}.`
-      : `Repeat-purchase rate is ${repeatRate.toFixed(1)}% — ${repeatStateLabel}.`;
+      ? `נתח הלקוחות החוזרים עומד על ${repeatRate.toFixed(1)}% — ${repeatStateLabel}.`
+      : `Returning-customer share is ${repeatRate.toFixed(1)}% — ${repeatStateLabel}.`;
   const noDataBody =
     locale === "he"
       ? "יכול להיות שהחלון קצר/עתידי, שהסנכרון עדיין רץ, או שהשליפה נכשלה. נסו להרחיב את טווח התאריכים או להריץ סנכרון — אם זה לא משתנה, זו תקלה ולא מציאות עסקית."
@@ -197,7 +210,15 @@ export default async function RetentionPage() {
               value={`${snap.secondOrderRate.toFixed(1)}%`}
               icon={TrendingUp}
               tooltip={tips.secondOrderRate}
-              hint={locale === "he" ? "לקוחות חדשים שחזרו להזמין שוב." : "First-time buyers who came back."}
+              hint={
+                secondOrderMeasurable
+                  ? locale === "he"
+                    ? "לקוחות חדשים שחזרו להזמין שוב."
+                    : "First-time buyers who came back."
+                  : locale === "he"
+                    ? "חלון קצר ממחזור הרכישה החוזרת — הרחיבו את הטווח כדי למדוד."
+                    : "Window shorter than your repeat cycle — widen the range to measure this."
+              }
               status={secondOrderStatus}
             />
             <StatTile

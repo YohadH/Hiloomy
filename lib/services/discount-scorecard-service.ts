@@ -48,13 +48,18 @@ export type DiscountClassification = "promo" | "seeding";
 export interface DiscountScorecard {
   code: string;
   uses: number; // distinct orders under the code
-  revenue: number; // net product revenue after discount
+  revenue: number; // net product revenue after discount (ex-VAT)
+  grossSales: number; // Σ lineSubtotal over the code's distinct orders (ex-VAT, pre-discount)
   discountCost: number; // Σ DiscountUsage.amount
   cogs: number;
   marginAfterDiscount: number;
   marginRate: number; // margin / revenue
-  aov: number; // avg order totalPrice under the code
-  baselineAov: number | null; // AOV of non-discounted orders, same window
+  // Net product revenue ÷ orders under the code — the dashboard's AOV
+  // definition (net sales ÷ orders). Was order.totalPrice ÷ orders (VAT +
+  // shipping in, and ₪0 on 100%-discount orders), which read as "broken"
+  // beside the card's own ex-VAT revenue (H-10).
+  aov: number;
+  baselineAov: number | null; // same definition, non-discounted orders, same window
   newCustomerShare: number | null; // null when no linked customers
   hasCostData: boolean; // false → margin is revenue-only (COGS missing)
   // The code belongs to an affiliate (BixGrow/portal coupon). Its real
@@ -76,7 +81,10 @@ export interface DiscountScorecardReport {
   windowEnd: string;
   baselineAov: number | null;
   totalDiscountCost: number;
+  /** Net product revenue over DISTINCT coded orders (an order with two codes counts once). */
   totalRevenue: number;
+  /** Σ lineSubtotal over DISTINCT coded orders — the "gross sales on coded orders" headline. */
+  totalGrossSales: number;
   totalMargin: number;
   discountedOrderShare: number | null; // discounted orders / all orders
   /** Distinct codes found in the window (cards may be capped at MAX_CODES). */
@@ -98,6 +106,10 @@ const EXPAND_MIN_USES = 5;
 const EXPAND_MIN_MARGIN_RATE = 0.2;
 const EXPAND_MIN_NEW_SHARE = 0.4;
 const STOP_MIN_USES = 3;
+// A code taking at least this share off list price is a giveaway (staff /
+// PR / replacement orders under a 100% manual discount), whoever receives
+// it — it must never be judged as an "underwater promo" on ₪1 of revenue.
+const GIVEAWAY_MIN_DISCOUNT_DEPTH = 0.95;
 
 export async function buildDiscountScorecards(input: {
   storeId: string;
@@ -112,6 +124,7 @@ export async function buildDiscountScorecards(input: {
     baselineAov: null,
     totalDiscountCost: 0,
     totalRevenue: 0,
+    totalGrossSales: 0,
     totalMargin: 0,
     discountedOrderShare: null,
     codesTotal: 0,
@@ -209,24 +222,65 @@ export async function buildDiscountScorecards(input: {
 
   // Baseline: the same window WITHOUT any discount code — what a "normal"
   // order looks like, for the AOV-vs-baseline comparison.
-  const baseline = await db.order.aggregate({
-    where: {
-      storeId: input.storeId,
-      ...orderScope,
-      discountUsages: { none: {} }
-    },
-    _avg: { totalPrice: true },
-    _count: { _all: true }
-  });
-  const baselineAov = baseline?._avg?.totalPrice != null ? Number(baseline._avg.totalPrice) : null;
+  // Same AOV definition as the cards (net product revenue ÷ orders), so the
+  // "vs non-discounted" delta compares like with like.
+  const [baseline, baselineLines] = await Promise.all([
+    db.order.aggregate({
+      where: {
+        storeId: input.storeId,
+        ...orderScope,
+        discountUsages: { none: {} }
+      },
+      _count: { _all: true }
+    }),
+    db.orderLineItem.aggregate({
+      where: {
+        storeId: input.storeId,
+        order: { ...orderScope, discountUsages: { none: {} } }
+      },
+      _sum: { lineSubtotal: true, lineDiscountAmount: true }
+    })
+  ]);
   const baselineCount = Number(baseline?._count?._all ?? 0);
+  const baselineNet =
+    Number(baselineLines?._sum?.lineSubtotal ?? 0) - Number(baselineLines?._sum?.lineDiscountAmount ?? 0);
+  const baselineAov = baselineCount > 0 ? round2(Math.max(0, baselineNet) / baselineCount) : null;
 
   const num = (v: unknown) => (v == null ? 0 : Number(v));
+
+  // Per-order product money, ex-VAT. gross = Σ lineSubtotal; net = gross −
+  // the discount actually taken off the lines. Orders synced before per-line
+  // discountAllocations were captured carry lineDiscountAmount = 0 for
+  // cart-level codes (a line's discountedTotal only reflects LINE-level
+  // discounts), which is how a ₪35 order read as ₪998 of "revenue" (H-10).
+  // Fall back to the order's DiscountUsage amounts in that case — capped at
+  // gross, so net can never go negative.
+  const usageAmountByOrder = new Map<string, number>();
+  for (const u of usages) {
+    usageAmountByOrder.set(u.orderId, (usageAmountByOrder.get(u.orderId) ?? 0) + num(u.amount));
+  }
+  const orderMoney = (order: {
+    id: string;
+    lineItems: Array<{ lineSubtotal: unknown; lineDiscountAmount: unknown; estimatedCostAmount: unknown }>;
+  }) => {
+    let gross = 0;
+    let lineDiscount = 0;
+    let cogs = 0;
+    for (const line of order.lineItems) {
+      gross += num(line.lineSubtotal);
+      lineDiscount += num(line.lineDiscountAmount);
+      cogs += num(line.estimatedCostAmount);
+    }
+    const usageDiscount = usageAmountByOrder.get(order.id) ?? 0;
+    const discount = Math.min(gross, lineDiscount > 0 ? lineDiscount : usageDiscount);
+    return { gross: round2(gross), net: round2(Math.max(0, gross - discount)), cogs: round2(cogs) };
+  };
 
   interface Acc {
     orderIds: Set<string>;
     discountCost: number;
     revenue: number;
+    grossRevenue: number;
     cogs: number;
     totalPriceSum: number;
     newCustomers: number;
@@ -247,6 +301,7 @@ export async function buildDiscountScorecards(input: {
       orderIds: new Set(),
       discountCost: 0,
       revenue: 0,
+      grossRevenue: 0,
       cogs: 0,
       totalPriceSum: 0,
       newCustomers: 0,
@@ -269,9 +324,11 @@ export async function buildDiscountScorecards(input: {
       acc.orderIds.add(order.id);
       dayBucket.uses += 1;
       acc.totalPriceSum += num(order.totalPrice);
+      const money = orderMoney(order);
+      acc.grossRevenue += money.gross;
+      acc.revenue += money.net;
+      acc.cogs += money.cogs;
       for (const line of order.lineItems) {
-        acc.revenue += num(line.lineSubtotal) - num(line.lineDiscountAmount);
-        acc.cogs += num(line.estimatedCostAmount);
         acc.lines += 1;
         if (num(line.estimatedCostAmount) > 0) acc.costLines += 1;
       }
@@ -304,12 +361,18 @@ export async function buildDiscountScorecards(input: {
     // affiliate-distribution code) slip back through whenever its orders
     // weren't customer-linked. A genuine mispriced promo looks the
     // opposite: mixed customers and meaningful non-zero revenue.
-    const classification: DiscountClassification =
+    const seedingPattern =
       acc.discountCost > 0 &&
       acc.revenue <= Math.max(50, acc.discountCost * 0.05) &&
-      (newShare == null || newShare >= 0.9)
-        ? "seeding"
-        : "promo";
+      (newShare == null || newShare >= 0.9);
+    // Depth-of-discount rule (H-04): ≥95% off list price is a giveaway
+    // regardless of who received it. The 100% manual discount ("הנחה
+    // מותאמת אישית" — staff/PR/replacements) was tripping the loss-making
+    // alert on ₪1 of net revenue across 18 orders because its recipients
+    // were known customers, so the seeding rule above didn't catch it.
+    const discountDepth = acc.grossRevenue > 0 ? acc.discountCost / acc.grossRevenue : 0;
+    const deepGiveaway = acc.discountCost > 0 && discountDepth >= GIVEAWAY_MIN_DISCOUNT_DEPTH;
+    const classification: DiscountClassification = seedingPattern || deepGiveaway ? "seeding" : "promo";
 
     let verdict: DiscountVerdict = "keep";
     let reason: { he: string; en: string };
@@ -318,10 +381,15 @@ export async function buildDiscountScorecards(input: {
       // The right question is ROI ("did these seeded orders deliver?"),
       // and the real cost is the COGS of the gifted goods — not the
       // retail value.
-      reason = {
-        he: `נראה כמו חלוקת מוצרים מכוונת (סידינג לשותפים/משפיענים): כמעט כל ההזמנות של לקוחות חדשים וכמעט ללא הכנסה. העלות האמיתית היא עלות המוצרים שנמסרו (₪${Math.round(acc.cogs).toLocaleString()}) — השאלה הנכונה היא האם השותפים סיפקו חשיפה בתמורה, לא אם "הקוד מפסיד".`,
-        en: `Looks like deliberate product seeding (affiliate/influencer gifting): almost all orders are first-time customers with near-zero revenue. The real cost is the COGS of the gifted goods (₪${Math.round(acc.cogs).toLocaleString()}) — the right question is whether the partners delivered exposure, not whether "the code loses money".`
-      };
+      reason = seedingPattern
+        ? {
+            he: `נראה כמו חלוקת מוצרים מכוונת (סידינג לשותפים/משפיענים): כמעט כל ההזמנות של לקוחות חדשים וכמעט ללא הכנסה. העלות האמיתית היא עלות המוצרים שנמסרו (₪${Math.round(acc.cogs).toLocaleString()}) — השאלה הנכונה היא האם השותפים סיפקו חשיפה בתמורה, לא אם "הקוד מפסיד".`,
+            en: `Looks like deliberate product seeding (affiliate/influencer gifting): almost all orders are first-time customers with near-zero revenue. The real cost is the COGS of the gifted goods (₪${Math.round(acc.cogs).toLocaleString()}) — the right question is whether the partners delivered exposure, not whether "the code loses money".`
+          }
+        : {
+            he: `מוצרים שניתנו במתנה, לא נמכרו: ${Math.round(discountDepth * 100)}% הנחה ממחיר המדף על ${uses} הזמנות (צוות / יחסי ציבור / החלפות). העלות האמיתית היא עלות המוצרים שנמסרו (₪${Math.round(acc.cogs).toLocaleString()}), לא "הפסד" על הקוד.`,
+            en: `Given away, not sold: ${Math.round(discountDepth * 100)}% off list price across ${uses} orders (staff / PR / replacements). The real cost is the COGS of the goods handed out (₪${Math.round(acc.cogs).toLocaleString()}), not a "loss" on the code.`
+          };
     } else if (hasCostData && margin < 0 && uses >= STOP_MIN_USES) {
       verdict = "stop";
       reason = affiliateName
@@ -367,11 +435,12 @@ export async function buildDiscountScorecards(input: {
       code,
       uses,
       revenue: round2(acc.revenue),
+      grossSales: round2(acc.grossRevenue),
       discountCost: round2(acc.discountCost),
       cogs: round2(acc.cogs),
       marginAfterDiscount: round2(margin),
       marginRate: acc.revenue > 0 ? margin / acc.revenue : 0,
-      aov: uses > 0 ? round2(acc.totalPriceSum / uses) : 0,
+      aov: uses > 0 ? round2(acc.revenue / uses) : 0,
       baselineAov,
       newCustomerShare: newShare,
       hasCostData,
@@ -394,13 +463,37 @@ export async function buildDiscountScorecards(input: {
   const discountedOrders = new Set(usages.map((u) => u.orderId)).size;
   const allOrders = discountedOrders + baselineCount;
 
+  // Headline totals over DISTINCT orders. Summing the cards counted an
+  // order once per code it carried, which is how "gross on coded orders"
+  // (₪122,448) came out ABOVE the dashboard's gross for ALL orders
+  // (₪120,101) in the same window (H-04).
+  const seenOrders = new Set<string>();
+  let totalGrossSales = 0;
+  let totalRevenue = 0;
+  let totalMargin = 0;
+  for (const card of kept) {
+    const acc = byCode.get(card.code);
+    if (!acc) continue;
+    for (const orderId of acc.orderIds) {
+      if (seenOrders.has(orderId)) continue;
+      seenOrders.add(orderId);
+      const order = orderById.get(orderId);
+      if (!order) continue;
+      const money = orderMoney(order);
+      totalGrossSales += money.gross;
+      totalRevenue += money.net;
+      totalMargin += money.net - money.cogs;
+    }
+  }
+
   return {
     windowStart: input.start.toISOString(),
     windowEnd: input.end.toISOString(),
     baselineAov,
     totalDiscountCost: round2(kept.reduce((s, c) => s + c.discountCost, 0)),
-    totalRevenue: round2(kept.reduce((s, c) => s + c.revenue, 0)),
-    totalMargin: round2(kept.reduce((s, c) => s + c.marginAfterDiscount, 0)),
+    totalRevenue: round2(totalRevenue),
+    totalGrossSales: round2(totalGrossSales),
+    totalMargin: round2(totalMargin),
     discountedOrderShare: allOrders > 0 ? discountedOrders / allOrders : null,
     codesTotal: cards.length,
     cards: kept
