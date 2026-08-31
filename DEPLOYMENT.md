@@ -35,6 +35,21 @@ End-to-end steps to deploy this app to production on **Render** with
 
 That's it. The schema is now live in Supabase.
 
+> ⚠️ **Every later schema change is manual too.** The Render build runs
+> `npm ci && npm run build` only — it never applies `prisma/migrations/*`,
+> and production has no `_prisma_migrations` history (it was created with
+> `db push`), so `prisma migrate deploy` would fail on existing tables.
+> When a commit adds a folder under `prisma/migrations/`, apply that one
+> file to production before (or right after) the deploy:
+>
+> ```powershell
+> npx prisma db execute --file prisma/migrations/<folder>/migration.sql --url "<direct prod URL>"
+> ```
+>
+> Symptom of a missed one: a page renders but its first save 500s with
+> `The table public.<Name> does not exist in the current database`
+> (2026-08-31: `StoreOnboarding` on `/settings/partners`).
+
 > ⚠️ Until you set `DATABASE_URL` to your Supabase pooled URI in
 > **Render**, the running app keeps writing to your local Postgres only.
 > Supabase will sit empty until production traffic starts hitting it.
