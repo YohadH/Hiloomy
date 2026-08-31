@@ -330,6 +330,39 @@ export async function verifyOauthHmac(searchParams: URLSearchParams): Promise<bo
   return timingSafeEqualStrings(digest, providedHmac);
 }
 
+/**
+ * Verify a Shopify APP PROXY request signature.
+ *
+ * Spec (per shopify.dev/docs/apps/build/online-store/app-proxies/authenticate):
+ * remove `signature`, sort the remaining params by key, format each as
+ * `key=value` (repeated keys' values joined by ","), join the pairs with "&",
+ * HMAC-SHA256 with the app's shared secret, hex, timing-safe compare to
+ * `signature`. NOTE: this differs from the OAuth callback HMAC (which uses the
+ * `hmac` param) — same "&"-joined format but a different query-param name.
+ *
+ * The secret is resolved PER SHOP so a managed-onboarding store's proxy signs
+ * with its own custom-distribution app's secret, not the global public app.
+ */
+export async function verifyAppProxySignature(searchParams: URLSearchParams): Promise<boolean> {
+  const signature = searchParams.get("signature");
+  if (!signature) return false;
+  const { clientSecret } = await getOauthConfigForShop(searchParams.get("shop"));
+
+  const grouped = new Map<string, string[]>();
+  for (const [key, value] of searchParams.entries()) {
+    if (key === "signature") continue;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(value);
+  }
+  const message = [...grouped.keys()]
+    .sort()
+    .map((key) => `${key}=${grouped.get(key)!.join(",")}`)
+    .join("&");
+
+  const digest = crypto.createHmac("sha256", clientSecret).update(message).digest("hex");
+  return timingSafeEqualStrings(digest, signature);
+}
+
 interface TokenExchangeResult {
   accessToken: string;
   scope: string;

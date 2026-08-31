@@ -33,6 +33,16 @@ export function shortLinkUrl(token: string): string {
   return `${appBaseUrl()}/l/${token}`;
 }
 
+/**
+ * The SAME short link served on the store's OWN domain via the Shopify App
+ * Proxy (subpath prefix "apps", subpath "go"). First-party cookie + branded
+ * URL. Only resolves once the App Proxy is configured on that store's app;
+ * until then use shortLinkUrl (hiloomy.com/l/{token}).
+ */
+export function appProxyShortLinkUrl(storeDomain: string, token: string): string {
+  return `https://${storeDomain}/apps/go/${token}`;
+}
+
 export async function createAffiliateShortLink(input: {
   storeId: string;
   affiliateId: string;
@@ -41,7 +51,7 @@ export async function createAffiliateShortLink(input: {
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;
-}): Promise<{ token: string; url: string }> {
+}): Promise<{ token: string; url: string; storeUrl: string }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = getDb() as any;
   if (!db?.affiliateShortLink) {
@@ -53,9 +63,10 @@ export async function createAffiliateShortLink(input: {
 
   const member = await db.affiliateMember.findFirst({
     where: { id: input.affiliateId, storeId: input.storeId },
-    select: { id: true }
+    select: { id: true, store: { select: { domain: true } } }
   });
   if (!member) throw new AppError("Affiliate was not found.", 404);
+  const storeDomain: string = member.store?.domain ?? "";
 
   const rawCoupon = String(input.couponCode ?? "").trim();
   const couponCode = /^[A-Za-z0-9._-]{1,64}$/.test(rawCoupon) ? rawCoupon : null;
@@ -76,7 +87,11 @@ export async function createAffiliateShortLink(input: {
           utmCampaign: cleanUtm(input.utmCampaign)
         }
       });
-      return { token, url: shortLinkUrl(token) };
+      return {
+        token,
+        url: shortLinkUrl(token),
+        storeUrl: storeDomain ? appProxyShortLinkUrl(storeDomain, token) : shortLinkUrl(token)
+      };
     } catch (error) {
       // P2002 = token collision — redraw. Anything else is real.
       if ((error as { code?: string })?.code !== "P2002") throw error;

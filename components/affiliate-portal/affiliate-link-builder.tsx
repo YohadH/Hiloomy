@@ -45,6 +45,7 @@ export function TrackedLinkComposer({
   const [utmCampaign, setUtmCampaign] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [shortUrl, setShortUrl] = useState<string | null>(null);
+  const [storeShortUrl, setStoreShortUrl] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
 
   const affiliate = affiliates.find((item) => item.id === affiliateId) ?? affiliates[0];
@@ -67,6 +68,7 @@ export function TrackedLinkComposer({
   // makes it stale, so drop it and show the live preview again.
   useEffect(() => {
     setShortUrl(null);
+    setStoreShortUrl(null);
   }, [generatedLink]);
 
   async function handleCopy(link: string) {
@@ -100,6 +102,7 @@ export function TrackedLinkComposer({
         throw new Error(body?.error ?? lang("יצירת הקישור נכשלה.", "Could not create the short link."));
       }
       setShortUrl(body.url);
+      setStoreShortUrl(body.storeUrl ?? null);
       try {
         await navigator.clipboard.writeText(body.url);
         setMessage(lang("הקישור הקצר נוצר והועתק ללוח.", "Short link created and copied to the clipboard."));
@@ -230,11 +233,29 @@ export function TrackedLinkComposer({
       </div>
 
       {shortUrl ? (
-        <div className="space-y-2 text-sm">
-          <span className="text-muted-foreground">{lang("הקישור הקצר", "Short link")}</span>
-          <div dir="ltr" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium leading-6 break-all dark:border-emerald-800 dark:bg-emerald-950/40">
-            {shortUrl}
+        <div className="space-y-3 text-sm">
+          <div className="space-y-2">
+            <span className="text-muted-foreground">{lang("הקישור הקצר (hiloomy.com)", "Short link (hiloomy.com)")}</span>
+            <div dir="ltr" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium leading-6 break-all dark:border-emerald-800 dark:bg-emerald-950/40">
+              {shortUrl}
+            </div>
           </div>
+          {storeShortUrl && storeShortUrl !== shortUrl ? (
+            <div className="space-y-2">
+              <span className="text-muted-foreground">
+                {lang("קישור על דומיין החנות", "On the store's own domain")}
+              </span>
+              <div dir="ltr" className="rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium leading-6 break-all">
+                {storeShortUrl}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {lang(
+                  "עובד רק אחרי הגדרת App Proxy באפליקציית Shopify (subpath: apps/go). עד אז השתמשו בקישור של hiloomy.com למעלה.",
+                  "Works only after the Shopify app's App Proxy is set up (subpath: apps/go). Until then use the hiloomy.com link above."
+                )}
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="space-y-2 text-sm">
