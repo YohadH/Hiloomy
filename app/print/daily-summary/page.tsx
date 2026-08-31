@@ -72,6 +72,11 @@ export default async function DailySummaryPrintPage({
         .catch(() => false);
       if (!allowed) storeId = null;
     }
+  } else {
+    // No explicit ?storeId (a signed-in user opening this interactively) —
+    // fall back to THEIR active store (org-validated), not a global pick.
+    const { resolveActiveStoreId } = await import("@/lib/services/offline-sales-service");
+    storeId = await resolveActiveStoreId().catch(() => null);
   }
 
   let bundle: DailyReportBundle | null = null;

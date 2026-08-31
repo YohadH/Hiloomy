@@ -93,13 +93,23 @@ async function resolveConnectedGrowthStore(db: any, storeId?: string) {
     return store;
   }
 
-  // Fail-closed: NEVER pick "the most-recently-updated store in the whole
-  // database" — in multi-tenant SaaS that hands the caller another tenant's
-  // brand. Every caller now resolves + org-asserts a storeId upstream
-  // (routes via resolveScopedStoreId, crons pass an explicit store.id), so a
-  // missing storeId here is a bug, not a request to guess. Return null and
-  // let getStoreOrThrow raise "connect a store".
-  return null;
+  // No explicit storeId (the Growth Agent PAGE calls getGrowthAgentStoreContext()
+  // with none). Resolve the caller's ACTIVE store — org-validated via
+  // resolveActiveStoreId — instead of the old global "newest store in the DB"
+  // fallback (which leaked another tenant's brand). Returns null when there's
+  // no active store, so getStoreOrThrow raises a clean "connect a store".
+  const { resolveActiveStoreId } = await import("@/lib/services/offline-sales-service");
+  const activeId = await resolveActiveStoreId();
+  if (!activeId) return null;
+  const active = await db.store.findUnique({
+    where: { id: activeId },
+    include: { connection: true }
+  });
+  if (!active) return null;
+  if (!active.connected || !active.connection) {
+    throw new AppError("Growth Agent only works for a connected Shopify store.", 400);
+  }
+  return active;
 }
 
 async function getStoreOrThrow(storeId?: string, options?: { allowFallback?: boolean }) {
