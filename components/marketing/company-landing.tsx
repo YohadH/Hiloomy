@@ -20,7 +20,17 @@ export default function CompanyLanding() {
   useEffect(() => {
     if (started) return; // guard React strict-mode double-invoke / remounts
     started = true;
-    initCompanyLanding();
+    try {
+      initCompanyLanding();
+    } catch (err) {
+      // The interactions are enhancement only. A bug in them (e.g. the
+      // script referencing a section that was later cut from the markup)
+      // must degrade to a static page — NOT throw out of the effect and
+      // feed the whole homepage to the error boundary, which is exactly
+      // what took /welcome down on 31 Aug 2026 (observe(null) on the
+      // removed #dash hero mock).
+      console.error("[company-landing] interactions failed to start:", err);
+    }
   }, []);
 
   return (

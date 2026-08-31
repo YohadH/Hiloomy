@@ -33,29 +33,9 @@ function countUp(el){const to=parseFloat(el.dataset.count),dec=+(el.dataset.dec|
     el.style.filter='blur('+((1-e)*4).toFixed(2)+'px)'; /* numbers resolve into focus */
     if(p<1)requestAnimationFrame(step);else{el.textContent=f(to);el.style.filter='none';}};requestAnimationFrame(step);}
 function watchCount(sel){const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.querySelectorAll('[data-count]').forEach(countUp);io.unobserve(e.target)}}),{threshold:.35});document.querySelectorAll(sel).forEach(el=>io.observe(el));}
-watchCount('#dash');watchCount('.statgrid');
+watchCount('.statgrid');
 
-/* chart draw */
-const dashIO=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){drawChart();dashIO.disconnect()}}),{threshold:.3});
-dashIO.observe(document.getElementById('dash'));
-function drawChart(){
-  const W=560,H=140,pad=8;
-  const rev=[9,17,27,33,37,36,30,27,24,29,33,30],prof=[4,8,12,15,17,17,15,14,13,14,15,13],maxV=40;
-  const X=i=>pad+i*(W-2*pad)/(rev.length-1),Y=v=>H-6-(v/maxV)*(H-16);
-  const line=a=>a.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
-  const revL=line(rev),profL=line(prof);
-  const area=`${revL} L ${X(rev.length-1).toFixed(1)} ${H} L ${X(0).toFixed(1)} ${H} Z`;
-  const gap=`${revL} ${prof.slice().reverse().map((v,i)=>`L ${X(prof.length-1-i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ')} Z`;
-  revLine.setAttribute('d',revL);profLine.setAttribute('d',profL);revArea.setAttribute('d',area);gapFill.setAttribute('d',gap);
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(!reduced){[['revLine',900],['profLine',1150]].forEach(([id,dur])=>{const p=document.getElementById(id),len=p.getTotalLength();
-    p.style.strokeDasharray=len;p.style.strokeDashoffset=len;p.animate([{strokeDashoffset:len},{strokeDashoffset:0}],{duration:dur,easing:'cubic-bezier(.4,0,.2,1)',fill:'forwards'});});}
-  revArea.animate([{opacity:0},{opacity:1}],{duration:700,delay:500,fill:'forwards'});
-  gapFill.animate([{opacity:0},{opacity:1}],{duration:700,delay:700,fill:'forwards'});
-  const tag=document.getElementById('gaptag'),gx=X(6),gy=(Y(rev[6])+Y(prof[6]))/2;
-  tag.style.left=(gx/W*100)+'%';tag.style.top=(gy/H*100)+'%';
-  tag.animate([{opacity:0,transform:'translate(-50%,-90%)'},{opacity:1,transform:'translate(-50%,-115%)'}],{duration:500,delay:1200,fill:'forwards'});
-}
+/* (The hero dashboard-mock chart block lived here. The mock was replaced by   the hero video, but the script kept observing #dash — observe(null) threw   on mount and the error boundary blanked the whole landing, 31 Aug 2026.) */
 
 /* ===== AI agent cards: grab-and-throw (apple-design physics) ===== */
 const FIND=[
