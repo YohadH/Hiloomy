@@ -12,6 +12,7 @@ import { getAppChromeData, getProfitAnalyticsPayload } from "@/lib/services/anal
 import { buildChannelCacReport } from "@/lib/services/channel-cac-service";
 import { buildCollectionRhythm } from "@/lib/services/collection-rhythm-service";
 import { buildBundleProfitability } from "@/lib/services/bundle-profitability-service";
+import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
 import { buildCogsOnboarding } from "@/lib/services/product-cost-service";
 import { CogsOnboardingCard } from "@/components/profit/cogs-onboarding-card";
 import { ProfitAccuracyBadge } from "@/components/profit/profit-accuracy-badge";
@@ -59,11 +60,26 @@ export default async function ProfitPage() {
   const cogs = storeId
     ? await buildCogsOnboarding(storeId, { start: selection.start, end: selection.end }).catch(() => null)
     : null;
+  // Headline profit = the ONE app-wide contribution definition (net product
+  // sales − COGS − affiliate commission), sourced from the SAME single-source
+  // layer the dashboard uses. Critically it subtracts refunds by REFUND date
+  // (money actually returned this window), whereas the per-product table below
+  // uses each order's own line refunds (by order date, which lag). Summing the
+  // table gave a higher, inconsistent headline than the dashboard — this makes
+  // contribution one number across dashboard, /profit and BI.
+  const contribution = storeId
+    ? await buildContributionMargin({ storeId, start: selection.start, end: selection.end }).catch(() => null)
+    : null;
   const isHe = locale === "he";
 
-  // Narrative
-  const totalRevenue = profit.productPerformance.reduce((acc, row) => acc + row.revenue, 0);
-  const totalProfit = profit.productPerformance.reduce((acc, row) => acc + row.estimatedProfit, 0);
+  // Narrative — headline from the single-source contribution; fall back to the
+  // per-product sum only if that layer is unavailable.
+  const totalRevenue = contribution
+    ? contribution.totals.revenue
+    : profit.productPerformance.reduce((acc, row) => acc + row.revenue, 0);
+  const totalProfit = contribution
+    ? contribution.totals.contributionMargin
+    : profit.productPerformance.reduce((acc, row) => acc + row.estimatedProfit, 0);
   const totalDiscount = profit.productPerformance.reduce((acc, row) => acc + row.discountImpact, 0);
   const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
   const topProduct = profit.topProducts[0];
@@ -262,6 +278,11 @@ export default async function ProfitPage() {
               label: locale === "he" ? "עריכת עלויות מוצרים (COGS) →" : "Edit product costs (COGS) →"
             }}
           />
+          <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            {locale === "he"
+              ? "הרווח בכותרת מנכה את כל ההחזרים שבוצעו בתקופה (כולל על הזמנות ישנות), בדיוק כמו בדשבורד. בטבלה למטה הרווח לכל מוצר מנכה רק את ההחזרים של אותה הזמנה — לכן ייתכן שסכום הטבלה לא יזדהה במדויק עם הכותרת בחלון קצר."
+              : "The headline profit subtracts every refund processed in this window (including on older orders), matching the dashboard. In the table below, each product's profit subtracts only that order's own refunds — so the table may not sum exactly to the headline in a short window."}
+          </p>
           <div className="grid items-start gap-4 lg:grid-cols-2">
             <DataTable
               title={dictionary.profit.productTable}

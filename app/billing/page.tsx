@@ -33,47 +33,60 @@ export default async function BillingPage() {
   const locale = cookieLocale === "he" ? "he" : "en";
   const currency = org.currency === "USD" ? "USD" : "ILS";
 
-  // Billing disabled in this environment — show a friendly notice
-  // instead of the plan picker so the page still works for poking around.
-  if (!billingEnabled()) {
-    const disabledCopy =
-      locale === "he"
-        ? {
-            title: "התשלומים מושבתים כרגע",
-            body: "המערכת רצה במצב פיתוח. כשתפעילו חיוב (BILLING_ENABLED=true) תופיע כאן בחירת מסלולים."
-          }
-        : {
-            title: "Billing is currently disabled",
-            body: "The app is running in development mode. Set BILLING_ENABLED=true in your environment to enable plan selection here."
-          };
-    return (
-      <AppShell store={chrome.store} controls={chrome.controls}>
-        <div dir={locale === "he" ? "rtl" : "ltr"} className="mx-auto w-full max-w-2xl">
-          <h1 className="text-2xl font-bold tracking-tight">{disabledCopy.title}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{disabledCopy.body}</p>
-        </div>
-      </AppShell>
-    );
-  }
-
   const t =
     locale === "he"
       ? {
           title: "מנוי וחיוב",
           subtitle: `מסלולים ל-${org.name}`,
           currentPlan: "המסלול הנוכחי",
-          status: { trial_active: "תקופת ניסיון פעילה", trial_expired: "תקופת ניסיון הסתיימה", paid: "מנוי פעיל", no_org: "—" }
+          status: { trial_active: "תקופת ניסיון פעילה", trial_expired: "תקופת ניסיון הסתיימה", paid: "מנוי פעיל", no_org: "—" },
+          contactBilling: "לשדרוג או שינוי מסלול — דברו איתנו ונשמח להסדיר לכם את זה."
         }
       : {
           title: "Billing & subscription",
           subtitle: `Plans for ${org.name}`,
           currentPlan: "Current plan",
-          status: { trial_active: "Trial active", trial_expired: "Trial expired", paid: "Active subscription", no_org: "—" }
+          status: { trial_active: "Trial active", trial_expired: "Trial expired", paid: "Active subscription", no_org: "—" },
+          contactBilling: "To upgrade or change your plan, get in touch and we'll set it up for you."
         };
 
   const planLabel = (sub.plan === "starter" || sub.plan === "growth" || sub.plan === "agency")
     ? PLANS[sub.plan].name[locale]
     : (locale === "he" ? "תקופת ניסיון" : "Trial");
+
+  const currentPlanCard = (
+    <div className="mb-8 rounded-xl border border-border bg-card p-5">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {t.currentPlan}
+      </p>
+      <p className="mt-1 text-xl font-semibold">{planLabel}</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {t.status[sub.status]}
+        {sub.status === "trial_active" && sub.daysUntilTrialEnd != null
+          ? ` · ${sub.daysUntilTrialEnd} ${locale === "he" ? "ימים" : "days"}`
+          : ""}
+      </p>
+    </div>
+  );
+
+  // Self-serve checkout isn't enabled in this environment. Show the plan
+  // status + how to change it — NEVER a developer instruction to the user.
+  if (!billingEnabled()) {
+    return (
+      <AppShell store={chrome.store} controls={chrome.controls}>
+        <div dir={locale === "he" ? "rtl" : "ltr"} className="mx-auto w-full max-w-2xl">
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold tracking-tight">{t.title}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{t.subtitle}</p>
+          </div>
+          {currentPlanCard}
+          <div className="rounded-xl border border-border bg-background/70 p-5 text-sm text-muted-foreground">
+            {t.contactBilling}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell store={chrome.store} controls={chrome.controls}>

@@ -177,17 +177,24 @@ export async function buildReturnsIntelligence(input: {
   const productTitle = new Map((products as Array<{ id: string; title: string }>).map((p) => [p.id, p.title]));
   const variantTitle = new Map((variants as Array<{ id: string; title: string }>).map((v) => [v.id, v.title]));
 
-  // Order-level refund ground truth for the coverage metric.
-  const orderAgg = await db.order.aggregate({
+  // "Money refunded" ground truth = refunds PROCESSED in the window, summed
+  // from the Refund table by REFUND date — the SAME source and date rule the
+  // dashboard uses (prisma-analytics-repository refund.aggregate).
+  //
+  // The previous sum of Order.totalRefunds by ORDER date read ~₪0 on a recent
+  // window (R-03/H-01): refunds lag purchases, so orders placed in the last
+  // few days have not been returned yet, even while ₪thousands were refunded
+  // in that window against OLDER orders. That produced a "Money refunded ₪0"
+  // KPI that contradicted the dashboard's refund figure and Shopify's own.
+  const refundAgg = await db.refund.aggregate({
     where: {
       storeId: input.storeId,
       createdAt: { gte: input.start, lte: input.end },
-      cancelledAt: null,
-      test: false
+      order: { cancelledAt: null, test: false }
     },
-    _sum: { totalRefunds: true }
+    _sum: { refundedAmount: true }
   });
-  const orderRefunds = num(orderAgg?._sum?.totalRefunds);
+  const orderRefunds = num(refundAgg?._sum?.refundedAmount);
 
   let totalSold = 0;
   let totalReturned = 0;
