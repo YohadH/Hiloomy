@@ -36,6 +36,7 @@ import { getDb } from "@/lib/server/db";
 import { BI_PERSONA, buildRuntimeContext } from "@/lib/ai/bi-persona";
 import { BI_TOOL_DEFINITIONS } from "@/lib/ai/bi-tool-definitions";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
+import { getStoreTimeZone, lastNDaysRange } from "@/lib/server/reporting-date-range";
 import { buildChannelPerformanceReport } from "@/lib/services/channel-performance-engine-service";
 import { buildCohortRetention } from "@/lib/services/cohort-retention-service";
 import { listOpenAlerts } from "@/lib/services/alert-writer-service";
@@ -191,12 +192,6 @@ function shapeOrder(o: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-function daysWindow(days: number): { start: Date; end: Date } {
-  const end = new Date();
-  const start = new Date(end.getTime() - days * 86_400_000);
-  return { start, end };
-}
-
 // Dispatch a tool call. `input` is the model-provided (already parsed)
 // object; storeId always comes from the session, never from the model.
 // Cache wrapper around the raw dispatch below. Every key is storeId-first —
@@ -225,6 +220,13 @@ async function executeToolUncached(
     const n = typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : fallback;
     return Math.min(max, Math.max(min, n));
   };
+
+  // Windows use STORE-TIMEZONE day boundaries (same as the dashboard's
+  // reporting picker), so "last N days" means the SAME calendar days here as
+  // on the dashboard — not a raw now−N×24h rolling window that drifted by up
+  // to a day and made the BI answer disagree with the screen behind it (C-05).
+  const storeTimeZone = await getStoreTimeZone(storeId);
+  const daysWindow = (days: number) => lastNDaysRange(days, storeTimeZone);
 
   let result: unknown;
   switch (name) {
@@ -326,7 +328,7 @@ async function executeToolUncached(
     }
     case "get_traffic": {
       const days = int(input.days, 30, 7, 90);
-      const since = new Date(Date.now() - days * 86_400_000);
+      const since = daysWindow(days).start;
       const db = getDb() as any;
       const rows = (await db.gaTrafficDaily.findMany({
         where: { storeId, date: { gte: since } },

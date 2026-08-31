@@ -171,6 +171,27 @@ export function lastCompleteDaysRange(
 }
 
 /**
+ * The last N days INCLUDING today, as store-timezone day boundaries:
+ * start-of (today − (N−1)) → end-of today. This matches the reporting
+ * picker's "Last 7/30/90 days" presets (resolvePreset) exactly, so any
+ * consumer that needs an arbitrary N-day window (e.g. the BI chat tools)
+ * lands on the same calendar days as the dashboard — instead of a raw
+ * `Date.now() − N×24h` rolling window that drifts by up to a day.
+ */
+export function lastNDaysRange(
+  days: number,
+  timeZone: string = DEFAULT_TIME_ZONE,
+  now = new Date()
+): { start: Date; end: Date } {
+  const today = zonedToday(timeZone, now);
+  const span = Math.max(1, Math.floor(days));
+  return {
+    start: zonedBoundaryUtc(addCalendarDays(today, -(span - 1)), "start", timeZone),
+    end: zonedBoundaryUtc(today, "end", timeZone)
+  };
+}
+
+/**
  * Format a UTC instant as the YYYY-MM-DD calendar date it falls on in
  * `timeZone`. Use this instead of `date.toISOString().slice(0, 10)` for
  * any user-facing period label or URL param that a TZ-aware consumer
@@ -381,11 +402,22 @@ export function comparisonLabel(mode: ComparisonMode, locale: "en" | "he" = "en"
   return map[mode];
 }
 
-function describeRange(start: Date, end: Date, locale: "en" | "he" = "en") {
+function describeRange(
+  start: Date,
+  end: Date,
+  locale: "en" | "he" = "en",
+  timeZone: string = DEFAULT_TIME_ZONE
+) {
+  // MUST format in the STORE timezone. The range boundaries are store-TZ day
+  // instants (e.g. Aug 25 00:00 Asia/Jerusalem = Aug 24 21:00 UTC); formatting
+  // them in the runtime TZ (UTC on Render) printed the PREVIOUS calendar day —
+  // "Aug 24 – Aug 31" over a window that actually queries Aug 25 – Aug 31, the
+  // off-by-one that made every surface look ~11% short vs Shopify (R-01).
   const formatter = new Intl.DateTimeFormat(locale === "he" ? "he-IL" : "en-US", {
     month: "short",
     day: "numeric",
-    year: "numeric"
+    year: "numeric",
+    timeZone
   });
   const startStr = formatter.format(start);
   const endStr = formatter.format(end);
@@ -537,6 +569,11 @@ export async function getReportingDateRangeSelection(locale: "en" | "he" = "en")
   };
 }
 
-export function describeAbsoluteRange(start: Date, end: Date, locale: "en" | "he" = "en") {
-  return describeRange(start, end, locale);
+export function describeAbsoluteRange(
+  start: Date,
+  end: Date,
+  locale: "en" | "he" = "en",
+  timeZone: string = DEFAULT_TIME_ZONE
+) {
+  return describeRange(start, end, locale, timeZone);
 }

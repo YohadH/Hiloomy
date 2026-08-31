@@ -192,9 +192,14 @@ export async function buildReturnsIntelligence(input: {
       createdAt: { gte: input.start, lte: input.end },
       order: { cancelledAt: null, test: false }
     },
-    _sum: { refundedAmount: true }
+    // Use refundedLineItemsAmount (line-items only) — the SAME field the
+    // dashboard + contribution math use, so "Money refunded" here matches the
+    // dashboard's refund figure exactly. (The full refundedAmount adds the
+    // shipping/tax portions, which over-states vs both the dashboard and
+    // Shopify's own sales-reversal number.)
+    _sum: { refundedLineItemsAmount: true }
   });
-  const orderRefunds = num(refundAgg?._sum?.refundedAmount);
+  const orderRefunds = num(refundAgg?._sum?.refundedLineItemsAmount);
 
   let totalSold = 0;
   let totalReturned = 0;

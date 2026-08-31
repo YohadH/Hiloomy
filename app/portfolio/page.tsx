@@ -22,7 +22,7 @@ import { buildPlatformSpendReport } from "@/lib/services/platform-spend-service"
 import { PlatformSpendTable } from "@/components/portfolio/platform-spend-table";
 import { getAppLocale } from "@/lib/i18n";
 import { heCount } from "@/lib/i18n/he-plural";
-import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
+import { getReportingDateRangeSelection, getStoreTimeZone } from "@/lib/server/reporting-date-range";
 import { cn } from "@/lib/utils";
 
 // /portfolio — the board / multi-brand operator view.
@@ -110,10 +110,15 @@ export default async function PortfolioPage() {
 
   // Explicit comparison window label — "13.7–11.8 מול 13.6–12.7". Every
   // "vs the previous period" phrase on this page means exactly this.
+  // Format window boundaries in the STORE timezone — they are store-TZ day
+  // instants, so formatting in the runtime TZ (UTC on Render) printed the
+  // previous calendar day ("8/24" for an Aug-25 start), the R-01 off-by-one.
+  const windowTimeZone = await getStoreTimeZone();
   const fmtDay = (iso: string) =>
     new Intl.DateTimeFormat(isHe ? "he-IL" : "en-US", {
       day: "numeric",
-      month: "numeric"
+      month: "numeric",
+      timeZone: windowTimeZone
     }).format(new Date(iso));
   const windowLabel = isHe
     ? `התקופה: ${fmtDay(portfolio.windowStart)}–${fmtDay(portfolio.windowEnd)} מול ${fmtDay(portfolio.previousWindowStart)}–${fmtDay(portfolio.previousWindowEnd)} (${portfolio.windowDays} ימים).`

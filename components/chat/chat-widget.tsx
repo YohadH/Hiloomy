@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Bot, LifeBuoy, MessageCircle, Send, X, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -420,6 +420,33 @@ function toolLabel(name: string, isHe: boolean): string {
   return isHe ? "מנתח נתונים" : "Analysing data";
 }
 
+// Minimal, injection-SAFE inline markdown: **bold**, *italic*, `code`.
+// The model emits these; rendering them raw showed literal asterisks in every
+// answer (H-11). Element-based (no dangerouslySetInnerHTML) — React escapes
+// all text, so there's no XSS surface. Newlines are handled by the bubble's
+// whitespace-pre-wrap.
+function renderRich(text: string): Array<string | ReactElement> {
+  const out: Array<string | ReactElement> = [];
+  const re = /\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\n]+)\*/g;
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[1] !== undefined) out.push(<strong key={key++}>{m[1]}</strong>);
+    else if (m[2] !== undefined)
+      out.push(
+        <code key={key++} className="rounded bg-black/10 px-1 py-0.5 text-[0.85em] dark:bg-white/15">
+          {m[2]}
+        </code>
+      );
+    else if (m[3] !== undefined) out.push(<em key={key++}>{m[3]}</em>);
+    last = re.lastIndex;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
 function Bubble({ role, text, isHe }: { role: "user" | "agent"; text: string; isHe: boolean }) {
   const isUser = role === "user";
   return (
@@ -433,7 +460,7 @@ function Bubble({ role, text, isHe }: { role: "user" | "agent"; text: string; is
         )}
         dir={isHe ? "rtl" : "ltr"}
       >
-        {text}
+        {renderRich(text)}
       </div>
     </div>
   );

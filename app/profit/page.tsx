@@ -82,7 +82,10 @@ export default async function ProfitPage() {
     : profit.productPerformance.reduce((acc, row) => acc + row.estimatedProfit, 0);
   const totalDiscount = profit.productPerformance.reduce((acc, row) => acc + row.discountImpact, 0);
   const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-  const topProduct = profit.topProducts[0];
+  // "Top profit driver" must be the highest-PROFIT product, not the highest-
+  // revenue one (profit.topProducts is revenue-sorted — using it here labelled
+  // a loss-making SKU as the "leading profit engine", M-01).
+  const topProduct = profit.topProfitableProducts[0];
   const watchlistFirst = profit.lowProducts[0];
 
   const narrativeBody = [
