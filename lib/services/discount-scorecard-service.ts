@@ -387,8 +387,8 @@ export async function buildDiscountScorecards(input: {
             en: `Looks like deliberate product seeding (affiliate/influencer gifting): almost all orders are first-time customers with near-zero revenue. The real cost is the COGS of the gifted goods (₪${Math.round(acc.cogs).toLocaleString()}) — the right question is whether the partners delivered exposure, not whether "the code loses money".`
           }
         : {
-            he: `מוצרים שניתנו במתנה, לא נמכרו: ${Math.round(discountDepth * 100)}% הנחה ממחיר המדף על ${uses} הזמנות (צוות / יחסי ציבור / החלפות). העלות האמיתית היא עלות המוצרים שנמסרו (₪${Math.round(acc.cogs).toLocaleString()}), לא "הפסד" על הקוד.`,
-            en: `Given away, not sold: ${Math.round(discountDepth * 100)}% off list price across ${uses} orders (staff / PR / replacements). The real cost is the COGS of the goods handed out (₪${Math.round(acc.cogs).toLocaleString()}), not a "loss" on the code.`
+            he: `מוצרים שניתנו במתנה, לא נמכרו: ${Math.min(100, Math.round(discountDepth * 100))}% הנחה ממחיר המדף על ${uses} הזמנות (צוות / יחסי ציבור / החלפות). העלות האמיתית היא עלות המוצרים שנמסרו (₪${Math.round(acc.cogs).toLocaleString()}), לא "הפסד" על הקוד.`,
+            en: `Given away, not sold: ${Math.min(100, Math.round(discountDepth * 100))}% off list price across ${uses} orders (staff / PR / replacements). The real cost is the COGS of the goods handed out (₪${Math.round(acc.cogs).toLocaleString()}), not a "loss" on the code.`
           };
     } else if (hasCostData && margin < 0 && uses >= STOP_MIN_USES) {
       verdict = "stop";

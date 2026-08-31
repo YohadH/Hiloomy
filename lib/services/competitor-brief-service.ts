@@ -493,7 +493,16 @@ export interface CompetitorBriefActions {
   today: BriefAction[];
   thisWeek: BriefAction[];
   generatedAt: string;
+  /** Fallback served while a BI generation is still running — poll again. */
+  pending?: boolean;
 }
+
+// How long the "blocking" loader actually blocks. The BI call itself may run
+// up to BI_TIMEOUT_MS (5 min); holding the dashboard's request open that
+// long is what read as "the app hangs" in QA (C-08: 13s in run 2, 60s+ in
+// run 4). After this, the fallback is served with `pending: true`, the
+// generation keeps running and writes the cache, and the client re-polls.
+const BLOCKING_WAIT_MS = 20_000;
 
 export async function getCompetitorBriefBlocking(
   storeId?: string,
@@ -515,16 +524,43 @@ export async function getCompetitorBriefBlocking(
     return { source: "bi-agent", today: cached.today, thisWeek: cached.thisWeek, generatedAt: intel.generatedAt };
   }
   if (isOpenAiConfigured() || isBiAgentConfigured() || isAnthropicDirectAvailable()) {
-    const answer = await generateBiBrief(intel, storeId, locale).catch(() => null);
+    let settled = false;
+    const generation = generateBiBrief(intel, storeId, locale)
+      .catch(() => null)
+      .finally(() => {
+        settled = true;
+      });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const deadline = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), BLOCKING_WAIT_MS);
+    });
+    const answer = await Promise.race([generation, deadline]);
+    if (timer) clearTimeout(timer);
     if (isValidAnswer(answer)) {
       return { source: "bi-agent", today: answer.today, thisWeek: answer.thisWeek, generatedAt: intel.generatedAt };
     }
+    // Not done yet: generation continues in the background and caches its
+    // answer; tell the client to come back for it.
+    if (!settled) return { ...fallback(), pending: true };
   }
   return fallback();
 }
 
+// Cache schema tag. Bumped to "s1" when the scraped-content screen landed:
+// briefs generated before it were composed from unfiltered ad copy and sat
+// in the 24h cache — which is why the explicit competitor headline was still
+// on the dashboard a deploy AFTER the filter shipped (QA run 4).
+const CACHE_SCHEMA = "s1";
 function cacheKey(version: string, storeId?: string): string {
-  return `${version}:${storeId ?? "org"}`;
+  return `${version}:${storeId ?? "org"}:${CACHE_SCHEMA}`;
+}
+
+// A BI answer is only usable if none of its text repeats unsafe scraped
+// copy — the model quotes competitor headlines back verbatim.
+function isCleanAnswer(answer: BiBriefAnswer): boolean {
+  return [...answer.today, ...answer.thisWeek].every((a) =>
+    [a.action, a.why, a.how, a.target].every((t) => isSafeScrapedText(t))
+  );
 }
 
 // ── Live store facts — the difference between consultant fluff and a
@@ -704,6 +740,10 @@ export async function generateBiBrief(
     );
   }
   if (isValidAnswer(answer)) {
+    if (!isCleanAnswer(answer)) {
+      console.warn("[competitor-brief] answer repeated unsafe scraped copy — not served, not cached");
+      return null;
+    }
     await writeCache(cacheKey(intel.version, storeId), answer);
     return answer;
   }
@@ -723,6 +763,7 @@ async function readCache(version: string): Promise<BiBriefAnswer | null> {
     // Full shape validation — a cache entry from the older string-array
     // format must be rejected, not rendered as empty action objects.
     if (!isValidAnswer(parsed)) return null;
+    if (!isCleanAnswer(parsed)) return null;
     return parsed;
   } catch {
     return null;

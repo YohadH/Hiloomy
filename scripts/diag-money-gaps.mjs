@@ -80,6 +80,53 @@ try {
     FROM "Order" WHERE "storeId" = ${STORE} AND "createdAt" >= ${start} AND "createdAt" <= ${end}
     ORDER BY "orderNumber" DESC LIMIT 5`).forEach(row);
 
+  console.log("\n## 2c-bis. Order-number GAPS inside the window (R-02: orders Shopify has that we never stored)");
+  // Shopify numbers orders sequentially. Any number between the window's
+  // lowest and highest that has no row here is an order that never reached
+  // the database — regardless of status. Numbers that exist but are
+  // cancelled/test are listed in 2b instead. Decisive for "ingest drops"
+  // vs "aggregate excludes".
+  (await p.$queryRaw`
+    WITH nums AS (
+      SELECT NULLIF(regexp_replace("orderNumber", '\D', '', 'g'), '')::bigint AS n
+      FROM "Order" WHERE "storeId" = ${STORE} AND "createdAt" >= ${start} AND "createdAt" <= ${end}
+    ),
+    bounds AS (SELECT MIN(n) AS lo, MAX(n) AS hi FROM nums WHERE n IS NOT NULL),
+    expected AS (SELECT generate_series(lo, hi) AS n FROM bounds),
+    all_nums AS (
+      SELECT NULLIF(regexp_replace("orderNumber", '\D', '', 'g'), '')::bigint AS n
+      FROM "Order" WHERE "storeId" = ${STORE}
+    )
+    SELECT e.n AS missing_order_number
+    FROM expected e LEFT JOIN all_nums a ON a.n = e.n
+    WHERE a.n IS NULL ORDER BY e.n LIMIT 50`).forEach(row);
+
+  console.log("\n## 2d. Discount basis split (H-14): orders whose DiscountUsage total ≠ Σ line discounts");
+  // The dashboard sums OrderLineItem.lineDiscountAmount; /discounts sums
+  // DiscountUsage.amount. Orders synced before per-line discountAllocations
+  // were captured carry lineDiscountAmount = 0 for cart-level codes while the
+  // usage row still holds the amount — the dashboard reads low by exactly
+  // that. Re-syncing these orders (not the ingest) closes the gap.
+  (await p.$queryRaw`
+    SELECT COUNT(*)::int AS orders_split,
+           SUM(u.usage_amt - l.line_disc)::float AS dashboard_short_by,
+           SUM(CASE WHEN l.line_disc = 0 THEN 1 ELSE 0 END)::int AS orders_with_no_line_discount
+    FROM "Order" o
+    JOIN (SELECT "orderId", SUM(amount)::float AS usage_amt FROM "DiscountUsage" WHERE "storeId" = ${STORE} GROUP BY "orderId") u ON u."orderId" = o.id
+    JOIN (SELECT "orderId", SUM("lineDiscountAmount")::float AS line_disc FROM "OrderLineItem" WHERE "storeId" = ${STORE} GROUP BY "orderId") l ON l."orderId" = o.id
+    WHERE o."storeId" = ${STORE} AND o."createdAt" >= ${start} AND o."createdAt" <= ${end}
+      AND o."cancelledAt" IS NULL AND o.test = false
+      AND ABS(u.usage_amt - l.line_disc) > 1`).forEach(row);
+  (await p.$queryRaw`
+    SELECT o."displayName", o."totalDiscounts"::float AS order_disc, u.usage_amt, l.line_disc, o."updatedAt"
+    FROM "Order" o
+    JOIN (SELECT "orderId", SUM(amount)::float AS usage_amt FROM "DiscountUsage" WHERE "storeId" = ${STORE} GROUP BY "orderId") u ON u."orderId" = o.id
+    JOIN (SELECT "orderId", SUM("lineDiscountAmount")::float AS line_disc FROM "OrderLineItem" WHERE "storeId" = ${STORE} GROUP BY "orderId") l ON l."orderId" = o.id
+    WHERE o."storeId" = ${STORE} AND o."createdAt" >= ${start} AND o."createdAt" <= ${end}
+      AND o."cancelledAt" IS NULL AND o.test = false
+      AND ABS(u.usage_amt - l.line_disc) > 1
+    ORDER BY ABS(u.usage_amt - l.line_disc) DESC LIMIT 10`).forEach(row);
+
   console.log("\n## 3. Discount codes in window");
   (await p.$queryRaw`
     SELECT du.code, du."applicationType", du."valueType",

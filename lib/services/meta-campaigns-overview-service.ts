@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { getDb } from "@/lib/server/db";
+import { formatDateInTimeZone, getStoreTimeZone } from "@/lib/server/reporting-date-range";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
 
 const RECENT_ACTIVITY_DAYS = 3;
@@ -40,8 +41,12 @@ export interface MetaCampaignRow {
 }
 
 export interface MetaCampaignsOverview {
+  /** Calendar dates in the STORE timezone — for labels and cache keys. */
   rangeStart: string;
   rangeEnd: string;
+  /** The exact window instants (ISO) — for anything that re-queries the window. */
+  rangeStartAt: string;
+  rangeEndAt: string;
   dataThrough: string | null;
   totalSpend: number;
   totalPurchases: number;
@@ -182,9 +187,16 @@ export async function getMetaCampaignsOverview(
   const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0);
   const totalRevenue = campaigns.reduce((s, c) => s + c.revenue, 0);
 
+  // Label the window by the calendar day it falls on in the store's
+  // timezone. toISOString() rendered the Aug-25 00:00 Israel boundary as
+  // "2026-08-24" — the same off-by-one R-01 fixed everywhere else, which
+  // this block missed (QA run 4, M-14).
+  const timeZone = await getStoreTimeZone(storeId);
   return {
-    rangeStart: range.start.toISOString().slice(0, 10),
-    rangeEnd: range.end.toISOString().slice(0, 10),
+    rangeStart: formatDateInTimeZone(range.start, timeZone),
+    rangeEnd: formatDateInTimeZone(range.end, timeZone),
+    rangeStartAt: range.start.toISOString(),
+    rangeEndAt: range.end.toISOString(),
     dataThrough: dataThrough ? dataThrough.toISOString().slice(0, 10) : null,
     totalSpend: Math.round(totalSpend * 100) / 100,
     totalPurchases: campaigns.reduce((s, c) => s + c.purchases, 0),
@@ -354,8 +366,10 @@ export async function buildMetaCampaignsInsight(input: {
       .catch(() => null)) as Promise<{ name: string; currency: string } | null>,
     buildContributionMargin({
       storeId: input.storeId,
-      start: new Date(input.overview.rangeStart),
-      end: new Date(input.overview.rangeEnd)
+      // The real instants — parsing the date LABEL as a bare UTC midnight
+      // shifted this window by hours against the one the campaigns used.
+      start: new Date(input.overview.rangeStartAt),
+      end: new Date(input.overview.rangeEndAt)
     }).catch(() => null)
   ]);
   const marginRate = margin?.totals?.contributionMarginRate ?? null; // 0..1

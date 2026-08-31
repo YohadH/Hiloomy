@@ -76,24 +76,42 @@ export function CompetitorBriefActionsBlock({
     // Already have a real BI answer from the server render — nothing to do.
     if (initial.source !== "fallback") return;
     let cancelled = false;
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // The loader route answers within ~20s. If the BI generation is still
+    // running it says `pending` and we poll — a bounded series of short
+    // requests instead of one request held open for minutes (C-08).
+    const MAX_POLLS = 6;
+    const POLL_MS = 20_000;
+    const load = async (attempt: number) => {
       try {
         const res = await fetch("/api/dashboard/competitor-brief", {
           method: "POST",
           headers: { "Content-Type": "application/json" }
         });
         const body = await res.json().catch(() => ({}));
-        if (!cancelled && res.ok && body?.ok && body.brief) {
-          setBrief(body.brief as BriefActions);
+        if (cancelled) return;
+        if (res.ok && body?.ok && body.brief) {
+          const next = body.brief as BriefActions;
+          if (next.source === "bi-agent") {
+            setBrief(next);
+            setLoading(false);
+            return;
+          }
+          if (next.pending && attempt < MAX_POLLS) {
+            timer = setTimeout(() => void load(attempt + 1), POLL_MS);
+            return;
+          }
         }
+        setLoading(false);
       } catch {
         // keep the fallback tips already on screen
-      } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    };
+    void load(1);
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, [initial.source]);
 
