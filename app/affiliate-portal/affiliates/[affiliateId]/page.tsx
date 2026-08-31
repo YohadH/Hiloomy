@@ -5,22 +5,25 @@ import { AffiliatePortalNav } from "@/components/affiliate-portal/portal-nav";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getAffiliateById } from "@/lib/services/affiliate-portal-service";
 import { getAffiliateCouponBuilderOptions } from "@/lib/services/affiliate-portal-admin-service";
+import { appBaseUrl, getSignupSettings } from "@/lib/services/affiliate-signup-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { getAppLocale } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { DataTable } from "@/components/shared/data-table";
 import { AffiliateCouponManager } from "@/components/affiliate-portal/affiliate-coupon-manager";
+import { TrackedLinkComposer } from "@/components/affiliate-portal/affiliate-link-builder";
 
 export default async function AffiliateDetailPage({ params }: { params: Promise<{ affiliateId: string }> }) {
   // Builder options must come from the caller's org store — the same store
   // coupon creation targets — not the globally-newest connected store.
   const activeStoreId = await resolveActiveStoreId();
-  const [{ affiliateId }, chrome, options, locale] = await Promise.all([
+  const [{ affiliateId }, chrome, options, locale, signupSettings] = await Promise.all([
     params,
     getAppChromeData(),
     getAffiliateCouponBuilderOptions(activeStoreId ?? undefined),
-    getAppLocale()
+    getAppLocale(),
+    activeStoreId ? getSignupSettings(activeStoreId).catch(() => null) : Promise.resolve(null)
   ]);
   const payload = await getAffiliateById(affiliateId);
 
@@ -84,10 +87,24 @@ export default async function AffiliateDetailPage({ params }: { params: Promise<
               <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
                 <p className="text-sm text-muted-foreground">{lang("קישור הפניה", "Referral link")}</p>
                 <p className="mt-2 break-all text-sm" dir="ltr">{affiliate.referralLink}</p>
-                <p className="mt-3 text-sm text-muted-foreground">
-                  {lang("קישור מקוצר", "Short link")}: <span dir="ltr">{affiliate.shortLink}</span>
-                </p>
               </div>
+              {/* Per-affiliate short-link composer — coupon + UTM + destination,
+                  minted to a tiny hiloomy.com/l/{token}. Locked to this
+                  affiliate (single option in the picker). */}
+              <TrackedLinkComposer
+                baseUrl={appBaseUrl()}
+                slug={signupSettings?.signupSlug ?? null}
+                affiliates={[
+                  {
+                    id: affiliate.id,
+                    firstName: affiliate.firstName,
+                    lastName: affiliate.lastName,
+                    affiliateCode: affiliate.affiliateCode
+                  }
+                ]}
+                coupons={coupons.map((c) => ({ code: c.code, affiliateId: affiliate.id }))}
+                locale={isHe ? "he" : "en"}
+              />
               <AffiliateCouponManager
                 baseStoreUrl={baseStoreUrl}
                 affiliates={[
