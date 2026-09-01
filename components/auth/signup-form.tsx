@@ -66,6 +66,27 @@ export function SignupForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
         setSubmitting(false);
         return;
       }
+      // Invited people (teammates, design partners) are confirmed server-side
+      // and signed in immediately — confirmation emails are not delivered.
+      // Anyone else still gets the "check your email" step.
+      try {
+        const res = await fetch("/api/auth/auto-confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email })
+        });
+        const body = (await res.json().catch(() => ({}))) as { confirmed?: boolean };
+        if (body.confirmed) {
+          const { error: signinError } = await supabase.auth.signInWithPassword({ email, password });
+          if (!signinError) {
+            router.replace(next as never);
+            router.refresh();
+            return;
+          }
+        }
+      } catch {
+        // fall through to the email step
+      }
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.errors.signupFailed);

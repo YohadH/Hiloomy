@@ -39,10 +39,28 @@ export function SigninForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
     setSubmitting(true);
     try {
       const supabase = getBrowserSupabase();
-      const { error: signinError } = await supabase.auth.signInWithPassword({
+      let { error: signinError } = await supabase.auth.signInWithPassword({
         email,
         password
       });
+      // Unconfirmed account of someone we invited: confirm it server-side and
+      // retry once, silently. Confirmation emails are not delivered, so this
+      // is what lets an invited teammate or partner in on their own.
+      if (signinError && /email not confirmed/i.test(signinError.message ?? "")) {
+        try {
+          const res = await fetch("/api/auth/auto-confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email })
+          });
+          const body = (await res.json().catch(() => ({}))) as { confirmed?: boolean };
+          if (body.confirmed) {
+            ({ error: signinError } = await supabase.auth.signInWithPassword({ email, password }));
+          }
+        } catch {
+          // keep the original error
+        }
+      }
       if (signinError) {
         // Confirmation emails are not delivered (no SMTP), so a fresh signup
         // sits unconfirmed and Supabase answers "Email not confirmed" — shown
