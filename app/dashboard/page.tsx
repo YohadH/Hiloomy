@@ -224,6 +224,16 @@ export default async function CommandCenterPage() {
   // Cached 24h; falls back to the intel's own action list when the BI agent
   // is unreachable, so the section always renders.
   const competitorBrief = await getCompetitorBrief(storeId ?? undefined, isHe ? "he" : "en").catch(() => null);
+  // The brief is null until the FIRST competitor crawl lands (apply a date
+  // range, or the 2h cron). Hiding the whole section then made "I added
+  // competitors, where's the banner?" a support question (Take a Nap,
+  // 1 Sep 2026) — count the active set so we can say "pending" instead.
+  const activeCompetitorCount =
+    !competitorBrief && storeId
+      ? await getDb()
+          .competitor.count({ where: { storeId, status: "active" } })
+          .catch(() => 0)
+      : 0;
 
   // Traffic (GA4) + organic search (GSC) summary — follows the page's
   // selected date window like every other section. Null when neither
@@ -433,6 +443,18 @@ export default async function CommandCenterPage() {
               )}
             />
             <CompetitorBriefSection brief={competitorBrief} isHe={isHe} />
+          </section>
+        ) : activeCompetitorCount > 0 ? (
+          <section className="space-y-3">
+            <SectionHead
+              eyebrow={lang("מתחרים", "Competitors")}
+              title={lang("מה המתחרים עושים — ואיך להגיב", "What competitors are doing — and the response")}
+            />
+            <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-5 py-4 text-sm text-muted-foreground">
+              {isHe
+                ? `${activeCompetitorCount} מתחרים במעקב — הסריקה הראשונה עדיין לא רצה. החילו טווח תאריכים (למעלה) כדי להריץ אותה עכשיו, או המתינו לסנכרון האוטומטי (עד שעתיים). התובנות והמלצות הפעולה יופיעו כאן אחרי הסריקה.`
+                : `${activeCompetitorCount} competitors tracked — the first crawl hasn't run yet. Apply a date range (top of the page) to run it now, or wait for the automatic sync (up to 2 hours). Intel and prescribed actions appear here once it lands.`}
+            </div>
           </section>
         ) : null}
 
