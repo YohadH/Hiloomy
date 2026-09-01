@@ -44,10 +44,16 @@ export function SigninForm({ defaultLocale }: { defaultLocale?: AuthLocale }) {
         password
       });
       if (signinError) {
-        const message =
-          /invalid login credentials/i.test(signinError.message ?? "")
+        // Confirmation emails are not delivered (no SMTP), so a fresh signup
+        // sits unconfirmed and Supabase answers "Email not confirmed" — shown
+        // raw in English until now, read by two partners as "password error"
+        // (1 Sep 2026). Name the real cause and the way out.
+        const raw = signinError.message ?? "";
+        const message = /email not confirmed/i.test(raw)
+          ? t.errors.emailNotConfirmed
+          : /invalid login credentials/i.test(raw)
             ? t.errors.invalidCredentials
-            : (signinError.message || t.errors.signinFailed);
+            : (raw || t.errors.signinFailed);
         setError(message);
         setSubmitting(false);
         return;

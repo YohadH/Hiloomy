@@ -113,6 +113,39 @@ try {
     if (auths.length > 1) console.log(`note: ${auths.length} auth users share this email; linked the most recently signed-in one`);
   }
 
+  // --confirm-email <email>: mark the auth user's email confirmed. Signups
+  // require a confirmation email that is not being delivered (no SMTP), so
+  // new accounts sit unconfirmed and sign-in fails with "Email not confirmed"
+  // / "Invalid login credentials". The Supabase dashboard normally fixes this
+  // by hand; this does the same from here.
+  const confirmIdx = process.argv.indexOf("--confirm-email");
+  const confirmEmail = confirmIdx > -1 ? process.argv[confirmIdx + 1] : null;
+  if (confirmEmail) {
+    console.log(`\n## CONFIRM EMAIL ${confirmEmail}`);
+    const n = await p.$executeRaw`
+      UPDATE auth.users SET email_confirmed_at = COALESCE(email_confirmed_at, now()), updated_at = now()
+      WHERE lower(email) = lower(${confirmEmail})`;
+    console.log(n ? `confirmed (${n} auth user row(s) updated)` : "no auth user with that email — they have not signed up yet");
+  }
+
+  // --set-password <email> <newPassword>: set the auth password directly
+  // (bcrypt via pgcrypto, the same hash GoTrue writes). Password-reset emails
+  // are not delivered either, so this is the recovery path. Min 8 chars.
+  const pwIdx = process.argv.indexOf("--set-password");
+  if (pwIdx > -1) {
+    const pwEmail = process.argv[pwIdx + 1];
+    const newPassword = process.argv[pwIdx + 2];
+    if (!pwEmail || !newPassword || newPassword.length < 8) throw new Error("--set-password needs <email> <newPassword ≥ 8 chars>");
+    console.log(`\n## SET PASSWORD for ${pwEmail}`);
+    const n = await p.$executeRaw`
+      UPDATE auth.users
+      SET encrypted_password = extensions.crypt(${newPassword}, extensions.gen_salt('bf')),
+          email_confirmed_at = COALESCE(email_confirmed_at, now()),
+          updated_at = now()
+      WHERE lower(email) = lower(${pwEmail})`;
+    console.log(n ? `password set (${n} row(s)); email confirmed as well. Tell them the new password out of band.` : "no auth user with that email");
+  }
+
   // --drop-empty-orgs <email>: delete the user's EMPTY personal org(s) so the
   // org that holds the store is the only one they belong to. Then nothing —
   // no cookie, no switcher — can land them anywhere else. Only deletes orgs

@@ -92,7 +92,8 @@ export const authStrings = {
       errors: {
         emailRequired: "נדרש אימייל.",
         passwordRequired: "נדרשת סיסמה.",
-        invalidCredentials: "פרטי התחברות שגויים.",
+        invalidCredentials: "פרטי התחברות שגויים. אם נרשמתם עכשיו — ייתכן שהחשבון עוד לא אושר; בקשו ממנהל המערכת לאשר אותו.",
+        emailNotConfirmed: "האימייל עוד לא אושר. מייל האישור לא נשלח בשלב זה — בקשו ממנהל המערכת לאשר את החשבון, ואז התחברו שוב.",
         signinFailed: "התחברות נכשלה. נסו שוב."
       }
     }
@@ -177,7 +178,8 @@ export const authStrings = {
       errors: {
         emailRequired: "Email is required.",
         passwordRequired: "Password is required.",
-        invalidCredentials: "Invalid email or password.",
+        invalidCredentials: "Invalid email or password. If you just signed up, the account may not be confirmed yet — ask your admin to confirm it.",
+        emailNotConfirmed: "Your email isn't confirmed yet. Confirmation emails aren't being sent at the moment — ask your admin to confirm the account, then sign in again.",
         signinFailed: "Sign in failed. Please try again."
       }
     }
