@@ -12,11 +12,17 @@
 
 import { PrismaClient } from "@prisma/client";
 
-const shopDomain = process.argv[2];
+// First argument: a shop domain (x.myshopify.com) OR an org name / id
+// ("yoadhakimv's Brands"). Either resolves to the org whose members we fix.
+const target = process.argv[2];
+const roleIdx = process.argv.indexOf("--role");
+const fixRole = roleIdx > -1 ? process.argv[roleIdx + 1] : "owner"; // owner | admin | member
 const fixIdx = process.argv.indexOf("--fix");
 const fixEmail = fixIdx > -1 ? process.argv[fixIdx + 1] : null;
 if (!shopDomain) {
-  console.error("Usage: node scripts/diag-partner-membership.mjs <shop.myshopify.com> [--fix <email>]");
+  console.error(
+    "Usage: node scripts/diag-partner-membership.mjs <shop.myshopify.com | \"org name\" | orgId> [--fix <email> [--role owner|admin|member]] [--relink <email>] [--drop-empty-orgs <email>]"
+  );
   process.exit(1);
 }
 if (!process.env.DATABASE_URL) {
@@ -28,6 +34,18 @@ const p = new PrismaClient({ log: [] });
 const row = (r) => console.log(JSON.stringify(r));
 
 try {
+  // Resolve the target: a shop domain, or an org by id / name (case-insensitive).
+  let shopDomain = target;
+  if (!/\.myshopify\.com$/i.test(target)) {
+    const orgs = await p.$queryRaw`
+      SELECT o.id, o.name, (SELECT s.domain FROM "Store" s WHERE s."orgId" = o.id ORDER BY s."createdAt" LIMIT 1) AS first_store
+      FROM "Organization" o WHERE o.id = ${target} OR lower(o.name) = lower(${target})`;
+    if (!orgs.length) throw new Error(`No organization matches "${target}" (by id or exact name).`);
+    if (!orgs[0].first_store) throw new Error(`Org "${orgs[0].name}" has no stores — nothing to attach members to.`);
+    console.log(`\n## Org "${orgs[0].name}" (${orgs[0].id}) — using its store ${orgs[0].first_store}`);
+    shopDomain = orgs[0].first_store;
+  }
+
   console.log(`\n## Store ${shopDomain}`);
   const stores = await p.$queryRaw`
     SELECT s.id AS store_id, s.domain, s."orgId", o.name AS org_name, s.connected,
@@ -127,7 +145,7 @@ try {
   }
 
   if (fixEmail) {
-    console.log(`\n## FIX: make ${fixEmail} an owner of the org that holds ${shopDomain}`);
+    console.log(`\n## FIX: make ${fixEmail} a(n) ${fixRole} of the org that holds ${shopDomain}`);
     const store = stores[0];
     const user = await p.user.findFirst({ where: { email: { equals: fixEmail, mode: "insensitive" } }, select: { id: true, email: true } });
     if (!store) throw new Error("No store row — nothing to attach to.");
@@ -136,8 +154,8 @@ try {
     if (existing) {
       console.log(`already a member (${existing.role}) — nothing to do`);
     } else {
-      const m = await p.membership.create({ data: { userId: user.id, orgId: store.orgId, role: "owner" } });
-      console.log(`created membership ${m.id}: ${user.email} → org ${store.org_name} (${store.orgId}) as owner`);
+      const m = await p.membership.create({ data: { userId: user.id, orgId: store.orgId, role: fixRole } });
+      console.log(`created membership ${m.id}: ${user.email} → org ${store.org_name} (${store.orgId}) as ${fixRole}`);
     }
     // Consume a matching pending invitation so it doesn't linger.
     const removed = await p.invitation.deleteMany({ where: { orgId: store.orgId, email: { equals: fixEmail, mode: "insensitive" } } });
