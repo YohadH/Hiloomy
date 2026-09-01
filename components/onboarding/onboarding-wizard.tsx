@@ -21,16 +21,44 @@ type Step = "welcome" | "connect";
 export function OnboardingWizard({
   email,
   pendingShopDomain,
-  locale = "he"
+  locale = "he",
+  connectedOrgs = []
 }: {
   email: string;
   pendingShopDomain: string | null;
   locale?: "he" | "en";
+  /** Other orgs this user belongs to that already have a connected store. */
+  connectedOrgs?: Array<{ orgId: string; name: string; storeCount: number }>;
 }) {
   const [step, setStep] = useState<Step>(pendingShopDomain ? "connect" : "welcome");
   const [shopDomain, setShopDomain] = useState(pendingShopDomain ?? "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [switching, setSwitching] = useState<string | null>(null);
+
+  // One-click escape from the empty-org trap: switch the active org to one
+  // that already has a store, then land on its dashboard.
+  const switchToOrg = async (orgId: string) => {
+    setSwitching(orgId);
+    setError(null);
+    try {
+      const res = await fetch("/api/settings/active-org", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgId })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? "switch failed");
+      window.location.href = "/dashboard";
+    } catch (e) {
+      setSwitching(null);
+      setError(
+        locale === "he"
+          ? "החלפת הארגון נכשלה — נסו דרך ההגדרות."
+          : `Couldn't switch organization — try from Settings. (${e instanceof Error ? e.message : "error"})`
+      );
+    }
+  };
 
   const t =
     locale === "he"
@@ -121,6 +149,42 @@ export function OnboardingWizard({
                 {t.welcome.kicker}
               </span>
             </div>
+            {connectedOrgs.length > 0 ? (
+              <div className="mb-5 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-start">
+                <p className="text-sm font-semibold text-emerald-900">
+                  {locale === "he"
+                    ? "יש לכם כבר מותג מחובר בארגון אחר"
+                    : "You already have a connected brand in another organization"}
+                </p>
+                <p className="mt-1 text-xs text-emerald-900/80">
+                  {locale === "he"
+                    ? "החשבון שלכם נמצא כרגע בארגון ריק. עברו לארגון עם החנות המחוברת:"
+                    : "Your account is currently in an empty organization. Switch to the one with the connected store:"}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {connectedOrgs.map((o) => (
+                    <button
+                      key={o.orgId}
+                      type="button"
+                      disabled={switching !== null}
+                      onClick={() => void switchToOrg(o.orgId)}
+                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      {switching === o.orgId ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />}
+                      {locale === "he" ? `לעבור ל־${o.name}` : `Go to ${o.name}`}
+                      <span className="text-xs font-normal opacity-80">
+                        ({o.storeCount} {locale === "he" ? "חנויות" : o.storeCount === 1 ? "store" : "stores"})
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-emerald-900/70">
+                  {locale === "he"
+                    ? "רוצים לחבר מותג חדש נוסף לארגון הזה? המשיכו למטה."
+                    : "Want to connect an additional new brand to this organization instead? Continue below."}
+                </p>
+              </div>
+            ) : null}
             <h1 className="text-2xl font-bold tracking-tight">{t.welcome.title}</h1>
             <p className="mt-2 text-sm text-muted-foreground">{t.welcome.body}</p>
 

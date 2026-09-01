@@ -2,7 +2,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { FirstSyncPending } from "@/components/onboarding/first-sync-pending";
 import { getOnboardingStatus } from "@/lib/onboarding/onboarding-status";
-import { getAuthContext } from "@/lib/auth/session";
+import { getAuthContext, listUserOrgsForSwitcher } from "@/lib/auth/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SectionHead } from "@/components/dashboard-v2/section-head";
 import { KpiTile } from "@/components/dashboard-v2/kpi-tile";
@@ -91,12 +91,21 @@ export default async function CommandCenterPage() {
   const onboarding = await getOnboardingStatus();
   if (onboarding.needsOnboarding) {
     const auth = await getAuthContext();
+    // The wizard has no top bar, so a user whose active-org cookie points at
+    // an EMPTY org (every signup creates one) but who belongs to another org
+    // that already has a connected store was stuck here with no way out
+    // (Take a Nap's owners, 1 Sep 2026). Hand the wizard those orgs so it
+    // can offer a one-click switch instead of "connect your first store".
+    const connectedOrgs = (await listUserOrgsForSwitcher().catch(() => [])).filter(
+      (o) => !o.isActive && o.storeCount > 0
+    );
     return (
       <main className="min-h-screen bg-gradient-to-br from-green-50/30 via-background to-emerald-50/30">
         <OnboardingWizard
           email={auth.email ?? ""}
           pendingShopDomain={onboarding.pendingShopDomain}
           locale={isHe ? "he" : "en"}
+          connectedOrgs={connectedOrgs}
         />
       </main>
     );
