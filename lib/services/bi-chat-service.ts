@@ -36,7 +36,7 @@ import { getDb } from "@/lib/server/db";
 import { BI_PERSONA, buildRuntimeContext } from "@/lib/ai/bi-persona";
 import { BI_TOOL_DEFINITIONS } from "@/lib/ai/bi-tool-definitions";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
-import { getStoreTimeZone, lastNDaysRange } from "@/lib/server/reporting-date-range";
+import { formatDateInTimeZone, getStoreTimeZone, lastNDaysRange } from "@/lib/server/reporting-date-range";
 import { buildChannelPerformanceReport } from "@/lib/services/channel-performance-engine-service";
 import { buildCohortRetention } from "@/lib/services/cohort-retention-service";
 import { listOpenAlerts } from "@/lib/services/alert-writer-service";
@@ -627,7 +627,9 @@ async function executeToolUncached(
       const totalNet = rows.reduce((sum, r) => sum + n(r.net_sales), 0);
 
       result = {
-        window: { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) },
+        // Store-TZ calendar days — toISOString rendered the Aug-25 00:00 Israel
+        // boundary as "08-24", and the analyst repeated it (H-15).
+        window: { start: formatDateInTimeZone(start, storeTimeZone), end: formatDateInTimeZone(end, storeTimeZone) },
         sortedBy: sortKey,
         note:
           "Line-item level. Contribution margin here excludes affiliate commission (order-level) " +
@@ -693,11 +695,14 @@ export async function runBiChatTurn(input: RunBiChatTurnInput): Promise<string> 
     select: { name: true, currency: true }
   })) as { name: string; currency: string } | null;
 
+  // "Today" in the STORE's timezone — after 21:00 Israel, UTC is already
+  // tomorrow, and the analyst's "last 7 days" label drifted a day (H-15).
+  const contextTimeZone = await getStoreTimeZone(input.storeId);
   const baseContext = buildRuntimeContext({
     locale: input.locale,
     storeName: store?.name ?? null,
     currency: store?.currency ?? null,
-    todayIso: new Date().toISOString().slice(0, 10),
+    todayIso: formatDateInTimeZone(new Date(), contextTimeZone),
     section: input.section ?? null
   });
 

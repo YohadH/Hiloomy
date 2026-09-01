@@ -18,6 +18,8 @@ import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-cli
 import { anthropicChatJson } from "@/lib/clients/anthropic-client";
 import { fetchCompetitorActivity, type CompetitorActivityEntry } from "@/lib/clients/rivalsweeper-client";
 import { normalizeDomain } from "@/lib/services/competitor-intel-service";
+import { getMetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
+import { getStoreTimeZone, lastNDaysRange } from "@/lib/server/reporting-date-range";
 import {
   COMPETITOR_INTEL_LATEST,
   type CompetitorIntel
@@ -120,9 +122,10 @@ function renderActivityEntry(
     if (topHeadline) {
       moveParts.push(t(`מסר מוביל: "${topHeadline}"`, `Top ad message: "${topHeadline}"`));
     }
-    if (a.homepageLinks.length > 0) {
+    const links = safeScrapedTexts(a.homepageLinks);
+    if (links.length > 0) {
       moveParts.push(
-        t(`בדף הבית: ${a.homepageLinks.slice(0, 3).join(", ")}`, `Homepage highlights: ${a.homepageLinks.slice(0, 3).join(", ")}`)
+        t(`בדף הבית: ${links.slice(0, 3).join(", ")}`, `Homepage highlights: ${links.slice(0, 3).join(", ")}`)
       );
     }
     if (a.news.length > 0) {
@@ -208,7 +211,7 @@ function activityFromSignals(signalsJson: unknown): SnapshotActivity | null {
     // Screened at READ time as well as at write time, so snapshots stored
     // before the filter existed can't resurface explicit copy.
     adHeadlines: safeScrapedTexts(strings(o.adHeadlines)),
-    homepageLinks: strings(o.homepageLinks),
+    homepageLinks: safeScrapedTexts(strings(o.homepageLinks)),
     news: Array.isArray(o.news)
       ? (o.news as Array<Record<string, unknown>>)
           .filter((n) => n && typeof n.title === "string" && n.title.trim() !== "" && isSafeScrapedText(n.title))
@@ -620,29 +623,24 @@ async function buildLiveFacts(storeId: string): Promise<string> {
   } catch { /* facts are best-effort */ }
 
   try {
-    // Meta campaigns, last 14d: top spender + best/worst ROAS (campaign level).
-    const rows = (await db.metaAdsCampaignInsight.findMany({
-      where: { storeId, dateStart: { gte: new Date(now.getTime() - 14 * 86_400_000) }, level: "campaign" },
-      select: { campaignName: true, spend: true, purchaseRoas: true }
-    })) as Array<{ campaignName: string; spend: unknown; purchaseRoas: unknown }>;
-    const byCampaign = new Map<string, { spend: number; roasWeighted: number }>();
-    for (const r of rows) {
-      const spend = Number(r.spend ?? 0);
-      const roas = r.purchaseRoas === null ? null : Number(r.purchaseRoas);
-      const e = byCampaign.get(r.campaignName) ?? { spend: 0, roasWeighted: 0 };
-      e.spend += spend;
-      if (roas !== null && Number.isFinite(roas)) e.roasWeighted += roas * spend;
-      byCampaign.set(r.campaignName, e);
-    }
-    const campaigns = [...byCampaign.entries()]
-      .map(([name, v]) => ({ name, spend: Math.round(v.spend), roas: v.spend > 0 ? v.roasWeighted / v.spend : 0 }))
-      .filter((c) => c.spend >= 100)
+    // Meta campaigns: the SAME window and aggregation as the dashboard's Meta
+    // block (last 7 complete store-days via getMetaCampaignsOverview), and
+    // only campaigns that actually spent in the last 3 data-days. The old raw
+    // query (`dateStart >= now − 14d` over insight rows) surfaced a July
+    // campaign as the "move budget here" target on 1 Sep, beside a table
+    // that didn't list it (C-09). The window is spelled out in the fact so the
+    // model can't quote a stale one.
+    const tz = await getStoreTimeZone(storeId);
+    const overview = await getMetaCampaignsOverview(storeId, lastNDaysRange(7, tz));
+    const campaigns = (overview?.campaigns ?? [])
+      .filter((c) => c.activeRecently && c.spend >= 100)
+      .map((c) => ({ name: c.campaignName, spend: Math.round(c.spend), roas: c.roas ?? 0 }))
       .sort((a, b) => b.spend - a.spend);
-    if (campaigns.length) {
+    if (overview && campaigns.length) {
       const best = [...campaigns].sort((a, b) => b.roas - a.roas)[0];
       const worst = [...campaigns].sort((a, b) => a.roas - b.roas)[0];
       facts.push(
-        `קמפיינים במטא (14 יום, לפי הוצאה): ` +
+        `קמפיינים פעילים במטא (${overview.rangeStart} עד ${overview.rangeEnd}, לפי הוצאה — אלה הקמפיינים היחידים שרצים עכשיו; אין להמליץ על קמפיין שאינו ברשימה): ` +
           campaigns.slice(0, 3).map((c) => `"${c.name}" (₪${c.spend.toLocaleString()}, ROAS ${c.roas.toFixed(1)})`).join(" · ")
       );
       if (best && worst && best.name !== worst.name) {

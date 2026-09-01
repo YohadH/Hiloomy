@@ -35,6 +35,7 @@
 
 import { getDb } from "@/lib/server/db";
 import { computeCostCoverage } from "@/lib/services/cost-coverage";
+import { formatDateInTimeZone, getStoreTimeZone } from "@/lib/server/reporting-date-range";
 import {
   computeWindowAffiliateCommission,
   getShopifySalesSummaryForWindow
@@ -194,9 +195,14 @@ export async function buildContributionMargin(
     costCoveragePct: Math.round(costCoverage * 100)
   });
 
+  // Window labels as store-TZ calendar days. These strings reach the BI
+  // analyst through get_profit_summary; formatted in UTC they read
+  // "2026-08-24" for a window that starts Aug 25 in Israel, and the chat
+  // introduced correct numbers with the wrong dates (H-15).
+  const labelTimeZone = await getStoreTimeZone(input.storeId);
   return {
-    windowStart: input.start.toISOString().slice(0, 10),
-    windowEnd: input.end.toISOString().slice(0, 10),
+    windowStart: formatDateInTimeZone(input.start, labelTimeZone),
+    windowEnd: formatDateInTimeZone(input.end, labelTimeZone),
     totals: {
       revenue: parity.grossSales,
       discounts: parity.discounts,

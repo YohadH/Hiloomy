@@ -383,7 +383,7 @@ export async function syncCompetitorSignals(
               adsActive: activity.adsActive,
               // Screened before persisting — scraped ad copy is unfiltered.
               adHeadlines: safeScrapedTexts(activity.adHeadlines).slice(0, 3),
-              homepageLinks: activity.homepageLinks.slice(0, 4),
+              homepageLinks: safeScrapedTexts(activity.homepageLinks).slice(0, 4),
               news: activity.news.slice(0, 2)
             }
           }

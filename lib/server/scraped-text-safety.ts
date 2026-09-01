@@ -21,18 +21,23 @@ const EXPLICIT_TERMS: string[] = [
   "nude", "nudes", "naked", "blowjob", "handjob", "anal", "dildo", "vibrator",
   "orgasm", "orgasms", "cum", "fuck", "fucking", "fucked", "pussy", "cock", "dick",
   "tits", "boobs", "milf", "hentai", "camgirl", "stripper", "strippers", "sex toy", "sex toys",
-  "sex shop", "sexshop", "18+",
+  "sex shop", "sexshop", "sex-shop", "18+", "erotic", "erotica", "adult toys", "adult store",
+  "adults only", "bondage", "fetish", "lube", "lubricant", "condoms",
   // Spanish
   "sexo", "porno", "pornografia", "pornografía", "follar", "coger", "verga", "pija",
   "tetas", "culo", "puta", "putas", "prostituta", "prostitutas", "desnuda", "desnudas",
   "desnudo", "desnudos", "orgasmo", "orgasmos", "mamada", "consolador", "vibrador",
   "juguetes sexuales", "juguete sexual", "webcam xxx", "chicas calientes", "mujeres calientes",
+  "erótico", "erótica", "erotico", "erotica", "eróticos", "eróticas", "juguetes eróticos", "tienda erótica",
+  "lencería erótica", "solo adultos", "solo para adultos", "adultos", "fetiche", "lubricante", "preservativos", "condones",
   // Portuguese
   "pornô", "sexo anal", "boquete", "buceta", "caralho", "prostituta", "nua", "nuas", "pelada", "peladas",
   // French
   "porno", "sexe", "baise", "baiser", "salope", "salopes", "nue", "nues", "orgasme", "sextoy", "sextoys",
+  "érotique", "érotiques", "erotique", "boutique érotique", "réservé aux adultes",
   // Hebrew
-  "פורנו", "סקס", "זונה", "זונות", "ליווי", "נערות ליווי", "עירום", "עירומה", "אורגזמה", "זין", "כוס", "מציצה"
+  "פורנו", "סקס", "זונה", "זונות", "ליווי", "נערות ליווי", "עירום", "עירומה", "אורגזמה", "זין", "כוס", "מציצה",
+  "ארוטי", "ארוטית", "ארוטיים", "סקס שופ", "צעצועי מין", "למבוגרים בלבד"
 ];
 
 // Build one regex per term. Latin terms get \b-style boundaries; Hebrew has

@@ -722,6 +722,37 @@ export async function backfillRefundLineItems(storeId: string) {
 }
 
 /**
+ * Re-fetches every order CREATED inside [start, end] through the paginated
+ * query and pushes them through the same upsert pipeline — lines, discount
+ * usages and refunds are rewritten from Shopify's current state.
+ *
+ * Why it exists (QA run 5, H-14 / R-04): the dashboard sums per-line
+ * `lineDiscountAmount` while /discounts sums `DiscountUsage.amount`; orders
+ * synced before per-line discountAllocations were captured carry ₪0 on their
+ * lines, so the two pages disagree by a constant. The 2h incremental sync
+ * keys on `updated_at`, so those orders never get re-pulled on their own.
+ * Re-syncing the window rewrites them — and pulls any order in the window
+ * that never reached the database at all.
+ *
+ * Idempotent; safe to rerun. Window capped by the route (≤ 92 days).
+ */
+export async function resyncOrdersInWindow(storeId: string, start: Date, end: Date) {
+  const db = getDb();
+  const store = await db.store.findUnique({ where: { id: storeId } });
+  if (!store) throw new AppError("Store not found.", 404);
+
+  const credentials = await getStoredShopifyCredentials(storeId);
+  const client = createShopifyClient(credentials);
+  // Shopify search syntax; instants in UTC so the window is exact.
+  const query = `created_at:>='${start.toISOString()}' AND created_at:<='${end.toISOString()}'`;
+  const orders = await client.paginateConnection<any, { orders: any }>("orders", ORDERS_QUERY, { query });
+
+  await processOrdersWithPreload(db, storeId, store, orders);
+
+  return { fetched: orders.length };
+}
+
+/**
  * Bulk-exports the store's products via a single Shopify Bulk Operation, re-nests
  * each product's variants, and upserts via the shared `upsertProductFromNode`.
  * Returns counts shaped like the paginated `syncProducts` so callers can sum them

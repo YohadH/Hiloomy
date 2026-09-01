@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { DiscountBoard } from "@/components/discounts/discount-board";
 import { heCountPhrase } from "@/lib/i18n/he-plural";
 import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
+import { ResyncWindowButton } from "@/components/discounts/resync-window-button";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,23 @@ export default async function DiscountsPage() {
     <AppShell store={chrome.store} controls={chrome.controls}>
       <section className="space-y-4">
         <SectionHeading eyebrow={heading.eyebrow} title={heading.title} description={heading.description} />
+        {/* When this page and the dashboard disagree on discount totals, the
+            orders in the window were synced before per-line discount
+            allocations were captured — re-pulling them rewrites the lines
+            (and recovers any order the incremental sync never stored). */}
+        <div className="flex flex-wrap items-center gap-3">
+          <ResyncWindowButton
+            storeId={chrome.store.id}
+            start={selection.start.toISOString()}
+            end={selection.end.toISOString()}
+            locale={isHe ? "he" : "en"}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            {isHe
+              ? "אם סך ההנחות כאן שונה מהדשבורד — סנכרון מחדש של ההזמנות בחלון מיישר את שני המספרים מול Shopify."
+              : "If the discount total here differs from the dashboard, re-syncing the window's orders aligns both with Shopify."}
+          </p>
+        </div>
       </section>
 
       {underwater.length > 0 ? (
