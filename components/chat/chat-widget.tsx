@@ -326,9 +326,13 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     // with logical `start`, the launcher and its speed-dial landed on the left
     // in one direction and overflowed the viewport edge in the other on
     // phones, pushing the page sideways.
-    <div className="fixed bottom-4 right-4 z-50 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
+    // dir="ltr" on the column: `items-end` is LOGICAL, so under the page's RTL
+    // it aligned the speed-dial to the LEFT while the launcher sat on the
+    // right (the whole stack jumped sides on open). Pinning the column to LTR
+    // makes "end" = right; the cards re-declare the page direction inside.
+    <div dir="ltr" className="fixed bottom-4 right-4 z-50 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
       {open ? (
-        <div className="flex flex-col gap-2">
+        <div dir={isHe ? "rtl" : "ltr"} className="flex flex-col items-end gap-2">
           {(Object.keys(CHATS) as ChatKind[]).map((kind, i) => {
             const chat = CHATS[kind];
             const Icon = chat.icon;

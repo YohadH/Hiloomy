@@ -59,7 +59,11 @@ export function SyncStatusDock({ locale = "he" }: { locale?: "he" | "en" }) {
   return (
     <div
       dir={isHe ? "rtl" : "ltr"}
-      className="pointer-events-none fixed bottom-4 z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2 ltr:left-4 rtl:right-4"
+      // Physical bottom-LEFT, sized to stay clear of the chat launcher on the
+      // right (56px FAB + margins). The logical ltr:/rtl: offsets did not
+      // resolve on phones — the dock rendered with no horizontal offset,
+      // cut off at the left edge and over the header (1 Sep 2026).
+      className="pointer-events-none fixed bottom-4 left-4 z-[60] flex w-[min(22rem,calc(100vw-6.5rem))] flex-col gap-2"
       role="status"
       aria-live="polite"
     >

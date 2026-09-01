@@ -1,6 +1,20 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+// Narrow-viewport flag for the tooltip: on phones the tooltip is pinned to
+// the chart's top-left instead of following the finger, where it overflowed.
+function useIsNarrow(maxWidthPx = 640): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${maxWidthPx}px)`);
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [maxWidthPx]);
+  return narrow;
+}
 import {
   Area,
   AreaChart,
@@ -56,8 +70,10 @@ function CustomTooltip({
 
   return (
     <div
-      className="rounded-xl border border-border bg-card text-card-foreground shadow-xl"
-      style={{ maxWidth: 360, minWidth: 260 }}
+      className="overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xl"
+      // Never wider than the phone: a fixed 360px box ran off the right edge
+      // of a 330px-wide chart on mobile (1 Sep 2026).
+      style={{ maxWidth: "min(360px, calc(100vw - 2.5rem))", minWidth: "min(260px, calc(100vw - 2.5rem))" }}
     >
       <div className="border-b border-border/70 px-4 py-2.5">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -222,6 +238,7 @@ export function EnrichedRevenueChart({
   locale?: UiLocale;
 }) {
   const t = saasStrings[locale].enrichedChart;
+  const isNarrow = useIsNarrow();
   // Merge daily metrics with context so the tooltip + markers share a
   // single row source.
   const enrichedData = useMemo<EnrichedRowBase[]>(() => {
@@ -293,6 +310,11 @@ export function EnrichedRevenueChart({
             />
             <Tooltip
               cursor={{ stroke: "#16A34A", strokeWidth: 1, strokeDasharray: "4 4" }}
+              // Keep the box inside the chart; on phones pin it to the top-left
+              // corner instead of following the finger (it ran off-screen).
+              allowEscapeViewBox={{ x: false, y: false }}
+              wrapperStyle={{ zIndex: 30, maxWidth: "calc(100vw - 2.5rem)", pointerEvents: "none" }}
+              position={isNarrow ? { x: 4, y: 0 } : undefined}
               content={(props: any) => <CustomTooltip {...props} currency={currency} locale={locale} />}
             />
             <Area
