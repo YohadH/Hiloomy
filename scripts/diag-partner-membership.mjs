@@ -57,6 +57,37 @@ try {
     WHERE u."createdAt" > now() - interval '3 days'
     ORDER BY u."createdAt" DESC`).forEach(row);
 
+  // --drop-empty-orgs <email>: delete the user's EMPTY personal org(s) so the
+  // org that holds the store is the only one they belong to. Then nothing —
+  // no cookie, no switcher — can land them anywhere else. Only deletes orgs
+  // with zero stores where this user is the sole member (cascade removes the
+  // membership). Never touches the store's org.
+  const dropIdx = process.argv.indexOf("--drop-empty-orgs");
+  const dropEmail = dropIdx > -1 ? process.argv[dropIdx + 1] : null;
+  if (dropEmail) {
+    console.log(`\n## DROP empty personal orgs of ${dropEmail}`);
+    const store = stores[0];
+    const user = await p.user.findFirst({ where: { email: { equals: dropEmail, mode: "insensitive" } }, select: { id: true, email: true } });
+    if (!user) throw new Error(`No User with email ${dropEmail}`);
+    const candidates = await p.$queryRaw`
+      SELECT o.id, o.name,
+             (SELECT count(*) FROM "Store" s WHERE s."orgId" = o.id)::int AS stores,
+             (SELECT count(*) FROM "Membership" m2 WHERE m2."orgId" = o.id)::int AS members
+      FROM "Membership" m JOIN "Organization" o ON o.id = m."orgId"
+      WHERE m."userId" = ${user.id}`;
+    for (const c of candidates) {
+      const isStoreOrg = store && c.id === store.orgId;
+      if (isStoreOrg || c.stores > 0 || c.members > 1) {
+        console.log(`keep  ${c.name} (${c.id}) — stores ${c.stores}, members ${c.members}${isStoreOrg ? ", holds the store" : ""}`);
+        continue;
+      }
+      await p.organization.delete({ where: { id: c.id } });
+      console.log(`DELETED empty org ${c.name} (${c.id})`);
+    }
+    const left = await p.membership.count({ where: { userId: user.id } });
+    console.log(`${user.email} now belongs to ${left} org(s). Reload the app — no switching needed.`);
+  }
+
   if (fixEmail) {
     console.log(`\n## FIX: make ${fixEmail} an owner of the org that holds ${shopDomain}`);
     const store = stores[0];

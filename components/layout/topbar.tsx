@@ -62,7 +62,12 @@ export async function Topbar({
   }
   // Orgs the user can switch between (own + any they were invited into).
   // Renders as a switcher only when there's more than one.
-  const userOrgs = await listUserOrgsForSwitcher().catch(() => []);
+  const userOrgs = await listUserOrgsForSwitcher().catch((error) => {
+    // Never swallow this silently: a throw here hides the org switcher for
+    // EVERY multi-org user, and that is indistinguishable from "one org".
+    console.error("[topbar] listUserOrgsForSwitcher failed:", error instanceof Error ? error.message : error);
+    return [];
+  });
   return (
     <div className="flex flex-col gap-4 border-b border-border/70 pb-5 sm:pb-6 lg:flex-row lg:items-center lg:justify-between">
       <div className="space-y-2 min-w-0">
