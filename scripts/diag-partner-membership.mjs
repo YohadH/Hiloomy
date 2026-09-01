@@ -14,6 +14,38 @@ import { PrismaClient } from "@prisma/client";
 
 // First argument: a shop domain (x.myshopify.com) OR an org name / id
 // ("yoadhakimv's Brands"). Either resolves to the org whose members we fix.
+// Standalone mode: --confirm-all  → confirm EVERY unconfirmed auth user.
+//   node scripts/diag-partner-membership.mjs --confirm-all            # preview + confirm
+//   node scripts/diag-partner-membership.mjs --confirm-all --dry-run  # preview only
+// Use when confirmation emails aren't delivered and people are locked out.
+// It confirms everyone who signed up (this is an invite-driven B2B app);
+// review the printed list first if that matters.
+if (process.argv[2] === "--confirm-all") {
+  if (!process.env.DATABASE_URL) { console.error("Set DATABASE_URL first."); process.exit(1); }
+  const { PrismaClient: PC } = await import("@prisma/client");
+  const db = new PC({ log: [] });
+  const dryRun = process.argv.includes("--dry-run");
+  try {
+    const pending = await db.$queryRaw`
+      SELECT email, created_at, last_sign_in_at FROM auth.users
+      WHERE email_confirmed_at IS NULL AND email IS NOT NULL
+      ORDER BY created_at DESC`;
+    console.log(`\n## Unconfirmed auth users: ${pending.length}`);
+    pending.forEach((r) => console.log(JSON.stringify(r)));
+    if (!pending.length) { console.log("nothing to confirm"); }
+    else if (dryRun) { console.log("dry run — nothing changed"); }
+    else {
+      const n = await db.$executeRaw`
+        UPDATE auth.users SET email_confirmed_at = now(), updated_at = now()
+        WHERE email_confirmed_at IS NULL AND email IS NOT NULL`;
+      console.log(`confirmed ${n} account(s). They can sign in now with the password they chose.`);
+    }
+  } finally {
+    await db.$disconnect();
+  }
+  process.exit(0);
+}
+
 const target = process.argv[2];
 const roleIdx = process.argv.indexOf("--role");
 const fixRole = roleIdx > -1 ? process.argv[roleIdx + 1] : "owner"; // owner | admin | member
