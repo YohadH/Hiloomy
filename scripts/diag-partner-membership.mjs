@@ -19,7 +19,7 @@ const roleIdx = process.argv.indexOf("--role");
 const fixRole = roleIdx > -1 ? process.argv[roleIdx + 1] : "owner"; // owner | admin | member
 const fixIdx = process.argv.indexOf("--fix");
 const fixEmail = fixIdx > -1 ? process.argv[fixIdx + 1] : null;
-if (!shopDomain) {
+if (!target) {
   console.error(
     "Usage: node scripts/diag-partner-membership.mjs <shop.myshopify.com | \"org name\" | orgId> [--fix <email> [--role owner|admin|member]] [--relink <email>] [--drop-empty-orgs <email>]"
   );
