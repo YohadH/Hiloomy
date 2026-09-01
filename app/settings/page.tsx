@@ -189,15 +189,23 @@ export default async function SettingsPage({
       id: "google",
       name: "Google",
       category: lang("אנליטיקס", "Analytics"),
+      // Two connections live behind this card — Search Console and GA4 (each
+      // its own Google grant + property picker). The copy used to say "GA4
+      // coming soon" long after it shipped, and the status ignored GA4, so a
+      // brand with GA4 connected looked unconnected and vice versa.
       description: lang(
-        "חיבור אחד לשירותי Google: נתוני חיפוש מSearch Console עכשיו, GA4 בקרוב.",
-        "One connection for Google services: Search Console data now, GA4 coming soon."
+        "Search Console ו-GA4 — שני חיבורים נפרדים (כל אחד עם בחירת נכס). מחברים כל אחד בנפרד בפאנל.",
+        "Search Console and GA4 — two separate connections (each with its own property picker). Connect each inside the panel."
       ),
-      status: gscConnection
-        ? gscConnection.status === "error"
-          ? "attention"
-          : "connected"
-        : "not_connected"
+      status: (() => {
+        const gscOk = Boolean(gscConnection) && gscConnection?.status !== "error";
+        const ga4Ok = Boolean(ga4Connection) && ga4Connection?.status !== "error";
+        const anyError = gscConnection?.status === "error" || ga4Connection?.status === "error";
+        if (anyError) return "attention";
+        if (gscOk && ga4Ok) return "connected";
+        if (gscOk || ga4Ok) return "attention"; // one of the two still missing
+        return "not_connected";
+      })()
     },
     {
       id: "instagram",
