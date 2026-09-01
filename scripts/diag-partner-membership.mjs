@@ -57,6 +57,44 @@ try {
     WHERE u."createdAt" > now() - interval '3 days'
     ORDER BY u."createdAt" DESC`).forEach(row);
 
+  // Auth identity check. The app finds the User row by auth.users.id
+  // (User.authUserId). If the person now signs in under a DIFFERENT auth id
+  // for the same email (provider change, re-created auth user), the app sees
+  // no User, tries to create one, hits the unique email, and falls back to a
+  // blank session with no org -> "connect your first store", regardless of
+  // memberships or cookies. --relink <email> repairs the pointer.
+  console.log("\n## Auth identity (auth.users vs User.authUserId) for recent users");
+  const identities = await p.$queryRaw`
+    SELECT u.email, u."authUserId", au.id AS auth_id, au.last_sign_in_at,
+           au.raw_app_meta_data->>'provider' AS provider, au.email_confirmed_at IS NOT NULL AS confirmed,
+           (u."authUserId" = au.id::text) AS linked
+    FROM "User" u
+    LEFT JOIN auth.users au ON lower(au.email) = lower(u.email)
+    WHERE u."createdAt" > now() - interval '3 days'
+    ORDER BY u.email, au.last_sign_in_at DESC NULLS LAST`;
+  identities.forEach(row);
+  const broken = identities.filter((r) => r.auth_id && !r.linked);
+  if (broken.length) console.log(`!! ${broken.length} auth identit(y/ies) NOT linked to their User row — run --relink <email>`);
+
+  const relinkIdx = process.argv.indexOf("--relink");
+  const relinkEmail = relinkIdx > -1 ? process.argv[relinkIdx + 1] : null;
+  if (relinkEmail) {
+    console.log(`\n## RELINK ${relinkEmail}: point User.authUserId at the auth user they actually sign in with`);
+    const auths = await p.$queryRaw`
+      SELECT id::text AS id, last_sign_in_at FROM auth.users WHERE lower(email) = lower(${relinkEmail})
+      ORDER BY last_sign_in_at DESC NULLS LAST`;
+    if (!auths.length) throw new Error(`No auth.users row for ${relinkEmail}`);
+    const target = auths[0].id;
+    const user = await p.user.findFirst({ where: { email: { equals: relinkEmail, mode: "insensitive" } }, select: { id: true, email: true, authUserId: true } });
+    if (!user) throw new Error(`No User row for ${relinkEmail}`);
+    if (user.authUserId === target) console.log("already linked — nothing to do");
+    else {
+      await p.user.update({ where: { id: user.id }, data: { authUserId: target } });
+      console.log(`relinked ${user.email}: ${user.authUserId} -> ${target}`);
+    }
+    if (auths.length > 1) console.log(`note: ${auths.length} auth users share this email; linked the most recently signed-in one`);
+  }
+
   // --drop-empty-orgs <email>: delete the user's EMPTY personal org(s) so the
   // org that holds the store is the only one they belong to. Then nothing —
   // no cookie, no switcher — can land them anywhere else. Only deletes orgs

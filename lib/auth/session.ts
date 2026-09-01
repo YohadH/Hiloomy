@@ -255,6 +255,29 @@ export async function ensureUserProvisioned(authUser: {
     return { userId: existing.id, orgId };
   }
 
+  // Same person, different auth id (signed in through another provider, or
+  // the auth user was re-created): the User row exists under this VERIFIED
+  // email but points at the old id. Re-link instead of trying to create a
+  // duplicate — the create would hit the unique email, the caller would fall
+  // back to a blank session with no org, and a partner who is an owner of a
+  // populated org would still be shown "connect your first store"
+  // (Take a Nap, 1 Sep 2026).
+  if (authUser.email) {
+    const byEmail = (await db.user.findFirst({
+      where: { email: { equals: authUser.email, mode: "insensitive" } },
+      select: { id: true, memberships: { select: { orgId: true }, take: 1 } }
+    })) as { id: string; memberships: Array<{ orgId: string }> } | null;
+    if (byEmail) {
+      await db.user.update({
+        where: { id: byEmail.id },
+        data: { authUserId: authUser.id, lastSignInAt: new Date() }
+      });
+      const orgId =
+        byEmail.memberships[0]?.orgId ?? (await createDefaultOrgFor(byEmail.id, authUser.email));
+      return { userId: byEmail.id, orgId };
+    }
+  }
+
   // Create User
   const user = (await db.user.create({
     data: {
