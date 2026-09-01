@@ -269,6 +269,29 @@ async function getDomainGuidMap(timeoutMs: number): Promise<Map<string, { guid: 
   return map;
 }
 
+/**
+ * Hosts the RivalSweeper company account monitors. Null in mock mode (every
+ * domain "exists" there). The provider only crawls domains added in ITS
+ * dashboard — adding a competitor in Hiloomy does not register it — so the
+ * sync uses this to tell the merchant "add x.com on RivalSweeper" rather than
+ * "no data yet" (Take a Nap, 1 Sep 2026: three competitors, zero snapshots).
+ */
+export async function getMonitoredHosts(timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Set<string> | null> {
+  if (isMock()) return null;
+  try {
+    const map = await getDomainGuidMap(timeoutMs);
+    return new Set(map.keys());
+  } catch (error) {
+    console.warn("[rivalsweeper] monitored-domain lookup failed:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+/** Normalised host for matching against the monitored set (exported for the sync). */
+export function rivalSweeperHost(domain: string): string {
+  return normalizeHost(domain);
+}
+
 // ── Defensive payload extraction ────────────────────────────────────────
 // Report payloads are additionalProperties:true — probe likely keys and
 // fall back to parsing "NN%" out of text so new provider fields degrade

@@ -15,7 +15,9 @@ import {
   fetchAdsDerivedSignals,
   fetchCompetitorActivity,
   fetchCompetitorSignals,
+  getMonitoredHosts,
   isRivalSweeperConfigured,
+  rivalSweeperHost,
   type CompetitorActivityEntry,
   type ReportDateRange
 } from "@/lib/clients/rivalsweeper-client";
@@ -349,7 +351,9 @@ export async function syncCompetitorSignals(
   // Per-competitor outcome, persisted below so the dashboard can say WHY a
   // tracked competitor shows nothing ("provider has no data yet for x.com")
   // instead of a silent empty section (Take a Nap, 1 Sep 2026).
-  const outcomes: Array<{ domain: string; result: "ok" | "no_data"; source?: string }> = [];
+  const outcomes: Array<{ domain: string; result: "ok" | "no_data" | "not_monitored"; source?: string }> = [];
+  // Which of our domains the provider account actually monitors (null = mock).
+  const monitoredHosts = source === "rivalsweeper" ? await getMonitoredHosts() : null;
   for (const competitor of competitors) {
     let signals = await fetchCompetitorSignals({
       domain: competitor.domain,
@@ -374,7 +378,8 @@ export async function syncCompetitorSignals(
     // week-over-week diff with fake quiet.
     if (signals === null) {
       skippedNoData += 1;
-      outcomes.push({ domain: competitor.domain, result: "no_data" });
+      const notMonitored = monitoredHosts !== null && !monitoredHosts.has(rivalSweeperHost(competitor.domain));
+      outcomes.push({ domain: competitor.domain, result: notMonitored ? "not_monitored" : "no_data" });
       continue;
     }
     // Activity is the provider's CURRENT state — attach it to today's
@@ -440,7 +445,7 @@ export interface CompetitorCrawlSummary {
   source: "mock" | "rivalsweeper";
   snapshotsUpserted: number;
   skippedNoData: number;
-  outcomes: Array<{ domain: string; result: "ok" | "no_data"; source?: string }>;
+  outcomes: Array<{ domain: string; result: "ok" | "no_data" | "not_monitored"; source?: string }>;
 }
 
 const CRAWL_SUMMARY_KEY = (storeId: string) => `competitor_crawl:${storeId}`;

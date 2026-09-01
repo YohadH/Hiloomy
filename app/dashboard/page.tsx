@@ -459,14 +459,21 @@ export default async function CommandCenterPage() {
                 <>
                   <p>
                     {isHe
-                      ? `${activeCompetitorCount} מתחרים במעקב. הסריקה האחרונה (${new Date(competitorCrawl.at).toLocaleString("he-IL")}) החזירה נתונים עבור ${competitorCrawl.snapshotsUpserted} מתוכם.`
-                      : `${activeCompetitorCount} competitors tracked. The last crawl (${new Date(competitorCrawl.at).toLocaleString("en-GB")}) returned data for ${competitorCrawl.snapshotsUpserted} of them.`}
+                      ? `${activeCompetitorCount} מתחרים במעקב. הסריקה האחרונה (${new Date(competitorCrawl.at).toLocaleString("he-IL")}, ${competitorCrawl.source === "mock" ? "מצב הדגמה — מפתחות RivalSweeper לא מוגדרים בשרת" : "דרך RivalSweeper"}) החזירה נתונים עבור ${competitorCrawl.snapshotsUpserted} מתוכם.`
+                      : `${activeCompetitorCount} competitors tracked. The last crawl (${new Date(competitorCrawl.at).toLocaleString("en-GB")}, ${competitorCrawl.source === "mock" ? "mock mode — RivalSweeper keys not set on the server" : "via RivalSweeper"}) returned data for ${competitorCrawl.snapshotsUpserted} of them.`}
                   </p>
-                  {competitorCrawl.skippedNoData > 0 ? (
+                  {competitorCrawl.outcomes.some((o) => o.result === "not_monitored") ? (
+                    <p className="mt-1.5 font-medium text-amber-900">
+                      {isHe
+                        ? `לא במעקב ב-RivalSweeper: ${competitorCrawl.outcomes.filter((o) => o.result === "not_monitored").map((o) => o.domain).join(", ")}. הוספת מתחרה ב-Hiloomy לא רושמת אותו אצל הספק — הוסיפו את הדומיינים האלה בלוח הבקרה של RivalSweeper (Domains), והסנכרון הבא יאסוף אותם.`
+                        : `Not monitored on RivalSweeper: ${competitorCrawl.outcomes.filter((o) => o.result === "not_monitored").map((o) => o.domain).join(", ")}. Adding a competitor in Hiloomy does not register it with the provider — add these domains in the RivalSweeper dashboard (Domains) and the next sync picks them up.`}
+                    </p>
+                  ) : null}
+                  {competitorCrawl.outcomes.some((o) => o.result === "no_data") ? (
                     <p className="mt-1.5">
                       {isHe
-                        ? `ספק המודיעין עדיין לא מחזיק נתונים על: ${competitorCrawl.outcomes.filter((o) => o.result === "no_data").map((o) => o.domain).join(", ")}. זה מתמלא תוך ימים אחרי ההוספה — הסנכרון האוטומטי ימשיך לבדוק כל שעתיים.`
-                        : `The intel provider has no data yet for: ${competitorCrawl.outcomes.filter((o) => o.result === "no_data").map((o) => o.domain).join(", ")}. It fills within days of adding a domain — the automatic sync keeps checking every 2 hours.`}
+                        ? `במעקב אך עדיין ללא נתונים: ${competitorCrawl.outcomes.filter((o) => o.result === "no_data").map((o) => o.domain).join(", ")}. הסריקה של הספק מתמלאת תוך ימים — הסנכרון האוטומטי ימשיך לבדוק כל שעתיים.`
+                        : `Monitored but no data yet: ${competitorCrawl.outcomes.filter((o) => o.result === "no_data").map((o) => o.domain).join(", ")}. The provider's crawl fills within days — the automatic sync keeps checking every 2 hours.`}
                     </p>
                   ) : null}
                 </>
