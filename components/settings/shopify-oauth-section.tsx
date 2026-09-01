@@ -38,7 +38,7 @@ export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
   // operator back on Settings with zero feedback — the flow looked broken
   // even when it was correctly reporting why it stopped.
   const [oauthResult, setOauthResult] = useState<
-    | { kind: "success"; shop: string }
+    | { kind: "success"; shop: string; orgMismatch?: boolean }
     | { kind: "error"; message: string }
     | null
   >(null);
@@ -65,8 +65,11 @@ export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
       const params = new URLSearchParams(window.location.search);
       const connectedShop = params.get("shopify") === "connected" ? params.get("shop") : null;
       const oauthError = params.get("shopify_error");
+      // Set by the callback when the store was bound to an org the installer
+      // is NOT a member of (design-partner install from the wrong account).
+      const orgMismatch = params.get("org_mismatch") === "1";
       if (connectedShop) {
-        setOauthResult({ kind: "success", shop: connectedShop });
+        setOauthResult({ kind: "success", shop: connectedShop, orgMismatch });
       } else if (oauthError) {
         setOauthResult({ kind: "error", message: oauthError });
       }
@@ -74,6 +77,7 @@ export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
         params.delete("shopify");
         params.delete("shop");
         params.delete("shopify_error");
+        params.delete("org_mismatch");
         const rest = params.toString();
         window.history.replaceState(
           null,
@@ -152,6 +156,13 @@ export function ShopifyOauthSection({ locale = "he" }: { locale?: UiLocale }) {
               ? `${oauthResult.shop} חוברה בהצלחה! הסנכרון הראשון יתחיל תוך רגע.`
               : `${oauthResult.shop} connected! The first sync starts momentarily.`}
           </p>
+          {oauthResult.orgMismatch ? (
+            <p className="mt-1.5 text-xs leading-5 text-emerald-900/90">
+              {locale === "he"
+                ? "החנות חוברה לארגון שאליו היא נרשמה (דרך 'שותפי עיצוב'), והחשבון שאיתו אתם מחוברים עכשיו אינו חבר בו — לכן המסך הזה עדיין מציג 'לא מחובר'. היכנסו עם כתובת האימייל שהוזמנה (או פתחו את קישור ההזמנה), ותראו את החנות."
+                : "The store was connected to the organization it was registered under (via Design partners), and the account you are signed in with is not a member of it — which is why this screen still says \"not connected\". Sign in with the invited email (or open the invite link) to see the store."}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {oauthResult?.kind === "error" ? (
