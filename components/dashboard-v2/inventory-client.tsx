@@ -15,7 +15,7 @@
  * as serializable props — no DB access in this file.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -114,6 +114,23 @@ function InventoryTable({
   showActionChips?: boolean;
   emptyMessage?: string;
 }) {
+  // Pagination + a scrollable body. A brand with 1,000+ products rendered
+  // every row of every section at once — the page was a mile of scrolling
+  // (Take a Nap, 1 Sep 2026). Page size is per section; page resets when the
+  // row set changes (search / filter / sort).
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [page, setPage] = useState(1);
+  const rowsKey = `${rows.length}:${rows[0]?.productId ?? ""}`;
+  useEffect(() => {
+    setPage(1);
+  }, [rowsKey]);
+  const effectiveSize = pageSize === 0 ? Math.max(rows.length, 1) : pageSize;
+  const pageCount = Math.max(1, Math.ceil(rows.length / effectiveSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * effectiveSize;
+  const visibleRows = rows.slice(pageStart, pageStart + effectiveSize);
+  const showPager = rows.length > 25;
+
   const columns: ColumnDef[] = [
     {
       label: locale === "he" ? "מוצר" : "Product",
@@ -196,13 +213,14 @@ function InventoryTable({
             ))}
           </div>
         ) : null}
+        <div className="max-h-[70vh] overflow-auto">
         <table className="min-w-full divide-y divide-border text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr>
               {columns.map((col, i) => (
                 <th
                   key={i}
-                  className="px-5 pb-3 pt-4 text-start text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  className="bg-card px-5 pb-3 pt-4 text-start text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                 >
                   <span className="inline-flex items-center gap-1.5">
                     {col.label}
@@ -224,8 +242,8 @@ function InventoryTable({
                 </td>
               </tr>
             ) : (
-              rows.map((row, idx) => (
-                <tr key={row.productId ?? idx} className="transition-colors hover:bg-muted/40">
+              visibleRows.map((row, idx) => (
+                <tr key={row.productId ?? pageStart + idx} className="transition-colors hover:bg-muted/40">
                   {columns.map((col, ci) => (
                     <td key={ci} className="px-5 py-4 align-top">
                       {col.render(row)}
@@ -236,6 +254,53 @@ function InventoryTable({
             )}
           </tbody>
         </table>
+        </div>
+        {showPager ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {locale === "he"
+                ? `מציג ${formatNumber(pageStart + 1)}–${formatNumber(pageStart + visibleRows.length)} מתוך ${formatNumber(rows.length)}`
+                : `Showing ${formatNumber(pageStart + 1)}–${formatNumber(pageStart + visibleRows.length)} of ${formatNumber(rows.length)}`}
+            </span>
+            <div className="flex items-center gap-2">
+              <label className="inline-flex items-center gap-1.5">
+                <span>{locale === "he" ? "שורות בעמוד" : "Rows per page"}</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={0}>{locale === "he" ? "הכל" : "All"}</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                className="rounded-md border border-border bg-background px-2.5 py-1 font-medium text-foreground disabled:opacity-40"
+              >
+                {locale === "he" ? "הקודם" : "Previous"}
+              </button>
+              <span className="tabular-nums">
+                {locale === "he" ? `עמוד ${currentPage} מתוך ${pageCount}` : `Page ${currentPage} of ${pageCount}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                disabled={currentPage >= pageCount}
+                className="rounded-md border border-border bg-background px-2.5 py-1 font-medium text-foreground disabled:opacity-40"
+              >
+                {locale === "he" ? "הבא" : "Next"}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
