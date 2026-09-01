@@ -143,6 +143,12 @@ function getNavigation(
         module: "product-follow-ups"
       },
       {
+        href: "/retention",
+        label: isHe ? "שימור לקוחות" : "Retention",
+        icon: UserRound,
+        module: "retention"
+      },
+      {
         // Moved out of /profit per the owner (F-041) — costs are a products
         // concern; the old /profit/costs URL redirects here.
         href: "/products/costs",

@@ -346,6 +346,10 @@ export async function syncCompetitorSignals(
 
   let snapshotsUpserted = 0;
   let skippedNoData = 0;
+  // Per-competitor outcome, persisted below so the dashboard can say WHY a
+  // tracked competitor shows nothing ("provider has no data yet for x.com")
+  // instead of a silent empty section (Take a Nap, 1 Sep 2026).
+  const outcomes: Array<{ domain: string; result: "ok" | "no_data"; source?: string }> = [];
   for (const competitor of competitors) {
     let signals = await fetchCompetitorSignals({
       domain: competitor.domain,
@@ -370,6 +374,7 @@ export async function syncCompetitorSignals(
     // week-over-week diff with fake quiet.
     if (signals === null) {
       skippedNoData += 1;
+      outcomes.push({ domain: competitor.domain, result: "no_data" });
       continue;
     }
     // Activity is the provider's CURRENT state — attach it to today's
@@ -418,8 +423,48 @@ export async function syncCompetitorSignals(
       }
     });
     snapshotsUpserted += 1;
+    outcomes.push({ domain: competitor.domain, result: "ok", source: rowSource });
   }
+  await writeCompetitorCrawlSummary(storeId, {
+    at: now.toISOString(),
+    source,
+    snapshotsUpserted,
+    skippedNoData,
+    outcomes
+  });
   return { snapshotsUpserted, skippedNoData };
+}
+
+export interface CompetitorCrawlSummary {
+  at: string;
+  source: "mock" | "rivalsweeper";
+  snapshotsUpserted: number;
+  skippedNoData: number;
+  outcomes: Array<{ domain: string; result: "ok" | "no_data"; source?: string }>;
+}
+
+const CRAWL_SUMMARY_KEY = (storeId: string) => `competitor_crawl:${storeId}`;
+
+async function writeCompetitorCrawlSummary(storeId: string, summary: CompetitorCrawlSummary) {
+  try {
+    const db = getDb() as any;
+    const key = CRAWL_SUMMARY_KEY(storeId);
+    const value = JSON.stringify(summary);
+    await db.systemConfig.upsert({ where: { key }, update: { value }, create: { key, value } });
+  } catch (error) {
+    console.warn("[competitor-intel] crawl summary write failed:", error instanceof Error ? error.message : error);
+  }
+}
+
+/** Last crawl outcome for the store, or null if no crawl has run yet. */
+export async function getCompetitorCrawlSummary(storeId: string): Promise<CompetitorCrawlSummary | null> {
+  try {
+    const db = getDb() as any;
+    const row = await db.systemConfig.findUnique({ where: { key: CRAWL_SUMMARY_KEY(storeId) }, select: { value: true } });
+    return row ? (JSON.parse(row.value) as CompetitorCrawlSummary) : null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Weekly report section ───────────────────────────────────────────────

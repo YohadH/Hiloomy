@@ -72,12 +72,12 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     { title: string; hint: string; icon: typeof Bot; intro: string; accent: string }
   > = {
     bi: {
-      title: lang("אנליסט הBI", "BI analyst"),
-      hint: lang("שאלות על המכירות, הקמפיינים והמתחרים", "Ask about sales, campaigns, competitors"),
+      title: lang("הילומה", "Hiloma"),
+      hint: lang("האנליסטית שלכם — מכירות, קמפיינים ומתחרים", "Your analyst — sales, campaigns, competitors"),
       icon: Bot,
       intro: lang(
-        "היי! אני אנליסט הBI של החנות. שאלו אותי כל דבר על המכירות, הקמפיינים או המתחרים — למשל: ״מה היה השבוע הכי חזק החודש?״ תשובה יכולה לקחת עד שתי דקות.",
-        "Hi! I'm the store's BI analyst. Ask me anything about sales, campaigns or competitors. Answers can take up to two minutes."
+        "היי! אני הילומה, האנליסטית של החנות. שאלו אותי כל דבר על המכירות, הקמפיינים או המתחרים — למשל: ״מה היה השבוע הכי חזק החודש?״ תשובה יכולה לקחת עד שתי דקות.",
+        "Hi! I'm Hiloma, the store's analyst. Ask me anything about sales, campaigns or competitors. Answers can take up to two minutes."
       ),
       accent: "bg-emerald-600"
     },
@@ -169,7 +169,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
         } else if (body.error === "bi_unconfigured") {
           pushMessage("bi", {
             role: "agent",
-            text: lang("סוכן הBI לא מחובר בסביבה הזו כרגע.", "The BI agent isn't connected in this environment."),
+            text: lang("הילומה לא מחוברת בסביבה הזו כרגע.", "Hiloma isn't connected in this environment."),
             at: Date.now()
           });
         } else {
@@ -211,7 +211,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     const Icon = chat.icon;
     const thread = threads[active];
     return (
-      <div className="fixed bottom-4 start-4 z-50 flex h-[min(72vh,580px)] w-[min(94vw,390px)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+      <div className="fixed bottom-4 left-4 right-4 z-50 flex h-[min(72vh,580px)] w-auto max-w-[390px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:left-auto sm:w-[390px]">
         <div className={cn("flex items-center gap-3 px-4 py-3 text-white", chat.accent)}>
           <button
             type="button"
@@ -322,7 +322,11 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
 
   // ── Launcher + speed-dial ───────────────────────────────────────────
   return (
-    <div className="fixed bottom-4 start-4 z-50 flex flex-col items-start gap-2">
+    // Physical right + right-aligned column regardless of document direction:
+    // with logical `start`, the launcher and its speed-dial landed on the left
+    // in one direction and overflowed the viewport edge in the other on
+    // phones, pushing the page sideways.
+    <div className="fixed bottom-4 right-4 z-50 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
       {open ? (
         <div className="flex flex-col gap-2">
           {(Object.keys(CHATS) as ChatKind[]).map((kind, i) => {

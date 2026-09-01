@@ -25,7 +25,7 @@ import { buildStockoutImminentReport } from "@/lib/services/stockout-imminent-se
 import { buildRoasCollapseReport } from "@/lib/services/roas-collapse-service";
 import { upsertCampaignFunnelAlerts } from "@/lib/services/campaign-funnel-alert-service";
 import { upsertSilentProductAlerts } from "@/lib/services/silent-product-alert-service";
-import { upsertCompetitorResponseAlerts } from "@/lib/services/competitor-intel-service";
+import { getCompetitorCrawlSummary, upsertCompetitorResponseAlerts } from "@/lib/services/competitor-intel-service";
 import { getCompetitorBrief } from "@/lib/services/competitor-brief-service";
 import { CompetitorBriefSection } from "@/components/command-center/competitor-brief-section";
 import { TrafficSearchSection } from "@/components/dashboard/traffic-search-section";
@@ -234,6 +234,10 @@ export default async function CommandCenterPage() {
           .competitor.count({ where: { storeId, status: "active" } })
           .catch(() => 0)
       : 0;
+  // What the last crawl actually found — "provider has no data yet for these
+  // domains" is a different message from "crawl hasn't run".
+  const competitorCrawl =
+    activeCompetitorCount > 0 && storeId ? await getCompetitorCrawlSummary(storeId).catch(() => null) : null;
 
   // Traffic (GA4) + organic search (GSC) summary — follows the page's
   // selected date window like every other section. Null when neither
@@ -451,9 +455,26 @@ export default async function CommandCenterPage() {
               title={lang("מה המתחרים עושים — ואיך להגיב", "What competitors are doing — and the response")}
             />
             <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-5 py-4 text-sm text-muted-foreground">
-              {isHe
-                ? `${activeCompetitorCount} מתחרים במעקב — הסריקה הראשונה עדיין לא רצה. החילו טווח תאריכים (למעלה) כדי להריץ אותה עכשיו, או המתינו לסנכרון האוטומטי (עד שעתיים). התובנות והמלצות הפעולה יופיעו כאן אחרי הסריקה.`
-                : `${activeCompetitorCount} competitors tracked — the first crawl hasn't run yet. Apply a date range (top of the page) to run it now, or wait for the automatic sync (up to 2 hours). Intel and prescribed actions appear here once it lands.`}
+              {competitorCrawl ? (
+                <>
+                  <p>
+                    {isHe
+                      ? `${activeCompetitorCount} מתחרים במעקב. הסריקה האחרונה (${new Date(competitorCrawl.at).toLocaleString("he-IL")}) החזירה נתונים עבור ${competitorCrawl.snapshotsUpserted} מתוכם.`
+                      : `${activeCompetitorCount} competitors tracked. The last crawl (${new Date(competitorCrawl.at).toLocaleString("en-GB")}) returned data for ${competitorCrawl.snapshotsUpserted} of them.`}
+                  </p>
+                  {competitorCrawl.skippedNoData > 0 ? (
+                    <p className="mt-1.5">
+                      {isHe
+                        ? `ספק המודיעין עדיין לא מחזיק נתונים על: ${competitorCrawl.outcomes.filter((o) => o.result === "no_data").map((o) => o.domain).join(", ")}. זה מתמלא תוך ימים אחרי ההוספה — הסנכרון האוטומטי ימשיך לבדוק כל שעתיים.`
+                        : `The intel provider has no data yet for: ${competitorCrawl.outcomes.filter((o) => o.result === "no_data").map((o) => o.domain).join(", ")}. It fills within days of adding a domain — the automatic sync keeps checking every 2 hours.`}
+                    </p>
+                  ) : null}
+                </>
+              ) : isHe ? (
+                `${activeCompetitorCount} מתחרים במעקב — הסריקה הראשונה עדיין לא רצה. החילו טווח תאריכים (למעלה) כדי להריץ אותה עכשיו, או המתינו לסנכרון האוטומטי (עד שעתיים). התובנות והמלצות הפעולה יופיעו כאן אחרי הסריקה.`
+              ) : (
+                `${activeCompetitorCount} competitors tracked — the first crawl hasn't run yet. Apply a date range (top of the page) to run it now, or wait for the automatic sync (up to 2 hours). Intel and prescribed actions appear here once it lands.`
+              )}
             </div>
           </section>
         ) : null}

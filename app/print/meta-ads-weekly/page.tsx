@@ -1093,7 +1093,7 @@ export default async function MetaAdsWeeklyPrintPage({
                 <BoldedText text={biCommentary.headline} />
               </h2>
               <p className="pwr-exec-page-sub" style={{ marginBottom: 14, fontStyle: "italic", color: "#64748b" }}>
-                {isHe ? "נכתב על-ידי סוכן הBI של Hiloomy" : "Written by the Hiloomy BI agent"}
+                {isHe ? "נכתב על-ידי הילומה, האנליסטית של Hiloomy" : "Written by Hiloma, Hiloomy's analyst"}
                 {" · "}
                 {new Date(biCommentary.generatedAt).toLocaleString(isHe ? "he-IL" : "en-US", {
                   dateStyle: "medium",

@@ -123,15 +123,15 @@ export function CompetitorBriefActionsBlock({
         <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-2.5 text-xs font-medium text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
           {lang(
-            "סוכן ה-BI מנתח את מהלכי המתחרים מול הנתונים שלכם…",
-            "The BI agent is analyzing competitor moves against your data…"
+            "הילומה מנתחת את מהלכי המתחרים מול הנתונים שלכם…",
+            "Hiloma is analyzing competitor moves against your data…"
           )}
         </div>
       ) : showFallbackBanner ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs leading-5 text-amber-900">
           {lang(
-            "⚠️ סוכן ה-BI לא הצליח להחזיר ניתוח כרגע — הפעולות למטה הן טיפים כלליים מוכנים מראש, לא מסקנות מהמודיעין.",
-            "⚠️ The BI agent couldn't return an analysis right now — the actions below are pre-written generic tips, not intel conclusions."
+            "⚠️ הילומה לא הצליחה להחזיר ניתוח כרגע — הפעולות למטה הן טיפים כלליים מוכנים מראש, לא מסקנות מהמודיעין.",
+            "⚠️ Hiloma couldn't return an analysis right now — the actions below are pre-written generic tips, not intel conclusions."
           )}
         </div>
       ) : null}
@@ -179,8 +179,8 @@ export function CompetitorBriefActionsBlock({
             <>
               <FileText className="h-3.5 w-3.5" aria-hidden />
               {lang(
-                `מתוך סיכום המודיעין מ${brief.generatedAt} (סוכן ה-BI לא זמין כרגע).`,
-                `From the ${brief.generatedAt} intel summary (BI agent currently unavailable).`
+                `מתוך סיכום המודיעין מ${brief.generatedAt} (הילומה לא זמינה כרגע).`,
+                `From the ${brief.generatedAt} intel summary (Hiloma currently unavailable).`
               )}
             </>
           )}

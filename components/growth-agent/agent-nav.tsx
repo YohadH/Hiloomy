@@ -4,20 +4,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-export function GrowthAgentNav({ locale = "he" }: { locale?: "he" | "en" }) {
+export function GrowthAgentNav({ locale = "he", full = false }: { locale?: "he" | "en"; full?: boolean }) {
   const pathname = usePathname();
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
 
-  const tabs = [
-    { href: "/growth-agent", label: lang("סקירה", "Overview") },
-    { href: "/growth-agent/configuration", label: lang("הגדרות", "Configuration") },
-    { href: "/growth-agent/connections", label: lang("חיבורים", "Connections") },
-    { href: "/growth-agent/supplier-orders", label: lang("טיוטות ספק", "Supplier Drafts") },
-    { href: "/growth-agent/rules", label: lang("חוקים ואוטומציות", "Rules & Automations") },
-    { href: "/growth-agent/history", label: lang("התראות / היסטוריה", "Alerts / History") },
-    { href: "/growth-agent/action-center", label: lang("מרכז פעולות", "Action Center") }
+  // Slim by default (owner's call, 1 Sep 2026): Hiloma shows insights, what
+  // needs action, and her next move — no hands yet. The configuration,
+  // connections, supplier-draft and rules tabs stay in the code behind
+  // GROWTH_AGENT_FULL=true for when (if) the agent gets hands.
+  const allTabs = [
+    { href: "/growth-agent", label: lang("סקירה", "Overview"), slim: true },
+    { href: "/growth-agent/action-center", label: lang("מרכז פעולות", "Action Center"), slim: true },
+    { href: "/growth-agent/history", label: lang("התראות / היסטוריה", "Alerts / History"), slim: true },
+    { href: "/growth-agent/configuration", label: lang("הגדרות", "Configuration"), slim: false },
+    { href: "/growth-agent/connections", label: lang("חיבורים", "Connections"), slim: false },
+    { href: "/growth-agent/supplier-orders", label: lang("טיוטות ספק", "Supplier Drafts"), slim: false },
+    { href: "/growth-agent/rules", label: lang("חוקים ואוטומציות", "Rules & Automations"), slim: false }
   ] as const;
+  const tabs = full ? allTabs : allTabs.filter((t) => t.slim);
 
   return (
     <div className="overflow-x-auto">

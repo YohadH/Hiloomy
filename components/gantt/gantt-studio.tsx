@@ -695,7 +695,7 @@ export function GanttStudio({
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-green-600" aria-hidden />
                 <h3 className="text-base font-semibold">
-                  {lang("תובנות מסוכן BI", "Insights from the BI agent")}
+                  {lang("תובנות מהילומה", "Insights from Hiloma")}
                 </h3>
                 {insightsGeneratedAt ? (
                   <span className="text-[11px] text-muted-foreground">
@@ -789,8 +789,8 @@ export function GanttStudio({
             ) : (
               <p className="mt-3 text-sm text-muted-foreground">
                 {lang(
-                  'לחצו על "הפעלת ניתוח" כדי לקבל סיכום, אזהרות (חוסרים, התנגשויות, חוסר זמן הכנה) והמלצות מסוכן הBI.',
-                  'Click "Run analysis" to get a summary, warnings (gaps, conflicts, not enough lead time) and recommendations from the BI agent.'
+                  'לחצו על "הפעלת ניתוח" כדי לקבל סיכום, אזהרות (חוסרים, התנגשויות, חוסר זמן הכנה) והמלצות מהילומה.',
+                  'Click "Run analysis" to get a summary, warnings (gaps, conflicts, not enough lead time) and recommendations from Hiloma.'
                 )}
               </p>
             )}
@@ -808,8 +808,8 @@ export function GanttStudio({
                 </div>
                 <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
                   {lang(
-                    "הBI יבנה בריף מלא בפורמט שאתם משתמשים בו: הטבות קבועות, קודי קופון של משפיעניות, הנחות באתר, בריף קידום ממומן (תקציב + ROAS + קמפיינים), ותוכן UGC — הכל עם הדגשות, קופונים, ותנאי המבצעים.",
-                    "The BI agent builds a full brief in the format you already use: standing perks, influencer coupon codes, on-site discounts, a paid-promotion brief (budget + ROAS + campaigns), and UGC content — all with highlights, coupons, and promo terms."
+                    "הילומה תבנה בריף מלא בפורמט שאתם משתמשים בו: הטבות קבועות, קודי קופון של משפיעניות, הנחות באתר, בריף קידום ממומן (תקציב + ROAS + קמפיינים), ותוכן UGC — הכל עם הדגשות, קופונים, ותנאי המבצעים.",
+                    "Hiloma builds a full brief in the format you already use: standing perks, influencer coupon codes, on-site discounts, a paid-promotion brief (budget + ROAS + campaigns), and UGC content — all with highlights, coupons, and promo terms."
                   )}
                 </p>
               </div>
