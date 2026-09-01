@@ -1,6 +1,7 @@
 import type { GrowthFinding } from "@/lib/domain/growth-agent-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GrowthStatusBadge } from "@/components/growth-agent/status-badge";
+import { localizeGrowthText } from "@/lib/i18n/growth-agent-labels";
 
 export function GrowthFindingsList({
   findings,
@@ -29,9 +30,12 @@ export function GrowthFindingsList({
                   <GrowthStatusBadge status={finding.severity} locale={locale} />
                   <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground" dir="ltr">{finding.metricName}</span>
                 </div>
-                <p className="text-base font-semibold">{finding.summary}</p>
+                <p className="text-base font-semibold">{localizeGrowthText(finding.summary, locale)}</p>
                 <p className="text-sm text-muted-foreground">{lang("גורמים אפשריים:", "Possible causes:")} {finding.possibleCauses.join(" • ")}</p>
-                <p className="text-sm text-muted-foreground">{lang("פעולה מומלצת:", "Recommended action:")} {finding.recommendedActions.join(" • ")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {lang("פעולה מומלצת:", "Recommended action:")}{" "}
+                  {finding.recommendedActions.map((a) => localizeGrowthText(a, locale)).join(" • ")}
+                </p>
               </div>
               <div className="text-xs text-muted-foreground">
                 <p>{new Date(finding.timestamp).toLocaleString(isHe ? "he-IL" : "en-US")}</p>

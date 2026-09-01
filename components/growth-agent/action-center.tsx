@@ -6,7 +6,7 @@ import type { GrowthAction } from "@/lib/domain/growth-agent-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GrowthStatusBadge } from "@/components/growth-agent/status-badge";
-import { getGrowthActionTypeLabel } from "@/lib/i18n/growth-agent-labels";
+import { getGrowthActionTypeLabel, localizeGrowthText } from "@/lib/i18n/growth-agent-labels";
 
 export function GrowthActionCenter({
   actions,
@@ -67,9 +67,14 @@ export function GrowthActionCenter({
                     {getGrowthActionTypeLabel(action.actionType, locale)}
                   </span>
                 </div>
-                <p className="text-base font-semibold">{action.title}</p>
-                <p className="text-sm text-muted-foreground">{action.reason}</p>
-                <p className="text-sm text-muted-foreground">{lang("השפעה משוערת:", "Estimated impact:")} {String(action.estimatedImpact?.expectedOutcome ?? lang("אין הערכה", "No estimate"))}</p>
+                <p className="text-base font-semibold">{localizeGrowthText(action.title, locale)}</p>
+                <p className="text-sm text-muted-foreground">{localizeGrowthText(action.reason, locale)}</p>
+                <p className="text-sm text-muted-foreground">
+                  {lang("השפעה משוערת:", "Estimated impact:")}{" "}
+                  {action.estimatedImpact?.expectedOutcome
+                    ? localizeGrowthText(String(action.estimatedImpact.expectedOutcome), locale)
+                    : lang("אין הערכה", "No estimate")}
+                </p>
                 <p className="text-sm text-muted-foreground">{lang("רמת ביטחון", "Confidence")} {Math.round(action.confidenceScore * 100)}%</p>
                 {action.failureReason ? <p className="text-sm text-rose-600">{action.failureReason}</p> : null}
               </div>

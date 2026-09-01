@@ -364,3 +364,88 @@ export function localizeConnectorHealthMessage(
 
   return { text: raw, detail: null };
 }
+
+// ── Generated text (findings / proposals) ───────────────────────────────
+//
+// The anomaly service and the action engine compose their summaries, titles
+// and recommended actions from a FINITE set of English templates, and the
+// rows are stored as written. Localize at render time like everything else
+// here: exact-match dictionary for fixed phrases, regex templates for the
+// ones that carry a number or a metric name. Unknown text passes through
+// unchanged (never blank a row because a template was added).
+
+const GROWTH_METRIC_HE: Record<string, string> = {
+  sessions: "ביקורים",
+  orders: "הזמנות",
+  conversion_rate: "יחס ההמרה",
+  inventory: "מלאי",
+  tracking_confidence: "אמינות המעקב",
+  revenue: "הכנסות",
+  aov: "סל ממוצע"
+};
+
+const GROWTH_PHRASE_HE: Record<string, string> = {
+  "Audit paid and organic traffic sources first": "לבדוק קודם את מקורות התנועה הממומנים והאורגניים",
+  "Avoid budget increases until tracking is confirmed": "לא להגדיל תקציבים עד שהמעקב מאומת",
+  "Block paid scale actions for low-inventory products": "לחסום הגדלת תקציב למוצרים במלאי נמוך",
+  "Campaign delivery weakened": "האספקה של הקמפיינים נחלשה",
+  "Check acquisition channel health before changing site conversion elements": "לבדוק את בריאות ערוצי הרכישה לפני שינויים באלמנטים של ההמרה באתר",
+  "Connect an analytics source or validate UTM/pixel coverage": "לחבר מקור אנליטיקס או לאמת את כיסוי ה-UTM/פיקסל",
+  "Cross-source attribution is only partially connected": "שיוך בין המקורות מחובר חלקית בלבד",
+  "Do not auto-execute paid actions": "לא להריץ אוטומטית פעולות ממומנות",
+  "Inspect this channel before changing other levers": "לבדוק את הערוץ הזה לפני שמזיזים מנופים אחרים",
+  "Inventory or merchandising issues may be impacting purchase intent": "ייתכן שבעיות מלאי או מרצ'נדייזינג פוגעות בכוונת הרכישה",
+  "Keep monitoring active and review the next scheduled scan": "להמשיך במעקב ולבדוק את הסריקה המתוזמנת הבאה",
+  "Merchandising or checkout friction increased": "החיכוך במרצ'נדייזינג או בקופה גדל",
+  "No material growth issues crossed the configured thresholds in the latest scan.": "בסריקה האחרונה לא חצו בעיות צמיחה מהותיות את הספים שהוגדרו.",
+  "Only draft paid recovery actions if confidence remains high": "להכין פעולות שיקום ממומנות רק אם רמת הביטחון נשארת גבוהה",
+  "Pause any scale-up action until conversion normalizes": "להשהות כל הגדלת תקציב עד שההמרה מתייצבת",
+  "Product demand is stable but reach is down": "הביקוש למוצרים יציב, אבל החשיפה ירדה",
+  "Product page, offer, or checkout friction likely increased": "כנראה גדל החיכוך בעמוד המוצר, בהצעה או בקופה",
+  "Restock timing may lag demand recovery": "תזמון החידוש עלול לפגר אחרי התאוששות הביקוש",
+  "Review checkout behavior, PDP changes, and in-stock availability": "לבדוק את התנהגות הקופה, שינויים בעמודי מוצר וזמינות במלאי",
+  "Review checkout funnel and hero SKU inventory": "לבדוק את משפך הקופה ואת מלאי המוצרים המובילים",
+  "Review replenishment timing before traffic expansion": "לבדוק את תזמון החידוש לפני הרחבת התנועה",
+  "Source-specific tracking or content cadence changed": "המעקב או קצב התוכן במקור הזה השתנו",
+  "Store conversion may be weaker": "ייתכן שההמרה בחנות נחלשה",
+  "Store performance is within the current baseline window": "ביצועי החנות בתוך חלון הבסיס הנוכחי",
+  "Strong demand depleted inventory": "ביקוש חזק רוקן את המלאי",
+  "Tracking coverage may have changed across channels": "ייתכן שכיסוי המעקב השתנה בין הערוצים",
+  "Traffic decline is the larger factor": "ירידת התנועה היא הגורם הגדול יותר",
+  "Traffic source coverage is incomplete": "כיסוי מקורות התנועה חלקי",
+  "Traffic source delivery is softer than normal": "האספקה ממקור התנועה חלשה מהרגיל",
+  "Verify analytics and pixel coverage": "לאמת את כיסוי האנליטיקס והפיקסל",
+  "Review issue": "לבדוק את הממצא"
+};
+
+function growthMetricHe(name: string): string {
+  return GROWTH_METRIC_HE[name] ?? name;
+}
+
+/**
+ * Localize agent-generated text (finding summaries, proposal titles/reasons,
+ * recommended actions) for display. English passes through untouched.
+ */
+export function localizeGrowthText(text: string | null | undefined, locale: GrowthLabelLocale = "he"): string {
+  if (!text) return "";
+  if (locale !== "he") return text;
+  const exact = GROWTH_PHRASE_HE[text.trim()];
+  if (exact) return exact;
+
+  let m: RegExpMatchArray | null;
+  // Action titles (engine) — recurse on the embedded summary / metric.
+  if ((m = text.match(/^Notify team: (.+)$/))) return `עדכון הצוות: ${localizeGrowthText(m[1], "he")}`;
+  if ((m = text.match(/^Create recommendation for (.+)$/))) return `יצירת המלצה עבור ${growthMetricHe(m[1])}`;
+  if ((m = text.match(/^Pause risky spend around low inventory: (.+)$/))) return `השהיית הוצאה מסוכנת סביב מלאי נמוך: ${growthMetricHe(m[1])}`;
+  if ((m = text.match(/^Generate a creative recovery brief for (.+)$/))) return `הכנת בריף קריאייטיב לשיקום ${growthMetricHe(m[1])}`;
+  if ((m = text.match(/^Review sourced product idea: (.+)$/))) return `בדיקת רעיון מוצר: ${m[1]}`;
+  // Finding summaries (anomaly service).
+  if ((m = text.match(/^Sessions down ([\d.]+)% versus the 7-day baseline\.?$/))) return `הביקורים ירדו ב-${m[1]}% לעומת ממוצע 7 הימים.`;
+  if ((m = text.match(/^Orders down ([\d.]+)% versus the 7-day baseline\.?$/))) return `ההזמנות ירדו ב-${m[1]}% לעומת ממוצע 7 הימים.`;
+  if ((m = text.match(/^Conversion rate dropped ([\d.]+)% while sessions were relatively stable\.?$/))) return `יחס ההמרה ירד ב-${m[1]}% בעוד הביקורים נשארו יציבים יחסית.`;
+  if ((m = text.match(/^(.+) traffic is down ([\d.]+)%\.?$/))) return `התנועה מ-${m[1]} ירדה ב-${m[2]}%.`;
+  if ((m = text.match(/^Top product inventory is under the guardrail threshold for (.+?)\.?$/))) return `המלאי של ${m[1]} מתחת לסף הבטיחות.`;
+  if ((m = text.match(/^Tracking confidence is (\d+)%, below the configured action threshold\.?$/))) return `אמינות המעקב היא ${m[1]}%, מתחת לסף שהוגדר לפעולות.`;
+  if ((m = text.match(/^Potential product opportunity found: (.+?)\.?$/))) return `נמצאה הזדמנות מוצר אפשרית: ${m[1]}.`;
+  return text;
+}
