@@ -35,9 +35,9 @@ async function loadConnection(storeId: string) {
   return connection;
 }
 
-async function listAccounts(accessToken: string): Promise<GraphAdAccount[]> {
-  const url = new URL(`${GRAPH}/me/adaccounts`);
-  url.searchParams.set("fields", "id,name,account_status,currency,timezone_name,business{name}");
+async function graphList<T>(path: string, accessToken: string, fields: string): Promise<T[]> {
+  const url = new URL(`${GRAPH}${path}`);
+  url.searchParams.set("fields", fields);
   url.searchParams.set("limit", "100");
   url.searchParams.set("access_token", accessToken);
   const res = await fetch(url, { cache: "no-store" });
@@ -45,7 +45,37 @@ async function listAccounts(accessToken: string): Promise<GraphAdAccount[]> {
   if (!res.ok || payload?.error) {
     throw new Error(payload?.error?.message ?? `Meta Graph request failed (${res.status}).`);
   }
-  return (payload?.data ?? []) as GraphAdAccount[];
+  return (payload?.data ?? []) as T[];
+}
+
+// Every ad account the token can reach. /me/adaccounts only returns accounts
+// assigned to the USER — an account granted through a Business opt-in in the
+// OAuth dialog (the merchant ticks "Hbosem" and nothing else) never appears
+// there, so the picker showed four unrelated accounts and not the one the
+// merchant just granted (2 Sep 2026). Merge the user's accounts with each
+// granted business's owned + client accounts, deduped by id.
+async function listAccounts(accessToken: string): Promise<GraphAdAccount[]> {
+  const fields = "id,name,account_status,currency,timezone_name,business{name}";
+  const byId = new Map<string, GraphAdAccount>();
+  for (const account of await graphList<GraphAdAccount>("/me/adaccounts", accessToken, fields)) {
+    byId.set(account.id, account);
+  }
+  const businesses = await graphList<{ id: string; name?: string }>("/me/businesses", accessToken, "id,name").catch(
+    () => [] as Array<{ id: string; name?: string }>
+  );
+  for (const business of businesses) {
+    for (const edge of ["owned_ad_accounts", "client_ad_accounts"] as const) {
+      const accounts = await graphList<GraphAdAccount>(`/${business.id}/${edge}`, accessToken, fields).catch(
+        () => [] as GraphAdAccount[]
+      );
+      for (const account of accounts) {
+        if (!byId.has(account.id)) {
+          byId.set(account.id, { ...account, business: account.business ?? { name: business.name } });
+        }
+      }
+    }
+  }
+  return [...byId.values()];
 }
 
 function resolveStoreId(auth: { storeId: string | null }, requested: string | null): string | null {

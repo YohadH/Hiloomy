@@ -81,12 +81,33 @@ export async function GET(request: Request) {
     const accessToken = String(longTok.access_token ?? shortTok.access_token);
 
     // Auto-pick the ad account: first ACTIVE (account_status=1), else first.
+    // /me/adaccounts misses accounts granted via a BUSINESS opt-in in the
+    // OAuth dialog, so merge in each granted business's owned + client
+    // accounts (2 Sep 2026: the merchant ticked only "Hbosem" and the
+    // callback picked an unrelated personal account).
     const accounts = await graphGet("/me/adaccounts", {
       fields: "id,name,account_status,currency",
       limit: "25",
       access_token: accessToken
     });
     const list: Array<{ id: string; name?: string; account_status?: number }> = accounts?.data ?? [];
+    try {
+      const businesses = await graphGet("/me/businesses", { fields: "id,name", limit: "50", access_token: accessToken });
+      for (const business of (businesses?.data ?? []) as Array<{ id: string }>) {
+        for (const edge of ["owned_ad_accounts", "client_ad_accounts"]) {
+          const extra = await graphGet(`/${business.id}/${edge}`, {
+            fields: "id,name,account_status,currency",
+            limit: "50",
+            access_token: accessToken
+          }).catch(() => null);
+          for (const account of (extra?.data ?? []) as typeof list) {
+            if (!list.some((a) => a.id === account.id)) list.push(account);
+          }
+        }
+      }
+    } catch {
+      // business listing is best-effort; the user-level list still works
+    }
     if (list.length === 0) {
       return back(`meta_error=${encodeURIComponent("This Facebook user has no ad accounts. Ask for access to the ad account and try again.")}`);
     }
