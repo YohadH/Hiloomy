@@ -7,6 +7,8 @@ import { getGrowthAgentStoreContext } from "@/lib/services/growth-agent-service"
 import { getHilomaNextMove } from "@/lib/services/hiloma-next-move-service";
 import { buildIdeaEngine } from "@/lib/services/idea-engine-service";
 import { IdeaEnginePanel } from "@/components/growth-agent/idea-engine-panel";
+import { buildHomepageMerchandiser } from "@/lib/services/homepage-merchandiser-service";
+import { HomepageMerchandiserPanel } from "@/components/growth-agent/homepage-merchandiser-panel";
 import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { listOpenAlerts } from "@/lib/services/alert-writer-service";
 import { GrowthAgentNav } from "@/components/growth-agent/agent-nav";
@@ -42,12 +44,17 @@ export default async function GrowthAgentPage() {
   const lang = (he: string, en: string) => (isHe ? he : en);
   const { store } = await getGrowthAgentStoreContext();
   const selection = await getReportingDateRangeSelection(isHe ? "he" : "en").catch(() => null);
-  const [chrome, overview, nextMove, alerts, ideaEngine] = await Promise.all([
+  const [chrome, overview, nextMove, alerts, ideaEngine, merchandiser] = await Promise.all([
     getAppChromeData(store.id),
     getGrowthAgentOverview(store.id),
     getHilomaNextMove(store.id, isHe ? "he" : "en").catch(() => ({ move: null, pending: false, available: false })),
     listOpenAlerts({ storeId: store.id, limit: 8 }).catch(() => [] as Array<Record<string, unknown>>),
     buildIdeaEngine({
+      storeId: store.id,
+      start: selection?.start,
+      end: selection?.end
+    }).catch(() => null),
+    buildHomepageMerchandiser({
       storeId: store.id,
       start: selection?.start,
       end: selection?.end
@@ -94,6 +101,21 @@ export default async function GrowthAgentPage() {
               )}
             />
             <IdeaEnginePanel report={ideaEngine} isHe={isHe} />
+          </section>
+        ) : null}
+
+        {/* 2b. Homepage merchandiser — product-level HSS ranking */}
+        {merchandiser && merchandiser.scored.length > 0 ? (
+          <section className="space-y-3">
+            <SectionHead
+              eyebrow={lang("מרצ'נדייזר עמוד הבית", "Homepage merchandiser")}
+              title={lang("איזה מוצר צריך להוביל את עמוד הבית", "Which product should lead the homepage")}
+              hint={lang(
+                "כל מוצר מקבל ניקוד סלוט (HSS) לפי רווח, הכנסה, תאוצה ומלאי. הילומה ממליצה על הסדר — השינוי בחנות אצלכם.",
+                "Every product gets a slot score (HSS) from margin, revenue, momentum & stock. Hiloma recommends the order — the store change stays with you."
+              )}
+            />
+            <HomepageMerchandiserPanel report={merchandiser} isHe={isHe} />
           </section>
         ) : null}
 
