@@ -88,13 +88,13 @@ try {
   // vs "aggregate excludes".
   (await p.$queryRaw`
     WITH nums AS (
-      SELECT NULLIF(regexp_replace("orderNumber", '\D', '', 'g'), '')::bigint AS n
+      SELECT NULLIF(regexp_replace("orderNumber", '[^0-9]', '', 'g'), '')::bigint AS n
       FROM "Order" WHERE "storeId" = ${STORE} AND "createdAt" >= ${start} AND "createdAt" <= ${end}
     ),
     bounds AS (SELECT MIN(n) AS lo, MAX(n) AS hi FROM nums WHERE n IS NOT NULL),
     expected AS (SELECT generate_series(lo, hi) AS n FROM bounds),
     all_nums AS (
-      SELECT NULLIF(regexp_replace("orderNumber", '\D', '', 'g'), '')::bigint AS n
+      SELECT NULLIF(regexp_replace("orderNumber", '[^0-9]', '', 'g'), '')::bigint AS n
       FROM "Order" WHERE "storeId" = ${STORE}
     )
     SELECT e.n AS missing_order_number
@@ -144,6 +144,32 @@ try {
       AND "totalDiscounts" > 0 AND "subtotalPrice" > 0
       AND ("subtotalPrice" - "totalDiscounts") <= ("subtotalPrice" * 0.05)`).forEach(row);
   console.log("compare stored_net_zero_orders to the count of ~100%-off orders in Shopify Admin for this window; a shortfall = not ingested");
+
+  console.log("\n## 2f. Line-item truth for the ₪0 / fully-discounted orders (R-02 DECISIVE)");
+  // For every order in the window whose stored total is ~0, dump what its
+  // line items actually hold. Shopify's GROSS-sales metric counts the
+  // ORIGINAL (pre-discount) unit price × qty. If line_gross below is ~0 for
+  // these orders, the mapper stored the pre-discount price as 0 and BOTH our
+  // gross AND our discount are short by the same amount (net ≈ 0) — that is
+  // the R-02 signature. If line_gross ≈ line_discount ≈ the real product
+  // price (e.g. ~29), the orders are captured correctly and R-02 is elsewhere.
+  (await p.$queryRaw`
+    SELECT o."displayName",
+           o."subtotalPrice"::float   AS order_subtotal,
+           o."totalDiscounts"::float  AS order_discounts,
+           COUNT(li.id)::int          AS lines,
+           SUM(li.quantity)::int      AS units,
+           SUM((li."originalUnitPrice" * li.quantity))::float AS line_gross_at_original,
+           SUM(li."lineSubtotal")::float       AS sum_line_subtotal,
+           SUM(li."lineDiscountAmount")::float AS sum_line_discount
+    FROM "Order" o
+    LEFT JOIN "OrderLineItem" li ON li."orderId" = o.id
+    WHERE o."storeId" = ${STORE} AND o."createdAt" >= ${start} AND o."createdAt" <= ${end}
+      AND o."cancelledAt" IS NULL AND o.test = false
+      AND o."totalPrice" <= 1 AND o."totalDiscounts" > 0
+    GROUP BY o.id, o."displayName", o."subtotalPrice", o."totalDiscounts"
+    ORDER BY o."displayName" LIMIT 30`).forEach(row);
+  console.log("READ: if line_gross_at_original ≈ 0 while order_discounts > 0 → the pre-discount price was stored as 0 (mapper bug, gross+discount both short). If line_gross_at_original ≈ order_discounts → captured correctly.");
 
   console.log("\n## 3. Discount codes in window");
   (await p.$queryRaw`
