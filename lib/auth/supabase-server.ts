@@ -67,6 +67,27 @@ export async function createRouteHandlerSupabaseClient() {
   });
 }
 
+// ─── 2b. Callback client bound to a REDIRECT response ─────────────
+// The OAuth / magic-link callback returns NextResponse.redirect(...), a fresh
+// response object. Cookies written via next/headers cookies().set() do NOT
+// ride on that new response, so the Supabase session Set-Cookie headers were
+// silently dropped — consent completed but no session was ever established
+// (Google SSO, 2 Sep 2026). Writing onto the redirect response itself is the
+// only reliable way to persist the session across the redirect.
+export async function createCallbackSupabaseClient(response: NextResponse) {
+  const cookieStore = await cookies();
+  return createServerClient(envUrl(), envAnonKey(), {
+    cookies: {
+      getAll: () => cookieStore.getAll(),
+      setAll: (cookiesToSet) => {
+        for (const { name, value, options } of cookiesToSet) {
+          response.cookies.set(name, value, options as CookieOptions);
+        }
+      }
+    }
+  });
+}
+
 // ─── 3. Middleware client (request + response cookie bridge) ──────
 export function createMiddlewareSupabaseClient(
   req: NextRequest,

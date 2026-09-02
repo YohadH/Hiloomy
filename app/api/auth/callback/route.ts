@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createRouteHandlerSupabaseClient } from "@/lib/auth/supabase-server";
+import { createCallbackSupabaseClient } from "@/lib/auth/supabase-server";
 import { ensureUserProvisioned } from "@/lib/auth/session";
 import { sendTransactionalEmail } from "@/lib/email/email-client";
 import { welcomeEmail } from "@/lib/email/templates";
@@ -31,7 +31,12 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/signin?error=missing_code", base));
   }
 
-  const supabase = await createRouteHandlerSupabaseClient();
+  // Build the success redirect UP FRONT and bind Supabase's session cookies
+  // to it — a redirect response created after exchange would not carry the
+  // Set-Cookie headers, which is why OAuth sign-in never established a
+  // session (2 Sep 2026).
+  const response = NextResponse.redirect(new URL(next, base));
+  const supabase = await createCallbackSupabaseClient(response);
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
   if (exchangeError) {
     return NextResponse.redirect(
@@ -81,5 +86,6 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(new URL(next, base));
+  // The response that carries the session cookies set during the exchange.
+  return response;
 }
