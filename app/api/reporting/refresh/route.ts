@@ -53,13 +53,23 @@ export async function POST(request: Request) {
     .then((selection) => ({ start: selection.start, end: selection.end }))
     .catch(() => null);
 
-  // ONE apply syncs EVERY platform (owner's ask): Shopify, Meta, Instagram,
-  // competitors, GA4 and Search Console — no page-by-page syncing. Each is
-  // best-effort; a missing connection resolves as a no-op, not a failure.
-  const [shopify, meta, instagram, competitors, ga4, gsc] = await Promise.allSettled([
+  // The Instagram PUBLIC crawl drives a headless Chromium over ~24 profiles
+  // with a delay between each (20–60s+), and it returns the same recent
+  // posts regardless of the reporting range — so blocking a date-range apply
+  // on it made "applying new range" take over a minute for no benefit
+  // (TakeaNap, 2 Sep 2026). Kick it in the background and let the range apply
+  // return as soon as the range-dependent syncs finish. (Render runs a
+  // long-lived Node server, so the detached promise continues.)
+  void crawlPublicInstagramProfiles({ storeId }).catch((error) => {
+    console.warn("[reporting/refresh] background Instagram crawl failed:", error instanceof Error ? error.message : error);
+  });
+
+  // ONE apply syncs the range-dependent platforms: Shopify, Meta,
+  // competitors, GA4 and Search Console. Each is best-effort; a missing
+  // connection resolves as a no-op, not a failure.
+  const [shopify, meta, competitors, ga4, gsc] = await Promise.allSettled([
     runIncrementalSync(storeId),
     syncMetaAdsCampaignInsights({ storeId }),
-    crawlPublicInstagramProfiles({ storeId }),
     syncCompetitorSignals(storeId, { range }).then(async (res) => {
       // Fresh snapshots → refresh the competitor-response alert queue too.
       await upsertCompetitorResponseAlerts({
@@ -91,7 +101,7 @@ export async function POST(request: Request) {
     results: {
       shopify: describe(shopify),
       meta: describe(meta),
-      instagram: describe(instagram),
+      instagram: { ok: true, background: true },
       competitors: describe(competitors),
       ga4: describe(ga4),
       gsc: describe(gsc)
