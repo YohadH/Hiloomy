@@ -127,6 +127,24 @@ try {
       AND ABS(u.usage_amt - l.line_disc) > 1
     ORDER BY ABS(u.usage_amt - l.line_disc) DESC LIMIT 10`).forEach(row);
 
+  console.log("\n## 2e. Fully-discounted orders (net ≈ 0) — are the seeding orders even stored? (R-02, systemic)");
+  // QA run 6 proved the loss scales with a store's near-100%-off order count
+  // (hbosem: 13 of 122 orders, ×4.4 vs Incense). This asks the DB directly:
+  // of the orders we DID store in the window, how many are net-zero, and are
+  // any being excluded by cancelled/test? If the count here is far below the
+  // count of 100%-off orders in Shopify Admin for the same window, the orders
+  // are not being INGESTED (fetch/scope), not mis-aggregated.
+  (await p.$queryRaw`
+    SELECT COUNT(*)::int AS stored_net_zero_orders,
+           SUM(CASE WHEN "cancelledAt" IS NOT NULL THEN 1 ELSE 0 END)::int AS of_them_cancelled,
+           SUM(CASE WHEN test THEN 1 ELSE 0 END)::int AS of_them_test,
+           SUM("totalDiscounts")::float AS their_total_discounts
+    FROM "Order"
+    WHERE "storeId" = ${STORE} AND "createdAt" >= ${start} AND "createdAt" <= ${end}
+      AND "totalDiscounts" > 0 AND "subtotalPrice" > 0
+      AND ("subtotalPrice" - "totalDiscounts") <= ("subtotalPrice" * 0.05)`).forEach(row);
+  console.log("compare stored_net_zero_orders to the count of ~100%-off orders in Shopify Admin for this window; a shortfall = not ingested");
+
   console.log("\n## 3. Discount codes in window");
   (await p.$queryRaw`
     SELECT du.code, du."applicationType", du."valueType",

@@ -288,16 +288,26 @@ export async function getOverviewPayload(): Promise<OverviewPayload> {
   const topDiscount = discounts[0];
   const biggestDropMetric = comparisonMetrics.filter((metric) => metric.change < 0).sort((a, b) => a.change - b.change)[0];
   const alerts = buildOverviewAlerts(locale, refundRate, discountRate, returningCustomerRate);
+  // A comparison is ENABLED whenever a prior window exists on the calendar,
+  // but a newly-connected brand's prior window has NO DATA — and comparing
+  // against zero made the absolute-delta cards echo the current value as the
+  // change (AOV ₪230 → "+230.3%", discount 53.9% → "+53.9%"; H-16, 2 Sep
+  // 2026). Only show a change when the prior window actually had sales.
+  const hasComparisonBase =
+    comparisonEnabled &&
+    (parity
+      ? Boolean(prev && prev.totalSales > 0)
+      : previousPeriodMetrics.some((metric) => (metric.orders ?? 0) > 0));
   const aovChange =
-    comparisonEnabled && cur && prev
+    hasComparisonBase && cur && prev
       ? cur.averageOrderValue - prev.averageOrderValue
-      : comparisonEnabled && !parity
+      : hasComparisonBase && !parity
         ? averageOrderValue - average(previousPeriodMetrics.map((metric) => metric.averageOrderValue))
         : undefined;
   const refundChange =
-    comparisonEnabled && cur && prev
+    hasComparisonBase && cur && prev
       ? cur.refundRate - prev.refundRate
-      : comparisonEnabled && !parity
+      : hasComparisonBase && !parity
         ? refundRate - average(previousPeriodMetrics.map((metric) => metric.refundRate))
         : undefined;
 
@@ -307,12 +317,12 @@ export async function getOverviewPayload(): Promise<OverviewPayload> {
       // previousValue = the comparison window's real figure, surfaced on the
       // % chip's hover so the founder never has to reverse-engineer it from
       // a bare percentage (F-009). Only the parity path knows it exactly.
-      { label: dictionary.overview.revenue, value: revenue, change: comparisonMetrics[0]?.change, previousValue: comparisonEnabled && prev ? prev.totalSales : undefined, format: "currency" },
-      { label: dictionary.overview.estimatedProfit, value: estimatedProfit, change: comparisonMetrics[1]?.change, previousValue: comparisonEnabled && prev ? prev.estimatedProfit : undefined, format: "currency" },
-      { label: locale === "he" ? "שיעור לקוחות חוזרים" : "Returning Customer Rate", value: returningCustomerRate, change: comparisonMetrics[2]?.change, previousValue: comparisonEnabled && prev ? prev.returningCustomerRate : undefined, format: "percent" },
-      { label: locale === "he" ? "ערך הזמנה ממוצע" : "Average Order Value", value: averageOrderValue, change: aovChange, previousValue: comparisonEnabled && prev ? prev.averageOrderValue : undefined, format: "currency" },
-      { label: locale === "he" ? "שיעור הנחות" : "Discount Rate", value: discountRate, change: comparisonMetrics[3]?.change, previousValue: comparisonEnabled && prev ? prev.discountRate : undefined, format: "percent" },
-      { label: locale === "he" ? "שיעור החזרים" : "Refund Rate", value: refundRate, change: refundChange, previousValue: comparisonEnabled && prev ? prev.refundRate : undefined, format: "percent" }
+      { label: dictionary.overview.revenue, value: revenue, change: hasComparisonBase ? comparisonMetrics[0]?.change : undefined, previousValue: hasComparisonBase && prev ? prev.totalSales : undefined, format: "currency" },
+      { label: dictionary.overview.estimatedProfit, value: estimatedProfit, change: hasComparisonBase ? comparisonMetrics[1]?.change : undefined, previousValue: hasComparisonBase && prev ? prev.estimatedProfit : undefined, format: "currency" },
+      { label: locale === "he" ? "שיעור לקוחות חוזרים" : "Returning Customer Rate", value: returningCustomerRate, change: hasComparisonBase ? comparisonMetrics[2]?.change : undefined, previousValue: hasComparisonBase && prev ? prev.returningCustomerRate : undefined, format: "percent" },
+      { label: locale === "he" ? "ערך הזמנה ממוצע" : "Average Order Value", value: averageOrderValue, change: aovChange, previousValue: hasComparisonBase && prev ? prev.averageOrderValue : undefined, format: "currency" },
+      { label: locale === "he" ? "שיעור הנחות" : "Discount Rate", value: discountRate, change: hasComparisonBase ? comparisonMetrics[3]?.change : undefined, previousValue: hasComparisonBase && prev ? prev.discountRate : undefined, format: "percent" },
+      { label: locale === "he" ? "שיעור החזרים" : "Refund Rate", value: refundRate, change: refundChange, previousValue: hasComparisonBase && prev ? prev.refundRate : undefined, format: "percent" }
     ],
     dailyMetrics,
     insights: [
