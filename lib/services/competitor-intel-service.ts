@@ -563,6 +563,33 @@ export async function buildCompetitorWeekSection(input: {
 // Fingerprint is per competitor per week-start, so the same competitor
 // re-fires at most once per weekly window. Idempotent — safe to call from
 // the refresh cron AND the Command Center's engine block.
+// The advice is the CROSS: their discount depth against our margin. Matching
+// a discount deeper than our contribution margin loses money on every order —
+// the alert should say that with the numbers, not "consider responding".
+function buildCompetitorResponseAdvice(
+  competitorDiscountPct: number | null,
+  own: { marginPct: number; discountPct: number; estimated: boolean } | null,
+  severity: AlertSeverity
+): string {
+  if (own && competitorDiscountPct !== null) {
+    const leftAfterMatch = own.marginPct - competitorDiscountPct;
+    const est = own.estimated ? " (מרווח מוערך — כיסוי עלויות חלקי)" : "";
+    if (leftAfterMatch <= 0) {
+      return (
+        `המרווח שלכם בחלון הוא ${own.marginPct}%${est} — השוואת הנחה של ${Math.round(competitorDiscountPct)}% מוחקת את הרווח על כל הזמנה. ` +
+        `אל תשוו מחיר: מתנה בקנייה, סף משלוח חינם או קידום ממוקד לקהל שלהם עולים פחות ושומרים על המרווח.`
+      );
+    }
+    return (
+      `המרווח שלכם בחלון הוא ${own.marginPct}%${est} ואתם כבר נותנים בממוצע ${own.discountPct}% הנחה — ` +
+      `השוואת ${Math.round(competitorDiscountPct)}% תשאיר בערך ${leftAfterMatch}% מרווח. אפשרי, אבל בדקו קודם תגובה זולה יותר (הדגשת ערך, משלוח, מתנה) ועקבו אחרי ההמרות השבוע.`
+    );
+  }
+  return severity === "high"
+    ? "מבצע אגרסיבי אצל מתחרה. שקלו תגובה: הדגשת ערך מוצרי הדגל, הטבת משלוח, או קידום ממוקד לקהל שלהם — לא בהכרח הורדת מחיר."
+    : "לעקוב אחרי ביצועי ההמרה השבוע. אם יש ירידה בהמרות — לשקול הצעת נגד ממוקדת.";
+}
+
 export async function upsertCompetitorResponseAlerts(input: {
   storeId: string;
   start: Date;
@@ -570,6 +597,26 @@ export async function upsertCompetitorResponseAlerts(input: {
 }): Promise<{ alertsUpserted: number }> {
   const section = await buildCompetitorWeekSection(input);
   if (!section) return { alertsUpserted: 0 };
+
+  // The cross is the product: a competitor's discount depth only means
+  // something against OUR margin. Pull the store's contribution numbers for
+  // the same window once, so every alert can say whether matching the move
+  // is profitable — in ₪-terms — instead of generic advice.
+  const own = await (async () => {
+    try {
+      const { buildContributionMargin } = await import("@/lib/services/contribution-margin-service");
+      const report = await buildContributionMargin({ storeId: input.storeId, start: input.start, end: input.end });
+      const revenue = report.totals.revenue;
+      if (!revenue || revenue <= 0) return null;
+      return {
+        marginPct: Math.round(report.totals.contributionMarginRate * 100),
+        discountPct: Math.round((report.totals.discounts / revenue) * 100),
+        estimated: report.quality.costCoverage < 0.6
+      };
+    } catch {
+      return null;
+    }
+  })();
 
   let upserted = 0;
   for (const entry of section.competitors) {
@@ -597,11 +644,11 @@ export async function upsertCompetitorResponseAlerts(input: {
         (entry.current.homepageMessage ? ` · מסר בדף הבית: "${entry.current.homepageMessage}"` : "") +
         (entry.current.freeShippingThreshold !== null
           ? ` · משלוח חינם מעל ₪${entry.current.freeShippingThreshold}`
+          : "") +
+        (own
+          ? ` · הנתונים שלכם לחלון: מרווח תרומה ${own.marginPct}%${own.estimated ? " (מוערך)" : ""}, הנחה ממוצעת ${own.discountPct}%`
           : ""),
-      recommendedAction:
-        severity === "high"
-          ? "מבצע אגרסיבי אצל מתחרה. שקלו תגובה: הדגשת ערך מוצרי הדגל, הטבת משלוח, או קידום ממוקד לקהל שלהם — לא בהכרח הורדת מחיר."
-          : "לעקוב אחרי ביצועי ההמרה השבוע. אם יש ירידה בהמרות — לשקול הצעת נגד ממוקדת.",
+      recommendedAction: buildCompetitorResponseAdvice(discount, own, severity),
       metricName: "competitor_max_discount_pct",
       currentValue: discount ?? undefined,
       payloadJson: {
