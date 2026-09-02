@@ -512,7 +512,22 @@ export default async function CommandCenterPage() {
                 "Spend, purchases, and ROAS per campaign for the selected window, with filters — and an agent insight below."
               )}
             />
-            <MetaCampaignsSection overview={metaCampaigns} isHe={isHe} />
+            <MetaCampaignsSection
+              overview={metaCampaigns}
+              isHe={isHe}
+              // Breakeven ROAS = 1 / contribution-margin rate — the point a
+              // campaign must clear to be profitable after COGS/shipping/fees.
+              // Only when cost coverage is real (≥60%); otherwise the margin is
+              // a default-ratio guess and a "breakeven" from it would mislead,
+              // so we pass null and the block judges against ROAS ×1 and says so.
+              breakevenRoas={
+                contributionMargin &&
+                contributionMargin.quality.costCoverage >= 0.6 &&
+                contributionMargin.totals.contributionMarginRate > 0
+                  ? 1 / contributionMargin.totals.contributionMarginRate
+                  : null
+              }
+            />
             <MetaCampaignsInsight isHe={isHe} />
           </section>
         ) : null}

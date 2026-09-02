@@ -25,12 +25,24 @@ type SortKey = "spend" | "roas" | "purchases";
 
 export function MetaCampaignsSection({
   overview,
-  isHe
+  isHe,
+  breakevenRoas
 }: {
   overview: MetaCampaignsOverview;
   isHe: boolean;
+  /**
+   * Store breakeven ROAS = 1 / contribution-margin rate. The point where a
+   * campaign stops making money AFTER COGS/shipping/fees. Null when cost
+   * coverage is too low to trust it — then we fall back to the ROAS=1 line
+   * and say so, rather than quote a false breakeven (Meta only ever judges
+   * against its own objective; the profit truth is the edge — 2 Sep 2026).
+   */
+  breakevenRoas?: number | null;
 }) {
   const lang = (he: string, en: string) => (isHe ? he : en);
+  // The line a campaign must clear to be profitable. Breakeven when we trust
+  // it, else 1.0 (revenue = spend) as a floor.
+  const profitLine = breakevenRoas && breakevenRoas > 0 ? breakevenRoas : 1;
   const nf = new Intl.NumberFormat(isHe ? "he-IL" : "en-US");
   const money = (n: number) => `₪${nf.format(Math.round(n))}`;
 
@@ -60,23 +72,27 @@ export function MetaCampaignsSection({
   }, [overview.campaigns, query, status, sortKey]);
 
   const activeCount = overview.campaigns.filter((c) => c.activeRecently).length;
-  const losingCount = overview.campaigns.filter((c) => c.spend > 0 && (c.roas ?? 0) < 1).length;
+  // "Losing money" = below the PROFIT line (breakeven), not below ROAS 1 —
+  // a campaign at ROAS 3 still loses money if breakeven is 3.5.
+  const losingCount = overview.campaigns.filter((c) => c.spend > 0 && (c.roas ?? 0) < profitLine).length;
 
+  // Tone by distance from the profit line: comfortably above → green, just
+  // above (within 20%) → amber, below → red.
   const roasTone = (roas: number | null) =>
     roas == null
       ? "text-muted-foreground"
-      : roas >= 2
+      : roas >= profitLine * 1.2
         ? "text-emerald-700 dark:text-emerald-400"
-        : roas >= 1
+        : roas >= profitLine
           ? "text-amber-700 dark:text-amber-400"
           : "text-rose-700 dark:text-rose-400";
 
   const barTone = (roas: number | null) =>
     roas == null
       ? "bg-slate-300 dark:bg-slate-600"
-      : roas >= 2
+      : roas >= profitLine * 1.2
         ? "bg-emerald-500"
-        : roas >= 1
+        : roas >= profitLine
           ? "bg-amber-500"
           : "bg-rose-500";
 
@@ -111,6 +127,23 @@ export function MetaCampaignsSection({
               {lang(
                 `${overview.rangeStart} עד ${overview.rangeEnd} · נתונים עד ${overview.dataThrough ?? "—"} · ״פעיל״ = הוציא תקציב ב־3 ימי הנתונים האחרונים`,
                 `${overview.rangeStart} to ${overview.rangeEnd} · data through ${overview.dataThrough ?? "—"} · "active" = spent within the last 3 data-days`
+              )}
+            </p>
+            <p className="mt-1 text-[11px]">
+              {breakevenRoas && breakevenRoas > 0 ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  {lang(`נקודת איזון רווחית: ROAS ×${breakevenRoas.toFixed(2)}`, `Breakeven: ROAS ×${breakevenRoas.toFixed(2)}`)}
+                  <span className="font-normal opacity-80">
+                    {lang("— מתחתיה הקמפיין מפסיד כסף אחרי עלויות", "— below this a campaign loses money after costs")}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  {lang(
+                    "נקודת האיזון האמיתית דורשת עלויות מוצר — כרגע נמדד מול ROAS ×1 בלבד (הכנסה = הוצאה).",
+                    "A real breakeven needs product costs — currently judged against ROAS ×1 only (revenue = spend)."
+                  )}
+                </span>
               )}
             </p>
           </div>
@@ -192,9 +225,28 @@ export function MetaCampaignsSection({
                       </span>
                     ) : null}
                   </div>
-                  <p className={cn("shrink-0 text-sm font-bold tabular-nums", roasTone(c.roas))}>
-                    {c.roas != null ? `ROAS ×${c.roas}` : lang("ללא רכישות", "No purchases")}
-                  </p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {c.roas != null && c.spend > 0 ? (
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                          c.roas >= profitLine
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            : "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300"
+                        )}
+                        title={
+                          breakevenRoas && breakevenRoas > 0
+                            ? lang(`מול נקודת איזון ×${profitLine.toFixed(2)}`, `vs breakeven ×${profitLine.toFixed(2)}`)
+                            : lang("מול ROAS ×1 (אין עלויות מוצר)", "vs ROAS ×1 (no product costs)")
+                        }
+                      >
+                        {c.roas >= profitLine ? lang("רווחי", "profitable") : lang("מפסיד", "losing")}
+                      </span>
+                    ) : null}
+                    <p className={cn("text-sm font-bold tabular-nums", roasTone(c.roas))}>
+                      {c.roas != null ? `ROAS ×${c.roas}` : lang("ללא רכישות", "No purchases")}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Spend-share bar, colored by ROAS */}
