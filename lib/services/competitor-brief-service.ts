@@ -19,6 +19,7 @@ import { anthropicChatJson } from "@/lib/clients/anthropic-client";
 import { fetchCompetitorActivity, type CompetitorActivityEntry } from "@/lib/clients/rivalsweeper-client";
 import { normalizeDomain } from "@/lib/services/competitor-intel-service";
 import { getMetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
+import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
 import { getStoreTimeZone, lastNDaysRange } from "@/lib/server/reporting-date-range";
 import {
   COMPETITOR_INTEL_LATEST,
@@ -553,7 +554,11 @@ export async function getCompetitorBriefBlocking(
 // briefs generated before it were composed from unfiltered ad copy and sat
 // in the 24h cache — which is why the explicit competitor headline was still
 // on the dashboard a deploy AFTER the filter shipped (QA run 4).
-const CACHE_SCHEMA = "s1";
+// "s2" (2 Sep 2026): the brief prompt is now localized (an EN viewer was
+// getting a Hebrew brief because the old prompt was hard-coded Hebrew and
+// cached under the EN key) AND leads with the competitor×margin cross. Both
+// changes make every "s1" cached answer stale, so bump to force regeneration.
+const CACHE_SCHEMA = "s2";
 function cacheKey(version: string, storeId?: string): string {
   return `${version}:${storeId ?? "org"}:${CACHE_SCHEMA}`;
 }
@@ -569,7 +574,9 @@ function isCleanAnswer(answer: BiBriefAnswer): boolean {
 // ── Live store facts — the difference between consultant fluff and a
 // decision. Pulled fresh from the DB on every generation so the agent's
 // actions can name actual products, campaigns and numbers.
-async function buildLiveFacts(storeId: string): Promise<string> {
+async function buildLiveFacts(storeId: string, locale: "he" | "en" = "he"): Promise<string> {
+  const isHe = locale === "he";
+  const t = (he: string, en: string) => (isHe ? he : en);
   const db = getDb();
   const now = new Date();
   const curStart = new Date(now.getTime() - 30 * 86_400_000);
@@ -610,14 +617,28 @@ async function buildLiveFacts(storeId: string): Promise<string> {
     const losers = deltas.slice(-3).filter((d) => d.delta < 0).reverse();
     if (gainers.length) {
       facts.push(
-        `מוצרים עולים (30 יום מול 30 הקודמים): ` +
-          gainers.map((g) => `"${g.t}" (הכנסה ₪${g.cur.toLocaleString()}, שינוי +₪${g.delta.toLocaleString()})`).join(" · ")
+        t("מוצרים עולים (30 יום מול 30 הקודמים): ", "Rising products (last 30d vs prior 30d): ") +
+          gainers
+            .map((g) =>
+              t(
+                `"${g.t}" (הכנסה ₪${g.cur.toLocaleString()}, שינוי +₪${g.delta.toLocaleString()})`,
+                `"${g.t}" (revenue ₪${g.cur.toLocaleString()}, change +₪${g.delta.toLocaleString()})`
+              )
+            )
+            .join(" · ")
       );
     }
     if (losers.length) {
       facts.push(
-        `מוצרים צונחים: ` +
-          losers.map((l) => `"${l.t}" (הכנסה ₪${l.cur.toLocaleString()}, שינוי -₪${Math.abs(l.delta).toLocaleString()})`).join(" · ")
+        t("מוצרים צונחים: ", "Declining products: ") +
+          losers
+            .map((l) =>
+              t(
+                `"${l.t}" (הכנסה ₪${l.cur.toLocaleString()}, שינוי -₪${Math.abs(l.delta).toLocaleString()})`,
+                `"${l.t}" (revenue ₪${l.cur.toLocaleString()}, change -₪${Math.abs(l.delta).toLocaleString()})`
+              )
+            )
+            .join(" · ")
       );
     }
   } catch { /* facts are best-effort */ }
@@ -640,14 +661,56 @@ async function buildLiveFacts(storeId: string): Promise<string> {
       const best = [...campaigns].sort((a, b) => b.roas - a.roas)[0];
       const worst = [...campaigns].sort((a, b) => a.roas - b.roas)[0];
       facts.push(
-        `קמפיינים פעילים במטא (${overview.rangeStart} עד ${overview.rangeEnd}, לפי הוצאה — אלה הקמפיינים היחידים שרצים עכשיו; אין להמליץ על קמפיין שאינו ברשימה): ` +
+        t(
+          `קמפיינים פעילים במטא (${overview.rangeStart} עד ${overview.rangeEnd}, לפי הוצאה — אלה הקמפיינים היחידים שרצים עכשיו; אין להמליץ על קמפיין שאינו ברשימה): `,
+          `Active Meta campaigns (${overview.rangeStart} to ${overview.rangeEnd}, by spend — these are the ONLY campaigns running now; never recommend a campaign not on this list): `
+        ) +
           campaigns.slice(0, 3).map((c) => `"${c.name}" (₪${c.spend.toLocaleString()}, ROAS ${c.roas.toFixed(1)})`).join(" · ")
       );
       if (best && worst && best.name !== worst.name) {
         facts.push(
-          `הפער: "${best.name}" עם ROAS ${best.roas.toFixed(1)} מול "${worst.name}" עם ROAS ${worst.roas.toFixed(1)} (הוצאה ₪${worst.spend.toLocaleString()}).`
+          t(
+            `הפער: "${best.name}" עם ROAS ${best.roas.toFixed(1)} מול "${worst.name}" עם ROAS ${worst.roas.toFixed(1)} (הוצאה ₪${worst.spend.toLocaleString()}).`,
+            `The gap: "${best.name}" at ROAS ${best.roas.toFixed(1)} vs "${worst.name}" at ROAS ${worst.roas.toFixed(1)} (spend ₪${worst.spend.toLocaleString()}).`
+          )
         );
       }
+    }
+  } catch { /* best-effort */ }
+
+  try {
+    // The store's OWN margin — the other half of Hiloma's edge. Competitor
+    // intel is only actionable when crossed against what the store can
+    // actually afford: the deepest discount a competitor runs means nothing
+    // until it's read against this contribution-margin rate and the breakeven
+    // ROAS it implies. Without this fact the model can only echo store
+    // internals; with it, it can say "don't match their 40% cut — it's below
+    // your X% margin" (the owner's stated edge: the cross, not intel alone).
+    const margin = await buildContributionMargin({ storeId, start: curStart, end: now }).catch(() => null);
+    if (margin && margin.totals.ordersIncluded > 0) {
+      const ratePct = Math.round(margin.totals.contributionMarginRate * 100);
+      const coveragePct = Math.round((margin.quality.costCoverage ?? 0) * 100);
+      const breakevenRoas =
+        margin.totals.contributionMarginRate > 0
+          ? (1 / margin.totals.contributionMarginRate).toFixed(1)
+          : null;
+      // Only assert a hard breakeven when cost coverage is real (≥60%),
+      // matching the dashboard's ProfitAccuracyBadge — otherwise flag it as an
+      // estimate so the model never crosses a competitor discount against a
+      // margin the store can't stand behind.
+      const solid = (margin.quality.costCoverage ?? 0) >= 0.6;
+      facts.push(
+        t(
+          `המרווח שלכם (30 יום): שיעור רווח תרומה ${ratePct}%${
+            breakevenRoas ? `, ROAS איזון ×${breakevenRoas}` : ""
+          } · כיסוי עלויות ${coveragePct}%${solid ? "" : " (מוערך — לצלוב הנחת מתחרה בזהירות)"}. ` +
+            `כל הנחת מתחרה למעלה נצלבת מול המרווח הזה — הנחה שמתחת ל${ratePct}% שוחקת רווח, לא רק מכירה.`,
+          `Your margin (30d): contribution-margin rate ${ratePct}%${
+            breakevenRoas ? `, breakeven ROAS ×${breakevenRoas}` : ""
+          } · cost coverage ${coveragePct}%${solid ? "" : " (estimated — cross competitor discounts against it cautiously)"}. ` +
+            `Every competitor discount above is read against THIS margin — a cut deeper than ${ratePct}% erodes profit, not just a sale.`
+        )
+      );
     }
   } catch { /* best-effort */ }
 
@@ -660,7 +723,10 @@ async function buildLiveFacts(storeId: string): Promise<string> {
       select: { title: true, severity: true }
     })) as Array<{ title: string; severity: string }>;
     if (alerts.length) {
-      facts.push(`התראות פתוחות שמחכות להחלטה: ` + alerts.map((a) => `[${a.severity}] ${a.title}`).join(" · "));
+      facts.push(
+        t("התראות פתוחות שמחכות להחלטה: ", "Open alerts awaiting a decision: ") +
+          alerts.map((a) => `[${a.severity}] ${a.title}`).join(" · ")
+      );
     }
   } catch { /* best-effort */ }
 
@@ -674,36 +740,71 @@ export async function generateBiBrief(
   storeId?: string,
   locale: "he" | "en" = "he"
 ): Promise<BiBriefAnswer | null> {
-  const answerLang = locale === "he" ? "ענה בעברית בלבד." : "Answer in English only — every field in English.";
-  const liveFacts = storeId ? await buildLiveFacts(storeId).catch(() => "") : "";
-  const question =
-    `אתה אנליסט BI למותג איקומרס. לפניך (א) נתוני אמת חיים מהחנות ו(ב) תמונת מודיעין ` +
-    `מתחרים. ענה בעברית בלבד.\n\n` +
-    `הקשר החנות: ${intel.storeContext}\n` +
-    (liveFacts ? `\nנתוני אמת חיים מהחנות (מקור: מסד הנתונים, עכשיו):\n${liveFacts}\n` : "") +
-    `\nמתחרים:\n` +
-    intel.competitors
-      .map((c) => `- ${c.name}: ${c.move} משמעות: ${c.implication}`)
-      .join("\n") +
-    `\n\nמשפיעניות: ${intel.influencerNote}\n\n` +
-    `תן בדיוק 3 פעולות לביצוע היום ו3 פעולות לשבוע הקרוב, כל אחת כאובייקט עם 4 שדות:\n` +
-    `- action: משפט פקודה קצר ונקי (עד 12 מילים), בלי סוגריים ובלי מספרים.\n` +
-    `- why: הסבר במשפטשניים בעברית פשוטה — כאן שמים את המספרים מהנתונים, ומסבירים ` +
-    `כל מונח מקצועי במילים פשוטות (למשל: ROAS = כמה שקלים חוזרים על כל שקל פרסום).\n` +
-    `- how: איך מבצעים בפועל — באיזה מסך/כלי (מנהל המודעות של מטא, ההגדרות בשופיפיי, ` +
-    `מסך ההתראות באפליקציה) ומה בדיוק לוחצים/משנים.\n` +
-    `- target: יעד מדיד לשבוע במספרים, או null אם אין.\n` +
-    `רף איכות — פעולה שלא עומדת בו פסולה:\n` +
-    `(1) כל פעולה נשענת על מוצר, קמפיין או התראה ספציפיים מנתוני האמת למעלה.\n` +
-    `(2) אסורות פעולות כלליות ("השק קמפיין עם סיפור", "הגדר מעקב", "שקול", "בחן").\n` +
-    `(3) אל תסיק סיבתיות שלא נמדדה ואל תמציא תאריכים/מספרים/מבצעים.\n` +
-    `(4) משפיעניות: רק אם יש להן אזכור בנתונים, ורק כצעד תהליכי — לא "surge".\n` +
-    `(5) המודיעין על המתחרים הוא הקשר לתעדוף — לא תחליף לנתוני האמת.\n` +
-    `(6) סגנון: אל תשתמש במקף מחבר בין אותיות שימוש למספרים או מילים לועזיות — ` +
-    `כתוב "ב31 אוגוסט", "הROAS", "מ4" (בלי מקף).`;
-  const jsonHint =
-    `{"today": [{"action": "...", "why": "...", "how": "...", "target": "... או null"}, ...3 פריטים], ` +
-    `"thisWeek": [{"action": "...", "why": "...", "how": "...", "target": null}, ...3 פריטים]}`;
+  const isHe = locale === "he";
+  const liveFacts = storeId ? await buildLiveFacts(storeId, locale).catch(() => "") : "";
+  // Localized so the viewer's language is honored end-to-end. The old prompt
+  // was hard-coded Hebrew — answerLang was computed but never inserted — so an
+  // English viewer still got a Hebrew brief (owner report, 2 Sep 2026).
+  const question = isHe
+    ? `את הילומה, אנליסטית BI למותג איקומרס. לפנייך (א) נתוני אמת חיים מהחנות ו(ב) תמונת מודיעין ` +
+      `מתחרים. ענה בעברית בלבד.\n\n` +
+      `הקשר החנות: ${intel.storeContext}\n` +
+      (liveFacts ? `\nנתוני אמת חיים מהחנות (מקור: מסד הנתונים, עכשיו):\n${liveFacts}\n` : "") +
+      `\nמתחרים:\n` +
+      intel.competitors
+        .map((c) => `- ${c.name}: ${c.move} משמעות: ${c.implication}`)
+        .join("\n") +
+      `\n\nמשפיעניות: ${intel.influencerNote}\n\n` +
+      `היתרון שלך הוא ההצלבה: כל פעולה חוצה בין מהלך מתחרה ספציפי לבין נתון האמת של החנות ` +
+      `(מרווח, מוצר, קמפיין). מהלך מתחרה בלי הצלבה למספר של החנות אינו פעולה.\n\n` +
+      `תני בדיוק 3 פעולות לביצוע היום ו3 פעולות לשבוע הקרוב, כל אחת כאובייקט עם 4 שדות:\n` +
+      `- action: משפט פקודה קצר ונקי (עד 12 מילים), בלי סוגריים ובלי מספרים.\n` +
+      `- why: הסבר במשפט-שניים בעברית פשוטה — כאן שמים את המספרים מהנתונים, ומסבירים ` +
+      `כל מונח מקצועי במילים פשוטות (למשל: ROAS = כמה שקלים חוזרים על כל שקל פרסום).\n` +
+      `- how: איך מבצעים בפועל — באיזה מסך/כלי (מנהל המודעות של מטא, ההגדרות בשופיפיי, ` +
+      `מסך ההתראות באפליקציה) ומה בדיוק לוחצים/משנים.\n` +
+      `- target: יעד מדיד לשבוע במספרים, או null אם אין.\n` +
+      `רף איכות — פעולה שלא עומדת בו פסולה:\n` +
+      `(1) לפחות 2 מ-3 הפעולות בכל רשימה חוצות מהלך מתחרה מפורש מול נתון אמת של החנות ` +
+      `(למשל "המתחרה X מוריד ל-40% — המרווח שלך Y%, אל תתאים").\n` +
+      `(2) אסורות פעולות כלליות ("השק קמפיין עם סיפור", "הגדר מעקב", "שקול", "בחן").\n` +
+      `(3) אל תסיקי סיבתיות שלא נמדדה ואל תמציאי תאריכים/מספרים/מבצעים/מתחרים.\n` +
+      `(4) משפיעניות: רק אם יש להן אזכור בנתונים, ורק כצעד תהליכי — לא "surge".\n` +
+      `(5) הנחת מתחרה נצלבת תמיד מול שיעור המרווח של החנות לפני המלצה על תגובת מחיר.\n` +
+      `(6) סגנון: אל תשתמשי במקף מחבר בין אותיות שימוש למספרים או מילים לועזיות — ` +
+      `כתבי "ב31 אוגוסט", "הROAS", "מ4" (בלי מקף).`
+    : `You are Hiloma, a BI analyst for an e-commerce brand. You have (a) live store facts and ` +
+      `(b) a competitor-intel snapshot. Answer in English only — every field in English.\n\n` +
+      `Store context: ${intel.storeContext}\n` +
+      (liveFacts ? `\nLive store facts (source: the database, right now):\n${liveFacts}\n` : "") +
+      `\nCompetitors:\n` +
+      intel.competitors
+        .map((c) => `- ${c.name}: ${c.move} Implication: ${c.implication}`)
+        .join("\n") +
+      `\n\nInfluencers: ${intel.influencerNote}\n\n` +
+      `Your edge is the CROSS: every action crosses a specific competitor move against a real ` +
+      `store number (margin, product, campaign). A competitor move with no cross to a store number ` +
+      `is not an action.\n\n` +
+      `Give EXACTLY 3 actions to do today and 3 for this coming week, each an object with 4 fields:\n` +
+      `- action: a short, clean imperative (max 12 words), no parentheses and no numbers.\n` +
+      `- why: a one-to-two sentence plain-English explanation — put the numbers from the facts HERE, ` +
+      `and explain any jargon in plain words (e.g. ROAS = shekels returned per shekel of ad spend).\n` +
+      `- how: how to actually do it — which screen/tool (Meta Ads Manager, Shopify settings, the ` +
+      `in-app alerts screen) and exactly what to click/change.\n` +
+      `- target: a measurable weekly target in numbers, or null if none.\n` +
+      `Quality bar — an action that fails it is rejected:\n` +
+      `(1) At least 2 of the 3 actions in each list cross an explicit competitor move against a real ` +
+      `store number (e.g. "competitor X is cutting to 40% — your margin is Y%, don't match").\n` +
+      `(2) No generic actions ("launch a campaign with a story", "set up tracking", "consider", "review").\n` +
+      `(3) Never infer causation that wasn't measured, and never invent dates/numbers/promos/competitors.\n` +
+      `(4) Influencers: only if they appear in the facts, and only as a process step — never a "surge".\n` +
+      `(5) A competitor discount is ALWAYS crossed against the store's margin rate before recommending a price response.\n` +
+      `(6) Style: write clean prose, no bracketed notes.`;
+  const jsonHint = isHe
+    ? `{"today": [{"action": "...", "why": "...", "how": "...", "target": "... או null"}, ...3 פריטים], ` +
+      `"thisWeek": [{"action": "...", "why": "...", "how": "...", "target": null}, ...3 פריטים]}`
+    : `{"today": [{"action": "...", "why": "...", "how": "...", "target": "... or null"}, ...3 items], ` +
+      `"thisWeek": [{"action": "...", "why": "...", "how": "...", "target": null}, ...3 items]}`;
   // Provider waterfall. OpenAI FIRST — it's the BI provider actually wired
   // on this deployment (same one the chat widget uses via bi-chat-service),
   // and the brief's question already carries every live fact it needs, so a
