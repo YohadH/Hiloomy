@@ -114,7 +114,11 @@ export function StoreSwitcher({
         aria-expanded={open}
       >
         {pending ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-        <span>{current?.name ?? (locale === "he" ? "בחרו מותג" : "Pick brand")}</span>
+        {/* The current brand name already appears as the page's <h2> title;
+            repeating it here rendered "hbosem hbosem" side by side once a
+            second brand made this switcher appear (QA run 6, 2 Sep 2026).
+            This is a switch control, so it says "switch brand", not the name. */}
+        <span>{locale === "he" ? "החלפת מותג" : "Switch brand"}</span>
         <ChevronDown className="h-3 w-3" aria-hidden />
       </button>
 
