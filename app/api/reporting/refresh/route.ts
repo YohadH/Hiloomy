@@ -60,17 +60,31 @@ export async function POST(request: Request) {
   // (TakeaNap, 2 Sep 2026). Kick it in the background and let the range apply
   // return as soon as the range-dependent syncs finish. (Render runs a
   // long-lived Node server, so the detached promise continues.)
-  void crawlPublicInstagramProfiles({ storeId }).catch((error) => {
-    console.warn("[reporting/refresh] background Instagram crawl failed:", error instanceof Error ? error.message : error);
-  });
+  const t0 = Date.now();
+  // Time every leg so the slow one is named in the logs instead of guessed.
+  // Look for "[reporting/refresh] timings" after an apply.
+  const timings: Record<string, number> = {};
+  const timed = <T,>(name: string, work: Promise<T>): Promise<T> => {
+    const started = Date.now();
+    return work.finally(() => {
+      timings[name] = Date.now() - started;
+    });
+  };
+
+  const igStarted = Date.now();
+  void timed("instagram_bg", crawlPublicInstagramProfiles({ storeId }))
+    .then(() => console.log(`[reporting/refresh] background Instagram crawl done in ${Date.now() - igStarted}ms`))
+    .catch((error) => {
+      console.warn("[reporting/refresh] background Instagram crawl failed:", error instanceof Error ? error.message : error);
+    });
 
   // ONE apply syncs the range-dependent platforms: Shopify, Meta,
   // competitors, GA4 and Search Console. Each is best-effort; a missing
   // connection resolves as a no-op, not a failure.
   const [shopify, meta, competitors, ga4, gsc] = await Promise.allSettled([
-    runIncrementalSync(storeId),
-    syncMetaAdsCampaignInsights({ storeId }),
-    syncCompetitorSignals(storeId, { range }).then(async (res) => {
+    timed("shopify", runIncrementalSync(storeId)),
+    timed("meta", syncMetaAdsCampaignInsights({ storeId })),
+    timed("competitors", syncCompetitorSignals(storeId, { range }).then(async (res) => {
       // Fresh snapshots → refresh the competitor-response alert queue too.
       await upsertCompetitorResponseAlerts({
         storeId,
@@ -78,13 +92,13 @@ export async function POST(request: Request) {
         end: new Date()
       }).catch(() => null);
       return res;
-    }),
-    (async () => {
+    })),
+    timed("ga4", (async () => {
       const property = await getGa4SelectedProperty(storeId).catch(() => null);
       if (!property) return { skipped: true };
       return syncGa4Data(storeId);
-    })(),
-    (async () => {
+    })()),
+    timed("gsc", (async () => {
       const db = getDb();
       const store = (await db.store
         .findUnique({ where: { id: storeId }, select: { domain: true } })
@@ -93,8 +107,16 @@ export async function POST(request: Request) {
       const selectedSite = await getGscSelectedSiteUrl(storeId).catch(() => null);
       const siteUrl = selectedSite ?? `sc-domain:${store.domain}`;
       return syncGscData(storeId, siteUrl);
-    })()
+    })())
   ]);
+
+  console.log(
+    `[reporting/refresh] timings (ms) storeId=${storeId} total=${Date.now() - t0} ` +
+      Object.entries(timings)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, ms]) => `${name}=${ms}`)
+        .join(" ")
+  );
 
   return NextResponse.json({
     ok: true,
