@@ -67,10 +67,23 @@ export async function getMetaCampaignsOverview(
   const db = getDb();
   if (!db?.metaAdsCampaignInsight) return null;
 
+  // Scope to the CURRENTLY connected ad account. Without this, rows synced
+  // earlier under a different (wrongly auto-picked) account stay visible for
+  // this store forever — hbosem showed Incense's "JulyPromotions" even after
+  // a sync that returned 0 rows (2 Sep 2026). No connection, or no account
+  // chosen yet → nothing to show.
+  const connection = db.metaAdsConnection
+    ? ((await db.metaAdsConnection
+        .findUnique({ where: { storeId }, select: { adAccountId: true } })
+        .catch(() => null)) as { adAccountId: string | null } | null)
+    : null;
+  if (!connection?.adAccountId) return null;
+
   const rows = (await db.metaAdsCampaignInsight
     .findMany({
       where: {
         storeId,
+        adAccountId: connection.adAccountId,
         level: "campaign",
         dateStart: { gte: range.start },
         dateStop: { lte: range.end }

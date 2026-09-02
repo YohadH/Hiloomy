@@ -156,6 +156,14 @@ export async function POST(request: Request) {
         lastSyncError: null
       }
     });
+    // Purge insight rows from any OTHER ad account for this store, so the
+    // dashboard can never show the previous account's campaigns after a
+    // switch (the stale-JulyPromotions bug, 2 Sep 2026).
+    if (db.metaAdsCampaignInsight?.deleteMany) {
+      await db.metaAdsCampaignInsight
+        .deleteMany({ where: { storeId, adAccountId: { not: picked.id } } })
+        .catch(() => null);
+    }
     return NextResponse.json({
       ok: true,
       adAccountId: picked.id,
