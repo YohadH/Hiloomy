@@ -24,6 +24,12 @@ export async function GET(request: Request) {
     await saveInstagramConnection(token.accessToken, auth.storeId);
     return NextResponse.redirect(`${appUrl}/settings?instagram=connected`);
   } catch (error) {
+    // Log the real reason: this path fails silently for the user (they land
+    // back on /settings still "not connected"). The usual causes are a
+    // redirect_uri not registered verbatim in the Meta app's Instagram
+    // product, or an IG account that isn't a professional (business/creator)
+    // account — both only visible here (2 Sep 2026).
+    console.error("[instagram/oauth/callback] connect failed:", error instanceof Error ? error.message : error);
     return NextResponse.redirect(`${appUrl}/settings?instagram_error=${encodeURIComponent(toErrorMessage(error))}`);
   }
 }

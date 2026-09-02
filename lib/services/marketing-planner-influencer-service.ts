@@ -11,8 +11,14 @@ import type {
 import { getDb } from "@/lib/server/db";
 import { toNumber } from "@/lib/server/numbers";
 
-const BRAND_INSTAGRAM_URL = "https://www.instagram.com/incenseparfums/";
-const BRAND_INSTAGRAM_USERNAME = "incenseparfums";
+// The brand's Instagram is resolved PER STORE from its own connection — a
+// hardcoded default here was Incense's handle, so every other brand's
+// influencer warnings pointed at @incenseparfums (cross-tenant leak, 2 Sep
+// 2026). Null when the store has no connected handle.
+function brandInstagramUrlFor(username: string | null | undefined): string | null {
+  const handle = String(username ?? "").trim().replace(/^@+/, "");
+  return handle ? `https://www.instagram.com/${handle}/` : null;
+}
 const PUBLIC_INSTAGRAM_PLATFORM = "instagram_public";
 
 function formatDateKey(value: Date) {
@@ -218,6 +224,11 @@ export async function buildInstagramCrawlEvidence(
     };
   }
 
+  // This store's OWN Instagram handle — never a hardcoded default.
+  const brandConn = await db.instagramConnection
+    ?.findUnique({ where: { storeId }, select: { username: true } })
+    .catch(() => null);
+  const brandUsername = normalizeInstagramUsername(brandConn?.username ?? null);
   const [latestRun, profiles] = await Promise.all([
     db.syncRun.findFirst({
       where: { storeId, mode: "instagram_public_crawl" },
@@ -267,20 +278,22 @@ export async function buildInstagramCrawlEvidence(
     postsByUsername.set(username, [...(postsByUsername.get(username) ?? []), post]);
   }
 
-  const brandProfile = buildInstagramProfileEvidence({
-    username: BRAND_INSTAGRAM_USERNAME,
-    role: "brand",
-    profile: profilesByUsername.get(BRAND_INSTAGRAM_USERNAME) ?? null,
-    crawl: latestCrawledProfiles.get(BRAND_INSTAGRAM_USERNAME) ?? null,
-    posts: postsByUsername.get(BRAND_INSTAGRAM_USERNAME) ?? [],
-    lastRunAt,
-    locale
-  });
+  const brandProfile = brandUsername
+    ? buildInstagramProfileEvidence({
+        username: brandUsername,
+        role: "brand",
+        profile: profilesByUsername.get(brandUsername) ?? null,
+        crawl: latestCrawledProfiles.get(brandUsername) ?? null,
+        posts: postsByUsername.get(brandUsername) ?? [],
+        lastRunAt,
+        locale
+      })
+    : null;
 
   const affiliateProfiles = (members as any[])
     .map((member) => {
       const username = normalizeInstagramUsername(member.instagramProfileUrl) ?? normalizeInstagramUsername(member.instagramUsername);
-      if (!username || username === BRAND_INSTAGRAM_USERNAME) return null;
+      if (!username || username === brandUsername) return null;
 
       return buildInstagramProfileEvidence({
         username,
@@ -301,7 +314,7 @@ export async function buildInstagramCrawlEvidence(
       id: post.id,
       username,
       creatorName: post.creatorProfile?.displayName ?? username,
-      role: username === BRAND_INSTAGRAM_USERNAME ? "brand" : "creator",
+      role: brandUsername && username === brandUsername ? "brand" : "creator",
       permalink: post.permalink ?? null,
       mediaType: post.mediaType ?? "Media",
       postedAt: post.postedAt instanceof Date ? post.postedAt.toISOString() : new Date().toISOString(),
@@ -465,6 +478,10 @@ export async function buildMarketingPlannerInfluencerIntelligence(
   const contentStart = hasExplicitRange
     ? previousMonth.start
     : new Date(previousMonth.start.getFullYear(), previousMonth.start.getMonth() - 2, 1);
+  const igConn = await db.instagramConnection
+    ?.findUnique({ where: { storeId: storeScope.storeId }, select: { username: true } })
+    .catch(() => null);
+  const brandInstagramUrl = brandInstagramUrlFor(igConn?.username);
   const [members, attributions, sessions, posts] = await Promise.all([
     db.affiliateMember
       ? db.affiliateMember.findMany({
@@ -634,7 +651,11 @@ export async function buildMarketingPlannerInfluencerIntelligence(
   const sourceTypes = new Set((attributions as any[]).map((row) => normalizeSource(row.trackingMethod || row.sourceType)).filter(Boolean));
 
   if (!contentWinners.length) {
-    dataWarnings.push(`לא נמצאו פוסטים/רילז מסונכרנים מהחשבון ${BRAND_INSTAGRAM_URL}; כרגע הדירוג נשען בעיקר על קופונים, bg_ref והזמנות.`);
+    dataWarnings.push(
+      brandInstagramUrl
+        ? `לא נמצאו פוסטים/רילז מסונכרנים מהחשבון ${brandInstagramUrl}; כרגע הדירוג נשען בעיקר על קופונים, bg_ref והזמנות.`
+        : `אין חשבון אינסטגרם מחובר למותג הזה, אז אין פוסטים/רילז לסריקה; כרגע הדירוג נשען בעיקר על קופונים, bg_ref והזמנות. חברו את האינסטגרם של המותג כדי להוסיף ניתוח תוכן.`
+    );
   }
 
   if (!totalClicks && totalOrders > 0) {
@@ -671,7 +692,7 @@ export async function buildMarketingPlannerInfluencerIntelligence(
 
   return {
     source: "affiliate_portal",
-    brandInstagramUrl: BRAND_INSTAGRAM_URL,
+    brandInstagramUrl,
     periodLabel,
     periodStart: formatDateKey(previousMonth.start),
     periodEnd: formatDateKey(previousMonth.end),

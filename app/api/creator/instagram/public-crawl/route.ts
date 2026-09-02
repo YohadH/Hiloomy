@@ -26,7 +26,9 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const result = await crawlPublicInstagramProfiles({
       storeId: typeof body.storeId === "string" ? body.storeId : null,
-      brandUsername: typeof body.brandUsername === "string" ? body.brandUsername : "incenseparfums",
+      // No hardcoded default — the crawler resolves the brand handle from the
+      // store's own Instagram connection when none is passed.
+      brandUsername: typeof body.brandUsername === "string" ? body.brandUsername : null,
       creatorHandles: parseHandles(body.creatorHandles),
       brandLimit: Number.isFinite(Number(body.brandLimit)) ? Number(body.brandLimit) : null,
       creatorLimit: Number.isFinite(Number(body.creatorLimit)) ? Number(body.creatorLimit) : null

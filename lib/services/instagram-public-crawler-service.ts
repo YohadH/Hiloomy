@@ -4,7 +4,6 @@ import { getGrowthAgentStoreContext } from "@/lib/services/growth-agent-service"
 
 const INSTAGRAM_PROFILE_ENDPOINT = "https://www.instagram.com/api/v1/users/web_profile_info/";
 const PUBLIC_CRAWLER_PLATFORM = "instagram_public";
-const DEFAULT_BRAND_USERNAME = "incenseparfums";
 const DEFAULT_BRAND_LIMIT = 24;
 const DEFAULT_CREATOR_LIMIT = 12;
 const MAX_PROFILES_PER_RUN = 25;
@@ -313,7 +312,7 @@ function profileUrl(username: string) {
   return `https://www.instagram.com/${username}/`;
 }
 
-async function getStoredCreatorTargets(db: any, storeId: string, brandUsername: string, creatorLimit: number) {
+async function getStoredCreatorTargets(db: any, storeId: string, brandUsername: string | null, brandTerms: string[], creatorLimit: number) {
   if (!db.creatorProfile) return [];
 
   const rows = await db.creatorProfile.findMany({
@@ -337,11 +336,11 @@ async function getStoredCreatorTargets(db: any, storeId: string, brandUsername: 
     username,
     role: "creator" as const,
     limit: creatorLimit,
-    relatedTerms: [brandUsername, "incense", "incenseparfums", "incense parfums", "אינסנס"]
+    relatedTerms: brandTerms
   }));
 }
 
-async function getAffiliateCreatorTargets(db: any, storeId: string, brandUsername: string, creatorLimit: number) {
+async function getAffiliateCreatorTargets(db: any, storeId: string, brandUsername: string | null, brandTerms: string[], creatorLimit: number) {
   if (!db.affiliateMember) return [];
 
   const rows = await db.affiliateMember.findMany({
@@ -370,11 +369,7 @@ async function getAffiliateCreatorTargets(db: any, storeId: string, brandUsernam
     if (!username || username === brandUsername) continue;
 
     const relatedTerms = [
-      brandUsername,
-      "incense",
-      "incenseparfums",
-      "incense parfums",
-      "אינסנס",
+      ...brandTerms,
       row.affiliateCode,
       row.couponCode
     ].map(normalizeRelatedTerm).filter(Boolean) as string[];
@@ -574,8 +569,23 @@ export async function crawlPublicInstagramProfiles(input: InstagramPublicCrawler
   if (!store.connected) throw new AppError("Connect a Shopify store before running the Instagram public crawler.", 400);
 
   const startedAt = new Date();
-  const brandUsername = normalizeUsername(input.brandUsername) ?? DEFAULT_BRAND_USERNAME;
-  const brandTerms = [brandUsername, "incense", "incenseparfums", "incense parfums", "אינסנס"];
+  // The brand handle is THIS store's own Instagram — never a hardcoded
+  // default (that was Incense's handle, so every other brand crawled and
+  // warned about @incenseparfums; a cross-tenant leak, 2 Sep 2026). Prefer
+  // the explicit arg, else the store's connected IG username. If neither
+  // exists we crawl creators only and skip the brand page entirely.
+  const igConnection = await db.instagramConnection
+    .findUnique({ where: { storeId: store.id }, select: { username: true } })
+    .catch(() => null);
+  const brandUsername =
+    normalizeUsername(input.brandUsername) ?? normalizeUsername(igConnection?.username ?? null);
+  // Related terms come from the store's own handle + name tokens, not a
+  // competitor's brand words.
+  const nameTokens = String(store.name ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9֐-׿]+/i)
+    .filter((token) => token.length >= 3);
+  const brandTerms = Array.from(new Set([brandUsername, ...nameTokens].filter(Boolean))) as string[];
   const brandLimit = clampLimit(input.brandLimit, DEFAULT_BRAND_LIMIT);
   const creatorLimit = clampLimit(input.creatorLimit, DEFAULT_CREATOR_LIMIT);
   const explicitCreatorHandles = parseHandles(input.creatorHandles);
@@ -586,8 +596,8 @@ export async function crawlPublicInstagramProfiles(input: InstagramPublicCrawler
     relatedTerms: brandTerms
   }));
   const [storedCreatorTargets, affiliateTargets] = await Promise.all([
-    getStoredCreatorTargets(db, store.id, brandUsername, creatorLimit),
-    getAffiliateCreatorTargets(db, store.id, brandUsername, creatorLimit)
+    getStoredCreatorTargets(db, store.id, brandUsername, brandTerms, creatorLimit),
+    getAffiliateCreatorTargets(db, store.id, brandUsername, brandTerms, creatorLimit)
   ]);
   const targetByUsername = new Map<string, InstagramCrawlerTarget>();
   for (const target of [...explicitCreatorTargets, ...storedCreatorTargets, ...affiliateTargets]) {
@@ -599,8 +609,12 @@ export async function crawlPublicInstagramProfiles(input: InstagramPublicCrawler
     }
   }
   const creatorTargets = Array.from(targetByUsername.values()).slice(0, MAX_PROFILES_PER_RUN - 1);
+  // Only crawl a brand page when THIS store has a handle — never fall back to
+  // someone else's brand.
   const profilesToCrawl = [
-    { username: brandUsername, role: "brand" as const, limit: brandLimit, relatedTerms: brandTerms },
+    ...(brandUsername
+      ? [{ username: brandUsername, role: "brand" as const, limit: brandLimit, relatedTerms: brandTerms }]
+      : []),
     ...creatorTargets
   ];
   const warnings: string[] = [];

@@ -221,7 +221,7 @@ export interface MarketingPlannerInfluencerAction {
 
 export interface MarketingPlannerInfluencerIntelligence {
   source: "affiliate_portal";
-  brandInstagramUrl: string;
+  brandInstagramUrl: string | null;
   periodLabel: string;
   periodStart: string;
   periodEnd: string;
