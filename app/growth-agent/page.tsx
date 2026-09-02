@@ -5,6 +5,9 @@ import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getGrowthAgentOverview } from "@/lib/services/growth-agent-overview-service";
 import { getGrowthAgentStoreContext } from "@/lib/services/growth-agent-service";
 import { getHilomaNextMove } from "@/lib/services/hiloma-next-move-service";
+import { buildIdeaEngine } from "@/lib/services/idea-engine-service";
+import { IdeaEnginePanel } from "@/components/growth-agent/idea-engine-panel";
+import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { listOpenAlerts } from "@/lib/services/alert-writer-service";
 import { GrowthAgentNav } from "@/components/growth-agent/agent-nav";
 import { GrowthFindingsList } from "@/components/growth-agent/findings-list";
@@ -38,11 +41,17 @@ export default async function GrowthAgentPage() {
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
   const { store } = await getGrowthAgentStoreContext();
-  const [chrome, overview, nextMove, alerts] = await Promise.all([
+  const selection = await getReportingDateRangeSelection(isHe ? "he" : "en").catch(() => null);
+  const [chrome, overview, nextMove, alerts, ideaEngine] = await Promise.all([
     getAppChromeData(store.id),
     getGrowthAgentOverview(store.id),
     getHilomaNextMove(store.id, isHe ? "he" : "en").catch(() => ({ move: null, pending: false, available: false })),
-    listOpenAlerts({ storeId: store.id, limit: 8 }).catch(() => [] as Array<Record<string, unknown>>)
+    listOpenAlerts({ storeId: store.id, limit: 8 }).catch(() => [] as Array<Record<string, unknown>>),
+    buildIdeaEngine({
+      storeId: store.id,
+      start: selection?.start,
+      end: selection?.end
+    }).catch(() => null)
   ]);
 
   const pendingActions = overview.actions.filter((a) => a.status === "pending_approval" || a.status === "recommended");
@@ -73,7 +82,22 @@ export default async function GrowthAgentPage() {
           <NextMoveCard move={nextMove.move} pending={nextMove.pending} available={nextMove.available} locale={isHe ? "he" : "en"} />
         </section>
 
-        {/* 2. Action needed */}
+        {/* 2. The Idea Engine — ranked by money */}
+        {ideaEngine ? (
+          <section className="space-y-3">
+            <SectionHead
+              eyebrow={lang("מנוע הרעיונות", "The Idea Engine")}
+              title={lang("מהלכים מדורגים לפי כסף", "Moves ranked by money")}
+              hint={lang(
+                "כל מהלך עם ה-₪ שמאחוריו, מדורג לפי השפעה חודשית חלקי מאמץ. הילומה ממליצה — אתם מאשרים.",
+                "Every move with the ₪ behind it, ranked by monthly impact ÷ effort. Hiloma recommends — you approve."
+              )}
+            />
+            <IdeaEnginePanel report={ideaEngine} isHe={isHe} />
+          </section>
+        ) : null}
+
+        {/* 3. Action needed */}
         <section className="space-y-3">
           <SectionHead
             eyebrow={lang("דורש פעולה", "Action needed")}
