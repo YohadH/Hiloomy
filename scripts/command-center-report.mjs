@@ -119,7 +119,7 @@ async function main() {
   // ── 1 · Homepage merchandiser (real HSS) ──────────────────────────────
   await section("1", "מרצ'נדייזר עמוד הבית", "maker", async () => {
     const rep = await buildHomepageMerchandiser({ storeId, start, end: now });
-    if (rep.scored.length === 0) return { html: pending("אין מספיק נתוני מכירות ועלות כדי לדרג את עמוד הבית."), facts: "" };
+    if (rep.scored.length === 0) return { empty: true };
     const top = rep.scored.filter((p) => p.move !== "remove").slice(0, 8);
     const removes = rep.removeList.slice(0, 5);
     kpi.opportunities += top.filter((p) => p.move === "promote").length;
@@ -144,15 +144,14 @@ async function main() {
 
   // ── 2 · Stockout interception (pending competitor data) ───────────────
   await section("2", "יירוט חוסרי מלאי אצל מתחרים", "maker", async () => ({
-    html: pending("דורש נתוני זמינות מלאי של מתחרים ברמת המוצר (RivalSweeper /signals/stock-events) — עדיין לא זורם. יופעל ברגע שהספק יספק התאמת מוצר-מול-מוצר."),
-    facts: ""
+    empty: true
   }));
 
   // ── 3 · Repricing (local margin floor; rival prices pending) ──────────
   await section("3", "תמחור בטוח-מרווח", "maker", async () => {
     const { rows, summary } = await listProductCosts(storeId, { start, end: now });
     const sold = rows.filter((r) => r.unitsSold > 0 && (r.costOverrideAmount != null || r.estimatedCost > 0));
-    if (sold.length === 0) return { html: pending("אין מוצרים שנמכרו עם עלות ידועה בחלון."), facts: "" };
+    if (sold.length === 0) return { empty: true };
     const coveragePct = Math.round((summary.costCoverage ?? 0) * 100);
     const withOverride = sold.filter((r) => r.costOverrideAmount != null).length;
     const floor = (r) => (r.effectiveUnitCost > 0 ? r.effectiveUnitCost / (1 - 0.35) : null);
@@ -185,7 +184,7 @@ async function main() {
     const overview = await getMetaCampaignsOverview(storeId, lastNDaysRange(7, tz)).catch(() => null);
     const margin = await buildContributionMargin({ storeId, start, end: now }).catch(() => null);
     const campaigns = (overview?.campaigns ?? []).filter((c) => c.activeRecently && c.spend >= 100).sort((a, b) => b.spend - a.spend);
-    if (campaigns.length === 0) return { html: pending("אין קמפיינים פעילים במטא בחלון, או שחשבון המודעות לא מחובר."), facts: "" };
+    if (campaigns.length === 0) return { empty: true };
     const breakeven = margin && margin.totals.contributionMarginRate > 0 && (margin.quality.costCoverage ?? 0) >= 0.6
       ? 1 / margin.totals.contributionMarginRate
       : null;
@@ -211,7 +210,7 @@ async function main() {
     const start90 = new Date(now.getTime() - 90 * 86_400_000);
     const { rows } = await listProductCosts(storeId, { start: start90, end: now });
     const sold = rows.filter((r) => r.revenue > 0).sort((a, b) => b.revenue - a.revenue);
-    if (sold.length === 0) return { html: pending("אין מכירות ב-90 הימים האחרונים."), facts: "" };
+    if (sold.length === 0) return { empty: true };
     const total = sold.reduce((s, r) => s + r.revenue, 0);
     const top = sold.slice(0, 8).map((r) => ({ ...r, share: total > 0 ? r.revenue / total : 0 }));
     kpi.revenueAtRisk += Math.round(top.slice(0, 3).reduce((s, r) => s + r.revenue, 0) / 3); // monthly-ish proxy
@@ -237,7 +236,7 @@ async function main() {
     const brief = await getCompetitorBrief(storeId, "he").catch(() => null);
     const cards = scored?.cards ?? [];
     const hasDiscounts = Array.isArray(cards) && cards.length > 0;
-    if (!hasDiscounts && !brief) return { html: pending("אין קודי הנחה פעילים ואין מודיעין מתחרים על מבצעים."), facts: "" };
+    if (!hasDiscounts && !brief) return { empty: true };
     const facts =
       (hasDiscounts
         ? `קודי ההנחה שלכם (חלון ${days} ימים) — קוד, עלות הנחה, מרווח אחרי הנחה, הכנסת ברוטו, פסיקה:\n` +
@@ -258,14 +257,13 @@ async function main() {
 
   // ── 7 · Trend radar (pending launch data) ─────────────────────────────
   await section("7", "רדאר טרנדים ומגוון", "helper", async () => ({
-    html: pending("דורש נתוני השקות מוצרים של מתחרים (RivalSweeper /signals/launches) — עדיין לא זורם."),
-    facts: ""
+    empty: true
   }));
 
   // ── 8 · AOV bundle builder (real co-occurrence) ───────────────────────
   await section("8", "בונה באנדלים להעלאת סל", "maker", async () => {
     const pairs = await coBoughtPairs(storeId, new Date(now.getTime() - 90 * 86_400_000), now);
-    if (pairs.length === 0) return { html: pending("אין מספיק הזמנות מרובות-פריטים כדי לזהות רכישות משותפות."), facts: "" };
+    if (pairs.length === 0) return { empty: true };
     const rowsHtml = pairs
       .slice(0, 6)
       .map((p) => `<tr><td class="prod">${esc(p.a)} + ${esc(p.b)}</td><td class="n">×${p.lift.toFixed(1)}</td><td class="n">${p.count}</td></tr>`)
@@ -291,19 +289,25 @@ async function main() {
 }
 
 // Register + render one section: gather → ask Hiloma → capture HTML.
+// A gather that returns { empty: true } (no data for this section) is SKIPPED
+// entirely — the report never shows a "pending / no data" section (owner:
+// "don't show empty sections"). Section numbers are assigned at render time
+// from the sections that actually made it in, so there are no gaps.
 async function section(idx, title, kind, gather) {
   log(`section ${idx} — ${title}…`);
-  let body = pending("שגיאה באיסוף הנתונים לסעיף זה.");
-  let facts = "";
+  let res;
   try {
-    const res = await gather();
-    body = res.html;
-    facts = res.facts;
+    res = await gather();
   } catch (err) {
     log(`section ${idx} gather failed: ${err instanceof Error ? err.message : err}`);
+    return; // an errored section has no data — omit it
   }
-  const bi = await askHiloma(title, facts);
-  sections.push({ idx, title, kind, body, bi });
+  if (!res || res.empty || !res.html) {
+    log(`section ${idx} — no data, omitted`);
+    return;
+  }
+  const bi = await askHiloma(title, res.facts ?? "");
+  sections.push({ title, kind, body: res.html, bi });
 }
 
 // Order line-item co-occurrence → lift, for the bundle section.
@@ -369,13 +373,17 @@ const tagHtml = (kind) =>
 
 function assemble() {
   const runDate = now.toLocaleDateString("he-IL", { day: "numeric", month: "long", year: "numeric" });
-  const compLine = competitorNames.length ? `${competitorNames.length} — ${competitorNames.slice(0, 6).join(" · ")}` : "אין מתחרים מוגדרים";
+  // Latin competitor names inside RTL Hebrew scramble under the bidi
+  // algorithm — isolate the list as LTR so it reads in order.
+  const compLine = competitorNames.length
+    ? `${competitorNames.length} — <bdi dir="ltr" style="unicode-bidi:isolate">${esc(competitorNames.slice(0, 6).join(" · "))}</bdi>`
+    : "אין מתחרים מוגדרים";
   const sectionHtml = sections
     .map(
-      (s) => `
+      (s, i) => `
       <section>
         <div class="sec-head">
-          <div class="sec-idx">${s.idx}</div>
+          <div class="sec-idx">${i + 1}</div>
           <div><div class="sec-title">${esc(s.title)}${tagHtml(s.kind)}</div></div>
         </div>
         <div class="bi">${biBlock(s.bi)}</div>
@@ -398,7 +406,7 @@ function assemble() {
     </div>
     <div class="meta-line">
       <span>📅 הופק: <b>${runDate}</b></span>
-      <span>🎯 מתחרים במעקב: <b>${esc(compLine)}</b></span>
+      <span>🎯 מתחרים במעקב: <b>${compLine}</b></span>
       <span>🤖 נכתב על ידי <b>הילומה</b>${biAvailable ? "" : " (ניתוח לא זמין בהרצה זו)"}</span>
       <span>🪟 חלון: <b>${days} ימים אחרונים</b></span>
     </div>
@@ -457,7 +465,7 @@ th,td{text-align:start;padding:9px 10px;border-bottom:1px solid #eeece6}
 th{font-size:11px;font-weight:700;color:#8b928b}
 tbody tr:last-child td{border-bottom:0}
 td.n,th.n{text-align:end;font-variant-numeric:tabular-nums}
-.prod{font-weight:600}.reason{color:#5c645d;font-size:12px}
+.prod{font-weight:600;unicode-bidi:plaintext}.reason{color:#5c645d;font-size:12px;unicode-bidi:plaintext}
 .hss{display:inline-grid;place-items:center;min-width:34px;height:26px;border-radius:8px;font-weight:800;font-family:'Rubik';font-size:13px}
 .hss.a{background:#e8f3ec;color:#1f7a54}.hss.b{background:#fbf1dc;color:#b7791f}.hss.c{background:#fae4e2;color:#b4362f}
 .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
