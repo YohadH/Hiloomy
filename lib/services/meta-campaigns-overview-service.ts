@@ -229,11 +229,12 @@ export interface MetaCampaignsInsight {
 }
 
 const INSIGHT_TTL_MS = 6 * 60 * 60 * 1000;
-// Version suffix (v2 = funnel + breakeven-aware prompt): bumping it retires
-// the old flat-metric cache so the richer analysis shows immediately instead
-// of waiting out the 6h TTL on stale entries.
-const insightCacheKey = (storeId: string, overview: MetaCampaignsOverview) =>
-  `meta_campaigns_insight:v2:${storeId}:${overview.rangeStart}:${overview.rangeEnd}`;
+// Version suffix (v3 = localized prompt + locale in the key): v2 keys ignored
+// the viewer's language, so whichever locale generated first was served to
+// every viewer of that store+window for the whole TTL. Bumping retires the
+// stale English entries immediately instead of waiting out the 6h TTL.
+const insightCacheKey = (storeId: string, locale: "he" | "en", overview: MetaCampaignsOverview) =>
+  `meta_campaigns_insight:v3:${storeId}:${locale}:${overview.rangeStart}:${overview.rangeEnd}`;
 
 interface DigestContext {
   storeName: string | null;
@@ -353,7 +354,7 @@ export async function buildMetaCampaignsInsight(input: {
   force?: boolean;
 }): Promise<MetaCampaignsInsight | null> {
   const db = getDb();
-  const key = insightCacheKey(input.storeId, input.overview);
+  const key = insightCacheKey(input.storeId, input.locale, input.overview);
 
   if (!input.force && db?.systemConfig) {
     const row = (await db.systemConfig
@@ -369,7 +370,7 @@ export async function buildMetaCampaignsInsight(input: {
     }
   }
 
-  const language = input.locale === "he" ? "Hebrew" : "English";
+  const isHe = input.locale === "he";
 
   // Store-specific profitability benchmark: breakeven ROAS = 1 / margin.
   // Only trust it when there's enough cost coverage to mean anything.
@@ -395,12 +396,33 @@ export async function buildMetaCampaignsInsight(input: {
     marginRatePct: trustMargin ? Math.round(marginRate! * 100) : null
   };
 
-  const prompt = `You are a senior Meta (Facebook/Instagram) media buyer AND conversion-rate analyst, reviewing an ad account for a store OWNER who is not a marketer. Be specific, honest, and practical. Adapt to the business model you see in the data: if purchases drive the funnel it is e-commerce; if purchases are ~0 but link clicks / leads flow, treat it as lead generation and switch to lead-gen best practices.
+  // Fully bilingual prompt (owner report, 3 Sep 2026): the old prompt asked
+  // for Hebrew in one clause ("writing in Hebrew") buried inside an otherwise
+  // all-English prompt with an English JSON template — the model followed the
+  // dominant language and Hebrew viewers got English. Same bug class and same
+  // fix as the competitor brief's bilingual prompts (bd8e467).
+  const prompt = isHe
+    ? `את הילומה, קניינית מדיה בכירה במטא (פייסבוק/אינסטגרם) וגם אנליסטית שיעורי המרה, שסוקרת חשבון מודעות עבור בעלי חנות שאינם אנשי שיווק. עני בעברית בלבד — כל שדה בעברית; שמות קמפיינים נשארים כלשונם. היי ספציפית, כנה ומעשית. התאימי את הניתוח למודל העסקי שעולה מהנתונים: אם רכישות מניעות את המשפך — זה איקומרס; אם הרכישות בערך 0 אבל זורמים קליקים או לידים — התייחסי לחשבון כעסק לידים ועברי לשיטות העבודה של עולם הלידים.
+
+נתוני החנות והקמפיינים:
+${buildDigest(input.overview, ctx)}
+
+הפיקי עבור הבעלים:
+1) פסק דין ROAS — אמרי בפשטות אם לחשבון כולו, ולכל קמפיין משמעותי, יש ROAS טוב או רע, בהשוואה לROAS נקודת האיזון של החנות שלמעלה (לא 3x/4x גנרי). נקבי במספרים. אם נקודת האיזון לא ידועה — אמרי שפסק דין מדויק דורש עלויות מוצר.
+2) שלב במשפך לכל קמפיין — הסיקי את התפקיד של כל קמפיין (ראש המשפך / מודעות, אמצע / שקילה, תחתית / רימרקטינג והמרה, או לידים). לכל קמפיין מצאי את השלב החלש ביותר — הנפילה הגדולה ביותר במשפך שלו — והסבירי מה היא אומרת במילים פשוטות. דוגמאות: חשיפות עם CTR נמוך = הוק/קריאייטיב חלש; קליקים אבל מעט צפיות בדף נחיתה = דף איטי או קישור שבור; צפיות בדף נחיתה אבל מעט הוספות לעגלה = בעיה בדף המוצר, במחיר או בהצעה; הוספות לעגלה אבל מעט רכישות = חיכוך בתשלום, במשלוח או באמון. אם שלב חימום הקהל (ראש המשפך) דל — אמרי זאת.
+3) פעולות מותאמות לנישה — לבעיות הגדולות ביותר תני את שיטת העבודה המומלצת לסוג העסק שזוהה (איקומרס או לידים) וגם ביצוע קונקרטי לחנות הזו שהבעלים יכולים לעשות השבוע. כל פעולה ברת ביצוע, לא גנרית ("לבדוק 3 וריאציות הוק שנפתחות בתועלת המוצר ב2 השניות הראשונות", לא "לשפר קריאייטיב").
+
+Respond with ONLY a JSON object, no markdown fences:
+{"headline": "משפט אחד — האם החשבון בריא מול נקודת האיזון, ומה הדבר האחד הכי חשוב לתקן",
+ "insights": ["4-6 פריטים. כל אחד נוקב בשם קמפיין, בשלב שלו במשפך, בצעד החלש ביותר עם המספר, ומה המשמעות"],
+ "actions": ["3-5 פריטים. כל אחד: התיקון + למה (שיטת העבודה לנישה) + איך בדיוק מבצעים בחנות הזו, קשור לקמפיין או לשלב משפך בשמו"]}
+כללים: שפטי ROAS טוב/רע מול נקודת האיזון של החנות; נקבי בשמות הקמפיינים האמיתיים כלשונם; צטטי את מספרי המשפך; ROAS מתחת לנקודת האיזון מפסיד כסף — אמרי זאת; אם שלב במשפך מציג 0 או לא זמין ייתכן שחסר אירוע פיקסל — הצביעי על בעיית מדידה במקום להמציא סיפור; לעולם אל תמציאי נתונים שלא הוצגו; סגנון: בלי מקף מחבר בין אות שימוש למספר או למילה לועזית — כתבי "הROAS", "ב2".`
+    : `You are a senior Meta (Facebook/Instagram) media buyer AND conversion-rate analyst, reviewing an ad account for a store OWNER who is not a marketer. Answer in English only. Be specific, honest, and practical. Adapt to the business model you see in the data: if purchases drive the funnel it is e-commerce; if purchases are ~0 but link clicks / leads flow, treat it as lead generation and switch to lead-gen best practices.
 
 STORE + CAMPAIGN DATA:
 ${buildDigest(input.overview, ctx)}
 
-Produce, writing in ${language} for the owner:
+Produce, writing in English for the owner:
 1) ROAS VERDICT — say plainly whether the account overall, and each meaningful campaign, has GOOD or BAD ROAS, judged against the store's BREAKEVEN ROAS above (not a generic 3x/4x). Name the numbers. If breakeven is unknown, say a precise verdict needs product costs.
 2) FUNNEL STAGE per campaign — infer each campaign's role (top-of-funnel / awareness, mid / consideration, bottom / retargeting-conversion, or lead-gen). For each, find the WEAKEST stage — the biggest drop-off in its funnel — and say what it means in plain terms. Examples: impressions but low CTR = weak hook/creative; clicks but few landing views = slow page or broken link; landing views but little add-to-cart = product page / price / offer problem; add-to-cart but few purchases = checkout, shipping, trust or payment friction. If the audience-warming (top) stage is thin, say so.
 3) NICHE-AWARE ACTION ITEMS — for the biggest problems, give the BEST PRACTICE for this kind of business (e-commerce or lead-gen as detected) AND a concrete, store-specific how-to the owner can do THIS WEEK. Make each action doable, not generic ("test 3 hook variations that open on the product benefit in the first 2s", not "improve creative").
