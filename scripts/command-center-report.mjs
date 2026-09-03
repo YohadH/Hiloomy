@@ -150,9 +150,11 @@ async function main() {
 
   // ── 3 · Repricing (local margin floor; rival prices pending) ──────────
   await section("3", "תמחור בטוח-מרווח", "maker", async () => {
-    const { rows } = await listProductCosts(storeId, { start, end: now });
+    const { rows, summary } = await listProductCosts(storeId, { start, end: now });
     const sold = rows.filter((r) => r.unitsSold > 0 && (r.costOverrideAmount != null || r.estimatedCost > 0));
     if (sold.length === 0) return { html: pending("אין מוצרים שנמכרו עם עלות ידועה בחלון."), facts: "" };
+    const coveragePct = Math.round((summary.costCoverage ?? 0) * 100);
+    const withOverride = sold.filter((r) => r.costOverrideAmount != null).length;
     const floor = (r) => (r.effectiveUnitCost > 0 ? r.effectiveUnitCost / (1 - 0.35) : null);
     const cand = sold
       .map((r) => ({ ...r, floorPrice: floor(r), belowFloor: floor(r) != null && r.price < floor(r) }))
@@ -164,11 +166,17 @@ async function main() {
           `<tr><td class="prod">${esc(r.title)}</td><td class="n">${nis(r.price)}</td><td class="n">${r.floorPrice != null ? nis(r.floorPrice) : "—"}</td><td class="n">${r.marginPct != null ? Math.round(r.marginPct) + "%" : "—"}</td><td>${r.belowFloor ? `<span class="pill remove">מתחת לרצפה</span>` : `<span class="pill hold">תקין</span>`}</td></tr>`
       )
       .join("");
+    const lowCoverage = coveragePct < 60;
     const facts =
-      `רצפת מרווח 35%. מוצרים מובילים בהכנסה (מחיר · רצפת מחיר · מרווח%):\n` +
+      `רצפת מרווח 35%. כיסוי עלויות: ${coveragePct}% מההכנסה מגובה בעלות (מתוכם ${withOverride} מוצרים עם עלות ידנית, השאר הערכה).` +
+      (lowCoverage ? " שים לב: כיסוי נמוך — המרווחים כאן עשויים להיות מוערכים כלפי מעלה, אל תמליצי על העלאת מחיר אגרסיבית לפני שהעלויות מאומתות." : "") +
+      `\nמוצרים מובילים בהכנסה (מחיר · רצפת מחיר · מרווח%):\n` +
       cand.map((r) => `- ${r.title}: מחיר ${nis(r.price)}, רצפה ${r.floorPrice != null ? nis(r.floorPrice) : "?"}, מרווח ${r.marginPct != null ? Math.round(r.marginPct) + "%" : "?"}${r.belowFloor ? " (מתחת לרצפה!)" : ""}`).join("\n") +
       `\nהערה: מחירי מתחרים ברמת מוצר עדיין לא זמינים (RivalSweeper /signals/prices) — התייחסי רק לרצפת המרווח והזדמנויות קטיף.`;
-    const html = `<div class="tbl-wrap"><table><thead><tr><th>מוצר</th><th class="n">מחיר</th><th class="n">רצפת מחיר (35%)</th><th class="n">מרווח</th><th>סטטוס</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+    const coverageNote = lowCoverage
+      ? `<p class="pending" style="margin-bottom:10px">⚠️ כיסוי עלויות ${coveragePct}% בלבד — המרווחים למטה מבוססים בחלקם על הערכת עלות, לא על עלות אמיתית, ולכן עשויים להיות גבוהים מהמציאות. השלמת עלויות המוצר תחדד את הסעיף.</p>`
+      : `<p class="lead">כיסוי עלויות ${coveragePct}% — המרווחים אמינים.</p>`;
+    const html = coverageNote + `<div class="tbl-wrap"><table><thead><tr><th>מוצר</th><th class="n">מחיר</th><th class="n">רצפת מחיר (35%)</th><th class="n">מרווח</th><th>סטטוס</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
     return { html, facts };
   });
 
@@ -304,36 +312,44 @@ async function coBoughtPairs(storeId, from, to) {
     where: { storeId, cancelledAt: null, test: false, createdAt: { gte: from, lte: to } },
     select: { id: true, lineItems: { select: { title: true, productId: true } } }
   });
-  const baskets = orders
-    .map((o) => Array.from(new Set(o.lineItems.map((li) => (li.title ?? "").trim()).filter(Boolean))))
-    .filter((b) => b.length >= 2);
   const N = orders.length || 1;
-  const solo = new Map();
-  const pair = new Map();
-  for (const b of baskets) {
-    for (const t of b) solo.set(t, (solo.get(t) ?? 0) + 1);
-    for (let i = 0; i < b.length; i++)
-      for (let j = i + 1; j < b.length; j++) {
-        const [x, y] = [b[i], b[j]].sort();
-        const k = `${x} ${y}`;
-        pair.set(k, (pair.get(k) ?? 0) + 1);
+  const SEP = " "; // separator that cannot appear inside a product title
+  const solo = new Map(); // title -> orders containing it (over ALL orders)
+  const pair = new Map(); // key -> { a, b, count }
+  for (const o of orders) {
+    const items = Array.from(new Set(o.lineItems.map((li) => (li.title ?? "").trim()).filter(Boolean)));
+    // P(A): count every order the product appears in — single-item orders
+    // included, or the denominator is wrong and lift is inflated.
+    for (const t of items) solo.set(t, (solo.get(t) ?? 0) + 1);
+    if (items.length < 2) continue;
+    items.sort();
+    for (let i = 0; i < items.length; i++)
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i];
+        const b = items[j];
+        const k = a + SEP + b;
+        const cur = pair.get(k) ?? { a, b, count: 0 };
+        cur.count += 1;
+        pair.set(k, cur);
       }
   }
-  // Count solo occurrences across ALL orders (not just multi-item) for P(A).
-  for (const o of orders) for (const t of new Set(o.lineItems.map((li) => (li.title ?? "").trim()).filter(Boolean))) {
-    if (!solo.has(t)) solo.set(t, 0);
-  }
+  // A bundle candidate needs real SUPPORT, not just a high lift. Lift =
+  // P(AB)/(P(A)P(B)) explodes for rare pairs — two products bought together
+  // 9 times can show x223 lift and drown out the pair bought together 200 times.
+  // Require a minimum co-occurrence count (scaled to store volume) and rank by
+  // support first, so the surfaced bundles are ones customers actually buy.
+  const MIN_PAIR_ORDERS = Math.max(12, Math.round(N * 0.005));
   const out = [];
-  for (const [k, count] of pair) {
-    if (count < 2) continue;
-    const [a, b] = k.split(" ");
+  for (const { a, b, count } of pair.values()) {
+    if (count < MIN_PAIR_ORDERS) continue;
     const pa = (solo.get(a) ?? 0) / N;
     const pb = (solo.get(b) ?? 0) / N;
     const pab = count / N;
     const lift = pa > 0 && pb > 0 ? pab / (pa * pb) : 0;
-    if (lift > 1.3) out.push({ a, b, count, lift });
+    if (lift > 1.5) out.push({ a, b, count, lift });
   }
-  return out.sort((x, y) => y.lift * y.count - x.lift * x.count);
+  // Rank by support (how many customers actually buy the pair), lift as tiebreak.
+  return out.sort((x, y) => y.count - x.count || y.lift - x.lift);
 }
 
 // ── render helpers ───────────────────────────────────────────────────────
