@@ -36,7 +36,7 @@ import { getDb } from "@/lib/server/db";
 import { BI_PERSONA, buildRuntimeContext } from "@/lib/ai/bi-persona";
 import { BI_TOOL_DEFINITIONS } from "@/lib/ai/bi-tool-definitions";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
-import { formatDateInTimeZone, getStoreTimeZone, lastNDaysRange } from "@/lib/server/reporting-date-range";
+import { dayBoundsUtc, formatDateInTimeZone, getStoreTimeZone, lastNDaysRange } from "@/lib/server/reporting-date-range";
 import { buildChannelPerformanceReport } from "@/lib/services/channel-performance-engine-service";
 import { buildCohortRetention } from "@/lib/services/cohort-retention-service";
 import { listOpenAlerts } from "@/lib/services/alert-writer-service";
@@ -227,16 +227,38 @@ async function executeToolUncached(
   // to a day and made the BI answer disagree with the screen behind it (C-05).
   const storeTimeZone = await getStoreTimeZone(storeId);
   const daysWindow = (days: number) => lastNDaysRange(days, storeTimeZone);
+  // Resolve a tool's analysis window. Explicit start+end (YYYY-MM-DD, store
+  // local) win and unlock ANY historical period — a past promo week, a specific
+  // month, before/during/after — so the analyst is no longer limited to windows
+  // ending today. Falls back to the trailing `days` window when they're absent
+  // or unparseable, so every existing days-only call behaves exactly as before.
+  const resolveWindow = (
+    inp: Record<string, unknown>,
+    defDays: number,
+    minDays: number,
+    maxDays: number
+  ): { start: Date; end: Date } => {
+    const s = typeof inp.start === "string" ? inp.start.trim() : "";
+    const e = typeof inp.end === "string" ? inp.end.trim() : "";
+    if (s && e) {
+      const sb = dayBoundsUtc(s, storeTimeZone);
+      const eb = dayBoundsUtc(e, storeTimeZone);
+      if (sb && eb && sb.start.getTime() <= eb.end.getTime()) {
+        return { start: sb.start, end: eb.end };
+      }
+    }
+    return daysWindow(int(inp.days, defDays, minDays, maxDays));
+  };
 
   let result: unknown;
   switch (name) {
     case "get_profit_summary": {
-      const { start, end } = daysWindow(int(input.days, 30, 1, 365));
+      const { start, end } = resolveWindow(input, 30, 1, 365);
       result = await buildContributionMargin({ storeId, start, end });
       break;
     }
     case "get_channel_performance": {
-      const { start, end } = daysWindow(int(input.days, 30, 1, 365));
+      const { start, end } = resolveWindow(input, 30, 1, 365);
       result = await buildChannelPerformanceReport({ storeId, start, end });
       break;
     }
@@ -253,7 +275,7 @@ async function executeToolUncached(
       break;
     }
     case "get_ad_performance": {
-      const { start, end } = daysWindow(int(input.days, 30, 1, 365));
+      const { start, end } = resolveWindow(input, 30, 1, 365);
       const [metaAds, margin, campaignOverview] = await Promise.all([
         buildMetaAdsWeeklyReport({ storeId, start, end }),
         buildContributionMargin({ storeId, start, end }).catch(() => null),
@@ -303,7 +325,7 @@ async function executeToolUncached(
       break;
     }
     case "get_discount_effectiveness": {
-      const { start, end } = daysWindow(int(input.days, 60, 1, 365));
+      const { start, end } = resolveWindow(input, 60, 1, 365);
       const [scorecards, metaAds] = await Promise.all([
         buildDiscountScorecards({ storeId, start, end }),
         buildMetaAdsWeeklyReport({ storeId, start, end }).catch(() => null)
@@ -327,11 +349,10 @@ async function executeToolUncached(
       break;
     }
     case "get_traffic": {
-      const days = int(input.days, 30, 7, 90);
-      const since = daysWindow(days).start;
+      const { start: since, end: trafficEnd } = resolveWindow(input, 30, 7, 90);
       const db = getDb() as any;
       const rows = (await db.gaTrafficDaily.findMany({
-        where: { storeId, date: { gte: since } },
+        where: { storeId, date: { gte: since, lte: trafficEnd } },
         orderBy: { date: "asc" },
         select: {
           date: true,
@@ -376,7 +397,7 @@ async function executeToolUncached(
         totalConversions += n(row.conversions);
       }
       result = {
-        windowDays: days,
+        windowDays: Math.max(1, Math.round((trafficEnd.getTime() - since.getTime()) / 86_400_000)),
         totals: {
           sessions: totalSessions,
           conversions: Math.round(totalConversions * 100) / 100,
@@ -471,7 +492,7 @@ async function executeToolUncached(
         // simply does not resolve.
         orders = await db.order.findMany({ where: { storeId, orderNumber: num }, select, take: 5 });
       } else {
-        const { start, end } = daysWindow(int(input.days, 30, 1, 365));
+        const { start, end } = resolveWindow(input, 30, 1, 365);
         const where: Record<string, unknown> = { storeId, createdAt: { gte: start, lte: end } };
         const min = typeof input.min_total === "number" ? input.min_total : null;
         const max = typeof input.max_total === "number" ? input.max_total : null;
@@ -576,7 +597,7 @@ async function executeToolUncached(
       break;
     }
     case "get_product_performance": {
-      const { start, end } = daysWindow(int(input.days, 30, 1, 365));
+      const { start, end } = resolveWindow(input, 30, 1, 365);
       const limit = int(input.limit, 10, 1, 25);
       // Whitelisted — never interpolate a model-supplied string into SQL.
       const ORDER_BY: Record<string, string> = {

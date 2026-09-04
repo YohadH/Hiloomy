@@ -9,6 +9,24 @@
 // session inside the service — the model must have no way to point a tool
 // at another store.
 
+// Optional explicit date window (store-local, YYYY-MM-DD). When BOTH `start`
+// and `end` are given they OVERRIDE `days` and let the analyst query ANY
+// historical period — e.g. a past promotion week in July — instead of only a
+// window ending today. Without them the tool falls back to `days` (trailing
+// from today). This is what lets Hiloma answer "as of…", "back in July", and
+// before/during/after questions. These name a date range, never a tenant, so
+// the isolation invariant still holds.
+const WINDOW_START = {
+  type: "string" as const,
+  description:
+    "Optional window start date, YYYY-MM-DD in store-local time. Provide TOGETHER WITH `end` to analyze a specific historical period (a past promo, a month, before/during/after). Overrides `days` when both are set."
+};
+const WINDOW_END = {
+  type: "string" as const,
+  description:
+    "Optional window end date, YYYY-MM-DD in store-local time (inclusive). Provide TOGETHER WITH `start`. Overrides `days` when both are set."
+};
+
 export const BI_TOOL_DEFINITIONS = [
   {
     name: "get_profit_summary",
@@ -22,7 +40,9 @@ export const BI_TOOL_DEFINITIONS = [
           minimum: 1,
           maximum: 365,
           description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window."
-        }
+        },
+        start: WINDOW_START,
+        end: WINDOW_END
       },
       required: []
     }
@@ -61,7 +81,9 @@ export const BI_TOOL_DEFINITIONS = [
           minimum: 1,
           maximum: 365,
           description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window."
-        }
+        },
+        start: WINDOW_START,
+        end: WINDOW_END
       },
       required: []
     }
@@ -78,7 +100,9 @@ export const BI_TOOL_DEFINITIONS = [
           minimum: 1,
           maximum: 365,
           description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window."
-        }
+        },
+        start: WINDOW_START,
+        end: WINDOW_END
       },
       required: []
     }
@@ -95,7 +119,9 @@ export const BI_TOOL_DEFINITIONS = [
           minimum: 1,
           maximum: 365,
           description: "Window length in days, ending today. Default 60."
-        }
+        },
+        start: WINDOW_START,
+        end: WINDOW_END
       },
       required: []
     }
@@ -113,7 +139,9 @@ export const BI_TOOL_DEFINITIONS = [
           maximum: 90,
           description:
             "Window length in days, ending today. Default 30. GA4 rolls up daily and this tool has a 7-day MINIMUM — it cannot answer 'today'. For today's sales use get_profit_summary or get_orders with days: 1."
-        }
+        },
+        start: WINDOW_START,
+        end: WINDOW_END
       },
       required: []
     }
@@ -182,6 +210,8 @@ export const BI_TOOL_DEFINITIONS = [
             "Look up one specific order by its number (with or without a leading #). When set, all other filters are ignored."
         },
         days: { type: "integer", minimum: 1, maximum: 365, description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window." },
+        start: WINDOW_START,
+        end: WINDOW_END,
         limit: { type: "integer", minimum: 1, maximum: 50, description: "Max orders to return. Default 20." },
         sort_by: {
           type: "string",
@@ -233,6 +263,8 @@ export const BI_TOOL_DEFINITIONS = [
           maximum: 365,
           description: "Window length in days, ending today. Default 30. Use days: 1 for TODAY ONLY — there is no minimum window."
         },
+        start: WINDOW_START,
+        end: WINDOW_END,
         limit: {
           type: "integer",
           minimum: 1,
