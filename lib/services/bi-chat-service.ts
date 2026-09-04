@@ -111,6 +111,10 @@ export interface RunBiChatTurnInput {
   // spend a minute across several tool rounds with nothing on screen — this
   // is what lets the widget show what it is doing instead of a spinner.
   onToolStart?: (toolName: string) => void;
+  // Like onToolStart but with the parsed arguments — lets a caller see the
+  // exact window the model chose (e.g. start/end vs days). Used by the
+  // decision-benchmark harness to verify Hiloma queried the right period.
+  onToolCall?: (toolName: string, args: Record<string, unknown>) => void;
 }
 
 // ── Tools ───────────────────────────────────────────────────────────────
@@ -825,6 +829,7 @@ async function runOpenAiTurn(input: RunBiChatTurnInput, runtimeContext: string):
       calls.map(async (call) => {
         try {
           const args = call.args ? (JSON.parse(call.args) as Record<string, unknown>) : {};
+          input.onToolCall?.(call.name, args);
           return { callId: call.callId, output: await executeTool(input.storeId, call.name, args) };
         } catch (err) {
           console.error(`[bi-chat] tool ${call.name} failed:`, err);
@@ -910,6 +915,7 @@ async function runAnthropicTurn(input: RunBiChatTurnInput, runtimeContext: strin
     const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
       toolUseBlocks.map(async (block): Promise<Anthropic.ToolResultBlockParam> => {
         input.onToolStart?.(block.name);
+        input.onToolCall?.(block.name, (block.input ?? {}) as Record<string, unknown>);
         try {
           const content = await executeTool(
             input.storeId,
