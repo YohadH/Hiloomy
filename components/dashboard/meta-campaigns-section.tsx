@@ -146,6 +146,17 @@ export function MetaCampaignsSection({
                 </span>
               )}
             </p>
+            {overview.totalPurchases === 0 && overview.totalSpend > 0 ? (
+              <p className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                <span aria-hidden>ℹ️</span>
+                <span>
+                  {lang(
+                    "יש הוצאה אך לא נרשמו רכישות מיוחסות בחלון הזה — לכן ROAS ×0. זה משקף היעדר רכישות מיוחסות (קמפייני חשיפה, השהיית המרה או מעקב המרות חסר ב-Meta) ולא בהכרח קמפיינים כושלים.",
+                    "There is spend but no attributed purchases in this window — hence ROAS ×0. That reflects missing attributed purchases (awareness campaigns, conversion lag, or missing Meta conversion tracking), not necessarily failing campaigns."
+                  )}
+                </span>
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-4 text-xs">
             {[
@@ -226,7 +237,23 @@ export function MetaCampaignsSection({
                     ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    {c.roas != null && c.spend > 0 ? (
+                    {c.spend > 0 && c.purchases <= 0 ? (
+                      // Spent but no attributed purchases yet — could be an
+                      // awareness campaign, a longer conversion lag, or missing
+                      // purchase attribution. Show it NEUTRALLY, not as a red
+                      // "losing ROAS ×0", which alarmed the owner (hbosem: every
+                      // row screamed מפסיד). "Losing" is reserved for campaigns
+                      // that DID convert but below breakeven.
+                      <span
+                        className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground"
+                        title={lang(
+                          "הוציא תקציב אך לא נרשמו רכישות מיוחסות — ייתכן קמפיין חשיפה, השהיית המרה, או מעקב המרות חסר",
+                          "Spent but no attributed purchases — may be an awareness campaign, conversion lag, or missing purchase tracking"
+                        )}
+                      >
+                        {lang("אין רכישות מיוחסות", "No attributed purchases")}
+                      </span>
+                    ) : c.roas != null && c.spend > 0 ? (
                       <span
                         className={cn(
                           "rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -243,8 +270,13 @@ export function MetaCampaignsSection({
                         {c.roas >= profitLine ? lang("רווחי", "profitable") : lang("מפסיד", "losing")}
                       </span>
                     ) : null}
-                    <p className={cn("text-sm font-bold tabular-nums", roasTone(c.roas))}>
-                      {c.roas != null ? `ROAS ×${c.roas}` : lang("ללא רכישות", "No purchases")}
+                    <p
+                      className={cn(
+                        "text-sm font-bold tabular-nums",
+                        c.purchases <= 0 ? "text-muted-foreground" : roasTone(c.roas)
+                      )}
+                    >
+                      {c.purchases > 0 && c.roas != null ? `ROAS ×${c.roas}` : lang("ללא רכישות", "No purchases")}
                     </p>
                   </div>
                 </div>
@@ -252,7 +284,10 @@ export function MetaCampaignsSection({
                 {/* Spend-share bar, colored by ROAS */}
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
                   <div
-                    className={cn("h-full rounded-full", barTone(c.roas))}
+                    className={cn(
+                      "h-full rounded-full",
+                      c.purchases <= 0 ? "bg-slate-300 dark:bg-slate-600" : barTone(c.roas)
+                    )}
                     style={{ width: `${Math.max(3, Math.round((c.spend / maxSpend) * 100))}%` }}
                   />
                 </div>
