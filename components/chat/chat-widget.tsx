@@ -211,7 +211,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     const Icon = chat.icon;
     const thread = threads[active];
     return (
-      <div className="fixed bottom-4 left-4 right-4 z-50 flex h-[min(72vh,580px)] w-auto max-w-[390px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:left-auto sm:w-[390px]">
+      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-50 flex h-[min(72dvh,580px)] w-auto max-w-[390px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:left-auto sm:w-[390px]">
         <div className={cn("flex items-center gap-3 px-4 py-3 text-white", chat.accent)}>
           <button
             type="button"
@@ -241,7 +241,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
           </button>
         </div>
 
-        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-muted/30 px-3 py-4">
+        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden bg-muted/30 px-3 py-4">
           <Bubble role="agent" text={chat.intro} isHe={isHe} />
           {thread.map((m, i) => (
             <Bubble key={i} role={m.role} text={m.text} isHe={isHe} />
@@ -330,7 +330,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     // it aligned the speed-dial to the LEFT while the launcher sat on the
     // right (the whole stack jumped sides on open). Pinning the column to LTR
     // makes "end" = right; the cards re-declare the page direction inside.
-    <div dir="ltr" className="fixed bottom-4 right-4 z-50 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
+    <div dir="ltr" className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
       {open ? (
         <div dir={isHe ? "rtl" : "ltr"} className="flex flex-col items-end gap-2">
           {(Object.keys(CHATS) as ChatKind[]).map((kind, i) => {
@@ -461,7 +461,11 @@ function Bubble({ role, text, isHe }: { role: "user" | "agent"; text: string; is
     <div className={cn("flex", isUser ? "justify-start flex-row-reverse" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-6 shadow-sm",
+          // break-words + overflow-wrap:anywhere so long unbreakable tokens
+          // (URLs, campaign names like Sales_Campaign_20%_sale) wrap inside the
+          // bubble instead of overflowing and forcing horizontal page scroll on
+          // narrow iPhones. min-w-0 lets the flex child actually shrink.
+          "min-w-0 max-w-[85%] overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-2xl px-3 py-2 text-sm leading-6 shadow-sm",
           isUser
             ? "bg-emerald-600 text-white rounded-ee-md"
             : "bg-card border border-border text-foreground rounded-es-md"
