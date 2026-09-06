@@ -127,9 +127,19 @@ export async function getDailyTrendContext(
   try {
     const expandedStart = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
     const expandedEnd = new Date(endDate.getTime() + 24 * 60 * 60 * 1000);
+    // Scope to the CURRENTLY connected ad account — same as the campaigns list
+    // (getMetaCampaignsOverview). Without this, stale insight rows from a
+    // previously-bound account (e.g. the other brand's "JulyPromotions") that
+    // still sit under this storeId leaked into the chart tooltip even though
+    // the list no longer showed them (owner, 7 Sep 2026: JulyPromotions on
+    // Incense's chart). No connected account → the sentinel matches nothing.
+    const metaConn = (await (db.metaAdsConnection
+      ?.findUnique?.({ where: { storeId }, select: { adAccountId: true } })
+      ?.catch(() => null)) ?? null) as { adAccountId: string | null } | null;
     const insights = (await db.metaAdsCampaignInsight.findMany({
       where: {
         storeId,
+        adAccountId: metaConn?.adAccountId ?? "__no_connected_account__",
         dateStart: { gte: expandedStart, lte: expandedEnd },
         // dateStart === dateStop means "single-day insight" — what we want.
         // Range insights (dateStart != dateStop) duplicate spend across
