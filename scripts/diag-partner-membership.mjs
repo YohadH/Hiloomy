@@ -66,9 +66,16 @@ const p = new PrismaClient({ log: [] });
 const row = (r) => console.log(JSON.stringify(r));
 
 try {
-  // Resolve the target: a shop domain, or an org by id / name (case-insensitive).
+  // Resolve the target: a shop domain, a Store id, or an org by id / name.
   let shopDomain = target;
   if (!/\.myshopify\.com$/i.test(target)) {
+    // Try a Store id first — lets you target a brand by its storeId when you
+    // don't have the myshopify domain handy. Falls through to org resolution.
+    const byStoreId = await p.$queryRaw`SELECT domain FROM "Store" WHERE id = ${target} LIMIT 1`;
+    if (byStoreId.length) {
+      shopDomain = byStoreId[0].domain;
+      console.log(`\n## Store id ${target} → ${shopDomain}`);
+    } else {
     const orgs = await p.$queryRaw`
       SELECT o.id, o.name, (SELECT s.domain FROM "Store" s WHERE s."orgId" = o.id ORDER BY s."createdAt" LIMIT 1) AS first_store
       FROM "Organization" o WHERE o.id = ${target} OR lower(o.name) = lower(${target})`;
@@ -76,6 +83,7 @@ try {
     if (!orgs[0].first_store) throw new Error(`Org "${orgs[0].name}" has no stores — nothing to attach members to.`);
     console.log(`\n## Org "${orgs[0].name}" (${orgs[0].id}) — using its store ${orgs[0].first_store}`);
     shopDomain = orgs[0].first_store;
+    }
   }
 
   console.log(`\n## Store ${shopDomain}`);
