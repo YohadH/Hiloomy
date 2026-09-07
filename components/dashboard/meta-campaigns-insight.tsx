@@ -56,7 +56,8 @@ function confidenceLabel(level: Confidence, isHe: boolean): string {
 export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
   const lang = (he: string, en: string) => (isHe ? he : en);
   const [insight, setInsight] = useState<Insight | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "hidden">("loading");
+  const [state, setState] = useState<"loading" | "ready" | "hidden" | "failed">("loading");
+  const [failure, setFailure] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
 
@@ -71,12 +72,19 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
       if (res.ok && body?.ok && body.insight) {
         setInsight(body.insight as Insight);
         setState("ready");
-      } else if (!force) {
-        // No data / no LLM key — hide quietly rather than nag.
+        setFailure(null);
+      } else if (res.status === 404) {
+        // No campaign data in this window — nothing to analyze, hide quietly.
         setState("hidden");
+      } else {
+        // A real failure stays visible with its reason and a retry — a card
+        // that spins and vanishes tells the manager nothing (7 Sep 2026).
+        setFailure(String(body?.error ?? `HTTP ${res.status}`));
+        setState("failed");
       }
-    } catch {
-      if (!force) setState("hidden");
+    } catch (e) {
+      setFailure(e instanceof Error ? e.message : "network");
+      setState("failed");
     }
   };
 
@@ -116,6 +124,27 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
             {lang("הסוכן מנתח את הקמפיינים…", "The agent is analyzing the campaigns…")}
           </p>
+        ) : state === "failed" ? (
+          <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+            <p>
+              {failure === "provider_rate_limited"
+                ? lang("ספק המודל דחה את הבקשה (מכסה או מגבלת קצב). נסו שוב בעוד דקה.", "The model provider refused the request (quota or rate limit). Try again in a minute.")
+                : failure === "model_output_incomplete" || failure === "model_output_unparseable"
+                  ? lang("הילומה לא סיימה את הניתוח הפעם (התשובה נחתכה). נסו שוב.", "Hiloma did not finish the analysis this time (the answer was cut off). Try again.")
+                  : lang(`הילומה לא הצליחה לנתח הפעם: ${failure ?? ""}`, `Hiloma could not analyze this time: ${failure ?? ""}`)}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setState("loading");
+                void load(true);
+              }}
+              className="inline-flex items-center gap-1 font-semibold text-foreground hover:text-emerald-700"
+            >
+              <RefreshCw className="h-3 w-3" aria-hidden />
+              {lang("לנסות שוב", "Try again")}
+            </button>
+          </div>
         ) : insight ? (
           <div className="mt-3 space-y-4">
             {/* Two axes first, then decision → what we know → what we don't →

@@ -11,6 +11,7 @@
 // aggregates (OpenAI default / Anthropic fallback — the BI chat keys),
 // cached in SystemConfig per store+window for 6h so page views don't bill.
 
+import { AppError } from "@/lib/server/errors";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { getDb } from "@/lib/server/db";
@@ -263,7 +264,7 @@ const INSIGHT_TTL_MS = 6 * 60 * 60 * 1000;
 // every viewer of that store+window for the whole TTL. Bumping retires the
 // stale English entries immediately instead of waiting out the 6h TTL.
 const insightCacheKey = (storeId: string, locale: "he" | "en", overview: MetaCampaignsOverview) =>
-  `meta_campaigns_insight:v5:${storeId}:${locale}:${overview.rangeStart}:${overview.rangeEnd}`;
+  `meta_campaigns_insight:v6:${storeId}:${locale}:${overview.rangeStart}:${overview.rangeEnd}`;
 
 interface DigestContext {
   storeName: string | null;
@@ -277,6 +278,55 @@ interface DigestContext {
 // Stage-to-stage conversion, as a percent, or null when the denominator is 0.
 function stagePct(numerator: number, denominator: number): number | null {
   return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : null;
+}
+
+// Facts the model MUST reflect, computed here so they cannot be missed or
+// softened: campaigns that spent without a single attributed purchase, the
+// account leader, and how far the evidence reaches. Plus the phrasing rules
+// that keep insight and decision apart (owner, 7 Sep 2026):
+//   - the decision is an INSIGHT headline, not a budget instruction;
+//   - no invented numbers ("raise 15%") when breakeven is unknown;
+//   - spend-without-purchases is REVIEW / candidate to pause, never "stop".
+function buildDecisionFrame(overview: MetaCampaignsOverview, ctx: DigestContext, isHe: boolean): string {
+  const money = (n: number) => `${ctx.currency} ${Math.round(n).toLocaleString("en-US")}`;
+  const noPurchase = overview.campaigns
+    .filter((c) => c.spend >= 100 && c.purchases === 0)
+    .sort((a, b) => b.spend - a.spend);
+  const noPurchaseSpend = noPurchase.reduce((sum, c) => sum + c.spend, 0);
+  const leader = [...overview.campaigns].filter((c) => c.purchases > 0).sort((a, b) => b.revenue - a.revenue)[0] ?? null;
+  const breakevenKnown = ctx.breakevenRoas != null;
+  if (isHe) {
+    const lines = [
+      "מסגרת החלטה (עובדות מחושבות — חובה לשקף):",
+      noPurchase.length
+        ? `- קמפיינים שהוציאו בלי אף רכישה מיוחסת בחלון: ${noPurchase.map((c) => `"${c.campaignName}" ${money(c.spend)}`).join(", ")} (סה"כ ${money(noPurchaseSpend)}). זה REVIEW / מועמד להשהיה — לא "לעצור": לא ידועים יעד CPA, ייחוס או שלב למידה.`
+        : "- אין קמפיין שהוציא בלי רכישה מיוחסת.",
+      leader
+        ? `- הקמפיין המוביל: "${leader.campaignName}" — ${leader.purchases} רכישות, ROAS ${leader.roas ?? "n/a"}. ${breakevenKnown ? "נקודת האיזון ידועה — מותר לשפוט רווחיות." : "מועמד להגדלה — אבל בלי נקודת איזון אסור לאשר שהגדלה תוסיף רווח."}`
+        : "- אין קמפיין עם רכישות מיוחסות.",
+      breakevenKnown
+        ? `- נקודת האיזון ידועה (${ctx.breakevenRoas}×): מותר לומר רווחי/מפסיד.`
+        : "- נקודת האיזון לא ידועה (אין עלויות מוצר): אסור לומר רווחי/מפסיד ואסור לנקוב באחוז הגדלה (לא 15%, לא 20%). ניסוח מותר: \"מועמד להגדלת תקציב — לאחר השלמת COGS, אם ה־ROAS נשאר מעל נקודת האיזון, scale מדורג\" או \"אפשר scale קטן ומבוקר, אבל אי אפשר לאשר שהוא מגדיל רווח תרומה\".",
+      "- הכותרת (decision) היא תובנה, לא הוראת תקציב. תבנית: \"ביצועי המדיה חזקים — הרווחיות עדיין לא מאומתת\". ההוראות הולכות ל־actions בלבד.",
+      "- סדר הפעולות: (1) להשלים COGS כדי לחשב נקודת איזון; (2) לבדוק את הקמפיינים שהוציאו בלי רכישה, בשמם ובסכום; (3) לסמן את המוביל כמועמד ל־scale בתנאי שאחרי השלמת העלויות הוא נשאר מעל נקודת האיזון."
+    ];
+    return lines.join("\n");
+  }
+  const lines = [
+    "Decision frame (computed facts — must be reflected):",
+    noPurchase.length
+      ? `- Campaigns that spent with no attributed purchase in the window: ${noPurchase.map((c) => `"${c.campaignName}" ${money(c.spend)}`).join(", ")} (total ${money(noPurchaseSpend)}). This is REVIEW / candidate to pause — never "stop": CPA target, attribution and learning phase are unknown.`
+      : "- No campaign spent without an attributed purchase.",
+    leader
+      ? `- Account leader: "${leader.campaignName}" — ${leader.purchases} purchases, ROAS ${leader.roas ?? "n/a"}. ${breakevenKnown ? "Breakeven is known — profitability may be judged." : "Scale candidate — but without breakeven you may not claim scaling adds profit."}`
+      : "- No campaign has attributed purchases.",
+    breakevenKnown
+      ? `- Breakeven is known (${ctx.breakevenRoas}×): profitable/losing may be stated.`
+      : "- Breakeven is unknown (no product costs): never say profitable/losing and never quote a scaling percentage (no 15%, no 20%). Allowed phrasing: \"scale candidate — once COGS is complete, if ROAS stays above breakeven, scale gradually\" or \"a small controlled scale is possible, but it cannot be confirmed to add contribution profit\".",
+    "- The decision is an INSIGHT headline, not a budget instruction. Template: \"Media performance is strong — profitability not yet verified\". Instructions go into actions only.",
+    "- Action order: (1) complete COGS to compute breakeven; (2) review the no-purchase campaigns by name and amount; (3) mark the leader as a scale candidate conditional on staying above breakeven once costs are in."
+  ];
+  return lines.join("\n");
 }
 
 function buildDigest(overview: MetaCampaignsOverview, ctx: DigestContext): string {
@@ -371,23 +421,42 @@ async function callInsightModel(prompt: string): Promise<string | null> {
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
   if (openaiKey) {
     const client = new OpenAI({ apiKey: openaiKey });
-    const call = (model: string) =>
-      client.responses.create({ model, input: prompt, max_output_tokens: 4000 } as never) as unknown as Promise<{
-        output_text?: string;
-      }>;
+    type InsightResponse = { output_text?: string; status?: string; incomplete_details?: { reason?: string } };
+    // max_output_tokens covers the model's REASONING as well as the visible
+    // answer on this model family. At 4,000 the JSON was cut mid-way once
+    // the prompt asked for known/unknown/evidence (7 Sep 2026: the card
+    // spun, then vanished — parse failure → 503 → hidden). Low reasoning
+    // effort keeps the budget for the answer; if the model rejects the
+    // param, retry without it rather than fail.
+    const call = (model: string, withReasoning: boolean) =>
+      client.responses.create({
+        model,
+        input: prompt,
+        max_output_tokens: 12000,
+        ...(withReasoning ? { reasoning: { effort: "low" } } : {})
+      } as never) as unknown as Promise<InsightResponse>;
     const pinned = process.env.BI_CHAT_MODEL?.trim() || DEFAULT_BI_MODEL;
-    let response: { output_text?: string };
+    let response: InsightResponse;
     try {
-      response = await call(pinned);
+      response = await call(pinned, true);
     } catch (err) {
-      // A bad BI_CHAT_MODEL pin must not silently kill the insight — retry
-      // once with the known-good default.
-      if (pinned !== DEFAULT_BI_MODEL) {
-        console.warn(`[meta-campaigns-insight] model "${pinned}" failed; retrying with ${DEFAULT_BI_MODEL}.`);
-        response = await call(DEFAULT_BI_MODEL);
+      const message = err instanceof Error ? err.message : String(err);
+      if (/reasoning/i.test(message)) {
+        console.warn("[meta-campaigns-insight] model rejected reasoning param; retrying without it.");
+        response = await call(pinned, false);
+      } else if (pinned !== DEFAULT_BI_MODEL) {
+        // A bad BI_CHAT_MODEL pin must not silently kill the insight — retry
+        // once with the known-good default.
+        console.warn(`[meta-campaigns-insight] model "${pinned}" failed (${message}); retrying with ${DEFAULT_BI_MODEL}.`);
+        response = await call(DEFAULT_BI_MODEL, false);
       } else {
         throw err;
       }
+    }
+    if (response.status && response.status !== "completed") {
+      console.warn(
+        `[meta-campaigns-insight] response ${response.status}${response.incomplete_details?.reason ? ` (${response.incomplete_details.reason})` : ""} — ${(response.output_text ?? "").length} chars of output`
+      );
     }
     return response.output_text ?? null;
   }
@@ -467,6 +536,8 @@ export async function buildMetaCampaignsInsight(input: {
 נתוני החנות והקמפיינים:
 ${buildDigest(input.overview, ctx)}
 
+${buildDecisionFrame(input.overview, ctx, isHe)}
+
 הפיקי עבור הבעלים:
 1) פסק דין ROAS — אמרי בפשטות אם לחשבון כולו, ולכל קמפיין משמעותי, יש ROAS טוב או רע, בהשוואה לROAS נקודת האיזון של החנות שלמעלה (לא 3x/4x גנרי). נקבי במספרים. אם נקודת האיזון לא ידועה — אמרי שפסק דין מדויק דורש עלויות מוצר.
 2) שלב במשפך לכל קמפיין — הסיקי את התפקיד של כל קמפיין (ראש המשפך / מודעות, אמצע / שקילה, תחתית / רימרקטינג והמרה, או לידים). לכל קמפיין מצאי את השלב החלש ביותר — הנפילה הגדולה ביותר במשפך שלו — והסבירי מה היא אומרת במילים פשוטות. דוגמאות: חשיפות עם CTR נמוך = הוק/קריאייטיב חלש; קליקים אבל מעט צפיות בדף נחיתה = דף איטי או קישור שבור; צפיות בדף נחיתה אבל מעט הוספות לעגלה = בעיה בדף המוצר, במחיר או בהצעה; הוספות לעגלה אבל מעט רכישות = חיכוך בתשלום, במשלוח או באמון. אם שלב חימום הקהל (ראש המשפך) דל — אמרי זאת.
@@ -475,7 +546,7 @@ ${buildDigest(input.overview, ctx)}
 הפרידי בין שני צירים ואל תערבבי ביניהם: ביצועי קמפיין (ROAS, רכישות, CTR, תדירות, CPA, מגמה, מי מוביל, מי מוציא בלי רכישות, מועמד להגדלה) — על אלה מותר וצריך לדבר גם בלי עלויות מוצר; רווחיות קמפיין (רווחי/מפסיד, האם הגדלת תקציב תוסיף רווח) — על זה מותר לדבר רק אם נקודת האיזון של החנות ידועה למעלה. אם אינה ידועה: אל תכתבי "הקמפיין רווחי" ואל תמליצי להגדיל תקציב על בסיס רווח; כתבי בנוסח "ROAS 5.92 מצביע על ביצועים חזקים, אך רווחיות הקמפיין עדיין לא מאומתת ללא COGS", וההחלטה תהיה מסוג "מועמד להגדלה — להשלים עלויות או להגדיר ROAS מינימלי ידני לפני שינוי תקציב", לא "לא לעשות כלום". אל תהיי שמרנית יתר על המידה: תשובה חלקית שאומרת בדיוק איפה הראיות נעצרות עדיפה על שתיקה.
 הפלט נקרא על ידי מנהל/ת שיש להם 20 שניות. החלק העליון חייב להיות קצר מאוד; כל הפירוט הולך ל־evidence.
 Respond with ONLY a JSON object, no markdown fences:
-{"decision": "ההחלטה עצמה, עד 10 מילים, למשל: הקמפיין נראה חזק — אך אי אפשר לאשר הגדלה על בסיס רווח",
+{"decision": "כותרת תובנה, עד 10 מילים, למשל: ביצועי המדיה חזקים — הרווחיות עדיין לא מאומתת",
  "conclusion": "משפט אחד או שניים: מה הביצועים אומרים, ואיפה הראיות נעצרות. שפה עסקית",
  "health": "strong | mixed | weak — קריאה יחסית של ביצועי הקמפיינים בחשבון, לא של רווחיות",
  "known": ["עד 4 עובדות ביצועים, כל אחת עד 12 מילים ומספר אחד, למשל: rosh Hasana 2026 מוביל בחשבון עם ROAS 6.65"],
@@ -488,6 +559,8 @@ Respond with ONLY a JSON object, no markdown fences:
 STORE + CAMPAIGN DATA:
 ${buildDigest(input.overview, ctx)}
 
+${buildDecisionFrame(input.overview, ctx, isHe)}
+
 Produce, writing in English for the owner:
 1) ROAS VERDICT — say plainly whether the account overall, and each meaningful campaign, has GOOD or BAD ROAS, judged against the store's BREAKEVEN ROAS above (not a generic 3x/4x). Name the numbers. If breakeven is unknown, say a precise verdict needs product costs.
 2) FUNNEL STAGE per campaign — infer each campaign's role (top-of-funnel / awareness, mid / consideration, bottom / retargeting-conversion, or lead-gen). For each, find the WEAKEST stage — the biggest drop-off in its funnel — and say what it means in plain terms. Examples: impressions but low CTR = weak hook/creative; clicks but few landing views = slow page or broken link; landing views but little add-to-cart = product page / price / offer problem; add-to-cart but few purchases = checkout, shipping, trust or payment friction. If the audience-warming (top) stage is thin, say so.
@@ -496,7 +569,7 @@ Produce, writing in English for the owner:
 Keep two axes apart and never blend them: campaign PERFORMANCE (ROAS, purchases, CTR, frequency, CPA, trend, who leads, who spends without buying, who is a scale candidate) — you may and must speak to these even without product costs; campaign PROFITABILITY (profitable/losing, whether more budget adds profit) — only when the store's breakeven ROAS above is known. If it is not: never write "the campaign is profitable" and never recommend more budget on profit grounds; write in the shape "ROAS 5.92 indicates strong performance, but campaign profitability is not yet verified without COGS", and make the decision "scale candidate — complete COGS or set a manual minimum ROAS before changing budget", not "do nothing". Do not over-hedge: a partial answer that says exactly where the evidence stops beats silence.
 The reader is a manager with 20 seconds. The top must be very short; every detail goes into evidence.
 Respond with ONLY a JSON object, no markdown fences:
-{"decision": "the call itself, ≤ 10 words, e.g.: Campaign looks strong — scaling can't be approved on profit yet",
+{"decision": "an insight headline, ≤ 10 words, e.g.: Media performance is strong — profitability not yet verified",
  "conclusion": "one or two sentences: what performance says, and where the evidence stops. Business language",
  "health": "strong | mixed | weak — a relative read of campaign performance in this account, not of profitability",
  "known": ["≤ 4 performance facts, each ≤ 12 words with ONE number, e.g.: rosh Hasana 2026 leads the account at ROAS 6.65"],
@@ -505,14 +578,27 @@ Respond with ONLY a JSON object, no markdown fences:
  "evidence": ["≤ 10 lines, one per meaningful campaign: name · funnel stage · weakest step with the number · what it means. All the detail lives here and only here"]}
 Rules: judge good/bad ROAS against the store's breakeven; name real campaigns verbatim; cite the funnel numbers; a ROAS below breakeven loses money — say it; if a funnel stage shows 0/n-a it may be a missing pixel event, so flag tracking rather than inventing a story; never invent data not shown.`;
 
-  const raw = await callInsightModel(prompt).catch((err) => {
+  let raw: string | null;
+  try {
+    raw = await callInsightModel(prompt);
+  } catch (err) {
     console.error("[meta-campaigns-insight] model call failed:", err);
-    return null;
-  });
-  if (!raw) return null;
+    const status = (err as { status?: number } | null)?.status;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new AppError(
+      status === 429 || /insufficient_quota|rate.?limit/i.test(message)
+        ? "provider_rate_limited"
+        : `model_failed: ${message.slice(0, 160)}`,
+      502
+    );
+  }
+  if (!raw) throw new AppError("model_no_output", 502);
   const parsed = extractJson(raw);
   const modelInsight = parsed ? sanitizeInsight(parsed) : null;
-  if (!modelInsight) return null;
+  if (!modelInsight) {
+    console.error("[meta-campaigns-insight] unparseable model output (first 400 chars):", raw.slice(0, 400));
+    throw new AppError(parsed ? "model_output_incomplete" : "model_output_unparseable", 502);
+  }
   const insight: MetaCampaignsInsight = {
     ...modelInsight,
     ...assessConfidence(input.overview, ctx, costCoverage),
