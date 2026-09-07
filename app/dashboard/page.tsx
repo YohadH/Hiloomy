@@ -446,7 +446,11 @@ export default async function CommandCenterPage() {
                 "Current intel snapshot plus prescribed actions for today and this week."
               )}
             />
-            <CompetitorBriefSection brief={competitorBrief} isHe={isHe} />
+            {/* key=storeId: same reason as MetaCampaignsInsight below — the
+                actions block seeds its state from `initial` via useState, which
+                a router.refresh() prop change does NOT reset, so it kept the
+                previous brand's competitor brief after a switch. */}
+            <CompetitorBriefSection key={storeId} brief={competitorBrief} isHe={isHe} />
           </section>
         ) : activeCompetitorCount > 0 ? (
           <section className="space-y-3">
@@ -528,7 +532,13 @@ export default async function CommandCenterPage() {
                   : null
               }
             />
-            <MetaCampaignsInsight isHe={isHe} />
+            {/* key=storeId: this is a client component that fetches the insight
+                once on mount. A brand switch does router.refresh() (re-renders
+                server components) but would NOT remount a client component, so
+                it kept showing the previous brand's insight (hbosem's text on
+                Incense, 7 Sep 2026). Keying on the active store forces a remount
+                — and a fresh fetch — whenever the brand changes. */}
+            <MetaCampaignsInsight key={storeId} isHe={isHe} />
           </section>
         ) : null}
 
