@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
+import { createPortal } from "react-dom";
 import { Bot, LifeBuoy, MessageCircle, Send, X, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -58,10 +59,29 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
   // Tool names, in call order, for the live progress list.
   const [steps, setSteps] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The open panel is portaled to <body> so no ancestor (transform, overflow,
+  // stacking context) can clip or reposition it. Portals need the DOM, so
+  // render nothing until after hydration.
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setThreads({ bi: loadThread("bi"), support: loadThread("support") });
   }, []);
+
+  // Phones: the panel is a full-screen sheet, so freeze the page behind it —
+  // otherwise a swipe that overshoots the message list scrolls the dashboard
+  // underneath and the sheet looks broken.
+  useEffect(() => {
+    if (!active) return;
+    const mq = window.matchMedia("(max-width: 639px)");
+    if (!mq.matches) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [active]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -210,9 +230,22 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     const chat = CHATS[active];
     const Icon = chat.icon;
     const thread = threads[active];
-    return (
-      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-50 flex h-[min(72dvh,580px)] w-auto max-w-[390px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:left-auto sm:w-[390px]">
-        <div className={cn("flex items-center gap-3 px-4 py-3 text-white", chat.accent)}>
+    if (!mounted) return null;
+    // Phones (<640px): a full-screen sheet — `inset-0` + `100dvh`, no margins,
+    // no rounded corners. The previous floating card was clipped on Android:
+    // focusing the 14px textarea made Chrome auto-zoom the page, and fixed
+    // elements pin to the zoomed-out layout viewport, so half the panel
+    // landed off-screen. Full-screen + a 16px textarea (no auto-zoom) fixes
+    // both. ≥640px keeps the Intercom-style 390px card in the corner.
+    const panel = (
+      <div
+        dir={isHe ? "rtl" : "ltr"}
+        role="dialog"
+        aria-modal="true"
+        aria-label={chat.title}
+        className="fixed inset-0 z-50 flex h-[100dvh] w-full flex-col overflow-hidden bg-card sm:inset-auto sm:bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:right-4 sm:h-[min(72dvh,580px)] sm:w-[390px] sm:rounded-2xl sm:border sm:border-border sm:shadow-2xl"
+      >
+        <div className={cn("flex items-center gap-3 px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))] text-white sm:pt-3", chat.accent)}>
           <button
             type="button"
             onClick={() => setActive(null)}
@@ -241,7 +274,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
           </button>
         </div>
 
-        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden bg-muted/30 px-3 py-4">
+        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-contain bg-muted/30 px-3 py-4">
           <Bubble role="agent" text={chat.intro} isHe={isHe} />
           {thread.map((m, i) => (
             <Bubble key={i} role={m.role} text={m.text} isHe={isHe} />
@@ -284,7 +317,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
         </div>
 
         <form
-          className="flex items-end gap-2 border-t border-border bg-card p-3"
+          className="flex items-end gap-2 border-t border-border bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-3"
           onSubmit={(e) => {
             e.preventDefault();
             void send();
@@ -301,7 +334,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
             }}
             rows={1}
             placeholder={lang("כתבו הודעה…", "Type a message…")}
-            className="max-h-28 min-h-[38px] flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-emerald-400"
+            className="max-h-28 min-h-[38px] flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-base outline-none focus:border-emerald-400 sm:text-sm"
           />
           <button
             type="submit"
@@ -318,6 +351,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
         </form>
       </div>
     );
+    return createPortal(panel, document.body);
   }
 
   // ── Launcher + speed-dial ───────────────────────────────────────────
