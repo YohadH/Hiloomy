@@ -113,12 +113,17 @@ export async function POST(request: Request) {
           // connection with no explanation. Name the one cause the merchant
           // can act on themselves (provider quota / rate limit); everything
           // else stays generic — the detail is in the server log above.
-          const status = (err as { status?: number } | null)?.status;
-          const quota =
-            status === 429 || /insufficient_quota|rate.?limit/i.test(String((err as Error | null)?.message ?? ""));
+          const status = (err as { status?: number; statusCode?: number } | null)?.status ?? (err as { statusCode?: number } | null)?.statusCode;
+          const message = String((err as Error | null)?.message ?? "");
+          const budget = message === "llm_budget_exhausted";
+          const quota = !budget && (status === 429 || /insufficient_quota|rate.?limit/i.test(message));
           controller.enqueue(
             encoder.encode(
-              quota
+              budget
+                ? locale === "he"
+                  ? "\n\n(תקציב ה־AI היומי של החנות נוצל. הילומה תחזור לענות מחר; תובנות שכבר חושבו ממשיכות להופיע.)"
+                  : "\n\n(Today's AI budget for this store is used up. Hiloma answers again tomorrow; already-computed insights keep showing.)"
+                : quota
                 ? locale === "he"
                   ? "\n\n(ספק המודל דחה את הבקשה — מכסה או מגבלת קצב. נסו שוב בעוד דקה.)"
                   : "\n\n(The model provider refused the request — quota or rate limit. Try again in a minute.)"

@@ -1969,3 +1969,22 @@ model BiStoreSnapshot {
 
   @@index([generatedAt])
 }
+
+// Per-location inventory for a variant, from Shopify inventoryLevels. Lets a
+// store follow ONE warehouse ("מחסן לוגיסטי") instead of Shopify's grand
+// total, which mixes damaged-goods and showroom locations into the count
+// that drives stock alerts (Take a Nap, 7 Sep 2026). Selection lives in
+// SystemConfig `inventory_locations:<storeId>`; ProductVariant.inventoryQuantity
+// is recomputed from the selected locations after every sync.
+model VariantInventoryLevel {
+  id                String   @id @default(cuid())
+  storeId           String
+  shopifyVariantId  String
+  shopifyLocationId String
+  locationName      String
+  available         Int      @default(0)
+  updatedAt         DateTime @updatedAt
+
+  @@unique([storeId, shopifyVariantId, shopifyLocationId])
+  @@index([storeId, shopifyLocationId])
+}

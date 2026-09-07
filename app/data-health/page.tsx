@@ -86,6 +86,23 @@ export default async function DataHealthPage() {
               </p>
             </Card>
 
+            <Card className="space-y-2 p-6">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t("שימוש ב־AI היום", "AI usage today")}</p>
+              <p className="text-2xl font-semibold tabular-nums tracking-tight">
+                ~${health.ai.estimatedUsd.toFixed(2)}
+                <span className="text-sm font-normal text-muted-foreground"> / ${health.ai.budgetUsd.toFixed(0)} {t("תקציב יומי", "daily budget")}</span>
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {t(`${health.ai.calls} קריאות למודל`, `${health.ai.calls} model calls`)}
+                {health.ai.byFeature.length > 0
+                  ? ` · ${health.ai.byFeature.map((f) => `${f.feature} ~$${f.estimatedUsd.toFixed(2)}`).join(" · ")}`
+                  : ""}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("אומדן לפי מחירי המודל; החשבון האמיתי אצל ספק המודל. כשהתקציב נגמר, הצ׳אט ותובנות חדשות נעצרים עד מחר; מה שכבר חושב ממשיך להופיע.", "Estimate at the model's prices; the real bill is at the provider. When the budget is spent, chat and new insights pause until tomorrow; already-computed insights keep showing.")}
+              </p>
+            </Card>
+
             <Card className="space-y-4 border-orange-200/70 bg-orange-50/30 p-6 dark:border-orange-500/20 dark:bg-orange-500/5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t("השפעה על החלטות", "Decision impact")}</p>
               <p className="text-lg font-semibold leading-7">

@@ -12,6 +12,7 @@
 // cached in SystemConfig per store+window for 6h so page views don't bill.
 
 import { AppError } from "@/lib/server/errors";
+import { assertLlmBudget, recordLlmUsage } from "@/lib/services/llm-usage-service";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { getDb } from "@/lib/server/db";
@@ -417,11 +418,16 @@ function assessConfidence(
 
 const DEFAULT_BI_MODEL = "gpt-5.6-terra";
 
-async function callInsightModel(prompt: string): Promise<string | null> {
+async function callInsightModel(prompt: string, storeId: string): Promise<string | null> {
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
   if (openaiKey) {
     const client = new OpenAI({ apiKey: openaiKey });
-    type InsightResponse = { output_text?: string; status?: string; incomplete_details?: { reason?: string } };
+    type InsightResponse = {
+      output_text?: string;
+      status?: string;
+      incomplete_details?: { reason?: string };
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
     // max_output_tokens covers the model's REASONING as well as the visible
     // answer on this model family. At 4,000 the JSON was cut mid-way once
     // the prompt asked for known/unknown/evidence (7 Sep 2026: the card
@@ -452,6 +458,15 @@ async function callInsightModel(prompt: string): Promise<string | null> {
       } else {
         throw err;
       }
+    }
+    if (response.usage) {
+      void recordLlmUsage({
+        storeId,
+        feature: "meta_insight",
+        model: pinned,
+        inputTokens: response.usage.input_tokens ?? 0,
+        outputTokens: response.usage.output_tokens ?? 0
+      });
     }
     if (response.status && response.status !== "completed") {
       console.warn(
@@ -578,9 +593,11 @@ Respond with ONLY a JSON object, no markdown fences:
  "evidence": ["≤ 10 lines, one per meaningful campaign: name · funnel stage · weakest step with the number · what it means. All the detail lives here and only here"]}
 Rules: judge good/bad ROAS against the store's breakeven; name real campaigns verbatim; cite the funnel numbers; a ROAS below breakeven loses money — say it; if a funnel stage shows 0/n-a it may be a missing pixel event, so flag tracking rather than inventing a story; never invent data not shown.`;
 
+  // Cached insights were served above; only a fresh generation spends.
+  await assertLlmBudget(input.storeId, "meta_insight");
   let raw: string | null;
   try {
-    raw = await callInsightModel(prompt);
+    raw = await callInsightModel(prompt, input.storeId);
   } catch (err) {
     console.error("[meta-campaigns-insight] model call failed:", err);
     const status = (err as { status?: number } | null)?.status;

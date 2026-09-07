@@ -14,6 +14,7 @@ import {
   History,
   Inbox,
   LayoutDashboard,
+  LayoutGrid,
   Loader2,
   Lock,
   Megaphone,
@@ -102,6 +103,11 @@ function getNavigation(
         href: "/dashboard",
         label: isHe ? "מרכז פיקוד" : "Command Center",
         icon: LayoutDashboard
+      },
+      {
+        href: "/my-dashboard",
+        label: isHe ? "הדשבורד שלי" : "My dashboard",
+        icon: LayoutGrid
       },
       {
         href: "/creative",

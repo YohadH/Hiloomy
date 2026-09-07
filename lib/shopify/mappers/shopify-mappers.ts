@@ -80,7 +80,12 @@ export function mapProductNode(product: any, storeId: string) {
       title: variant.title,
       price: variant.price ? Number(variant.price) : null,
       compareAtPrice: variant.compareAtPrice ? Number(variant.compareAtPrice) : null,
-      inventoryQuantity: variant.inventoryQuantity ?? null
+      // An UNTRACKED variant (inventoryItem.tracked = false) still carries a
+      // number in Shopify — it counts down forever, so bags and gift cards
+      // showed -621 and sat in the "Emergency" tier (Take a Nap, 7 Sep 2026).
+      // null already means "not tracked" everywhere downstream (stock flags,
+      // stockout engine, decision inbox), so map it there at the source.
+      inventoryQuantity: variant.inventoryItem?.tracked === false ? null : (variant.inventoryQuantity ?? null)
     }))
   };
 }

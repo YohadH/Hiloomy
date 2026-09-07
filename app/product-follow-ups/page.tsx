@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
+import { getCachedShopifyLocations, getSelectedInventoryLocations } from "@/lib/services/inventory-locations-service";
 import { NarrativeBanner } from "@/components/dashboard-v2/narrative-banner";
 import { PageHead } from "@/components/dashboard-v2/section-head";
 import { InventoryClient } from "@/components/dashboard-v2/inventory-client";
@@ -33,6 +35,10 @@ export default async function ProductFollowUpsPage() {
       })
     : null;
   const lastSyncedAt = connection?.lastProductsSyncAt ?? null;
+  const [selectedLocationIds, cachedLocations] = storeId
+    ? await Promise.all([getSelectedInventoryLocations(storeId), getCachedShopifyLocations(storeId)])
+    : [[], []];
+  const selectedLocationNames = cachedLocations.filter((l) => selectedLocationIds.includes(l.id)).map((l) => l.name);
   const syncAgeMinutes = lastSyncedAt
     ? Math.max(0, Math.round((Date.now() - lastSyncedAt.getTime()) / 60000))
     : null;
@@ -104,6 +110,21 @@ export default async function ProductFollowUpsPage() {
               : "Active SKUs only — drafts and archived products filtered out. Emergency (<5), critical (<20), low (<50)."
           }
         />
+        {/* Which shelf the numbers come from — set in Settings → Inventory. */}
+        <p className="text-xs text-muted-foreground">
+          {locale === "he" ? "המלאי נספר לפי: " : "Stock counted at: "}
+          <span className="font-semibold text-foreground">
+            {selectedLocationNames.length > 0
+              ? selectedLocationNames.join(", ")
+              : locale === "he"
+                ? "כל המיקומים (סה״כ Shopify)"
+                : "all locations (Shopify total)"}
+          </span>
+          {" · "}
+          <Link href={"/settings#inventory" as never} className="font-semibold text-emerald-700 hover:text-emerald-600">
+            {locale === "he" ? "לשנות" : "Change"}
+          </Link>
+        </p>
 
         <NarrativeBanner
           eyebrow={locale === "he" ? "דופק המלאי" : "Stock pulse"}

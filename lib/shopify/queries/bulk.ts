@@ -115,6 +115,10 @@ export function bulkProductsQuery(updatedAfter?: Date | null): string {
               price
               compareAtPrice
               inventoryQuantity
+              inventoryPolicy
+              inventoryItem {
+                tracked
+              }
             }
           }
         }

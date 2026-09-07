@@ -825,7 +825,7 @@ export async function generateBiBrief(
   let answer: BiBriefAnswer | null = null;
   if (isOpenAiConfigured()) {
     answer = await attempt("openai", () =>
-      askOpenAiJson<BiBriefAnswer>({ question, jsonHint, timeoutMs: BI_TIMEOUT_MS, maxOutputTokens: 3000 })
+      askOpenAiJson<BiBriefAnswer>({ question, jsonHint, timeoutMs: BI_TIMEOUT_MS, maxOutputTokens: 3000, storeId: storeId ?? null, feature: "competitor_brief" })
     );
   }
   if (!isValidAnswer(answer) && isBiAgentConfigured()) {

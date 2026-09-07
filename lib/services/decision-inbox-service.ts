@@ -46,6 +46,7 @@ import { computeCostCoverage } from "@/lib/services/cost-coverage";
 import { buildSetupHealth, type SetupHealthReport } from "@/lib/services/setup-health-service";
 import { getMetaCampaignsOverview, type MetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
 import { getBundleOverview } from "@/lib/services/bundle-profitability-service";
+import { getLlmUsageToday, llmDailyBudgetUsd } from "@/lib/services/llm-usage-service";
 import type {
   Decision,
   DecisionInbox,
@@ -183,7 +184,7 @@ async function loadProductEcon(storeId: string, now: Date): Promise<Map<string, 
       COALESCE(SUM(li.quantity), 0)::int AS units,
       COALESCE(SUM(li."lineSubtotal" - li."lineDiscountAmount" - li."refundedSubtotal"), 0)::float AS net,
       COALESCE(SUM(li."estimatedCostAmount"), 0)::float AS cogs,
-      COALESCE((SELECT SUM(v."inventoryQuantity") FROM "ProductVariant" v WHERE v."productId" = p.id), 0)::int AS inventory
+      GREATEST(COALESCE((SELECT SUM(v."inventoryQuantity") FROM "ProductVariant" v WHERE v."productId" = p.id), 0), 0)::int AS inventory
     FROM "Product" p
     JOIN "OrderLineItem" li ON li."productId" = p.id
     JOIN "Order" o ON o.id = li."orderId"
@@ -1130,8 +1131,8 @@ function metaWatchItems(overview: MetaCampaignsOverview | null, pulse: InternalP
     .slice(0, 3)
     .map((c) => ({
       id: `meta:${c.campaignId}`,
-      title: L(`היעילות של ${c.campaignName} נחלשת — עדיין מעל סף העסק`, `${c.campaignName} efficiency weakening — still above business threshold`),
-      detail: L(`ROAS ${c.roas!.toFixed(1)}× מול ${overview.blendedRoas!.toFixed(1)}× ממוצע החשבון; נקודת איזון ${be.toFixed(1)}×.`, `ROAS ${c.roas!.toFixed(1)}× vs ${overview.blendedRoas!.toFixed(1)}× account blended; breakeven ${be.toFixed(1)}×.`),
+      title: L(`${c.campaignName}: ROAS ${c.roas!.toFixed(1)} — נמוך מממוצע החשבון, אבל עדיין רווחי`, `${c.campaignName}: ROAS ${c.roas!.toFixed(1)} — below the account average, but still profitable`),
+      detail: L(`ממוצע החשבון ${overview.blendedRoas!.toFixed(1)}, נקודת האיזון של החנות ${be.toFixed(1)}. הקמפיין מרוויח, רק פחות מהאחרים. לא נדרשת פעולה כל עוד הוא מעל נקודת האיזון.`, `Account average ${overview.blendedRoas!.toFixed(1)}, store breakeven ${be.toFixed(1)}. The campaign earns, just less than the others. No action needed while it stays above breakeven.`),
       source: "meta" as const,
       since: now.toISOString(),
       decisionId: null
@@ -1575,19 +1576,22 @@ export interface DataHealth {
   costCoveragePct: number;
   productsMissingCost: number;
   suppressedDecisions: number;
+  // Today's AI spend (estimate) against the per-store daily budget.
+  ai: { calls: number; estimatedUsd: number; budgetUsd: number; byFeature: Array<{ feature: string; calls: number; estimatedUsd: number }> };
 }
 
 export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth> => {
   const now = new Date();
   const d30 = new Date(now.getTime() - 30 * DAY_MS);
   const db = getDb() as any;
-  const [health, cost, crawl, competitors, ganttSheets, leakage] = await Promise.all([
+  const [health, cost, crawl, competitors, ganttSheets, leakage, llm] = await Promise.all([
     buildSetupHealth({ storeId }).catch(() => null),
     computeCostCoverage(storeId, d30, now),
     getCompetitorCrawlSummary(storeId).catch(() => null),
     listCompetitors(storeId).catch(() => []),
     db.ganttSheet.count({ where: { storeId } }).catch(() => 0) as Promise<number>,
-    getCommissionLeakageSummary({ storeId, start: d30, end: now }).catch(() => null)
+    getCommissionLeakageSummary({ storeId, start: d30, end: now }).catch(() => null),
+    getLlmUsageToday(storeId)
   ]);
   const check = (id: string) => health?.checks.find((c) => c.id === id) ?? null;
   const stateOf = (status: "pass" | "fail" | "warning" | undefined | null): HealthState =>
@@ -1664,6 +1668,14 @@ export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth
     // Every product sold this month without a real cost is a profit decision
     // Hiloomy refuses to make — that is the honest count of what is
     // suppressed for lack of financial evidence.
-    suppressedDecisions: cost.productsMissing
+    suppressedDecisions: cost.productsMissing,
+    ai: {
+      calls: llm.calls,
+      estimatedUsd: llm.estimatedUsd,
+      budgetUsd: llmDailyBudgetUsd(),
+      byFeature: Object.entries(llm.byFeature)
+        .map(([feature, f]) => ({ feature, calls: f.calls, estimatedUsd: f.estimatedUsd }))
+        .sort((a, b) => b.estimatedUsd - a.estimatedUsd)
+    }
   };
 });

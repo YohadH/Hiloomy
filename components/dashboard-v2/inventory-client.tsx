@@ -410,14 +410,12 @@ export function InventoryClient({
       rows = rows.filter((r) => r.productTitle.toLowerCase().includes(q));
     }
 
-    // Category filter from KPI card click
+    // Category filter from KPI card click. Each tile is an exclusive band
+    // (<5, 5–19, 20–49, 50+) and its count says so, so the list must show
+    // exactly that band — "Critical (<20)" used to also pour in every
+    // "Emergency" row, and the list never seemed to change (7 Sep 2026).
     if (filterFlag) {
-      if (filterFlag === "red") {
-        // "red" KPI card shows both critical + red
-        rows = rows.filter((r) => r.flag === "critical" || r.flag === "red");
-      } else {
-        rows = rows.filter((r) => r.flag === filterFlag);
-      }
+      rows = rows.filter((r) => r.flag === filterFlag);
     }
 
     // Sort
@@ -725,13 +723,13 @@ export function InventoryClient({
                 eyebrow={locale === "he" ? "לא במעקב" : "Not tracked"}
                 title={
                   locale === "he"
-                    ? `אין נתוני מלאי (${formatNumber(unknownFiltered.length)} מוצרים)`
-                    : `No inventory data (${unknownFiltered.length} products)`
+                    ? `ללא מעקב מלאי ב־Shopify (${formatNumber(unknownFiltered.length)} מוצרים)`
+                    : `Not tracked in Shopify (${unknownFiltered.length} products)`
                 }
                 hint={
                   locale === "he"
-                    ? "וריאציות בלי מעקב מלאי. הפעילו 'Track quantity' בShopify כדי להציג דגלי מלאי."
-                    : "Variants without inventory tracking. Enable 'Track quantity' in Shopify to generate flags."
+                    ? "Shopify ממשיך למכור אותם בלי לספור — למשל שקיות, גיפט קארד, הזמנה אישית. הם לא נספרים באזעקות. כדי לעקוב: 'Track quantity' בShopify."
+                    : "Shopify keeps selling these without counting — bags, gift cards, made-to-order. Excluded from the alarm tiers. To track: enable 'Track quantity' in Shopify."
                 }
                 accentClass="border-slate-200 bg-slate-50/50 text-slate-700"
               />

@@ -18,6 +18,7 @@ import {
   type ChildAttachPlan
 } from "@/lib/shopify/bulk-client";
 import { mapCustomerNode, mapOrderNode, mapProductNode, mapShopMetadata } from "@/lib/shopify/mappers/shopify-mappers";
+import { syncInventoryLevels } from "@/lib/services/inventory-locations-service";
 import { getStoredShopifyCredentials } from "@/lib/services/shopify-connection-service";
 import type { SyncMode, SyncRunSummary } from "@/lib/domain/types";
 
@@ -260,6 +261,14 @@ export async function syncProducts(storeId: string, updatedAfter?: Date | null) 
     data: {
       lastProductsSyncAt: new Date()
     }
+  });
+
+  // Per-location levels + the store's location selection. The product sync
+  // above just wrote Shopify's grand total into inventoryQuantity; this
+  // replaces it with the selected warehouse(s). Best-effort: a stores
+  // without read_locations still gets its product sync.
+  await syncInventoryLevels(storeId).catch((err) => {
+    console.warn("[shopify-sync] inventory levels sync skipped:", err instanceof Error ? err.message : err);
   });
 
   return { created, updated, fetched: products.length };

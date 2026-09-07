@@ -48,11 +48,15 @@ import { mapShopMetadata } from "@/lib/shopify/mappers/shopify-mappers";
 // write_discounts backs the affiliate portal's coupon creation
 // (discountCodeBasicCreate). Not a protected scope. Stores installed
 // before it was added must re-run the OAuth install to grant it.
+// read_locations backs the inventory-by-location setting (which warehouse
+// counts as "stock"). Stores installed before 7 Sep 2026 must reconnect
+// once to grant it; until then location names cannot be read.
 const DEFAULT_SCOPES = [
   "read_products",
   "read_orders",
   "read_customers",
   "read_inventory",
+  "read_locations",
   "write_discounts"
 ];
 

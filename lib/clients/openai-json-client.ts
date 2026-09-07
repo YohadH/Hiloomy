@@ -21,6 +21,7 @@
 // between the chat/completions and Responses surfaces.
 
 import OpenAI from "openai";
+import { assertLlmBudget, recordLlmUsage, type LlmFeature } from "@/lib/services/llm-usage-service";
 
 export type OpenAiJsonAccount = "bi" | "creative";
 
@@ -77,8 +78,13 @@ export async function askOpenAiJson<T>(input: {
   maxOutputTokens?: number;
   // Which billing account + model pin to use. Defaults to the BI account.
   account?: OpenAiJsonAccount;
+  // When given, the call is gated by the store's daily AI budget and its
+  // tokens are recorded under `feature` (lib/services/llm-usage-service.ts).
+  storeId?: string | null;
+  feature?: LlmFeature;
 }): Promise<T> {
   const kind = input.account ?? "bi";
+  if (input.storeId) await assertLlmBudget(input.storeId, input.feature ?? "other");
   const apiKey = resolveApiKey(kind);
   if (!apiKey) {
     throw new Error(
@@ -93,13 +99,12 @@ export async function askOpenAiJson<T>(input: {
     (input.jsonHint ? `\n\nFormat hint: ${input.jsonHint}` : "");
   const maxOutputTokens = input.maxOutputTokens ?? 3000;
 
+  type JsonResponse = { output_text?: string; usage?: { input_tokens?: number; output_tokens?: number } };
   const call = (model: string) =>
-    client.responses.create({ model, input: full, max_output_tokens: maxOutputTokens } as never) as unknown as Promise<{
-      output_text?: string;
-    }>;
+    client.responses.create({ model, input: full, max_output_tokens: maxOutputTokens } as never) as unknown as Promise<JsonResponse>;
 
   const pinned = modelFor(kind);
-  let response: { output_text?: string };
+  let response: JsonResponse;
   try {
     response = await call(pinned);
   } catch (err) {
@@ -117,5 +122,14 @@ export async function askOpenAiJson<T>(input: {
     }
   }
 
+  if (input.storeId && response.usage) {
+    void recordLlmUsage({
+      storeId: input.storeId,
+      feature: input.feature ?? "other",
+      model: pinned,
+      inputTokens: response.usage.input_tokens ?? 0,
+      outputTokens: response.usage.output_tokens ?? 0
+    });
+  }
   return parseJsonResponse<T>(response.output_text ?? "");
 }

@@ -21,6 +21,7 @@ const AUTHED_ROUTES = [
   "/market",
   "/memory",
   "/data-health",
+  "/my-dashboard",
   "/dashboard",
   "/profit",
   "/profit/costs",

@@ -22,6 +22,10 @@ export const PRODUCTS_QUERY = /* GraphQL */ `
                 price
                 compareAtPrice
                 inventoryQuantity
+                inventoryPolicy
+                inventoryItem {
+                  tracked
+                }
               }
             }
           }

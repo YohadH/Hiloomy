@@ -47,11 +47,17 @@ import { buildMetaAdsWeeklyReport } from "@/lib/services/meta-ads-report-service
 import { getMetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
 import { readCachedToolResult, writeCachedToolResult } from "@/lib/services/bi-tool-cache";
 import { getStoreSnapshotText } from "@/lib/services/bi-store-snapshot";
+import { assertLlmBudget, recordLlmUsage } from "@/lib/services/llm-usage-service";
 
 const MAX_TOKENS = 16000;
 // Tool round-trips per question. 6 covers "compare two periods across two
 // tools"; anything needing more is a sign the question should be narrowed.
-const MAX_ITERATIONS = 6;
+// 6 → 4 (7 Sep 2026): every round resends the whole context; the fifth
+// and sixth rounds were rare and the most expensive.
+const MAX_ITERATIONS = 4;
+// A tool result larger than this is cut before it goes back to the model —
+// order dumps were the single biggest input-token line.
+const MAX_TOOL_OUTPUT_CHARS = 8000;
 // Cap serialized tool results so one huge report can't blow the context.
 // Lowered from 28k: at ~3.7 chars/token a single result was ~7,500 tokens,
 // and six rounds could reach ~45,000. Answers cite the top rows, not whole
@@ -768,6 +774,7 @@ interface ResponseStreamEvent {
   type: string;
   delta?: string;
   item?: { type?: string; name?: string; arguments?: string; call_id?: string };
+  response?: { usage?: { input_tokens?: number; output_tokens?: number } };
 }
 
 async function runOpenAiTurn(input: RunBiChatTurnInput, runtimeContext: string): Promise<string> {
@@ -788,6 +795,9 @@ async function runOpenAiTurn(input: RunBiChatTurnInput, runtimeContext: string):
   let finalText = "";
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration += 1) {
+    // Budget gate before EVERY round — a long tool loop must not sail past
+    // the store's daily cap mid-conversation.
+    await assertLlmBudget(input.storeId, "chat");
     // Cast through unknown: the overload returns the non-streaming Response
     // type because the request object is widened by the `as never` above.
     const stream = (await client.responses.create({
@@ -826,6 +836,15 @@ async function runOpenAiTurn(input: RunBiChatTurnInput, runtimeContext: string):
           });
         }
       }
+      if (event.type === "response.completed" && event.response?.usage) {
+        void recordLlmUsage({
+          storeId: input.storeId,
+          feature: "chat",
+          model,
+          inputTokens: event.response.usage.input_tokens ?? 0,
+          outputTokens: event.response.usage.output_tokens ?? 0
+        });
+      }
     }
 
     finalText += text;
@@ -840,7 +859,14 @@ async function runOpenAiTurn(input: RunBiChatTurnInput, runtimeContext: string):
         try {
           const args = call.args ? (JSON.parse(call.args) as Record<string, unknown>) : {};
           input.onToolCall?.(call.name, args);
-          return { callId: call.callId, output: await executeTool(input.storeId, call.name, args) };
+          const output = await executeTool(input.storeId, call.name, args);
+          return {
+            callId: call.callId,
+            output:
+              output.length > MAX_TOOL_OUTPUT_CHARS
+                ? `${output.slice(0, MAX_TOOL_OUTPUT_CHARS)}\n…[truncated ${output.length - MAX_TOOL_OUTPUT_CHARS} chars — ask for a narrower window or fewer rows]`
+                : output
+          };
         } catch (err) {
           console.error(`[bi-chat] tool ${call.name} failed:`, err);
           return {

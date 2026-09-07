@@ -7,6 +7,7 @@ import { CreatorConnectionsManager } from "@/components/settings/creator-connect
 import { MetaAdsConnectionManager } from "@/components/settings/meta-ads-connection-manager";
 import { WeeklyReportRecipientsManager } from "@/components/settings/weekly-report-recipients-manager";
 import { CompetitorSetManager } from "@/components/settings/competitor-set-manager";
+import { InventoryLocationsManager } from "@/components/settings/inventory-locations-manager";
 import { CampaignProductManager } from "@/components/settings/campaign-product-manager";
 import { BundleManager } from "@/components/settings/bundle-manager";
 import { GscConnectionManager } from "@/components/settings/gsc-connection-manager";
@@ -358,6 +359,7 @@ export default async function SettingsPage({
     { id: "reporting", label: lang("דיווח ורווח", "Reporting & profit"), group: lang("דוחות", "Reporting") },
     { id: "weekly-report", label: lang("דוח שבועי", "Weekly report"), group: lang("דוחות", "Reporting") },
     { id: "competitors", label: lang("מתחרים", "Competitors"), group: lang("דוחות", "Reporting") },
+    { id: "inventory", label: lang("מלאי", "Inventory"), group: lang("דוחות", "Reporting") },
     { id: "mappings", label: lang("קמפיינים ובאנדלים", "Campaigns & bundles"), group: lang("דוחות", "Reporting") },
     ...(orgSummary
       ? [{ id: "organization", label: lang("ארגון וצוות", "Organization & team"), group: lang("חשבון", "Account") }]
@@ -455,6 +457,15 @@ export default async function SettingsPage({
             </div>
             ),
 
+            "inventory": (
+              <div className="space-y-3">
+              <Card>
+                <CardContent className="pt-6">
+                  <InventoryLocationsManager storeId={chrome.store.id} isHe={isHe} />
+                </CardContent>
+              </Card>
+              </div>
+            ),
             "competitors": (
               <div className="space-y-3">
               <Card>
