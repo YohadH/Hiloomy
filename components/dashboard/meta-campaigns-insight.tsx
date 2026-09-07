@@ -7,13 +7,15 @@
 // a regeneration.
 
 import { useEffect, useState } from "react";
-import { Bot, Lightbulb, Loader2, RefreshCw, Wrench } from "lucide-react";
+import { Bot, ChevronDown, Loader2, RefreshCw, Wrench } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface Insight {
-  headline: string;
-  insights: string[];
+  decision: string;
+  conclusion: string;
+  why: string[];
   actions: string[];
+  evidence: string[];
   generatedAt: string;
 }
 
@@ -22,6 +24,7 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
   const [insight, setInsight] = useState<Insight | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "hidden">("loading");
   const [refreshing, setRefreshing] = useState(false);
+  const [showEvidence, setShowEvidence] = useState(false);
 
   const load = async (force: boolean) => {
     try {
@@ -56,7 +59,7 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
         <div className="flex items-center justify-between gap-2">
           <p className="flex items-center gap-2 text-sm font-bold text-foreground">
             <Bot className="h-4 w-4" aria-hidden />
-            {lang("מה הילומה רואה בקמפיינים", "What Hiloma sees in these campaigns")}
+            {lang("מה לעשות היום?", "What to do today?")}
           </p>
           {state === "ready" ? (
             <button
@@ -80,16 +83,22 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
             {lang("הסוכן מנתח את הקמפיינים…", "The agent is analyzing the campaigns…")}
           </p>
         ) : insight ? (
-          <div className="mt-2 space-y-3">
-            <p className="text-sm font-semibold text-foreground">{insight.headline}</p>
+          <div className="mt-3 space-y-4">
+            {/* Decision → why → what to do. Evidence stays behind a toggle:
+                Hiloma should show how much reading she saved, not how much
+                she analyzed. */}
             <div className="space-y-1.5">
-              {insight.insights.map((line, i) => (
-                <p key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                  <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
-                  <span>{line}</span>
-                </p>
-              ))}
+              <p className="text-lg font-semibold leading-snug tracking-tight text-foreground">{insight.decision}</p>
+              <p className="text-sm leading-6 text-muted-foreground">{insight.conclusion}</p>
             </div>
+            <ul className="space-y-1">
+              {insight.why.map((line, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                  <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/60" />
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
             {insight.actions.length > 0 ? (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900 dark:bg-emerald-950/30">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
@@ -103,6 +112,30 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
                     </p>
                   ))}
                 </div>
+              </div>
+            ) : null}
+            {insight.evidence.length > 0 ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowEvidence((v) => !v)}
+                  aria-expanded={showEvidence}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                >
+                  <ChevronDown className={showEvidence ? "h-3.5 w-3.5 rotate-180 transition-transform" : "h-3.5 w-3.5 transition-transform"} aria-hidden />
+                  {showEvidence
+                    ? lang("להסתיר ראיות", "Hide evidence")
+                    : lang(`הצג ראיות (${insight.evidence.length} קמפיינים)`, `Show evidence (${insight.evidence.length} campaigns)`)}
+                </button>
+                {showEvidence ? (
+                  <ul className="mt-2 space-y-1.5 border-s-2 border-border ps-3">
+                    {insight.evidence.map((line, i) => (
+                      <li key={i} className="text-xs leading-5 text-muted-foreground">
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             ) : null}
             <p className="text-[10px] text-muted-foreground">

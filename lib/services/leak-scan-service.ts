@@ -338,21 +338,34 @@ async function roasBurnLeg(storeId: string, start: Date, end: Date): Promise<Lea
   }
   const nameById = new Map(rows.map((r) => [r.campaignId, r.campaignName]));
 
+  // Every campaign that actually spent counts (₪100+ in the window — below
+  // that is a test budget, not a leak). A campaign with spend but NO
+  // attributed purchases is the purest burn there is; it used to be skipped
+  // as "no attribution data", which is how a store with 16 campaigns read
+  // "5 checked — all above breakeven" while 8 of them bought nothing
+  // (Take a Nap, 7 Sep 2026). Only when NO campaign in the account reports
+  // ROAS at all do we treat missing ROAS as a tracking gap and stand down.
+  const accountHasAttribution = [...perCampaign.values()].some((c) => c.hasRoas);
   let burned = 0;
   const flagged: string[] = [];
   let considered = 0;
+  let noPurchase = 0;
   for (const [campaignId, c] of perCampaign) {
-    if (c.spend < 500 || !c.hasRoas) continue; // noise / no attribution data
+    if (c.spend < 100) continue; // test budgets
+    if (!c.hasRoas && !accountHasAttribution) continue; // pixel gap, not a leak
     considered += 1;
-    if (c.revenue >= c.spend) continue; // at least breaking even
-    const loss = c.spend - c.revenue;
+    const revenue = c.hasRoas ? c.revenue : 0;
+    if (revenue >= c.spend) continue; // at least breaking even
+    const loss = c.spend - revenue;
     burned += loss;
+    if (!c.hasRoas || revenue === 0) noPurchase += 1;
     if (flagged.length < 3) {
       flagged.push(
-        `"${nameById.get(campaignId) ?? campaignId}" (₪${Math.round(loss).toLocaleString("en-US")} הפסד)`
+        `"${nameById.get(campaignId) ?? campaignId}" (₪${Math.round(loss).toLocaleString("en-US")}${!c.hasRoas || revenue === 0 ? " ללא רכישות" : " הפסד"})`
       );
     }
   }
+  const total = perCampaign.size;
 
   const amount = round(burned);
   return {
@@ -366,12 +379,12 @@ async function roasBurnLeg(storeId: string, start: Date, end: Date): Promise<Lea
     detail:
       amount > 0
         ? {
-            he: `קמפיינים שמחזירים פחות ממה שהם עולים: ${flagged.join(" · ")}`,
-            en: `Campaigns returning less than they cost: ${flagged.join(" · ")}`
+            he: `${considered} מתוך ${total} קמפיינים נבדקו${noPurchase > 0 ? ` · ${noPurchase} הוציאו בלי רכישה מיוחסת` : ""}: ${flagged.join(" · ")}`,
+            en: `${considered} of ${total} campaigns checked${noPurchase > 0 ? ` · ${noPurchase} spent with no attributed purchase` : ""}: ${flagged.join(" · ")}`
           }
         : {
-            he: `${considered} קמפיינים עם הוצאה אמיתית נבדקו — כולם מעל נקודת האיזון.`,
-            en: `${considered} campaigns with real spend checked — all above breakeven.`
+            he: `${considered} מתוך ${total} קמפיינים עם הוצאה נבדקו — כולם מעל נקודת האיזון.`,
+            en: `${considered} of ${total} campaigns with spend checked — all above breakeven.`
           }
   };
 }
