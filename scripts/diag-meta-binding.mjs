@@ -54,6 +54,34 @@ try {
   console.log("- If #1 adAccountId != the account holding your REAL campaigns in #3, the store is bound to the WRONG account → re-connect it in Settings > Meta.");
   console.log("- If #2 shows multiple adAccountIds, stale rows from old bindings sit under this storeId → purge the ones that aren't the connected account.");
   console.log("- If #4 shows the same adAccountId on two different brands, the two brands were bound to one Meta account (cross-brand).");
+
+  // --purge-stale: delete insight rows under this storeId whose adAccountId is
+  // NOT the currently-connected account (leftover contamination from an old
+  // binding, e.g. the orphaned JulyPromotions account). --dry-run previews.
+  // Refuses to run when there is no connected account (would delete everything).
+  if (process.argv.includes("--purge-stale")) {
+    const dry = process.argv.includes("--dry-run");
+    const conn = (await p.$queryRaw`SELECT "adAccountId" FROM "MetaAdsConnection" WHERE "storeId" = ${STORE}`);
+    const connected = conn?.[0]?.adAccountId ?? null;
+    console.log(`\n## PURGE stale insight rows (keep only connected account ${connected ?? "—"})`);
+    if (!connected) {
+      console.log("no connected ad account for this store — refusing to purge (would delete all rows).");
+    } else {
+      const victims = await p.$queryRaw`
+        SELECT "adAccountId", COUNT(*)::int AS rows
+        FROM "MetaAdsCampaignInsight" WHERE "storeId" = ${STORE} AND "adAccountId" <> ${connected}
+        GROUP BY "adAccountId"`;
+      victims.forEach(row);
+      if (dry) {
+        console.log("dry run — nothing deleted.");
+      } else {
+        const del = await p.metaAdsCampaignInsight.deleteMany({
+          where: { storeId: STORE, adAccountId: { not: connected } }
+        });
+        console.log(`DELETED ${del.count} stale insight rows (adAccountId != ${connected}).`);
+      }
+    }
+  }
 } finally {
   await p.$disconnect();
 }
