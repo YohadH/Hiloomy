@@ -15,7 +15,7 @@
  * as serializable props — no DB access in this file.
  */
 
-import { useState, useMemo, useEffect } from "react";
+import { Fragment, useState, useMemo, useEffect } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -26,8 +26,7 @@ import {
   Search,
   ShieldAlert,
   ShoppingCart,
-  Truck
-} from "lucide-react";
+  Truck, ChevronDown } from "lucide-react";
 import { CollectionChips } from "@/components/dashboard-v2/collection-chips";
 import { StockBadge } from "@/components/dashboard-v2/stock-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -130,6 +129,15 @@ function InventoryTable({
   const pageStart = (currentPage - 1) * effectiveSize;
   const visibleRows = rows.slice(pageStart, pageStart + effectiveSize);
   const showPager = rows.length > 25;
+  // Expanded product ids (variant breakdown). Collapsed by default.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = (productId: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
 
   const columns: ColumnDef[] = [
     {
@@ -150,7 +158,22 @@ function InventoryTable({
     },
     {
       label: locale === "he" ? "וריאציות" : "Variants",
-      render: (row) => formatNumber(row.variantCount)
+      // Products with several variants expand (on click only) to show each
+      // variant's own stock — a product-level "3" hides which size is out.
+      render: (row) =>
+        row.variantCount > 1 ? (
+          <button
+            type="button"
+            onClick={() => toggleExpanded(row.productId)}
+            aria-expanded={expanded.has(row.productId)}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-sm font-medium hover:bg-accent"
+          >
+            {formatNumber(row.variantCount)}
+            <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", expanded.has(row.productId) && "rotate-180")} aria-hidden />
+          </button>
+        ) : (
+          formatNumber(row.variantCount)
+        )
     },
     {
       label: locale === "he" ? "במלאי" : "In stock",
@@ -243,13 +266,41 @@ function InventoryTable({
               </tr>
             ) : (
               visibleRows.map((row, idx) => (
-                <tr key={row.productId ?? pageStart + idx} className="transition-colors hover:bg-muted/40">
-                  {columns.map((col, ci) => (
-                    <td key={ci} className="px-5 py-4 align-top">
-                      {col.render(row)}
-                    </td>
-                  ))}
-                </tr>
+                <Fragment key={row.productId ?? pageStart + idx}>
+                  <tr className="transition-colors hover:bg-muted/40">
+                    {columns.map((col, ci) => (
+                      <td key={ci} className="px-5 py-4 align-top">
+                        {col.render(row)}
+                      </td>
+                    ))}
+                  </tr>
+                  {row.variantCount > 1 && expanded.has(row.productId) ? (
+                    <tr className="bg-muted/20">
+                      <td colSpan={columns.length} className="px-5 pb-4 pt-1">
+                        <table className="w-full max-w-2xl text-xs">
+                          <thead className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            <tr>
+                              <th className="py-1.5 pe-4 text-start">{locale === "he" ? "וריאציה" : "Variant"}</th>
+                              <th className="py-1.5 pe-4 text-start">SKU</th>
+                              <th className="py-1.5 text-start">{locale === "he" ? "במלאי" : "In stock"}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/50">
+                            {row.variants.map((v) => (
+                              <tr key={v.variantId}>
+                                <td className="py-1.5 pe-4 font-medium">{v.title}</td>
+                                <td className="py-1.5 pe-4 text-muted-foreground" dir="ltr">{v.sku ?? "—"}</td>
+                                <td className="py-1.5">
+                                  <StockBadge quantity={v.inventoryQuantity} flag={v.flag} locale={locale} />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))
             )}
           </tbody>

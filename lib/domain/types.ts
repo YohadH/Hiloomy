@@ -172,6 +172,15 @@ export interface ProductPerformanceRow {
 
 export type StockFlag = "critical" | "red" | "yellow" | "green" | "unknown";
 
+export interface ProductVariantStock {
+  variantId: string;
+  title: string;
+  sku: string | null;
+  /** null = not tracked in Shopify. */
+  inventoryQuantity: number | null;
+  flag: StockFlag;
+}
+
 export interface ProductStockRow {
   productId: string;
   productTitle: string;
@@ -181,6 +190,8 @@ export interface ProductStockRow {
   vendor: string | null;
   inventoryQuantity: number | null;
   variantCount: number;
+  /** Each variant with its own stock — shown behind an expander when there is more than one. */
+  variants: ProductVariantStock[];
   flag: StockFlag;
   /** Calendar days since the product last appeared in any order. null = never sold or data unavailable. */
   daysSinceLastSale: number | null;

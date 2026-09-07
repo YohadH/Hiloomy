@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, Plus, Search, X } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
+import { ChevronDown, Loader2, Plus, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,13 @@ interface WatchedProduct {
   addedAt: string;
   inventory: number | null;
   byLocation: Array<{ locationId: string; locationName: string; available: number }>;
+  variants: Array<{
+    variantId: string;
+    title: string;
+    sku: string | null;
+    inventoryQuantity: number | null;
+    byLocation: Array<{ locationId: string; locationName: string; available: number }>;
+  }>;
   units14: number;
   revenue14: number;
   dailyVelocity: number;
@@ -44,6 +51,15 @@ export function MyDashboard({ locale, initial }: { locale: Locale; initial: { pr
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Products whose variant breakdown is open. Collapsed by default.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = (productId: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
 
   useEffect(() => {
     const q = query.trim();
@@ -158,7 +174,54 @@ export function MyDashboard({ locale, initial }: { locale: Locale; initial: { pr
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {sorted.map((p) => (
-                    <ProductRow key={p.productId} product={p} locale={locale} busy={busy === p.productId} onRemove={() => void act("remove", p.productId)} onThreshold={(v) => void act("threshold", p.productId, v)} />
+                    <Fragment key={p.productId}>
+                      <ProductRow
+                        product={p}
+                        locale={locale}
+                        busy={busy === p.productId}
+                        expanded={expanded.has(p.productId)}
+                        onToggle={() => toggleExpanded(p.productId)}
+                        onRemove={() => void act("remove", p.productId)}
+                        onThreshold={(v) => void act("threshold", p.productId, v)}
+                      />
+                      {expanded.has(p.productId) && p.variants.length > 1 ? (
+                        <tr className="bg-muted/20">
+                          <td colSpan={9} className="px-4 pb-4 pt-1">
+                            <table className="w-full max-w-3xl text-xs">
+                              <thead className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                <tr>
+                                  <th className="py-1.5 pe-4 text-start">{t("וריאציה", "Variant")}</th>
+                                  <th className="py-1.5 pe-4 text-start">SKU</th>
+                                  <th className="py-1.5 pe-4 text-end">{t("במלאי", "In stock")}</th>
+                                  <th className="py-1.5 text-start">{t("לפי מיקום", "By location")}</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border/50">
+                                {p.variants.map((v) => (
+                                  <tr key={v.variantId}>
+                                    <td className="py-1.5 pe-4 font-medium">{v.title}</td>
+                                    <td className="py-1.5 pe-4 text-muted-foreground" dir="ltr">{v.sku ?? "—"}</td>
+                                    <td className={cn("py-1.5 pe-4 text-end font-semibold tabular-nums", v.inventoryQuantity !== null && v.inventoryQuantity < 5 && "text-red-700")}>
+                                      {v.inventoryQuantity === null ? t("ללא מעקב", "not tracked") : v.inventoryQuantity.toLocaleString("en-US")}
+                                    </td>
+                                    <td className="py-1.5 text-muted-foreground">
+                                      {v.byLocation.length === 0
+                                        ? "—"
+                                        : v.byLocation.map((l, i) => (
+                                            <span key={l.locationId}>
+                                              {i > 0 ? " · " : ""}
+                                              {l.locationName} <span className="tabular-nums text-foreground">{l.available}</span>
+                                            </span>
+                                          ))}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -174,12 +237,16 @@ function ProductRow({
   product: p,
   locale,
   busy,
+  expanded,
+  onToggle,
   onRemove,
   onThreshold
 }: {
   product: WatchedProduct;
   locale: Locale;
   busy: boolean;
+  expanded: boolean;
+  onToggle: () => void;
   onRemove: () => void;
   onThreshold: (value: number | null) => void;
 }) {
@@ -206,8 +273,18 @@ function ProductRow({
   return (
     <tr className={cn(busy && "opacity-60")}>
       <td className="px-4 py-3">
-        <p className="font-semibold">{p.title}</p>
-        {p.vendor ? <p className="text-xs text-muted-foreground">{p.vendor}</p> : null}
+        {p.variants.length > 1 ? (
+          <button type="button" onClick={onToggle} aria-expanded={expanded} className="inline-flex items-center gap-1.5 text-start font-semibold hover:text-emerald-700">
+            {p.title}
+            <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} aria-hidden />
+          </button>
+        ) : (
+          <p className="font-semibold">{p.title}</p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {p.vendor ? `${p.vendor} · ` : ""}
+          {p.variants.length > 1 ? t(`${p.variants.length} וריאציות`, `${p.variants.length} variants`) : t("וריאציה אחת", "1 variant")}
+        </p>
       </td>
       <td className="px-4 py-3">
         <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]", statusClass)}>{statusLabel}</span>

@@ -8,8 +8,7 @@ import type {
   ProductStockRow,
   StockFlag,
   Store,
-  Summary
-} from "@/lib/domain/types";
+  Summary, ProductVariantStock } from "@/lib/domain/types";
 import { withOptionalDb } from "@/lib/server/db";
 import { toNumber } from "@/lib/server/numbers";
 import { buildDailyMetrics, buildDiscountUsage, buildProductPerformance } from "@/lib/server/analytics";
@@ -802,24 +801,32 @@ async function buildLastSaleLookup(storeId: string): Promise<Map<string, number>
  * variant returns the sum of the tracked ones.
  */
 async function buildProductStockLookup(storeId: string): Promise<
-  Map<string, { quantity: number | null; variantCount: number }>
+  Map<string, { quantity: number | null; variantCount: number; variants: ProductVariantStock[] }>
 > {
   const variants = await withOptionalDb(
     (db) =>
       db.productVariant.findMany({
         where: { storeId },
-        select: { productId: true, inventoryQuantity: true }
+        select: { id: true, productId: true, title: true, sku: true, inventoryQuantity: true },
+        orderBy: { title: "asc" }
       }),
-    [] as Array<{ productId: string; inventoryQuantity: number | null }>
+    [] as Array<{ id: string; productId: string; title: string; sku: string | null; inventoryQuantity: number | null }>
   );
 
-  const lookup = new Map<string, { quantity: number | null; variantCount: number }>();
+  const lookup = new Map<string, { quantity: number | null; variantCount: number; variants: ProductVariantStock[] }>();
   for (const variant of variants) {
-    const entry = lookup.get(variant.productId) ?? { quantity: null, variantCount: 0 };
+    const entry = lookup.get(variant.productId) ?? { quantity: null, variantCount: 0, variants: [] };
     entry.variantCount += 1;
-    if (variant.inventoryQuantity !== null && variant.inventoryQuantity !== undefined) {
-      entry.quantity = (entry.quantity ?? 0) + Number(variant.inventoryQuantity);
-    }
+    const quantity =
+      variant.inventoryQuantity !== null && variant.inventoryQuantity !== undefined ? Number(variant.inventoryQuantity) : null;
+    if (quantity !== null) entry.quantity = (entry.quantity ?? 0) + quantity;
+    entry.variants.push({
+      variantId: variant.id,
+      title: variant.title,
+      sku: variant.sku ?? null,
+      inventoryQuantity: quantity,
+      flag: classifyStock(quantity)
+    });
     lookup.set(variant.productId, entry);
   }
   return lookup;
@@ -1002,6 +1009,7 @@ export const prismaAnalyticsRepository: AnalyticsRepository = {
           vendor: product.vendor ?? null,
           inventoryQuantity: quantity,
           variantCount: stock?.variantCount ?? 0,
+          variants: stock?.variants ?? [],
           flag: classifyStock(quantity),
           daysSinceLastSale: lastSaleLookup.get(product.id) ?? null
         };

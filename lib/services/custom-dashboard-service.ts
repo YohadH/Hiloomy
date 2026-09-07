@@ -20,6 +20,15 @@ export interface CustomDashboardConfig {
   products: WatchedProductConfig[];
 }
 
+export interface WatchedVariant {
+  variantId: string;
+  title: string;
+  sku: string | null;
+  // Stock by the selected locations (or Shopify total); null = not tracked.
+  inventoryQuantity: number | null;
+  byLocation: Array<{ locationId: string; locationName: string; available: number }>;
+}
+
 export interface WatchedProduct {
   productId: string;
   title: string;
@@ -29,6 +38,7 @@ export interface WatchedProduct {
   // Stock by the store's selected locations (or Shopify total); null = not tracked.
   inventory: number | null;
   byLocation: Array<{ locationId: string; locationName: string; available: number }>;
+  variants: WatchedVariant[];
   units14: number;
   revenue14: number;
   dailyVelocity: number;
@@ -119,6 +129,42 @@ export async function buildCustomDashboard(storeId: string): Promise<{ products:
   ]);
 
   const byId = new Map(rows.map((r) => [r.product_id, r]));
+
+  // Variants + their per-location levels, grouped per product.
+  const variantRows = (await db.productVariant
+    .findMany({
+      where: { storeId, productId: { in: ids } },
+      select: { id: true, productId: true, shopifyVariantId: true, title: true, sku: true, inventoryQuantity: true },
+      orderBy: { title: "asc" }
+    })
+    .catch(() => [])) as Array<{ id: string; productId: string; shopifyVariantId: string; title: string; sku: string | null; inventoryQuantity: number | null }>;
+  const levelRows = variantRows.length
+    ? ((await db.variantInventoryLevel
+        .findMany({
+          where: { storeId, shopifyVariantId: { in: variantRows.map((v) => v.shopifyVariantId) } },
+          select: { shopifyVariantId: true, shopifyLocationId: true, locationName: true, available: true },
+          orderBy: { locationName: "asc" }
+        })
+        .catch(() => [])) as Array<{ shopifyVariantId: string; shopifyLocationId: string; locationName: string; available: number }>)
+    : [];
+  const levelsByVariant = new Map<string, WatchedVariant["byLocation"]>();
+  for (const l of levelRows) {
+    const list = levelsByVariant.get(l.shopifyVariantId) ?? [];
+    list.push({ locationId: l.shopifyLocationId, locationName: l.locationName, available: Number(l.available) });
+    levelsByVariant.set(l.shopifyVariantId, list);
+  }
+  const variantsByProduct = new Map<string, WatchedVariant[]>();
+  for (const v of variantRows) {
+    const list = variantsByProduct.get(v.productId) ?? [];
+    list.push({
+      variantId: v.id,
+      title: v.title,
+      sku: v.sku,
+      inventoryQuantity: v.inventoryQuantity === null ? null : Number(v.inventoryQuantity),
+      byLocation: levelsByVariant.get(v.shopifyVariantId) ?? []
+    });
+    variantsByProduct.set(v.productId, list);
+  }
   const products: WatchedProduct[] = config.products
     .map((cfg): WatchedProduct | null => {
       const r = byId.get(cfg.productId);
@@ -143,6 +189,7 @@ export async function buildCustomDashboard(storeId: string): Promise<{ products:
         addedAt: cfg.addedAt,
         inventory,
         byLocation: byLocation.get(cfg.productId) ?? [],
+        variants: variantsByProduct.get(cfg.productId) ?? [],
         units14,
         revenue14: Number(r.revenue14),
         dailyVelocity,
