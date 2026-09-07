@@ -228,12 +228,32 @@ export async function getMetaCampaignsOverview(
 //   why        — ≤ 4 bullets, each one number
 //   actions    — ≤ 3 concrete steps
 //   evidence   — the per-campaign detail, shown only behind "Show evidence"
+//
+// Two axes, never conflated (owner, 7 Sep 2026): PERFORMANCE (ROAS, purchases,
+// CTR, trend — Meta data, available without costs) and PROFITABILITY
+// (breakeven, contribution — needs COGS). Missing COGS lowers the profit
+// axis; it does not silence the performance axis. The two confidences are
+// computed from the data server-side, not asked of the model.
+export type InsightConfidence = "high" | "medium" | "low";
+
 export interface MetaCampaignsInsight {
   decision: string;
   conclusion: string;
-  why: string[];
+  // "What we know" — performance facts, one number each.
+  known: string[];
+  // "What we don't know" — the profit-side gaps, stated plainly.
+  unknown: string[];
   actions: string[];
   evidence: string[];
+  // Model's relative read of the account's campaign performance.
+  health: "strong" | "mixed" | "weak";
+  // Computed: quality of the performance evidence (window, spend, tracking).
+  performanceConfidence: InsightConfidence;
+  // Computed: quality of the profit evidence (cost coverage).
+  profitConfidence: InsightConfidence;
+  // Computed: blended ROAS vs breakeven when breakeven is trusted.
+  profitability: "verified_profitable" | "verified_losing" | "not_verified";
+  breakevenRoas: number | null;
   generatedAt: string;
 }
 
@@ -243,7 +263,7 @@ const INSIGHT_TTL_MS = 6 * 60 * 60 * 1000;
 // every viewer of that store+window for the whole TTL. Bumping retires the
 // stale English entries immediately instead of waiting out the 6h TTL.
 const insightCacheKey = (storeId: string, locale: "he" | "en", overview: MetaCampaignsOverview) =>
-  `meta_campaigns_insight:v4:${storeId}:${locale}:${overview.rangeStart}:${overview.rangeEnd}`;
+  `meta_campaigns_insight:v5:${storeId}:${locale}:${overview.rangeStart}:${overview.rangeEnd}`;
 
 interface DigestContext {
   storeName: string | null;
@@ -302,18 +322,47 @@ function extractJson(text: string): Record<string, unknown> | null {
   }
 }
 
-function sanitizeInsight(raw: Record<string, unknown>): MetaCampaignsInsight | null {
+type ModelInsight = Pick<MetaCampaignsInsight, "decision" | "conclusion" | "known" | "unknown" | "actions" | "evidence" | "health">;
+
+function sanitizeInsight(raw: Record<string, unknown>): ModelInsight | null {
   const asList = (v: unknown, max: number): string[] =>
     Array.isArray(v)
       ? v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, max)
       : [];
   const decision = typeof raw.decision === "string" ? raw.decision.trim() : "";
   const conclusion = typeof raw.conclusion === "string" ? raw.conclusion.trim() : "";
-  const why = asList(raw.why, 4);
+  const known = asList(raw.known, 4);
+  const unknown = asList(raw.unknown, 3);
   const actions = asList(raw.actions, 3);
   const evidence = asList(raw.evidence, 10);
-  if (!decision || !conclusion || why.length === 0) return null;
-  return { decision, conclusion, why, actions, evidence, generatedAt: new Date().toISOString() };
+  const healthRaw = typeof raw.health === "string" ? raw.health.trim().toLowerCase() : "";
+  const health: ModelInsight["health"] = healthRaw === "strong" || healthRaw === "weak" ? healthRaw : "mixed";
+  if (!decision || !conclusion || known.length === 0) return null;
+  return { decision, conclusion, known, unknown, actions, evidence, health };
+}
+
+// The two confidences come from the DATA, not from the model's mood.
+function assessConfidence(
+  overview: MetaCampaignsOverview,
+  ctx: DigestContext,
+  costCoverage: number
+): Pick<MetaCampaignsInsight, "performanceConfidence" | "profitConfidence" | "profitability" | "breakevenRoas"> {
+  const days = Math.max(
+    1,
+    Math.round((new Date(overview.rangeEndAt).getTime() - new Date(overview.rangeStartAt).getTime()) / 86_400_000)
+  );
+  const tracked = overview.totalPurchases > 0;
+  const performanceConfidence: InsightConfidence =
+    tracked && overview.totalSpend >= 1000 && days >= 7 ? "high" : tracked && overview.totalSpend > 0 ? "medium" : "low";
+  const profitConfidence: InsightConfidence =
+    ctx.breakevenRoas !== null ? (costCoverage >= 0.8 ? "high" : "medium") : "low";
+  const profitability: MetaCampaignsInsight["profitability"] =
+    ctx.breakevenRoas !== null && overview.blendedRoas !== null
+      ? overview.blendedRoas >= ctx.breakevenRoas
+        ? "verified_profitable"
+        : "verified_losing"
+      : "not_verified";
+  return { performanceConfidence, profitConfidence, profitability, breakevenRoas: ctx.breakevenRoas };
 }
 
 const DEFAULT_BI_MODEL = "gpt-5.6-terra";
@@ -423,11 +472,14 @@ ${buildDigest(input.overview, ctx)}
 2) שלב במשפך לכל קמפיין — הסיקי את התפקיד של כל קמפיין (ראש המשפך / מודעות, אמצע / שקילה, תחתית / רימרקטינג והמרה, או לידים). לכל קמפיין מצאי את השלב החלש ביותר — הנפילה הגדולה ביותר במשפך שלו — והסבירי מה היא אומרת במילים פשוטות. דוגמאות: חשיפות עם CTR נמוך = הוק/קריאייטיב חלש; קליקים אבל מעט צפיות בדף נחיתה = דף איטי או קישור שבור; צפיות בדף נחיתה אבל מעט הוספות לעגלה = בעיה בדף המוצר, במחיר או בהצעה; הוספות לעגלה אבל מעט רכישות = חיכוך בתשלום, במשלוח או באמון. אם שלב חימום הקהל (ראש המשפך) דל — אמרי זאת.
 3) פעולות מותאמות לנישה — לבעיות הגדולות ביותר תני את שיטת העבודה המומלצת לסוג העסק שזוהה (איקומרס או לידים) וגם ביצוע קונקרטי לחנות הזו שהבעלים יכולים לעשות השבוע. כל פעולה ברת ביצוע, לא גנרית ("לבדוק 3 וריאציות הוק שנפתחות בתועלת המוצר ב2 השניות הראשונות", לא "לשפר קריאייטיב").
 
+הפרידי בין שני צירים ואל תערבבי ביניהם: ביצועי קמפיין (ROAS, רכישות, CTR, תדירות, CPA, מגמה, מי מוביל, מי מוציא בלי רכישות, מועמד להגדלה) — על אלה מותר וצריך לדבר גם בלי עלויות מוצר; רווחיות קמפיין (רווחי/מפסיד, האם הגדלת תקציב תוסיף רווח) — על זה מותר לדבר רק אם נקודת האיזון של החנות ידועה למעלה. אם אינה ידועה: אל תכתבי "הקמפיין רווחי" ואל תמליצי להגדיל תקציב על בסיס רווח; כתבי בנוסח "ROAS 5.92 מצביע על ביצועים חזקים, אך רווחיות הקמפיין עדיין לא מאומתת ללא COGS", וההחלטה תהיה מסוג "מועמד להגדלה — להשלים עלויות או להגדיר ROAS מינימלי ידני לפני שינוי תקציב", לא "לא לעשות כלום". אל תהיי שמרנית יתר על המידה: תשובה חלקית שאומרת בדיוק איפה הראיות נעצרות עדיפה על שתיקה.
 הפלט נקרא על ידי מנהל/ת שיש להם 20 שניות. החלק העליון חייב להיות קצר מאוד; כל הפירוט הולך ל־evidence.
 Respond with ONLY a JSON object, no markdown fences:
-{"decision": "ההחלטה עצמה, עד 8 מילים, למשל: אין כרגע הצדקה להגדיל תקציב",
- "conclusion": "משפט אחד או שניים: למה. שפה עסקית, בלי שמות של כל הקמפיינים",
- "why": ["עד 4 נקודות, כל אחת עד 12 מילים ומספר אחד, למשל: rosh Hasana 2026 ROAS 6.65 מול נקודת איזון לא ידועה"],
+{"decision": "ההחלטה עצמה, עד 10 מילים, למשל: הקמפיין נראה חזק — אך אי אפשר לאשר הגדלה על בסיס רווח",
+ "conclusion": "משפט אחד או שניים: מה הביצועים אומרים, ואיפה הראיות נעצרות. שפה עסקית",
+ "health": "strong | mixed | weak — קריאה יחסית של ביצועי הקמפיינים בחשבון, לא של רווחיות",
+ "known": ["עד 4 עובדות ביצועים, כל אחת עד 12 מילים ומספר אחד, למשל: rosh Hasana 2026 מוביל בחשבון עם ROAS 6.65"],
+ "unknown": ["עד 3 פערים בצד הרווח, רק אם קיימים, למשל: ROAS נקודת איזון לא ידוע — אין עלויות מוצר"],
  "actions": ["עד 3 צעדים קונקרטיים לשבוע הזה, כל אחד עד 15 מילים"],
  "evidence": ["עד 10 שורות, אחת לכל קמפיין משמעותי: שם · שלב במשפך · הצעד החלש ביותר עם המספר · המשמעות. כאן, ורק כאן, כל הפירוט"]}
 כללים: שפטי ROAS טוב/רע מול נקודת האיזון של החנות; נקבי בשמות הקמפיינים האמיתיים כלשונם; צטטי את מספרי המשפך; ROAS מתחת לנקודת האיזון מפסיד כסף — אמרי זאת; אם שלב במשפך מציג 0 או לא זמין ייתכן שחסר אירוע פיקסל — הצביעי על בעיית מדידה במקום להמציא סיפור; לעולם אל תמציאי נתונים שלא הוצגו; סגנון: בלי מקף מחבר בין אות שימוש למספר או למילה לועזית — כתבי "הROAS", "ב2".`
@@ -441,11 +493,14 @@ Produce, writing in English for the owner:
 2) FUNNEL STAGE per campaign — infer each campaign's role (top-of-funnel / awareness, mid / consideration, bottom / retargeting-conversion, or lead-gen). For each, find the WEAKEST stage — the biggest drop-off in its funnel — and say what it means in plain terms. Examples: impressions but low CTR = weak hook/creative; clicks but few landing views = slow page or broken link; landing views but little add-to-cart = product page / price / offer problem; add-to-cart but few purchases = checkout, shipping, trust or payment friction. If the audience-warming (top) stage is thin, say so.
 3) NICHE-AWARE ACTION ITEMS — for the biggest problems, give the BEST PRACTICE for this kind of business (e-commerce or lead-gen as detected) AND a concrete, store-specific how-to the owner can do THIS WEEK. Make each action doable, not generic ("test 3 hook variations that open on the product benefit in the first 2s", not "improve creative").
 
+Keep two axes apart and never blend them: campaign PERFORMANCE (ROAS, purchases, CTR, frequency, CPA, trend, who leads, who spends without buying, who is a scale candidate) — you may and must speak to these even without product costs; campaign PROFITABILITY (profitable/losing, whether more budget adds profit) — only when the store's breakeven ROAS above is known. If it is not: never write "the campaign is profitable" and never recommend more budget on profit grounds; write in the shape "ROAS 5.92 indicates strong performance, but campaign profitability is not yet verified without COGS", and make the decision "scale candidate — complete COGS or set a manual minimum ROAS before changing budget", not "do nothing". Do not over-hedge: a partial answer that says exactly where the evidence stops beats silence.
 The reader is a manager with 20 seconds. The top must be very short; every detail goes into evidence.
 Respond with ONLY a JSON object, no markdown fences:
-{"decision": "the call itself, ≤ 8 words, e.g.: No case for raising budget yet",
- "conclusion": "one or two sentences: why. Business language, no campaign-by-campaign listing",
- "why": ["≤ 4 bullets, each ≤ 12 words with ONE number, e.g.: rosh Hasana 2026 ROAS 6.65 vs unknown breakeven"],
+{"decision": "the call itself, ≤ 10 words, e.g.: Campaign looks strong — scaling can't be approved on profit yet",
+ "conclusion": "one or two sentences: what performance says, and where the evidence stops. Business language",
+ "health": "strong | mixed | weak — a relative read of campaign performance in this account, not of profitability",
+ "known": ["≤ 4 performance facts, each ≤ 12 words with ONE number, e.g.: rosh Hasana 2026 leads the account at ROAS 6.65"],
+ "unknown": ["≤ 3 profit-side gaps, only if they exist, e.g.: breakeven ROAS unknown — no product costs"],
  "actions": ["≤ 3 concrete steps for this week, each ≤ 15 words"],
  "evidence": ["≤ 10 lines, one per meaningful campaign: name · funnel stage · weakest step with the number · what it means. All the detail lives here and only here"]}
 Rules: judge good/bad ROAS against the store's breakeven; name real campaigns verbatim; cite the funnel numbers; a ROAS below breakeven loses money — say it; if a funnel stage shows 0/n-a it may be a missing pixel event, so flag tracking rather than inventing a story; never invent data not shown.`;
@@ -456,8 +511,13 @@ Rules: judge good/bad ROAS against the store's breakeven; name real campaigns ve
   });
   if (!raw) return null;
   const parsed = extractJson(raw);
-  const insight = parsed ? sanitizeInsight(parsed) : null;
-  if (!insight) return null;
+  const modelInsight = parsed ? sanitizeInsight(parsed) : null;
+  if (!modelInsight) return null;
+  const insight: MetaCampaignsInsight = {
+    ...modelInsight,
+    ...assessConfidence(input.overview, ctx, costCoverage),
+    generatedAt: new Date().toISOString()
+  };
 
   if (db?.systemConfig) {
     await db.systemConfig

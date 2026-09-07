@@ -10,13 +10,47 @@ import { useEffect, useState } from "react";
 import { Bot, ChevronDown, Loader2, RefreshCw, Wrench } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
+type Confidence = "high" | "medium" | "low";
+
 interface Insight {
   decision: string;
   conclusion: string;
-  why: string[];
+  known: string[];
+  unknown: string[];
   actions: string[];
   evidence: string[];
+  health: "strong" | "mixed" | "weak";
+  performanceConfidence: Confidence;
+  profitConfidence: Confidence;
+  profitability: "verified_profitable" | "verified_losing" | "not_verified";
+  breakevenRoas: number | null;
   generatedAt: string;
+}
+
+// Two badges the manager reads before anything else: how the campaigns are
+// doing, and whether profit is verified. Missing COGS lowers the second
+// axis without muting the first.
+function AxisBadge({ label, value, tone }: { label: string; value: string; tone: "good" | "neutral" | "bad" | "unknown" }) {
+  const toneClass =
+    tone === "good"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200"
+      : tone === "bad"
+        ? "border-red-300 bg-red-50 text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200"
+        : tone === "unknown"
+          ? "border-dashed border-border bg-transparent text-muted-foreground"
+          : "border-border bg-muted text-foreground";
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${toneClass}`}>
+      <span className="font-normal opacity-80">{label}:</span>
+      {value}
+    </span>
+  );
+}
+
+function confidenceLabel(level: Confidence, isHe: boolean): string {
+  if (level === "high") return isHe ? "גבוה" : "high";
+  if (level === "medium") return isHe ? "בינוני" : "medium";
+  return isHe ? "נמוך" : "low";
 }
 
 export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
@@ -84,21 +118,67 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
           </p>
         ) : insight ? (
           <div className="mt-3 space-y-4">
-            {/* Decision → why → what to do. Evidence stays behind a toggle:
-                Hiloma should show how much reading she saved, not how much
-                she analyzed. */}
+            {/* Two axes first, then decision → what we know → what we don't →
+                what to do. Evidence stays behind a toggle: Hiloma should show
+                how much reading she saved, not how much she analyzed. */}
+            <div className="flex flex-wrap gap-2">
+              <AxisBadge
+                label={lang("בריאות הקמפיינים", "Campaign health")}
+                value={
+                  insight.health === "strong"
+                    ? lang("חזקה", "Strong")
+                    : insight.health === "weak"
+                      ? lang("חלשה", "Weak")
+                      : lang("מעורבת", "Mixed")
+                }
+                tone={insight.health === "strong" ? "good" : insight.health === "weak" ? "bad" : "neutral"}
+              />
+              <AxisBadge
+                label={lang("רווחיות", "Profitability")}
+                value={
+                  insight.profitability === "verified_profitable"
+                    ? lang(`מאומתת · מעל נקודת איזון ${insight.breakevenRoas ?? ""}×`, `Verified · above ${insight.breakevenRoas ?? ""}× breakeven`)
+                    : insight.profitability === "verified_losing"
+                      ? lang(`מתחת לנקודת האיזון ${insight.breakevenRoas ?? ""}×`, `Below ${insight.breakevenRoas ?? ""}× breakeven`)
+                      : lang("לא מאומתת · חסר COGS", "Not verified · COGS missing")
+                }
+                tone={insight.profitability === "verified_profitable" ? "good" : insight.profitability === "verified_losing" ? "bad" : "unknown"}
+              />
+              <span className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+                {lang("ביטחון", "Confidence")}: {lang("ביצועים", "performance")} {confidenceLabel(insight.performanceConfidence, isHe)} · {lang("רווח", "profit")}{" "}
+                {confidenceLabel(insight.profitConfidence, isHe)}
+              </span>
+            </div>
             <div className="space-y-1.5">
               <p className="text-lg font-semibold leading-snug tracking-tight text-foreground">{insight.decision}</p>
               <p className="text-sm leading-6 text-muted-foreground">{insight.conclusion}</p>
             </div>
-            <ul className="space-y-1">
-              {insight.why.map((line, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-foreground">
-                  <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/60" />
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{lang("מה אנחנו כן יודעים", "What we know")}</p>
+                <ul className="mt-1.5 space-y-1">
+                  {insight.known.map((line, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                      <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/60" />
+                      <span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {insight.unknown.length > 0 ? (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{lang("מה אנחנו לא יודעים", "What we don't know")}</p>
+                  <ul className="mt-1.5 space-y-1">
+                    {insight.unknown.map((line, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full border border-current" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
             {insight.actions.length > 0 ? (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900 dark:bg-emerald-950/30">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
