@@ -469,6 +469,16 @@ export async function saveMetaAdsConnection(input: SaveMetaAdsConnectionInput) {
     }
   });
 
+  // Whenever the connected ad account is (re)written, drop campaign-insight
+  // rows under this store from ANY OTHER account — leftovers from a previous
+  // binding that otherwise leak into the chart tooltip and lists (the orphaned
+  // JulyPromotions rows under Incense, 7 Sep 2026). The account-switch endpoint
+  // already purged on switch; centralizing it here means oauth/callback and
+  // connection/save can't leave cross-account contamination behind either.
+  await db.metaAdsCampaignInsight
+    ?.deleteMany?.({ where: { storeId: store.id, adAccountId: { not: connection.adAccountId } } })
+    .catch(() => undefined);
+
   await saveGrowthPlatformConnection({
     platform: "metaAds",
     status: "connected",
