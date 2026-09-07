@@ -91,6 +91,8 @@ export function MyDashboard({ locale, initial }: { locale: Locale; initial: { pr
   };
 
   const attention = products.filter((p) => p.status === "below_threshold" || p.status === "low_cover");
+  const rank = (p: WatchedProduct) => (p.status === "below_threshold" ? 0 : p.status === "low_cover" ? 1 : p.status === "ok" ? 2 : 3);
+  const sorted = [...products].sort((a, b) => rank(a) - rank(b) || (a.daysCover ?? Infinity) - (b.daysCover ?? Infinity) || a.title.localeCompare(b.title));
 
   return (
     <div className="space-y-6">
@@ -138,18 +140,37 @@ export function MyDashboard({ locale, initial }: { locale: Locale; initial: { pr
               <span className="text-muted-foreground"> · {t("מתחת לסף שהגדרתם או פחות מ־14 ימי כיסוי", "below your threshold or under 14 days of cover")}</span>
             </p>
           ) : null}
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {products.map((p) => (
-              <ProductCard key={p.productId} product={p} locale={locale} busy={busy === p.productId} onRemove={() => void act("remove", p.productId)} onThreshold={(v) => void act("threshold", p.productId, v)} />
-            ))}
-          </div>
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-border text-sm">
+                <thead className="bg-muted/40 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-2.5 text-start">{t("מוצר", "Product")}</th>
+                    <th className="px-4 py-2.5 text-start">{t("סטטוס", "Status")}</th>
+                    <th className="px-4 py-2.5 text-end">{t("במלאי", "In stock")}</th>
+                    <th className="px-4 py-2.5 text-start">{t("לפי מיקום", "By location")}</th>
+                    <th className="px-4 py-2.5 text-end">{t("ימי כיסוי", "Days cover")}</th>
+                    <th className="px-4 py-2.5 text-end">{t("מכירות / 14 יום", "Sales / 14d")}</th>
+                    <th className="px-4 py-2.5 text-start">{t("מכירה אחרונה", "Last sale")}</th>
+                    <th className="px-4 py-2.5 text-end">{t("התראה מתחת ל־", "Alert below")}</th>
+                    <th className="px-2 py-2.5" aria-label={t("פעולות", "Actions")} />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {sorted.map((p) => (
+                    <ProductRow key={p.productId} product={p} locale={locale} busy={busy === p.productId} onRemove={() => void act("remove", p.productId)} onThreshold={(v) => void act("threshold", p.productId, v)} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         </>
       )}
     </div>
   );
 }
 
-function ProductCard({
+function ProductRow({
   product: p,
   locale,
   busy,
@@ -165,84 +186,68 @@ function ProductCard({
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
   const [thresholdDraft, setThresholdDraft] = useState(p.threshold === null ? "" : String(p.threshold));
-  const tone =
-    p.status === "below_threshold" ? "border-red-300" : p.status === "low_cover" ? "border-orange-300" : p.status === "not_tracked" ? "border-dashed" : "border-border/80";
   const statusLabel =
     p.status === "below_threshold"
       ? t("מתחת לסף", "Below threshold")
       : p.status === "low_cover"
         ? t("כיסוי נמוך", "Low cover")
         : p.status === "not_tracked"
-          ? t("ללא מעקב מלאי", "Not tracked")
+          ? t("ללא מעקב", "Not tracked")
           : t("תקין", "OK");
+  const statusClass =
+    p.status === "below_threshold"
+      ? "border-red-300 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200"
+      : p.status === "low_cover"
+        ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-500/40 dark:bg-orange-500/10 dark:text-orange-200"
+        : p.status === "not_tracked"
+          ? "border-dashed border-border text-muted-foreground"
+          : "border-border bg-muted text-muted-foreground";
 
   return (
-    <Card className={cn("space-y-4 p-5", tone)}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold">{p.title}</h3>
-          {p.vendor ? <p className="text-xs text-muted-foreground">{p.vendor}</p> : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={cn(
-              "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]",
-              p.status === "below_threshold" ? "border-red-300 text-red-700" : p.status === "low_cover" ? "border-orange-300 text-orange-700" : "border-border text-muted-foreground"
-            )}
-          >
-            {statusLabel}
-          </span>
-          <button type="button" onClick={onRemove} disabled={busy} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("הסרה", "Remove")}>
-            <X className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <Stat label={t("במלאי", "In stock")} value={p.inventory === null ? "—" : p.inventory.toLocaleString("en-US")} />
-        <Stat label={t("ימי כיסוי", "Days cover")} value={p.daysCover === null ? "—" : p.daysCover.toFixed(0)} />
-        <Stat label={t("מכירות / 14 יום", "Sales / 14d")} value={`${p.units14}`} note={ils(p.revenue14)} />
-      </div>
-
-      {p.byLocation.length > 0 ? (
-        <ul className="space-y-1 text-xs text-muted-foreground">
-          {p.byLocation.map((l) => (
-            <li key={l.locationId} className="flex justify-between gap-2">
-              <span className="truncate">{l.locationName}</span>
-              <span className="tabular-nums text-foreground">{l.available}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span suppressHydrationWarning>
-          {t("מכירה אחרונה", "Last sale")}: {p.lastSaleAt ? new Date(p.lastSaleAt).toLocaleDateString(isHe ? "he-IL" : "en-US", { month: "short", day: "numeric" }) : t("אין", "none")}
-        </span>
-        <label className="flex items-center gap-1.5">
-          <span>{t("התראה מתחת ל־", "Alert below")}</span>
-          <input
-            type="number"
-            min={0}
-            value={thresholdDraft}
-            onChange={(e) => setThresholdDraft(e.target.value)}
-            onBlur={() => onThreshold(thresholdDraft.trim() === "" ? null : Number(thresholdDraft))}
-            className="w-16 rounded-md border border-border bg-background px-2 py-1 text-right text-xs tabular-nums outline-none focus:border-emerald-400"
-            placeholder="—"
-          />
-          <span>{t("יח׳", "units")}</span>
-        </label>
-      </div>
-    </Card>
-  );
-}
-
-function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
-  return (
-    <div>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="text-lg font-semibold tabular-nums">{value}</p>
-      {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
-    </div>
+    <tr className={cn(busy && "opacity-60")}>
+      <td className="px-4 py-3">
+        <p className="font-semibold">{p.title}</p>
+        {p.vendor ? <p className="text-xs text-muted-foreground">{p.vendor}</p> : null}
+      </td>
+      <td className="px-4 py-3">
+        <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]", statusClass)}>{statusLabel}</span>
+      </td>
+      <td className="px-4 py-3 text-end font-semibold tabular-nums">{p.inventory === null ? "—" : p.inventory.toLocaleString("en-US")}</td>
+      <td className="px-4 py-3 text-xs text-muted-foreground">
+        {p.byLocation.length === 0
+          ? "—"
+          : p.byLocation.map((l, i) => (
+              <span key={l.locationId}>
+                {i > 0 ? " · " : ""}
+                {l.locationName} <span className="tabular-nums text-foreground">{l.available}</span>
+              </span>
+            ))}
+      </td>
+      <td className="px-4 py-3 text-end tabular-nums">{p.daysCover === null ? "—" : p.daysCover.toFixed(0)}</td>
+      <td className="px-4 py-3 text-end tabular-nums">
+        {p.units14}
+        <span className="block text-xs text-muted-foreground">{ils(p.revenue14)}</span>
+      </td>
+      <td className="px-4 py-3 text-xs text-muted-foreground" suppressHydrationWarning>
+        {p.lastSaleAt ? new Date(p.lastSaleAt).toLocaleDateString(isHe ? "he-IL" : "en-US", { month: "short", day: "numeric" }) : t("אין", "none")}
+      </td>
+      <td className="px-4 py-3 text-end">
+        <input
+          type="number"
+          min={0}
+          value={thresholdDraft}
+          onChange={(e) => setThresholdDraft(e.target.value)}
+          onBlur={() => onThreshold(thresholdDraft.trim() === "" ? null : Number(thresholdDraft))}
+          className="w-20 rounded-md border border-border bg-background px-2 py-1 text-end text-sm tabular-nums outline-none focus:border-emerald-400"
+          placeholder="—"
+          aria-label={t("סף התראה", "Alert threshold")}
+        />
+      </td>
+      <td className="px-2 py-3 text-end">
+        <button type="button" onClick={onRemove} disabled={busy} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("הסרה", "Remove")}>
+          <X className="h-4 w-4" aria-hidden />
+        </button>
+      </td>
+    </tr>
   );
 }
