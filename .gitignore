@@ -49,3 +49,10 @@ cogs-import.csv
 
 # One-shot local diagnostic/repair scripts
 tmp-*.ts
+
+# private scopes of the app 
+FEATURES.md
+
+# script to run report when checking hiloomy demand 
+incense-report.html
+.gitignore
