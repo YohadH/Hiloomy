@@ -6,10 +6,11 @@
 // deploy. Direct URLs remain reachable; real per-plan route blocking arrives
 // with billing packages.
 //
-// Valid slugs (see components/layout/sidebar.tsx): portfolio,
-// marketing-planner, creative, affiliate-portal, discounts,
-// weekly-summary, creator-flow, sales-summary, product-follow-ups, alerts.
-// The Command Center (/) and Settings are core and cannot be disabled.
+// Valid slugs (see components/layout/sidebar.tsx): competitors (the Market
+// page), portfolio, marketing-planner, creative, affiliate-portal, discounts,
+// weekly-summary, creator-flow, sales-summary, product-follow-ups, retention,
+// alerts. Today, Watchlist, Memory, Data Health, the Command Center and
+// Settings are core and cannot be disabled.
 
 export function getDisabledModules(): string[] {
   return parseSlugList(process.env.DISABLED_MODULES);

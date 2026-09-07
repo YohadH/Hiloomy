@@ -87,6 +87,19 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [active, threads, busy, streaming]);
 
+  // "Ask Hiloomy" from a Decision Receipt: open the analyst thread with the
+  // question pre-filled so the merchant only has to hit send.
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      const text = (e as CustomEvent<{ text?: string }>).detail?.text ?? "";
+      setOpen(true);
+      setActive("bi");
+      if (text) setDraft(text);
+    };
+    window.addEventListener("hiloomy:ask", onAsk);
+    return () => window.removeEventListener("hiloomy:ask", onAsk);
+  }, []);
+
   const CHATS: Record<
     ChatKind,
     { title: string; hint: string; icon: typeof Bot; intro: string; accent: string }

@@ -16,6 +16,11 @@ const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
 
 // Authed app routes — Hebrew-first, so the shell renders dir=rtl / lang=he.
 const AUTHED_ROUTES = [
+  "/today",
+  "/watchlist",
+  "/market",
+  "/memory",
+  "/data-health",
   "/dashboard",
   "/profit",
   "/profit/costs",

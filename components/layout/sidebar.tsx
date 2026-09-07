@@ -3,18 +3,23 @@
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   BadgePercent,
   Bell,
   Building2,
   CalendarRange,
   Coins,
+  Eye,
   FileText,
+  History,
+  Inbox,
   LayoutDashboard,
   Loader2,
   Lock,
   Megaphone,
   Menu,
   PackageSearch,
+  Radar,
   Settings2,
   Sparkles,
   Store as StoreIcon,
@@ -27,14 +32,8 @@ import { HiloomyMark } from "@/components/ui/logo";
 import { useMemo, useState } from "react";
 import type { AppLocale } from "@/lib/i18n";
 
-// Two-group nav — 2026-07-05.
-//
-// The 2.1 memo cut the sidebar to 5 owner-language anchors, but that
-// pushed the direct dashboards (Weekly Summary, Alerts, Offline,
-// Product Follow-ups, Creator Flow) out of reach for founders who
-// still navigate by task rather than by growth loop. This restores
-// them under a second "Dashboards" heading — the 5 anchors stay
-// primary at the top, the discovery-fallback dashboards live below.
+// Two-group nav: the decision system on top, the tools below (see the
+// comment on `nav` inside getNavigation).
 type NavItem = {
   href: string;
   label: string;
@@ -65,13 +64,30 @@ function getNavigation(
     ...item,
     locked: Boolean(item.module && lockedModules.includes(item.module))
   });
+  // Decision-system nav — 2026-09-07.
+  //
+  // The primary group is the product: Today (the Decision Inbox), what is
+  // being watched, the market as decision input, the plan, decision memory,
+  // and the data the decisions rest on. Everything that used to be a
+  // top-level dashboard is still reachable under "Tools" — it just no
+  // longer defines the experience.
   const nav = {
     primary: [
-      // Organization dashboard — only rendered for orgs with 2+ connected
-      // stores (app-shell passes showPortfolio). A single-brand operator
-      // gets no value from a "portfolio of one", but a 3-store owner needs
-      // this to be the FIRST thing they see: the cross-store rollup with
-      // per-brand comparison and click-to-switch.
+      { href: "/today", label: isHe ? "היום" : "Today", icon: Inbox },
+      { href: "/watchlist", label: isHe ? "מעקב" : "Watchlist", icon: Eye },
+      { href: "/market", label: isHe ? "שוק" : "Market", icon: Radar, module: "competitors" },
+      {
+        href: "/marketing-planner",
+        label: isHe ? "תוכנית" : "Plan",
+        icon: CalendarRange,
+        module: "marketing-planner"
+      },
+      { href: "/memory", label: isHe ? "זיכרון" : "Memory", icon: History },
+      { href: "/data-health", label: isHe ? "בריאות הנתונים" : "Data Health", icon: Activity }
+    ],
+    dashboards: [
+      // Organization rollup — only for orgs with 2+ connected stores
+      // (app-shell passes showPortfolio).
       ...(showPortfolio
         ? [
             {
@@ -88,12 +104,6 @@ function getNavigation(
         icon: LayoutDashboard
       },
       {
-        href: "/marketing-planner",
-        label: isHe ? "תכנון החודש" : "Plan the month",
-        icon: CalendarRange,
-        module: "marketing-planner"
-      },
-      {
         href: "/creative",
         label: isHe ? "סטודיו קריאייטיב" : "Creative Studio",
         icon: Sparkles,
@@ -105,13 +115,6 @@ function getNavigation(
         icon: Megaphone,
         module: "affiliate-portal"
       },
-      {
-        href: "/settings",
-        label: isHe ? "הגדרות" : "Settings",
-        icon: Settings2
-      }
-    ],
-    dashboards: [
       {
         href: "/discounts",
         label: isHe ? "הנחות וקופונים" : "Discounts",
@@ -160,9 +163,14 @@ function getNavigation(
         label: isHe ? "התראות" : "Alerts",
         icon: Bell,
         module: "alerts"
+      },
+      {
+        href: "/settings",
+        label: isHe ? "הגדרות" : "Settings",
+        icon: Settings2
       }
     ],
-    dashboardsHeading: isHe ? "דשבורדים נוספים" : "More dashboards"
+    dashboardsHeading: isHe ? "כלים" : "Tools"
   };
   return {
     primary: nav.primary.filter(enabled).map(resolve),

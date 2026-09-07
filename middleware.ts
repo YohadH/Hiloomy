@@ -201,7 +201,7 @@ export async function middleware(req: NextRequest) {
     // sent to the app instead of seeing the form again.
     if (user && (pathname === "/signin" || pathname === "/login" || pathname === "/signup")) {
       const home = req.nextUrl.clone();
-      home.pathname = "/dashboard";
+      home.pathname = "/today";
       home.search = "";
       return NextResponse.redirect(home);
     }
@@ -210,12 +210,12 @@ export async function middleware(req: NextRequest) {
 
   // The root splits by audience: anonymous visitors get the marketing
   // landing served in-place (rewrite, so the URL stays hiloomy.com/),
-  // signed-in users are sent to the Command Center at /dashboard.
+  // signed-in users are sent to Today (the Decision Inbox) at /today.
   // Query params (e.g. ?lang=en) pass through to the landing page.
   if (pathname === "/") {
     if (user) {
       const app = req.nextUrl.clone();
-      app.pathname = "/dashboard";
+      app.pathname = "/today";
       app.search = "";
       return NextResponse.redirect(app);
     }
