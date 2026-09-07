@@ -144,6 +144,47 @@ export interface CompetitorMarketSignals {
     onSalePct: number | null;
   } | null;
   adPresence: { activeAds: number; totalAds: number } | null;
+  // Ad-library read (see CompetitorAdInsights). The library has NO
+  // performance numbers, so "what works" is a proxy: the ads they keep
+  // paying for longest.
+  ads: CompetitorAdInsights | null;
+}
+
+export interface CompetitorAdInsights {
+  active: number;
+  total: number;
+  // Share of ads whose CTA is PROMO or DIRECT_SALE (vs awareness / other).
+  promoShare: number | null;
+  // Longest-running ACTIVE ads — headline screened, days since delivery_start.
+  longestRunning: Array<{ headline: string; days: number; cta: string | null; platforms: string | null; snapshotUrl: string | null }>;
+}
+
+export function adInsightsFromJson(activity: unknown): CompetitorAdInsights | null {
+  if (typeof activity !== "object" || activity === null) return null;
+  const a = (activity as Record<string, any>).adInsights;
+  if (typeof a !== "object" || a === null) return null;
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return {
+    active: n(a.active) ?? 0,
+    total: n(a.total) ?? 0,
+    promoShare: n(a.promoShare),
+    longestRunning: Array.isArray(a.longestRunning)
+      ? a.longestRunning
+          .filter((x: any) => x && typeof x.headline === "string" && isSafeScrapedTextLocal(x.headline))
+          .slice(0, 3)
+          .map((x: any) => ({
+            headline: String(x.headline),
+            days: n(x.days) ?? 0,
+            cta: typeof x.cta === "string" ? x.cta : null,
+            platforms: typeof x.platforms === "string" ? x.platforms : null,
+            snapshotUrl: typeof x.snapshotUrl === "string" ? x.snapshotUrl : null
+          }))
+      : []
+  };
+}
+
+function isSafeScrapedTextLocal(text: string): boolean {
+  return safeScrapedTexts([text]).length === 1;
 }
 
 export function marketSignalsFromJson(signalsJson: unknown): CompetitorMarketSignals | null {
@@ -175,7 +216,8 @@ export function marketSignalsFromJson(signalsJson: unknown): CompetitorMarketSig
     adPresence:
       o.adPresence && typeof o.adPresence === "object"
         ? { activeAds: n(o.adPresence.activeAds) ?? 0, totalAds: n(o.adPresence.totalAds) ?? 0 }
-        : null
+        : null,
+    ads: adInsightsFromJson((signalsJson as Record<string, unknown>).activity)
   };
 }
 
@@ -472,6 +514,7 @@ export interface CompetitorActivityEntry {
   news: Array<{ title: string; source: string; date: string }>;
   // Top homepage link labels — what the competitor pushes above the fold.
   homepageLinks: string[];
+  adInsights: CompetitorAdInsights | null;
 }
 
 export async function fetchCompetitorActivity(options?: {
@@ -502,7 +545,9 @@ export async function fetchCompetitorActivity(options?: {
           // 0 records for every monitored domain while `since=30d` returned
           // 60/60/0/26. The 7d window was reporting "no competitor ads" for
           // competitors who were in fact advertising the whole time.
-          report("ads", `/companies/${cg}/domains/${dg}/reports/ads?since=${ADS_WINDOW}&limit=60`),
+          // 200, not 60: the longevity read needs the whole active set, and a
+          // brand like Byredo keeps 150+ ads live at once.
+          report("ads", `/companies/${cg}/domains/${dg}/reports/ads?since=${ADS_WINDOW}&limit=200`),
           report("news", `/companies/${cg}/domains/${dg}/reports/news?since=14d&limit=10`),
           report("homepage-links", `/companies/${cg}/domains/${dg}/reports/homepage-top-links?since=30d&limit=10`)
         ]);
@@ -514,6 +559,45 @@ export async function fetchCompetitorActivity(options?: {
           if (headlines.length >= 3) break;
         }
 
+        // Ad-library read. The library never exposes spend or results (0 of
+        // ~800 ads carried a spend/impressions range, 7 Sep 2026), so the
+        // honest "what works" proxy is longevity: an ad still running after
+        // months is one the competitor keeps paying for.
+        const adRows = (ads?.records ?? []).map((r) => r.payload ?? {});
+        const now = Date.now();
+        const daysRunning = (a: Record<string, unknown>): number | null => {
+          const start = typeof a.delivery_start === "string" ? Date.parse(a.delivery_start) : NaN;
+          if (!Number.isFinite(start)) return null;
+          const end = typeof a.last_seen === "string" && Number.isFinite(Date.parse(a.last_seen)) ? Date.parse(a.last_seen) : now;
+          return Math.max(0, Math.round((end - start) / 86_400_000));
+        };
+        const promoCtas = new Set(["PROMO", "DIRECT_SALE", "SHOP_NOW", "BUY_NOW"]);
+        const withCta = adRows.filter((a) => typeof a.cta_type === "string");
+        const activeRows = adRows.filter((a) => a.is_active === true);
+        const longestRunning = activeRows
+          .map((a) => ({ a, days: daysRunning(a) }))
+          .filter((x): x is { a: Record<string, unknown>; days: number } => x.days !== null)
+          .sort((x, y) => y.days - x.days)
+          .map(({ a, days }) => ({
+            headline: safeScrapedTexts([pickText(a, ["headline", "title", "body"]) ?? ""])[0] ?? "",
+            days,
+            cta: typeof a.cta_type === "string" ? a.cta_type : null,
+            platforms: typeof a.platforms === "string" ? a.platforms : null,
+            snapshotUrl: typeof a.snapshot_url === "string" ? a.snapshot_url : null
+          }))
+          .filter((x) => x.headline)
+          .filter((x, i, arr) => arr.findIndex((y) => y.headline === x.headline) === i)
+          .slice(0, 3);
+        const adInsights: CompetitorAdInsights | null =
+          adRows.length > 0
+            ? {
+                active: activeRows.length,
+                total: ads?.page?.total ?? adRows.length,
+                promoShare: withCta.length > 0 ? Math.round((withCta.filter((a) => promoCtas.has(String(a.cta_type))).length / withCta.length) * 100) / 100 : null,
+                longestRunning
+              }
+            : null;
+
         return {
           domain: host,
           name: meta.name,
@@ -521,6 +605,7 @@ export async function fetchCompetitorActivity(options?: {
           // Ad-library copy is whatever the competitor runs — screen it here
           // at the source so no consumer can quote explicit text.
           adHeadlines: safeScrapedTexts(headlines),
+          adInsights,
           news: (news?.records ?? [])
             .filter((r) =>
               newsMentionsCompetitor(
@@ -766,7 +851,9 @@ export async function fetchCompetitorSignals(
           onSalePct: piProducts > 0 ? Math.round((piOnSale / piProducts) * 1000) / 10 : null
         }
       : null,
-    adPresence: ap ? { activeAds: pickNumber(ap, ["active_ads"]) ?? 0, totalAds: pickNumber(ap, ["total_ads"]) ?? 0 } : null
+    adPresence: ap ? { activeAds: pickNumber(ap, ["active_ads"]) ?? 0, totalAds: pickNumber(ap, ["total_ads"]) ?? 0 } : null,
+    // Filled from the activity fetch (signalsJson.activity.adInsights) at read time.
+    ads: null
   };
 
   return {

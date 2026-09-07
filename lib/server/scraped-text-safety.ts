@@ -37,7 +37,11 @@ const EXPLICIT_TERMS: string[] = [
   "érotique", "érotiques", "erotique", "boutique érotique", "réservé aux adultes",
   // Hebrew
   "פורנו", "סקס", "זונה", "זונות", "ליווי", "נערות ליווי", "עירום", "עירומה", "אורגזמה", "זין", "כוס", "מציצה",
-  "ארוטי", "ארוטית", "ארוטיים", "סקס שופ", "צעצועי מין", "למבוגרים בלבד"
+  "ארוטי", "ארוטית", "ארוטיים", "סקס שופ", "צעצועי מין", "למבוגרים בלבד",
+  // Symbols + clickbait spam signatures. 🔞 is the "adults only" pictograph;
+  // it carried a Spanish adult ad past the word list on 7 Sep 2026 (the
+  // provider had mapped a competitor to the wrong Facebook page).
+  "🔞", "no aguanto más", "haz clic aquí para seguir", "estoy durísimo"
 ];
 
 // Build one regex per term. Latin terms get \b-style boundaries; Hebrew has

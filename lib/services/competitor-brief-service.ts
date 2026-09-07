@@ -357,6 +357,15 @@ async function buildLiveIntel(
       if (market.adPresence && market.adPresence.activeAds > 0) {
         moveParts.push(t(`${market.adPresence.activeAds} מודעות פעילות`, `${market.adPresence.activeAds} active ads`));
       }
+      const veteran = market.ads?.longestRunning[0];
+      if (veteran && veteran.days >= 14) {
+        moveParts.push(
+          t(
+            `המודעה שהם משאירים הכי הרבה זמן: "${veteran.headline}" — רצה ${veteran.days} ימים`,
+            `The ad they keep running longest: "${veteran.headline}" — ${veteran.days} days live`
+          )
+        );
+      }
       if (market.priceIndex && market.priceIndex.medianPrice !== null) {
         moveParts.push(
           t(

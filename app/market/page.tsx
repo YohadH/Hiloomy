@@ -204,6 +204,66 @@ export default async function MarketPage() {
             </p>
           </section>
         ) : null}
+
+        {(() => {
+          const rows = [...market.events, ...market.quiet].filter((r) => r.market?.ads && (r.market.ads.longestRunning.length > 0 || r.market.ads.active > 0));
+          if (rows.length === 0) return null;
+          return (
+            <section className="space-y-3">
+              <SectionHead
+                eyebrow={t("מודעות", "Ads")}
+                title={t("מה המתחרים משאירים באוויר", "What competitors keep on air")}
+                hint={t(
+                  "ספריית המודעות של Meta לא חושפת ביצועים. מה שכן: מודעה שרצה חודשים היא מודעה שהמתחרה ממשיך לשלם עליה — זה הקירוב הכי כן ל\"מה עובד להם\".",
+                  "Meta's ad library exposes no performance data. What it does show: an ad running for months is one the competitor keeps paying for — the honest proxy for \"what works for them\"."
+                )}
+              />
+              <div className="grid gap-4 md:grid-cols-2">
+                {rows.map((r) => {
+                  const ads = r.market!.ads!;
+                  return (
+                    <Card key={`ads-${r.domain}`} className="space-y-3 p-5">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 className="text-base font-semibold">{r.name}</h3>
+                        <p className="text-xs text-muted-foreground">
+                          {t(`${ads.active} פעילות מתוך ${ads.total}`, `${ads.active} active of ${ads.total}`)}
+                          {ads.promoShare !== null ? ` · ${t(`${Math.round(ads.promoShare * 100)}% מודעות מבצע`, `${Math.round(ads.promoShare * 100)}% promo ads`)}` : ""}
+                        </p>
+                      </div>
+                      {ads.longestRunning.length > 0 ? (
+                        <ol className="space-y-2">
+                          {ads.longestRunning.map((ad, i) => (
+                            <li key={i} className="flex items-start gap-3 text-sm">
+                              <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border border-border px-1 text-[11px] font-bold text-muted-foreground">{i + 1}</span>
+                              <div className="min-w-0 flex-1">
+                                <p className="leading-5">“{ad.headline}”</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {t(`רצה ${ad.days} ימים`, `${ad.days} days live`)}
+                                  {ad.cta ? ` · ${ad.cta.toLowerCase().replace(/_/g, " ")}` : ""}
+                                  {ad.platforms ? ` · ${ad.platforms}` : ""}
+                                  {ad.snapshotUrl ? (
+                                    <>
+                                      {" · "}
+                                      <a href={ad.snapshotUrl} target="_blank" rel="noreferrer" className="font-semibold text-emerald-700 hover:text-emerald-600 dark:text-emerald-300">
+                                        {t("לצפייה", "View")}
+                                      </a>
+                                    </>
+                                  ) : null}
+                                </p>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">{t("אין מודעות פעילות עם תאריך התחלה.", "No active ads with a start date.")}</p>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
       </div>
     </AppShell>
   );
