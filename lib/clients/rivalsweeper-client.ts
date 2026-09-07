@@ -179,6 +179,14 @@ export function marketSignalsFromJson(signalsJson: unknown): CompetitorMarketSig
   };
 }
 
+// Scraped homepage link labels sometimes arrive doubled ("BedroomBedroom":
+// an icon's alt text plus the visible label). Collapse an exact repeat.
+export function undoubleLabel(value: string): string {
+  const s = value.trim();
+  const m = s.match(/^(.{2,})\1$/);
+  return m ? m[1] : s;
+}
+
 // News relevance: the provider matches news by brand name loosely, so
 // "Linera" surfaced a crypto article and "ד"ר גב" a snake sighting. Keep an
 // item only when the competitor's name (or a ≥4-char token of it) appears
@@ -528,10 +536,14 @@ export async function fetchCompetitorActivity(options?: {
             }))
             .filter((n) => n.title)
             .slice(0, 3),
-          homepageLinks: (links?.records ?? [])
-            .map((r) => pickText(r.payload ?? {}, ["name"]))
-            .filter((v): v is string => Boolean(v && v.trim()))
-            .slice(0, 4)
+          homepageLinks: [
+            ...new Set(
+              (links?.records ?? [])
+                .map((r) => pickText(r.payload ?? {}, ["name"]))
+                .filter((v): v is string => Boolean(v && v.trim()))
+                .map(undoubleLabel)
+            )
+          ].slice(0, 4)
         };
       })
     );

@@ -148,24 +148,60 @@ export default async function MarketPage() {
           </div>
         )}
 
-        {market.quiet.length > 0 ? (
+        {market.tracked > 0 ? (
           <section className="space-y-3">
             <SectionHead
-              eyebrow={t("הושתק", "Suppressed")}
-              title={t("מתחרים ללא שינוי מסחרי", "Competitors with no commercial change")}
-              hint={t("מה הספק כן רואה אצלם השבוע — בלי שינוי שמצדיק החלטה.", "What the provider does see at them this week — nothing that warrants a decision.")}
+              eyebrow={t("מצב השוק", "Market state")}
+              title={t("מה הספק רואה אצל כל מתחרה השבוע", "What the provider sees at each competitor this week")}
+              hint={t(
+                "הורדות מחיר, מוצרים שאזלו, מודעות פעילות ומחיר קטלוג. עובדות, לא החלטות — החלטה נפתחת רק כשיש שינוי מול השבוע הקודם.",
+                "Price cuts, stockouts, active ads and catalog price. Facts, not decisions — a decision opens only when something changed versus last week."
+              )}
             />
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {market.quiet.map((q) => (
-                <li key={q.domain} className="space-y-1 rounded-xl border border-border/70 bg-card/60 px-4 py-3 text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium">{q.name}</span>
-                    <span className="truncate text-muted-foreground">{q.summary[lc]}</span>
-                  </div>
-                  <MarketSignals market={q.market} lc={lc} />
-                </li>
-              ))}
-            </ul>
+            <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-border text-sm">
+                  <thead className="bg-muted/40 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-2.5 text-start">{t("מתחרה", "Competitor")}</th>
+                      <th className="px-4 py-2.5 text-start">{t("מול שבוע שעבר", "vs last week")}</th>
+                      <th className="px-4 py-2.5 text-end">{t("הורדות מחיר", "Price cuts")}</th>
+                      <th className="px-4 py-2.5 text-end">{t("הנחה מקסימלית", "Deepest cut")}</th>
+                      <th className="px-4 py-2.5 text-end">{t("מהקטלוג במבצע", "Catalog on sale")}</th>
+                      <th className="px-4 py-2.5 text-end">{t("אזלו מהמלאי", "Out of stock")}</th>
+                      <th className="px-4 py-2.5 text-end">{t("מודעות פעילות", "Active ads")}</th>
+                      <th className="px-4 py-2.5 text-end">{t("מחיר חציוני", "Median price")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {[...market.events.map((e) => ({ name: e.name, domain: e.domain, summary: e.summary, market: e.market, event: true })), ...market.quiet.map((q) => ({ ...q, event: false }))]
+                      .sort((a, b) => Number(b.event) - Number(a.event) || (b.market?.priceIndex?.onSalePct ?? 0) - (a.market?.priceIndex?.onSalePct ?? 0) || (b.market?.markdowns.count ?? 0) - (a.market?.markdowns.count ?? 0))
+                      .map((r) => {
+                        const m = r.market;
+                        const cell = (v: string | null) => <span className={v === null ? "text-muted-foreground" : "tabular-nums"}>{v ?? "—"}</span>;
+                        return (
+                          <tr key={r.domain} className={r.event ? "bg-emerald-50/40 dark:bg-emerald-500/5" : undefined}>
+                            <td className="px-4 py-3">
+                              <p className="font-semibold">{r.name}</p>
+                              <p className="text-xs text-muted-foreground" dir="ltr">{r.domain}</p>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground">{r.summary[lc]}</td>
+                            <td className="px-4 py-3 text-end">{cell(m && m.markdowns.count > 0 ? String(m.markdowns.count) : null)}</td>
+                            <td className="px-4 py-3 text-end">{cell(m && m.markdowns.maxDropPct !== null ? `${Math.round(m.markdowns.maxDropPct)}%` : null)}</td>
+                            <td className="px-4 py-3 text-end">{cell(m?.priceIndex && m.priceIndex.onSalePct !== null ? `${m.priceIndex.onSalePct}%` : null)}</td>
+                            <td className="px-4 py-3 text-end">{cell(m && m.outOfStock.count > 0 ? String(m.outOfStock.count) : null)}</td>
+                            <td className="px-4 py-3 text-end">{cell(m?.adPresence ? String(m.adPresence.activeAds) : null)}</td>
+                            <td className="px-4 py-3 text-end">{cell(m?.priceIndex && m.priceIndex.medianPrice !== null ? `₪${Math.round(m.priceIndex.medianPrice)}` : null)}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+            <p className="text-xs text-muted-foreground">
+              {t("— = הספק לא מדווח על הנתון הזה עבור המתחרה. מספרים לפי הסריקה האחרונה של הספק.", "— = the provider does not report this for that competitor. Numbers are from the provider's latest crawl.")}
+            </p>
           </section>
         ) : null}
       </div>

@@ -16,7 +16,7 @@ import { getDb } from "@/lib/server/db";
 import { askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
 import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 import { anthropicChatJson } from "@/lib/clients/anthropic-client";
-import { fetchCompetitorActivity, type CompetitorActivityEntry, marketSignalsFromJson } from "@/lib/clients/rivalsweeper-client";
+import { fetchCompetitorActivity, type CompetitorActivityEntry, marketSignalsFromJson, undoubleLabel } from "@/lib/clients/rivalsweeper-client";
 import { normalizeDomain } from "@/lib/services/competitor-intel-service";
 import { getMetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
@@ -212,7 +212,7 @@ function activityFromSignals(signalsJson: unknown): SnapshotActivity | null {
     // Screened at READ time as well as at write time, so snapshots stored
     // before the filter existed can't resurface explicit copy.
     adHeadlines: safeScrapedTexts(strings(o.adHeadlines)),
-    homepageLinks: safeScrapedTexts(strings(o.homepageLinks)),
+    homepageLinks: [...new Set(safeScrapedTexts(strings(o.homepageLinks)).map(undoubleLabel))],
     news: Array.isArray(o.news)
       ? (o.news as Array<Record<string, unknown>>)
           .filter((n) => n && typeof n.title === "string" && n.title.trim() !== "" && isSafeScrapedText(n.title))
@@ -316,15 +316,26 @@ async function buildLiveIntel(
     // "no promos on site" would be a claim the data doesn't make.
     const fromAds = latest.source === "rivalsweeper-ads";
     const moveParts: string[] = [];
-    moveParts.push(
-      latest.activePromoCount > 0
-        ? fromAds
-          ? t(`${latest.activePromoCount} מודעות עם מבצע או הנחה`, `${latest.activePromoCount} ads carrying a promo or discount`)
-          : t(`${latest.activePromoCount} מבצעים פעילים באתר`, `${latest.activePromoCount} active promos on site`)
-        : fromAds
-          ? t("לא זוהו מבצעים או הנחות במודעות שלהם", "No promos or discounts detected in their ads")
-          : t("אין מבצעים פעילים באתר", "No active promos on site")
-    );
+    const marketEarly = marketSignalsFromJson(latest.signalsJson);
+    const hasSaleSignal =
+      !!marketEarly && (marketEarly.markdowns.count > 0 || (marketEarly.priceIndex?.onSalePct ?? 0) > 0);
+    // The old first line asserted "no active promos on site" from the
+    // homepage-promo report — which the provider leaves EMPTY for every
+    // domain — right above "65% of the catalog on sale" (7 Sep 2026). Only
+    // make a promo statement the data supports: markdowns/catalog when we
+    // have them, ads when the row came from ads, otherwise "not detected on
+    // the homepage", never "none".
+    if (!hasSaleSignal) {
+      moveParts.push(
+        latest.activePromoCount > 0
+          ? fromAds
+            ? t(`${latest.activePromoCount} מודעות עם מבצע או הנחה`, `${latest.activePromoCount} ads carrying a promo or discount`)
+            : t(`${latest.activePromoCount} מבצעים פעילים באתר`, `${latest.activePromoCount} active promos on site`)
+          : fromAds
+            ? t("לא זוהו מבצעים או הנחות במודעות שלהם", "No promos or discounts detected in their ads")
+            : t("לא זוהו מבצעים בדף הבית", "No promos detected on the homepage")
+      );
+    }
     if (pct != null && pct > 0) moveParts.push(t(`הנחה עד ${Math.round(pct)}%`, `Discounts up to ${Math.round(pct)}%`));
     if (ship != null && ship > 0) moveParts.push(t(`משלוח חינם מעל ₪${Math.round(ship)}`, `Free shipping over ₪${Math.round(ship)}`));
     const homepageMessage = safeScrapedText(latest.homepageMessage);
@@ -385,7 +396,28 @@ async function buildLiveIntel(
     }
 
     // Week-over-week read: this is where the intel becomes an action.
+    // Default is market-aware: a competitor with wide discounting or many
+    // stockouts says something even when nothing changed since last week.
     let implication = t("ללא שינוי מהותי מול הבדיקה הקודמת.", "No material change since the previous check.");
+    if (market) {
+      const onSale = market.priceIndex?.onSalePct ?? 0;
+      if (market.markdowns.count >= 5 || onSale >= 30) {
+        implication = t(
+          `מריצים הנחות רחבות${onSale > 0 ? ` (${onSale}% מהקטלוג)` : ""}${market.markdowns.maxDropPct !== null ? `, הורדות עד ${Math.round(market.markdowns.maxDropPct)}%` : ""} — לחץ מחיר בקטגוריה. לא להשוות מחיר בלי ירידה בהמרות שלכם.`,
+          `Discounting broadly${onSale > 0 ? ` (${onSale}% of catalog)` : ""}${market.markdowns.maxDropPct !== null ? `, cuts up to ${Math.round(market.markdowns.maxDropPct)}%` : ""} — price pressure in the category. Don't match on price without a drop in your conversions.`
+        );
+      } else if (market.outOfStock.count >= 10) {
+        implication = t(
+          `${market.outOfStock.count} מוצרים אזלו אצלם — ביקוש שמחפש חלופה. לוודא שהמוצרים המקבילים שלכם במלאי ובולטים.`,
+          `${market.outOfStock.count} of their products are out of stock — demand looking for an alternative. Make sure your equivalents are in stock and visible.`
+        );
+      } else if (market.adPresence && market.adPresence.activeAds >= 50) {
+        implication = t(
+          `${market.adPresence.activeAds} מודעות פעילות בלי הנחות — משקיעים במותג ובמוצר. לוודא שהבידול שלכם מולם ברור.`,
+          `${market.adPresence.activeAds} active ads with no discounting — investing in brand and product. Make sure your differentiation is clear.`
+        );
+      }
+    }
     const prevPromos = prev?.activePromoCount ?? null;
     const prevPct = prev ? num(prev.maxDiscountPct) : null;
     if (prev && prevPromos === 0 && latest.activePromoCount > 0) {
