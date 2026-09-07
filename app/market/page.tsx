@@ -9,8 +9,32 @@ import { getAppChromeData } from "@/lib/services/analytics-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { buildMarketView } from "@/lib/services/decision-inbox-service";
 import { getAppLocale } from "@/lib/i18n";
+import type { CompetitorMarketSignals } from "@/lib/clients/rivalsweeper-client";
 
 export const dynamic = "force-dynamic";
+
+// One quiet line per competitor from the provider reports that are actually
+// populated: price cuts, out-of-stock events, active ads, catalog price.
+function MarketSignals({ market, lc }: { market: CompetitorMarketSignals | null; lc: "he" | "en" }) {
+  if (!market) return null;
+  const t = (he: string, en: string) => (lc === "he" ? he : en);
+  const parts: string[] = [];
+  if (market.markdowns.count > 0) {
+    parts.push(
+      market.markdowns.maxDropPct !== null
+        ? t(`${market.markdowns.count} הורדות מחיר · עד ${Math.round(market.markdowns.maxDropPct)}%`, `${market.markdowns.count} price cuts · up to ${Math.round(market.markdowns.maxDropPct)}%`)
+        : t(`${market.markdowns.count} הורדות מחיר`, `${market.markdowns.count} price cuts`)
+    );
+  }
+  if (market.outOfStock.count > 0) parts.push(t(`${market.outOfStock.count} אזלו מהמלאי`, `${market.outOfStock.count} out of stock`));
+  if (market.adPresence && market.adPresence.activeAds > 0) parts.push(t(`${market.adPresence.activeAds} מודעות פעילות`, `${market.adPresence.activeAds} active ads`));
+  if (market.priceIndex && market.priceIndex.medianPrice !== null) {
+    parts.push(t(`מחיר חציוני ₪${Math.round(market.priceIndex.medianPrice)}`, `median ₪${Math.round(market.priceIndex.medianPrice)}`));
+    if (market.priceIndex.onSalePct !== null) parts.push(t(`${market.priceIndex.onSalePct}% במבצע`, `${market.priceIndex.onSalePct}% on sale`));
+  }
+  if (parts.length === 0) return null;
+  return <p className="text-xs text-muted-foreground">{parts.join(" · ")}</p>;
+}
 
 // Market — competitor signals as INPUTS to commercial decisions. Each
 // relevant event is shown next to your own sales, conversion and exposure,
@@ -79,6 +103,7 @@ export default async function MarketPage() {
                       : t(`ההנחה הועמקה${e.maxDiscountPct !== null ? ` ל־${e.maxDiscountPct}%` : ""}`, `discount deepened${e.maxDiscountPct !== null ? ` to ${e.maxDiscountPct}%` : ""}`)}
                   </p>
                   <p className="text-sm leading-6 text-muted-foreground">{e.summary[lc]}</p>
+                  <MarketSignals market={e.market} lc={lc} />
                   {e.homepageMessage ? <p className="text-xs text-muted-foreground">“{e.homepageMessage}”</p> : null}
                   <div className="space-y-1 pt-1">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t("מוצר תואם", "Matched to")}</p>
@@ -125,12 +150,19 @@ export default async function MarketPage() {
 
         {market.quiet.length > 0 ? (
           <section className="space-y-3">
-            <SectionHead eyebrow={t("הושתק", "Suppressed")} title={t("מתחרים ללא שינוי מסחרי", "Competitors with no commercial change")} />
+            <SectionHead
+              eyebrow={t("הושתק", "Suppressed")}
+              title={t("מתחרים ללא שינוי מסחרי", "Competitors with no commercial change")}
+              hint={t("מה הספק כן רואה אצלם השבוע — בלי שינוי שמצדיק החלטה.", "What the provider does see at them this week — nothing that warrants a decision.")}
+            />
             <ul className="grid gap-2 sm:grid-cols-2">
               {market.quiet.map((q) => (
-                <li key={q.domain} className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 px-4 py-3 text-sm">
-                  <span className="font-medium">{q.name}</span>
-                  <span className="truncate text-muted-foreground">{q.summary[lc]}</span>
+                <li key={q.domain} className="space-y-1 rounded-xl border border-border/70 bg-card/60 px-4 py-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{q.name}</span>
+                    <span className="truncate text-muted-foreground">{q.summary[lc]}</span>
+                  </div>
+                  <MarketSignals market={q.market} lc={lc} />
                 </li>
               ))}
             </ul>

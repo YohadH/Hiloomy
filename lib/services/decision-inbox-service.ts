@@ -40,6 +40,7 @@ import {
   type CompetitorWeekSection
 } from "@/lib/services/competitor-intel-service";
 import { getShopifySalesSummaryForWindow } from "@/lib/data/prisma-analytics-repository";
+import { marketSignalsFromJson, type CompetitorMarketSignals } from "@/lib/clients/rivalsweeper-client";
 import { buildTrafficSearchSummary } from "@/lib/services/traffic-search-summary-service";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
 import { computeCostCoverage } from "@/lib/services/cost-coverage";
@@ -775,8 +776,26 @@ function competitorDecision(alert: AlertRow, ctx: DecisionContext): Decision {
   const demandHit = v !== null && v <= -0.12;
   const status: DecisionStatus = demandHit ? "act" : "watch";
   const velocityLabel = v === null ? null : Math.abs(v) < 0.05 ? L("יציב", "stable") : v > 0 ? L(`עלייה ${pct(v)}`, `up ${pct(v)}`) : L(`ירידה ${pct(Math.abs(v))}`, `down ${pct(Math.abs(v))}`);
+  const market = marketSignalsFromJson({ market: p.market });
+  const marketFacts: EvidenceFact[] = market
+    ? [
+        ...(market.markdowns.count > 0
+          ? [fact(L("הורדות מחיר", "Price cuts"), `${market.markdowns.count}`, "market", L("מעקב קטלוג", "Catalog monitoring"), "known", market.markdowns.maxDropPct !== null ? L(`העמוקה ${Math.round(market.markdowns.maxDropPct)}%`, `deepest ${Math.round(market.markdowns.maxDropPct)}%`) : undefined)]
+          : []),
+        ...(market.outOfStock.count > 0
+          ? [fact(L("אזל אצל המתחרה", "Out of stock at competitor"), `${market.outOfStock.count}`, "market", L("מעקב קטלוג", "Catalog monitoring"), "known", L("מוצרים — הזדמנות לביקוש שמחפש חלופה", "products — demand that may look for an alternative"))]
+          : []),
+        ...(market.adPresence
+          ? [fact(L("מודעות פעילות", "Active ads"), `${market.adPresence.activeAds}`, "market", L("ספריית המודעות של Meta", "Meta ad library"), "known", L(`מתוך ${market.adPresence.totalAds} בסך הכול`, `of ${market.adPresence.totalAds} total`))]
+          : []),
+        ...(market.priceIndex && market.priceIndex.medianPrice !== null
+          ? [fact(L("מחיר חציוני בקטלוג", "Catalog median price"), `₪${Math.round(market.priceIndex.medianPrice)}`, "market", L("מדד מחירים", "Price index"), "known", market.priceIndex.onSalePct !== null ? L(`${market.priceIndex.onSalePct}% מהקטלוג במבצע`, `${market.priceIndex.onSalePct}% of catalog on sale`) : undefined)]
+          : [])
+      ]
+    : [];
   const evidence: EvidenceFact[] = [
     fact(L("מבצע מתחרה", "Competitor promotion"), discount === null ? L("מבצע פעיל", "Promotion active") : `${discount}%`, "market", L("מעקב מתחרים", "Competitor monitoring"), "known", L(`התחיל לפני ${startedDays} ימים`, `started ${startedDays} days ago`)),
+    ...marketFacts,
     fact(L("מוצר תואם", "Matched product"), null, "market", L("התאמת מוצרים", "Product matching"), "unavailable", L("התאמה בין מוצרי המתחרה למוצרים שלכם עדיין לא זמינה", "Competitor ↔ your-SKU matching is not available yet")),
     fact(L("קצב מכירות", "Sales velocity"), velocityLabel, "shopify", L("הזמנות Shopify, 7 ימים מול 7 קודמים", "Shopify Orders, 7d vs prior 7d"), v === null ? "unavailable" : "calculated"),
     fact(L("המרה", "Conversion"), ctx.pulse.conversionRate === null ? null : pct(ctx.pulse.conversionRate, 1), "shopify", L("GA4", "GA4"), ctx.pulse.conversionQuality, ctx.pulse.conversionRate === null ? L("GA4 לא מחובר", "GA4 not connected") : undefined),
@@ -789,7 +808,10 @@ function competitorDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     title: demandHit
       ? L(`${name} השיקו מבצע${discount !== null ? ` של ${discount}%` : ""} — הביקוש שלכם נפגע`, `${name} launched a ${discount !== null ? `${discount}% ` : ""}promotion — your demand is affected`)
       : L(`${name} השיקו מבצע${discount !== null ? ` של ${discount}%` : ""} — עדיין אין הצדקה לתגובה`, `${name} launched a ${discount !== null ? `${discount}% ` : ""}promotion — no response justified yet`),
-    whyNow: L(`מבצע${discount !== null ? ` ${discount}%` : ""} מלפני ${startedDays} ימים · המכירות שלכם: ${velocityLabel ? velocityLabel.he : "אין מדידה"}`, `${discount !== null ? `${discount}% ` : ""}promotion ${startedDays} days ago · your sales: ${velocityLabel ? velocityLabel.en : "not measurable"}`),
+    whyNow: L(
+      `${market && market.markdowns.count > 0 ? `${market.markdowns.count} הורדות מחיר${discount !== null ? ` עד ${discount}%` : ""}` : `מבצע${discount !== null ? ` ${discount}%` : ""}`} מלפני ${startedDays} ימים · המכירות שלכם: ${velocityLabel ? velocityLabel.he : "אין מדידה"}`,
+      `${market && market.markdowns.count > 0 ? `${market.markdowns.count} price cuts${discount !== null ? ` up to ${discount}%` : ""}` : `${discount !== null ? `${discount}% ` : ""}promotion`} ${startedDays} days ago · your sales: ${velocityLabel ? velocityLabel.en : "not measurable"}`
+    ),
     question: L("האם להשוות את ההנחה של המתחרה?", "Should we match the competitor's discount?"),
     trigger: L(`זוהה מבצע חדש אצל ${name}${discount !== null ? ` (עד ${discount}%)` : ""}.`, `A new promotion was detected at ${name}${discount !== null ? ` (up to ${discount}%)` : ""}.`),
     evidence,
@@ -1483,6 +1505,7 @@ export interface MarketEvent {
   maxDiscountPct: number | null;
   activePromoCount: number;
   homepageMessage: string | null;
+  market: CompetitorMarketSignals | null;
   decisionId: string | null;
   decisionStatus: DecisionStatus | null;
 }
@@ -1493,7 +1516,7 @@ export interface MarketView {
   relevant: number;
   suppressed: number;
   events: MarketEvent[];
-  quiet: Array<{ name: string; domain: string; summary: Localized }>;
+  quiet: Array<{ name: string; domain: string; summary: Localized; market: CompetitorMarketSignals | null }>;
   pulse: InternalPulse;
   crawl: { at: string; source: string } | null;
   section: CompetitorWeekSection | null;
@@ -1538,11 +1561,12 @@ export const buildMarketView = cache(async (storeId: string): Promise<MarketView
       maxDiscountPct: e.current.maxDiscountPct,
       activePromoCount: e.current.activePromoCount,
       homepageMessage: e.current.homepageMessage,
+      market: e.current.market,
       decisionId: decision?.id ?? null,
       decisionStatus: decision?.status ?? null
     };
   });
-  const quiet = entries.filter((e) => !relevantEntries.includes(e)).map((e) => ({ name: e.name, domain: e.domain, summary: e.change.summary }));
+  const quiet = entries.filter((e) => !relevantEntries.includes(e)).map((e) => ({ name: e.name, domain: e.domain, summary: e.change.summary, market: e.current.market }));
   const detectedCount = Math.max(detected, events.length);
   return {
     tracked: competitors.filter((c) => c.status === "active").length,

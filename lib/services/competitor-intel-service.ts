@@ -15,6 +15,8 @@ import {
   fetchAdsDerivedSignals,
   fetchCompetitorActivity,
   fetchCompetitorSignals,
+  marketSignalsFromJson,
+  type CompetitorMarketSignals,
   getMonitoredHosts,
   isRivalSweeperConfigured,
   rivalSweeperHost,
@@ -80,6 +82,9 @@ export interface CompetitorWeekEntry {
     maxDiscountPct: number | null;
     freeShippingThreshold: number | null;
     homepageMessage: string | null;
+    // Markdowns / out-of-stock / price index / ad presence from the latest
+    // snapshot in the window (see CompetitorMarketSignals). null on old rows.
+    market: CompetitorMarketSignals | null;
   };
   change: CompetitorChange;
 }
@@ -508,6 +513,9 @@ export async function buildCompetitorWeekSection(input: {
 
   const startKey = input.start.toISOString().slice(0, 10);
   const byCompetitor = new Map<string, { current: CompetitorDayRow[]; prior: CompetitorDayRow[] }>();
+  // Latest market signals per competitor inside the current window
+  // (snapshots are ordered ascending, so the last one wins).
+  const marketByCompetitor = new Map<string, CompetitorMarketSignals>();
   for (const snap of snapshots) {
     const day = toDayRow(snap);
     let bucket = byCompetitor.get(snap.competitorId);
@@ -516,6 +524,10 @@ export async function buildCompetitorWeekSection(input: {
       byCompetitor.set(snap.competitorId, bucket);
     }
     (day.snapshotDate >= startKey ? bucket.current : bucket.prior).push(day);
+    if (day.snapshotDate >= startKey) {
+      const market = marketSignalsFromJson(snap.signalsJson);
+      if (market) marketByCompetitor.set(snap.competitorId, market);
+    }
   }
 
   const entries: CompetitorWeekEntry[] = competitors.map((competitor: any) => {
@@ -530,7 +542,8 @@ export async function buildCompetitorWeekSection(input: {
         activePromoCount: current?.latestPromoCount ?? 0,
         maxDiscountPct: current?.maxDiscountPct ?? null,
         freeShippingThreshold: current?.latestFreeShippingThreshold ?? null,
-        homepageMessage: current?.latestMessage ?? null
+        homepageMessage: current?.latestMessage ?? null,
+        market: marketByCompetitor.get(competitor.id) ?? null
       },
       change: computeCompetitorChange(current, prior)
     };
@@ -656,7 +669,8 @@ export async function upsertCompetitorResponseAlerts(input: {
         domain: entry.domain,
         changeKind: entry.change.kind,
         periodStart: section.periodStart,
-        periodEnd: section.periodEnd
+        periodEnd: section.periodEnd,
+        market: entry.current.market
       },
       periodLabel: `${section.periodStart} → ${section.periodEnd}`
     });

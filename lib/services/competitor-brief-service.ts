@@ -16,7 +16,7 @@ import { getDb } from "@/lib/server/db";
 import { askBiAgentJson, isBiAgentConfigured } from "@/lib/clients/bi-agent-client";
 import { askOpenAiJson, isOpenAiConfigured } from "@/lib/clients/openai-json-client";
 import { anthropicChatJson } from "@/lib/clients/anthropic-client";
-import { fetchCompetitorActivity, type CompetitorActivityEntry } from "@/lib/clients/rivalsweeper-client";
+import { fetchCompetitorActivity, type CompetitorActivityEntry, marketSignalsFromJson } from "@/lib/clients/rivalsweeper-client";
 import { normalizeDomain } from "@/lib/services/competitor-intel-service";
 import { getMetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
@@ -328,6 +328,33 @@ async function buildLiveIntel(
     if (pct != null && pct > 0) moveParts.push(t(`הנחה עד ${Math.round(pct)}%`, `Discounts up to ${Math.round(pct)}%`));
     if (ship != null && ship > 0) moveParts.push(t(`משלוח חינם מעל ₪${Math.round(ship)}`, `Free shipping over ₪${Math.round(ship)}`));
     const homepageMessage = safeScrapedText(latest.homepageMessage);
+    // Populated provider reports (markdowns, out-of-stock, price index, ad
+    // presence) — the concrete part of the card. Replaces the old "promo
+    // analysis arrives once the provider's scans mature" placeholder.
+    const market = marketSignalsFromJson(latest.signalsJson);
+    if (market) {
+      if (market.markdowns.count > 0) {
+        moveParts.push(
+          market.markdowns.maxDropPct !== null
+            ? t(`${market.markdowns.count} הורדות מחיר, העמוקה ${Math.round(market.markdowns.maxDropPct)}%`, `${market.markdowns.count} price cuts, deepest ${Math.round(market.markdowns.maxDropPct)}%`)
+            : t(`${market.markdowns.count} הורדות מחיר`, `${market.markdowns.count} price cuts`)
+        );
+      }
+      if (market.outOfStock.count > 0) {
+        moveParts.push(t(`${market.outOfStock.count} מוצרים אזלו מהמלאי`, `${market.outOfStock.count} products went out of stock`));
+      }
+      if (market.adPresence && market.adPresence.activeAds > 0) {
+        moveParts.push(t(`${market.adPresence.activeAds} מודעות פעילות`, `${market.adPresence.activeAds} active ads`));
+      }
+      if (market.priceIndex && market.priceIndex.medianPrice !== null) {
+        moveParts.push(
+          t(
+            `מחיר חציוני ₪${Math.round(market.priceIndex.medianPrice)}${market.priceIndex.onSalePct !== null ? ` · ${market.priceIndex.onSalePct}% מהקטלוג במבצע` : ""}`,
+            `median price ₪${Math.round(market.priceIndex.medianPrice)}${market.priceIndex.onSalePct !== null ? ` · ${market.priceIndex.onSalePct}% of catalog on sale` : ""}`
+          )
+        );
+      }
+    }
     if (homepageMessage) moveParts.push(t(`בעמוד הבית: "${homepageMessage}"`, `Homepage: "${homepageMessage}"`));
     if (activity) {
       if (activity.adsActive != null && activity.adsActive > 0) {

@@ -126,6 +126,75 @@ export function mockSignalsFor(domain: string, weekKey: string): RivalSweeperSig
 
 // ── Real HTTP path ──────────────────────────────────────────────────────
 
+// The report types the API actually fills for most monitored domains
+// (verified against the published OpenAPI + a live sweep, 7 Sep 2026):
+// markdowns (price cuts with drop %), out-of-stock events, the company-wide
+// price-index (catalog size, median price, on-sale count) and ad-presence
+// (active / total ads in Meta's library). homepage-promo, coupons and
+// free-shipping were empty for every domain — so these are the signals
+// that make the competitor section say something true.
+export interface CompetitorMarketSignals {
+  markdowns: { count: number; maxDropPct: number | null; avgDropPct: number | null };
+  outOfStock: { count: number; products: string[] };
+  priceIndex: {
+    products: number;
+    medianPrice: number | null;
+    avgPrice: number | null;
+    onSaleCount: number;
+    onSalePct: number | null;
+  } | null;
+  adPresence: { activeAds: number; totalAds: number } | null;
+}
+
+export function marketSignalsFromJson(signalsJson: unknown): CompetitorMarketSignals | null {
+  if (typeof signalsJson !== "object" || signalsJson === null) return null;
+  const m = (signalsJson as Record<string, unknown>).market;
+  if (typeof m !== "object" || m === null) return null;
+  const o = m as Record<string, any>;
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return {
+    markdowns: {
+      count: n(o.markdowns?.count) ?? 0,
+      maxDropPct: n(o.markdowns?.maxDropPct),
+      avgDropPct: n(o.markdowns?.avgDropPct)
+    },
+    outOfStock: {
+      count: n(o.outOfStock?.count) ?? 0,
+      products: Array.isArray(o.outOfStock?.products) ? o.outOfStock.products.filter((x: unknown) => typeof x === "string").slice(0, 5) : []
+    },
+    priceIndex:
+      o.priceIndex && typeof o.priceIndex === "object"
+        ? {
+            products: n(o.priceIndex.products) ?? 0,
+            medianPrice: n(o.priceIndex.medianPrice),
+            avgPrice: n(o.priceIndex.avgPrice),
+            onSaleCount: n(o.priceIndex.onSaleCount) ?? 0,
+            onSalePct: n(o.priceIndex.onSalePct)
+          }
+        : null,
+    adPresence:
+      o.adPresence && typeof o.adPresence === "object"
+        ? { activeAds: n(o.adPresence.activeAds) ?? 0, totalAds: n(o.adPresence.totalAds) ?? 0 }
+        : null
+  };
+}
+
+// News relevance: the provider matches news by brand name loosely, so
+// "Linera" surfaced a crypto article and "ד"ר גב" a snake sighting. Keep an
+// item only when the competitor's name (or a ≥4-char token of it) appears
+// in the title or description.
+export function newsMentionsCompetitor(name: string, domain: string, text: string): boolean {
+  const hay = text.toLowerCase();
+  const tokens = new Set<string>();
+  const brandFromDomain = domain.replace(/^www\./, "").split(".")[0];
+  for (const t of [name, brandFromDomain, ...name.split(/[\s\-/|,]+/)]) {
+    const tok = t.trim().toLowerCase();
+    if (tok.length >= 4) tokens.add(tok);
+  }
+  if (tokens.size === 0) return true;
+  return [...tokens].some((tok) => hay.includes(tok));
+}
+
 interface ReportRecord {
   record_id: string;
   domain_guid?: string | null;
@@ -215,12 +284,28 @@ async function getAccessToken(timeoutMs: number): Promise<{ token: string; compa
   }
 }
 
+// The provider allows 10 requests/second per key. Callers fan out
+// (15 domains × 3 reports in one Promise.all; 7 reports per competitor in
+// the snapshot sync), which blew through the cap and silently dropped a
+// random subset of ads/news every sync (7 Sep 2026: twelve 429s in one
+// activity fetch). One module-level gate spaces every request start ≥125ms
+// apart (≤8/s) no matter how many callers run in parallel.
+const REQUEST_SPACING_MS = 125;
+let nextRequestAt = 0;
+async function rateGate(): Promise<void> {
+  const now = Date.now();
+  const at = Math.max(now, nextRequestAt);
+  nextRequestAt = at + REQUEST_SPACING_MS;
+  if (at > now) await new Promise((r) => setTimeout(r, at - now));
+}
+
 async function getReport(
   path: string,
   timeoutMs: number,
   retryOnce = true
 ): Promise<ReportEnvelope> {
   const auth = await getAccessToken(timeoutMs);
+  await rateGate();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -297,7 +382,7 @@ export function rivalSweeperHost(domain: string): string {
 // fall back to parsing "NN%" out of text so new provider fields degrade
 // gracefully instead of breaking the sync.
 
-const PCT_KEYS = ["max_discount_pct", "discount_pct", "discount_percent", "depth_pct", "pct", "percent"];
+const PCT_KEYS = ["max_discount_pct", "discount_pct", "discount_percent", "depth_pct", "drop_pct", "pct", "percent"];
 const THRESHOLD_KEYS = ["free_shipping_threshold", "threshold", "min_order", "minimum", "amount"];
 const TEXT_KEYS = ["message", "title", "text", "banner_text", "description", "headline", "code", "promo_text"];
 
@@ -410,7 +495,7 @@ export async function fetchCompetitorActivity(options?: {
           // 60/60/0/26. The 7d window was reporting "no competitor ads" for
           // competitors who were in fact advertising the whole time.
           report("ads", `/companies/${cg}/domains/${dg}/reports/ads?since=${ADS_WINDOW}&limit=60`),
-          report("news", `/companies/${cg}/domains/${dg}/reports/news?since=14d&limit=3`),
+          report("news", `/companies/${cg}/domains/${dg}/reports/news?since=14d&limit=10`),
           report("homepage-links", `/companies/${cg}/domains/${dg}/reports/homepage-top-links?since=30d&limit=10`)
         ]);
 
@@ -428,11 +513,21 @@ export async function fetchCompetitorActivity(options?: {
           // Ad-library copy is whatever the competitor runs — screen it here
           // at the source so no consumer can quote explicit text.
           adHeadlines: safeScrapedTexts(headlines),
-          news: (news?.records ?? []).map((r) => ({
-            title: pickText(r.payload ?? {}, ["title"]) ?? "",
-            source: String(r.payload?.["source"] ?? r.source ?? ""),
-            date: String(r.captured_at ?? "").slice(0, 10)
-          })).filter((n) => n.title),
+          news: (news?.records ?? [])
+            .filter((r) =>
+              newsMentionsCompetitor(
+                meta.name,
+                host,
+                `${pickText(r.payload ?? {}, ["title"]) ?? ""} ${pickText(r.payload ?? {}, ["description"]) ?? ""}`
+              )
+            )
+            .map((r) => ({
+              title: pickText(r.payload ?? {}, ["title"]) ?? "",
+              source: String(r.payload?.["source"] ?? r.source ?? ""),
+              date: String(r.captured_at ?? "").slice(0, 10)
+            }))
+            .filter((n) => n.title)
+            .slice(0, 3),
           homepageLinks: (links?.records ?? [])
             .map((r) => pickText(r.payload ?? {}, ["name"]))
             .filter((v): v is string => Boolean(v && v.trim()))
@@ -570,11 +665,20 @@ export async function fetchCompetitorSignals(
   const cg = auth.companyGuid;
   const dg = entry.guid;
   const since = `${lookbackDays(input.range, 7)}d`;
-  const [homepagePromo, markdowns, coupons, freeShipping] = await Promise.all([
+  const soft = (path: string) =>
+    getReport(path, timeoutMs).catch((err) => {
+      console.warn(`[rivalsweeper] ${path.split("/reports/")[1]?.split("?")[0]} failed for ${host}:`, err instanceof Error ? err.message : err);
+      return {} as ReportEnvelope;
+    });
+  const [homepagePromo, markdowns, coupons, freeShipping, outOfStock, priceIndex, adPresence] = await Promise.all([
     getReport(`/companies/${cg}/domains/${dg}/reports/homepage-promo?since=${since}&limit=100`, timeoutMs),
     getReport(`/companies/${cg}/domains/${dg}/reports/markdowns?since=${since}&limit=100`, timeoutMs),
     getReport(`/companies/${cg}/reports/coupons?since=${since}&limit=200`, timeoutMs),
-    getReport(`/companies/${cg}/reports/free-shipping?since=${since}&limit=200`, timeoutMs)
+    getReport(`/companies/${cg}/reports/free-shipping?since=${since}&limit=200`, timeoutMs),
+    // The reports that are actually populated (see CompetitorMarketSignals).
+    soft(`/companies/${cg}/domains/${dg}/reports/out-of-stock?since=${since}&limit=100`),
+    soft(`/companies/${cg}/reports/price-index?since=30d&limit=200`),
+    soft(`/companies/${cg}/reports/ad-presence?since=30d&limit=200`)
   ]);
 
   // Company-scoped reports: keep only this domain's records; ranged pulls
@@ -584,12 +688,16 @@ export async function fetchCompetitorSignals(
   const domainShipping = (freeShipping.records ?? []).filter((r) => r.domain_guid === dg && inWindow(r));
   const promoRecords = (homepagePromo.records ?? []).filter(inWindow);
   const markdownRecords = (markdowns.records ?? []).filter(inWindow);
+  const oosRecords = (outOfStock.records ?? []).filter(inWindow);
+  const priceIndexRecord = (priceIndex.records ?? []).find((r) => r.domain_guid === dg) ?? null;
+  const adPresenceRecord = (adPresence.records ?? []).find((r) => r.domain_guid === dg) ?? null;
 
-  const everRefreshed = [homepagePromo, markdowns, coupons, freeShipping].some(
+  const everRefreshed = [homepagePromo, markdowns, coupons, freeShipping, outOfStock, priceIndex, adPresence].some(
     (e) => e.last_refreshed_at != null
   );
   const totalRecords =
-    promoRecords.length + markdownRecords.length + domainCoupons.length + domainShipping.length;
+    promoRecords.length + markdownRecords.length + domainCoupons.length + domainShipping.length +
+    oosRecords.length + (priceIndexRecord ? 1 : 0) + (adPresenceRecord ? 1 : 0);
   if (totalRecords === 0 && (!everRefreshed || input.range)) {
     // Never crawled — or a ranged pull with no crawl at or before the
     // window's end. Either way: no signal for this window, not "no promos".
@@ -616,8 +724,44 @@ export async function fetchCompetitorSignals(
     String(b.captured_at ?? "").localeCompare(String(a.captured_at ?? ""))
   )[0];
 
+  // Market signals from the populated reports.
+  const drops = markdownRecords
+    .map((r) => pickNumber(r.payload ?? {}, ["drop_pct"]))
+    .filter((v): v is number => v !== null && v > 0 && v < 100);
+  const pi = priceIndexRecord?.payload ?? null;
+  const ap = adPresenceRecord?.payload ?? null;
+  const piProducts = pi ? (pickNumber(pi, ["products"]) ?? 0) : 0;
+  const piOnSale = pi ? (pickNumber(pi, ["on_sale_count"]) ?? 0) : 0;
+  const market: CompetitorMarketSignals = {
+    markdowns: {
+      count: markdownRecords.length,
+      maxDropPct: drops.length ? Math.max(...drops) : null,
+      avgDropPct: drops.length ? Math.round((drops.reduce((a, b) => a + b, 0) / drops.length) * 10) / 10 : null
+    },
+    outOfStock: {
+      count: oosRecords.length,
+      // Events are per variant — the same product shows up once per size.
+      products: safeScrapedTexts(
+        [...new Set(oosRecords.map((r) => pickText(r.payload ?? {}, ["product"]) ?? "").filter(Boolean))]
+      ).slice(0, 5)
+    },
+    priceIndex: pi
+      ? {
+          products: piProducts,
+          medianPrice: pickNumber(pi, ["median_price"]),
+          avgPrice: pickNumber(pi, ["avg_price"]),
+          onSaleCount: piOnSale,
+          onSalePct: piProducts > 0 ? Math.round((piOnSale / piProducts) * 1000) / 10 : null
+        }
+      : null,
+    adPresence: ap ? { activeAds: pickNumber(ap, ["active_ads"]) ?? 0, totalAds: pickNumber(ap, ["total_ads"]) ?? 0 } : null
+  };
+
   return {
-    activePromoCount: promoRecords.length + domainCoupons.length,
+    // A markdown is a price cut the shopper sees — it IS a promotion signal.
+    // Counting it here is what lets the week-over-week diff fire for stores
+    // whose provider never fills homepage-promo (every domain, 7 Sep 2026).
+    activePromoCount: promoRecords.length + domainCoupons.length + markdownRecords.length,
     maxDiscountPct: pctCandidates.length ? Math.max(...pctCandidates) : null,
     freeShippingThreshold: thresholds.length ? Math.min(...thresholds) : null,
     homepageMessage: newestPromo ? safeScrapedText(pickText(newestPromo.payload ?? {}, TEXT_KEYS)) : null,
@@ -634,8 +778,10 @@ export async function fetchCompetitorSignals(
         homepagePromo: promoRecords.length,
         markdowns: markdownRecords.length,
         coupons: domainCoupons.length,
-        freeShipping: domainShipping.length
-      }
+        freeShipping: domainShipping.length,
+        outOfStock: oosRecords.length
+      },
+      market
     }
   };
 }
