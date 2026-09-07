@@ -7,7 +7,7 @@ import { StatusPill } from "@/components/decisions/status-pill";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { listDecisionMemory } from "@/lib/services/decision-inbox-service";
-import { displayDecisionId, type HumanChoice } from "@/lib/domain/decision";
+import { DECISION_STATE_LABEL, JUDGMENT_LABEL, displayDecisionId, type HumanChoice } from "@/lib/domain/decision";
 import { getAppLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -82,6 +82,12 @@ export default async function MemoryPage() {
                   </p>
                   <StatusPill status={e.status} locale={lc} />
                   <span className="text-[11px] text-muted-foreground">{displayDecisionId(e.id)}</span>
+                  <span className="text-[11px] text-muted-foreground">· {DECISION_STATE_LABEL[e.state][lc]}</span>
+                  {e.crossDomain ? (
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      {t("חוצה תחומים", "Cross-domain")}
+                    </span>
+                  ) : null}
                 </div>
                 <Link href={`/today/${e.id}` as never} className="mt-1.5 block text-base font-semibold leading-6 hover:underline">
                   {e.title[lc]}
@@ -91,6 +97,15 @@ export default async function MemoryPage() {
                   <dd>{e.recommendation[lc]}</dd>
                   <dt className="text-muted-foreground">{t("החלטת המנהל/ת", "Manager decision")}</dt>
                   <dd className="font-medium">{HUMAN[e.human.choice][lc]}</dd>
+                  {e.judgment ? (
+                    <>
+                      <dt className="text-muted-foreground">{t("שיפוט", "Judgment")}</dt>
+                      <dd className="font-medium">
+                        {e.judgment.tags.map((tag) => JUDGMENT_LABEL[tag][lc]).join(" · ") || "—"}
+                        {e.judgment.changedDecision === true ? ` · ${t("שינה את ההחלטה", "changed the decision")}` : e.judgment.changedDecision === false ? ` · ${t("לא שינה את ההחלטה", "did not change the decision")}` : ""}
+                      </dd>
+                    </>
+                  ) : null}
                   <dt className="text-muted-foreground">{t("תוצאה", "Outcome")}</dt>
                   <dd className={e.outcome ? "" : "text-muted-foreground"}>
                     {e.outcome

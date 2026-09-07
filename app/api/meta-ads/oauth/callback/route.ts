@@ -4,6 +4,8 @@ import { getAuthContext } from "@/lib/auth/session";
 import { saveMetaAdsConnection } from "@/lib/services/meta-ads-service";
 import { toErrorMessage } from "@/lib/server/errors";
 import { META_OAUTH_STATE_COOKIE, META_OAUTH_STORE_COOKIE } from "@/lib/meta-oauth";
+import { getDb } from "@/lib/server/db";
+import { getMetaAdAccountPin, normalizeMetaAdAccountId } from "@/lib/services/meta-ads-account-pin";
 
 // One-click Meta Ads connect — step 2: Facebook redirects back here with a
 // code. Exchange it for a long-lived user token, auto-pick the ad account
@@ -111,7 +113,24 @@ export async function GET(request: Request) {
     if (list.length === 0) {
       return back(`meta_error=${encodeURIComponent("This Facebook user has no ad accounts. Ask for access to the ad account and try again.")}`);
     }
-    const picked = list.find((a) => a.account_status === 1) ?? list[0];
+    // Re-connect / token renewal must NOT move the store to another account.
+    // Keep the pinned account, else the account already connected; auto-pick
+    // "first active" only for a first-time connection. If the new login
+    // cannot see the pinned account, refuse and leave the connection as is.
+    const existing = (await (getDb() as any).metaAdsConnection
+      .findUnique({ where: { storeId }, select: { adAccountId: true } })
+      .catch(() => null)) as { adAccountId: string } | null;
+    const pinned = await getMetaAdAccountPin(storeId);
+    const wanted = pinned ?? (existing?.adAccountId ? normalizeMetaAdAccountId(existing.adAccountId) : null);
+    const kept = wanted ? list.find((a) => normalizeMetaAdAccountId(a.id) === wanted) ?? null : null;
+    if (wanted && !kept && pinned) {
+      return back(
+        `meta_error=${encodeURIComponent(
+          `The Facebook login you used has no access to this store's locked ad account (${pinned}). The connection was not changed.`
+        )}`
+      );
+    }
+    const picked = kept ?? list.find((a) => a.account_status === 1) ?? list[0];
 
     await saveMetaAdsConnection({
       storeId,
@@ -124,7 +143,9 @@ export async function GET(request: Request) {
     });
 
     const response = back(
-      `meta_connected=true&meta_account=${encodeURIComponent(picked.name ?? picked.id)}${list.length > 1 ? "&meta_multi=1" : ""}`
+      `meta_connected=true&meta_account=${encodeURIComponent(picked.name ?? picked.id)}${
+        list.length > 1 && !kept ? "&meta_multi=1" : ""
+      }${kept ? "&meta_kept=1" : ""}`
     );
     response.cookies.delete(META_OAUTH_STATE_COOKIE);
     response.cookies.delete(META_OAUTH_STORE_COOKIE);

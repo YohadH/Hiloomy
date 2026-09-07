@@ -3,6 +3,7 @@ import { getAuthContext } from "@/lib/auth/session";
 import { getDb } from "@/lib/server/db";
 import { decryptSecret } from "@/lib/security/encryption";
 import { toErrorMessage } from "@/lib/server/errors";
+import { assertMetaAdAccountAllowed, setMetaAdAccountPin } from "@/lib/services/meta-ads-account-pin";
 
 // Ad-account picker for an existing Meta Ads connection.
 //
@@ -142,6 +143,9 @@ export async function POST(request: Request) {
       );
     }
 
+    // A locked store cannot be switched here — unlock first (409).
+    await assertMetaAdAccountAllowed(storeId, picked.id);
+
     const db = getDb() as any;
     await db.metaAdsConnection.update({
       where: { storeId },
@@ -164,12 +168,17 @@ export async function POST(request: Request) {
         .deleteMany({ where: { storeId, adAccountId: { not: picked.id } } })
         .catch(() => null);
     }
+    // An explicit choice in the picker is intent — lock the store to it so a
+    // later OAuth auto-pick can never move it.
+    await setMetaAdAccountPin(storeId, picked.id).catch(() => null);
     return NextResponse.json({
       ok: true,
       adAccountId: picked.id,
-      adAccountName: picked.name ?? picked.id
+      adAccountName: picked.name ?? picked.id,
+      pinned: true
     });
   } catch (error) {
-    return NextResponse.json({ ok: false, error: toErrorMessage(error) }, { status: 502 });
+    const status = error instanceof Error && "statusCode" in error ? Number((error as { statusCode?: number }).statusCode) || 502 : 502;
+    return NextResponse.json({ ok: false, error: toErrorMessage(error) }, { status });
   }
 }

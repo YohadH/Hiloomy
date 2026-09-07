@@ -25,7 +25,9 @@ that the implementation follows; it is kept next to the code so future work stay
 
 | Decision kind | Status | Sources (all existing) | Rule |
 |---|---|---|---|
-| Stockout × paid traffic | ACT / WATCH | `stockout_imminent` alerts (payload: inventory, velocity, days cover, trailing revenue, active campaigns) + `getActiveCampaignsByProduct` | ACT when a live Meta campaign is still spending on the SKU, else WATCH |
+| Stockout × paid traffic | ACT / WATCH | `stockout_imminent` alerts (payload: inventory, velocity, days cover, trailing revenue, active campaigns) + `getActiveCampaignsByProduct` + per-product 14d economics | ACT when cover ≤ 14 days (engine severity critical/high), else WATCH; a linked campaign changes the question only when its materiality is `material`/`driver` (see 5b) |
+| Discount × Profit | TEST | per-product SQL (30d, real cost only): ≥30 units, discount ≥15 % of list, contribution ≥0 but <25 % of net | "Should the discount continue although it lowers contribution?" |
+| Campaign × Product | CHANGE PLAN | `product_gone_silent` alerts that carry a live linked campaign + per-product 14d economics for a candidate SKU (real cost, positive contribution, >30 days cover) | "Move spend to a SKU with better stock and margin?" — candidate unavailable when none qualifies |
 | Returning-customer affiliate commission | TEST | `getCommissionLeakageSummary` (30d) | TEST when returning commission ≥ ₪500 and ≥ 15 % of classified commission; smaller → Watchlist |
 | Product unprofitable standalone | DO NOT ACT | per-product SQL over `OrderLineItem` (90d: units, net, discounts, COGS, cost coverage) + `BundleComponent` presence | DO NOT ACT when contribution < 0 with ≥ 95 % cost coverage and basket economics are not modelled |
 | Competitor promotion | WATCH / ACT | `competitor_promo` alerts + 7d vs prior-7d sales velocity (`getShopifySalesSummaryForWindow`) + GA4 conversion when available | WATCH unless velocity −12 % or conversion −8 % |
@@ -88,6 +90,35 @@ Still owed (needs a running server with a database, which this workstation does 
 - Today with 0 decisions and with 1–5 decisions, drawer open/close, approve /
   alternative / ignore round-trip, Memory showing the decision after a choice, RTL + EN,
   phone width.
+
+## 5b. Wedge-test package (2026-09-07, second pass)
+
+Agreed with the owner before a two-week freeze. Logic, not design:
+
+- **Stockout logic.** ACT is decided by days of cover (≤14), not by the campaign. The
+  decision today is replenishment only; the campaign stays as is. A separate campaign
+  decision opens only if the supplier cannot deliver inside the cover window AND the
+  campaign is material.
+- **Campaign materiality** (`assessMateriality`): spend share of product revenue and
+  campaign purchases ÷ product units → `evidence` / `material` / `driver`. Meta is
+  evidence-only until the numbers say otherwise.
+- **Presentation cap, not decision cap.** ≤2 cards per kind on Today (a critical one
+  may add a third), ≤5 overall. The ledger keeps every decision; overflow → Watchlist.
+- **Two more engines**, framed as management trade-offs: Discount × Profit
+  (`decision_discount_tradeoff`, TEST) and Campaign × Product
+  (`campaign_reallocation` from silent-product alerts with a live campaign, CHANGE PLAN).
+- **Exposure in three dimensions** (revenue / profit or "COGS missing" / inventory or
+  spend) instead of one number.
+- **Connected line** on every card and a business-readable "A + B + C = consequence"
+  block on the receipt.
+- **Judgment**: Useful / Obvious / Wrong / Missing context + "did this change your
+  decision?" via `POST /api/decisions/[id]/judge`, stored in `payloadJson.judgment`.
+- **Stateful ledger**: `payloadJson.decision` = state (open → watching → escalated →
+  resolved), `firstDetectedAt` (engine period start when known), `surfacedAt`, daily
+  evidence snapshots. `upsertAlert` now preserves ledger keys across re-detections.
+- **Daily cron**: `POST /api/cron/decision-inbox` + in-process scheduler at 05:00
+  Israel (`lib/server/decision-inbox-cron.ts`, env prefix `DECISION_INBOX`).
+- **Review table**: `node --import tsx scripts/decision-inbox-report.mjs <storeId> --days 14`.
 
 ## 6. Out of scope for this pass
 

@@ -40,6 +40,16 @@ export interface EvidenceFact {
   note?: Localized;
 }
 
+// Commercial exposure in up to three dimensions — revenue, profit, and the
+// operational one (inventory cover, spend) — instead of one inflated number.
+// Profit is `null` + "COGS missing" when the product has no real cost.
+export interface ExposureDim {
+  label: Localized;
+  value: string | null;
+  quality: EvidenceQuality;
+  note?: Localized;
+}
+
 export interface DecisionOption {
   key: string;
   label: Localized;
@@ -63,11 +73,59 @@ export interface DecisionOutcome {
   measuredAt: string;
 }
 
+// How much a paid campaign actually matters to the situation. Decides
+// whether Meta is context, a contributor, or the thing the decision is about.
+export type Materiality = "evidence" | "material" | "driver";
+
+export interface MaterialityAssessment {
+  level: Materiality;
+  detail: Localized;
+  // Inputs, so the receipt can show why (all 0–1 shares; null = unknown).
+  spendShare: number | null;
+  attributedShare: number | null;
+}
+
+// Lifecycle of one decision episode in the ledger. The same situation seen
+// again tomorrow does NOT create a new decision — it advances this one.
+export type DecisionState = "open" | "watching" | "escalated" | "resolved";
+
+export interface EvidenceSnapshot {
+  at: string;
+  status: DecisionStatus;
+  // A handful of key numbers, engine-specific (inventory, days, spend …).
+  metrics: Record<string, number | string | null>;
+}
+
+export interface DecisionLedgerState {
+  state: DecisionState;
+  // When the signal was first seen (engine period start when known, else
+  // the row's creation) — NOT when the cron happened to run.
+  firstDetectedAt: string;
+  lastEvaluatedAt: string;
+  // First time it was shown as a card on Today. null = never surfaced.
+  surfacedAt: string | null;
+  snapshots: EvidenceSnapshot[];
+}
+
+// The manager's judgment of the decision itself — the wedge measurement.
+export type JudgmentTag = "useful" | "obvious" | "wrong" | "missing_context";
+
+export interface Judgment {
+  tags: JudgmentTag[];
+  // Did this change what you did / where you looked? null = not answered.
+  changedDecision: boolean | null;
+  at: string;
+  by: string;
+}
+
 export interface Decision {
   // Ledger id (Alert.id). Display id is derived: see displayDecisionId().
   id: string;
   kind: string;
   status: DecisionStatus;
+  // Engine severity was critical — lets a third card of the same domain
+  // through the presentation cap.
+  critical: boolean;
   title: Localized;
   question: Localized;
   // One short line for the inbox card: the two facts that make this matter
@@ -76,11 +134,15 @@ export interface Decision {
   whyNow: Localized;
   trigger: Localized;
   evidence: EvidenceFact[];
-  // Commercial exposure — always labelled by what it IS (recent revenue
-  // attached, commissions paid …), never "money at risk" unless causal.
-  exposure: { label: Localized; value: string; quality: EvidenceQuality } | null;
-  // "What Hiloomy connected": inputs → conclusion. Business evidence only.
-  connected: { inputs: Localized[]; conclusion: Localized };
+  exposure: ExposureDim[];
+  // "What Hiloomy connected", business-readable:
+  //   statement  — "Low inventory + strong sales velocity + active acquisition"
+  //   conclusion — "Stockout may interrupt profitable demand"
+  //   inputs     — the systems that were joined (shown as chips)
+  connected: { inputs: Localized[]; statement: Localized; conclusion: Localized };
+  // Distinct evidence domains that actually had data. ≥ 2 = cross-domain.
+  domains: EvidenceSource[];
+  materiality: MaterialityAssessment | null;
   options: DecisionOption[];
   recommendation: Localized;
   reason: Localized | null;
@@ -94,7 +156,10 @@ export interface Decision {
   // Ranking key — ₪ exposure when known, else 0.
   rank: number;
   createdAt: string;
+  detectedAt: string;
+  ledger: DecisionLedgerState;
   human: HumanDecision;
+  judgment: Judgment | null;
   outcome: DecisionOutcome | null;
   entity: { type: string; id: string | null; label: string } | null;
 }
@@ -130,11 +195,15 @@ export interface MemoryEntry {
   id: string;
   kind: string;
   status: DecisionStatus;
+  state: DecisionState;
   title: Localized;
   recommendation: Localized;
   createdAt: string;
+  detectedAt: string;
   human: HumanDecision;
+  judgment: Judgment | null;
   outcome: DecisionOutcome | null;
+  crossDomain: boolean;
 }
 
 export const DECISION_STATUS_LABEL: Record<DecisionStatus, Localized> = {
@@ -143,6 +212,13 @@ export const DECISION_STATUS_LABEL: Record<DecisionStatus, Localized> = {
   do_not_act: { he: "לא לפעול", en: "DO NOT ACT" },
   test: { he: "לבדוק", en: "TEST" },
   change_plan: { he: "לשנות תוכנית", en: "CHANGE PLAN" }
+};
+
+export const DECISION_STATE_LABEL: Record<DecisionState, Localized> = {
+  open: { he: "פתוח", en: "Open" },
+  watching: { he: "במעקב", en: "Watching" },
+  escalated: { he: "הוסלם", en: "Escalated" },
+  resolved: { he: "נסגר", en: "Resolved" }
 };
 
 export const CONFIDENCE_LABEL: Record<Confidence, Localized> = {
@@ -166,6 +242,19 @@ export const SOURCE_LABEL: Record<EvidenceSource, Localized> = {
   affiliate: { he: "שותפים", en: "Affiliate" },
   market: { he: "שוק", en: "Market" },
   plan: { he: "תוכנית", en: "Plan" }
+};
+
+export const MATERIALITY_LABEL: Record<Materiality, Localized> = {
+  evidence: { he: "ראיה בלבד", en: "Evidence only" },
+  material: { he: "תורם מהותי", en: "Material contributor" },
+  driver: { he: "מניע ההחלטה", en: "Decision driver" }
+};
+
+export const JUDGMENT_LABEL: Record<JudgmentTag, Localized> = {
+  useful: { he: "שימושי", en: "Useful" },
+  obvious: { he: "מובן מאליו", en: "Obvious" },
+  wrong: { he: "שגוי", en: "Wrong" },
+  missing_context: { he: "חסר הקשר", en: "Missing context" }
 };
 
 // Short, stable, human-readable receipt id derived from the ledger cuid.

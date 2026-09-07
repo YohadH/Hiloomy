@@ -70,17 +70,21 @@ export interface UpsertAlertResult {
 // updated in place (severity, copy, payload, metric snapshots) and a new
 // `updatedAt` is stamped. If it doesn't exist (or only resolved/ignored
 // rows exist), a new open row is created.
+// payloadJson keys owned by the decision ledger rather than by the engine
+// that detects the condition. See lib/services/decision-inbox-service.ts.
+export const LEDGER_PAYLOAD_KEYS = ["humanDecision", "outcome", "decision", "judgment"] as const;
+
 export async function upsertAlert(input: UpsertAlertInput): Promise<UpsertAlertResult> {
   const db = getDb();
 
-  const existing = await db.alert.findFirst({
+  const existing = (await db.alert.findFirst({
     where: {
       storeId: input.storeId,
       fingerprint: input.fingerprint,
       status: "open"
     },
-    select: { id: true }
-  });
+    select: { id: true, payloadJson: true }
+  })) as { id: string; payloadJson: unknown } | null;
 
   // We mirror canonical fields into the legacy columns so the existing
   // Alerts page (which reads `explanation` / `suggestedAction` / `timestamp`)
@@ -105,9 +109,24 @@ export async function upsertAlert(input: UpsertAlertInput): Promise<UpsertAlertR
   };
 
   if (existing) {
+    // Engines re-write their payload on every run, but the row is also the
+    // decision ledger: the manager's decision, their judgment, the measured
+    // outcome and the decision state/snapshots live in the same JSON and
+    // must survive a re-detection. Carry those keys over.
+    const prev =
+      existing.payloadJson && typeof existing.payloadJson === "object"
+        ? (existing.payloadJson as Record<string, unknown>)
+        : {};
+    const carried: Record<string, unknown> = {};
+    for (const key of LEDGER_PAYLOAD_KEYS) {
+      if (prev[key] !== undefined) carried[key] = prev[key];
+    }
     await db.alert.update({
       where: { id: existing.id },
-      data: commonData
+      data: {
+        ...commonData,
+        payloadJson: { ...(input.payloadJson ?? {}), ...carried } as any
+      }
     });
     return { id: existing.id, created: false };
   }

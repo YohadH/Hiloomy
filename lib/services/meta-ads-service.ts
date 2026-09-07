@@ -1,4 +1,5 @@
 import { createHmac } from "crypto";
+import { assertMetaAdAccountAllowed } from "@/lib/services/meta-ads-account-pin";
 import { AppError } from "@/lib/server/errors";
 import { getDb } from "@/lib/server/db";
 import { decryptSecret, encryptSecret } from "@/lib/security/encryption";
@@ -425,6 +426,9 @@ export async function saveMetaAdsConnection(input: SaveMetaAdsConnectionInput) {
   tokenScopes = debug?.scopes ?? [];
 
   const adAccountId = normalizeAdAccountId(input.adAccountId);
+  // A pinned store never changes its ad account through this path — the
+  // owner unlocks it first (lib/services/meta-ads-account-pin.ts).
+  await assertMetaAdAccountAllowed(store.id, adAccountId);
   const account = await fetchMetaAdAccount(token, adAccountId, appCredentials.appSecret);
   const accountId = normalizeAdAccountId(account.id ?? adAccountId);
   const appId = cleanAppCredential(input.appId) || existing?.appId || cleanAppCredential(process.env.META_ADS_CLIENT_ID) || null;

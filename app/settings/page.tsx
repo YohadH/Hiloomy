@@ -25,6 +25,7 @@ import { getAppChromeData } from "@/lib/services/analytics-service";
 import { getShopifyConnectionSummary } from "@/lib/services/shopify-connection-service";
 import { getSyncStatus } from "@/lib/services/shopify-sync-service";
 import { getMetaAdsConnectionSummary } from "@/lib/services/meta-ads-service";
+import { getMetaAdAccountPin } from "@/lib/services/meta-ads-account-pin";
 import { buildSetupHealth } from "@/lib/services/setup-health-service";
 import { getAppLocale, getDictionary } from "@/lib/i18n";
 import { getDb } from "@/lib/server/db";
@@ -44,6 +45,7 @@ export default async function SettingsPage({
     meta_error?: string;
     meta_account?: string;
     meta_multi?: string;
+    meta_kept?: string;
   }>;
 }) {
   const locale = await getAppLocale();
@@ -62,9 +64,11 @@ export default async function SettingsPage({
           connected: params.meta_connected === "true",
           account: params.meta_account ?? null,
           multi: params.meta_multi === "1",
+          kept: params.meta_kept === "1",
           error: params.meta_error ?? null
         }
       : null;
+  const metaPinnedAdAccountId = await getMetaAdAccountPin(chrome.store.id).catch(() => null);
 
   const [connectionSummary, syncStatus, metaAdsConnection, setupHealth, storeRow, gscConnection, igConnection] =
     await Promise.all([
@@ -283,7 +287,14 @@ export default async function SettingsPage({
         storeId={chrome.store.id}
         initialConnection={metaAdsConnection}
         isHe={isHe}
-        oauthResult={metaOauthResult}
+        // The banner names the account actually STORED, not the URL param —
+        // the param is stale the moment the account is switched.
+        oauthResult={
+          metaOauthResult && metaOauthResult.connected && metaAdsConnection
+            ? { ...metaOauthResult, account: metaAdsConnection.adAccountName ?? metaAdsConnection.adAccountId }
+            : metaOauthResult
+        }
+        pinnedAdAccountId={metaPinnedAdAccountId}
       />
     ),
     instagram: <CreatorConnectionsManager labels={dictionary.creator} />,

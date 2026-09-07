@@ -39,6 +39,8 @@ export interface MetaOauthResult {
   connected?: boolean;
   account?: string | null;
   multi?: boolean;
+  // Re-connect kept the store's existing / locked account instead of auto-picking.
+  kept?: boolean;
   error?: string | null;
 }
 
@@ -65,6 +67,16 @@ const STRINGS = {
     oneClickCta: "התחברות עם פייסבוק",
     oauthOkPrefix: "מחובר! חשבון המודעות שנבחר:",
     oauthMulti: "נמצאו כמה חשבונות מודעות — בחרנו את הפעיל הראשון. אפשר להחליף בבחירת החשבון למטה.",
+    oauthKept: "החיבור חודש ונשאר על חשבון המודעות הקיים של החנות.",
+    pinTitle: "נעילת חשבון המודעות",
+    pinLockedLine: (id: string) => `נעול ל־${id}. חיבור מחדש, חידוש טוקן ובחירת חשבון לא ישנו אותו עד שתבטלו את הנעילה.`,
+    pinUnlockedLine: "לא נעול. חיבור מחדש שומר על החשבון הקיים, אבל אפשר עדיין להחליף אותו מהבורר. מומלץ לנעול.",
+    pinLock: "נעילה לחשבון הזה",
+    pinUnlock: "ביטול נעילה",
+    pinWorking: "מעדכן…",
+    pinLocked: (id: string) => `חשבון המודעות נעול ל־${id}.`,
+    pinReleased: "הנעילה בוטלה. אפשר להחליף חשבון מהבורר; הבחירה הבאה תינעל אוטומטית.",
+    pickerLockedHint: "החשבון נעול — בטלו את הנעילה למעלה כדי להחליף.",
     pickerToggle: "החלפת חשבון מודעות",
     pickerLoading: "טוען חשבונות…",
     pickerLabel: "בחרו את חשבון המודעות הנכון (מוצג לפי עסק):",
@@ -125,6 +137,16 @@ const STRINGS = {
     oneClickCta: "Continue with Facebook",
     oauthOkPrefix: "Connected! Selected ad account:",
     oauthMulti: "Several ad accounts were found — we picked the first active one. You can switch it in the account picker below.",
+    oauthKept: "Reconnected and kept the store's existing ad account.",
+    pinTitle: "Ad account lock",
+    pinLockedLine: (id: string) => `Locked to ${id}. Reconnecting, token renewal and the account picker will not change it until you unlock.`,
+    pinUnlockedLine: "Not locked. Reconnecting keeps the current account, but it can still be switched from the picker. Locking is recommended.",
+    pinLock: "Lock to this account",
+    pinUnlock: "Unlock",
+    pinWorking: "Updating…",
+    pinLocked: (id: string) => `Ad account locked to ${id}.`,
+    pinReleased: "Unlocked. You can switch accounts from the picker; the next choice locks automatically.",
+    pickerLockedHint: "The account is locked — unlock it above to switch.",
     pickerToggle: "Switch ad account",
     pickerLoading: "Loading accounts…",
     pickerLabel: "Pick the correct ad account (shown with its business):",
@@ -185,12 +207,15 @@ export function MetaAdsConnectionManager({
   storeId,
   initialConnection,
   isHe = false,
-  oauthResult
+  oauthResult,
+  pinnedAdAccountId = null
 }: {
   storeId: string;
   initialConnection: MetaAdsConnectionSummary | null;
   isHe?: boolean;
   oauthResult?: MetaOauthResult | null;
+  // Ad account the store is locked to (lib/services/meta-ads-account-pin.ts).
+  pinnedAdAccountId?: string | null;
 }) {
   const t = STRINGS[isHe ? "he" : "en"];
   const [accessToken, setAccessToken] = useState("");
@@ -200,6 +225,7 @@ export function MetaAdsConnectionManager({
   const [exchangeToken, setExchangeToken] = useState(true);
   const [datePreset, setDatePreset] = useState("last_30d");
   const [connection, setConnection] = useState(initialConnection);
+  const [pinned, setPinned] = useState<string | null>(pinnedAdAccountId);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
@@ -276,6 +302,7 @@ export function MetaAdsConnectionManager({
         {oauthResult?.connected ? (
           <p className="mt-3 text-sm font-semibold text-green-700">
             {t.oauthOkPrefix} {oauthResult.account}
+            {oauthResult.kept ? <span className="mt-1 block font-normal text-muted-foreground">{t.oauthKept}</span> : null}
             {oauthResult.multi ? <span className="mt-1 block font-normal text-muted-foreground">{t.oauthMulti}</span> : null}
           </p>
         ) : null}
@@ -326,6 +353,39 @@ export function MetaAdsConnectionManager({
         )}
       </div>
 
+      {/* Ad-account lock — a pinned store refuses every write that would
+          move it to another account (OAuth auto-pick, picker, manual form). */}
+      {connection ? (
+        <div className={`rounded-2xl border p-4 text-sm ${pinned ? "border-emerald-300 bg-emerald-50/50 dark:border-emerald-500/30 dark:bg-emerald-500/5" : "border-border/70"}`}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-semibold">{t.pinTitle}</p>
+              <p className="mt-1 text-muted-foreground">{pinned ? t.pinLockedLine(pinned) : t.pinUnlockedLine}</p>
+            </div>
+            <Button
+              variant={pinned ? "secondary" : "default"}
+              size="sm"
+              disabled={loading !== null}
+              onClick={() =>
+                runAction("pin", async () => {
+                  const response = await fetch("/api/meta-ads/connection/pin", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ storeId, pinned: !pinned })
+                  });
+                  const payload = await response.json();
+                  if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
+                  setPinned(payload.pinned ?? null);
+                  return payload.pinned ? t.pinLocked(payload.pinned) : t.pinReleased;
+                })
+              }
+            >
+              {loading === "pin" ? t.pinWorking : pinned ? t.pinUnlock : t.pinLock}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Ad-account picker — the sanctioned way to change the selected
           account after OAuth (the token stays; only the selection moves). */}
       {connection ? (
@@ -358,8 +418,9 @@ export function MetaAdsConnectionManager({
                       </option>
                     ))}
                   </select>
+                  {pinned ? <p className="text-xs text-muted-foreground">{t.pickerLockedHint}</p> : null}
                   <Button
-                    disabled={loading !== null || !pickerSelection || pickerSelection === connection.adAccountId}
+                    disabled={loading !== null || !pickerSelection || pickerSelection === connection.adAccountId || Boolean(pinned)}
                     onClick={() =>
                       runAction("picker-apply", async () => {
                         const response = await fetch("/api/meta-ads/accounts", {
@@ -369,6 +430,8 @@ export function MetaAdsConnectionManager({
                         });
                         const payload = await response.json();
                         if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
+                        // The explicit choice is locked server-side; mirror it.
+                        if (payload.pinned) setPinned(payload.adAccountId ?? pickerSelection);
                         return t.pickerSwitched(payload.adAccountName ?? payload.adAccountId);
                       })
                     }

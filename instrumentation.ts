@@ -57,4 +57,6 @@ export async function register() {
   startMetaAdsTokenCheckCron();
   const { startCreativeSprintCron } = await import("@/lib/server/creative-sprint-cron");
   startCreativeSprintCron();
+  const { startDecisionInboxCron } = await import("@/lib/server/decision-inbox-cron");
+  startDecisionInboxCron();
 }

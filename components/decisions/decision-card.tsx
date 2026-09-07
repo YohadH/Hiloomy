@@ -110,6 +110,17 @@ export function DecisionCard({
             {d.title[locale]}
           </h3>
           <p className="text-sm text-muted-foreground">{d.whyNow[locale]}</p>
+          {/* The cross-domain join IS the value — say which systems were
+              connected, in one quiet line. */}
+          <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            <span>{t("חיבור", "Connected")}:</span>
+            {d.connected.inputs.map((input, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5">
+                {i > 0 ? <span aria-hidden className="text-border">×</span> : null}
+                <span className="text-foreground/80">{input[locale]}</span>
+              </span>
+            ))}
+          </p>
         </div>
 
         <div className="space-y-1">
