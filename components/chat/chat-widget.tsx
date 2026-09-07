@@ -45,6 +45,53 @@ function saveThread(kind: ChatKind, messages: ChatMessage[]) {
   }
 }
 
+// Where the VISIBLE viewport sits inside the layout viewport. `position:
+// fixed` pins to the layout viewport, so once a phone is pinch- or
+// auto-zoomed (focusing a small input does it) a fixed launcher drifts off
+// the visible area and only reappears when the user pans to the layout
+// corner. Null when not zoomed, so the CSS classes stay in charge.
+interface ViewportOffsets {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+function useVisualViewportOffsets(): ViewportOffsets | null {
+  const [offsets, setOffsets] = useState<ViewportOffsets | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const layoutW = document.documentElement.clientWidth;
+      const layoutH = document.documentElement.clientHeight;
+      const zoomed = vv.scale > 1.01 || vv.offsetLeft > 1 || vv.offsetTop > 1 || vv.width < layoutW - 1;
+      if (!zoomed) {
+        setOffsets((prev) => (prev === null ? prev : null));
+        return;
+      }
+      setOffsets({
+        top: vv.offsetTop,
+        left: vv.offsetLeft,
+        right: Math.max(0, layoutW - (vv.offsetLeft + vv.width)),
+        bottom: Math.max(0, layoutH - (vv.offsetTop + vv.height)),
+        width: vv.width,
+        height: vv.height
+      });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+  return offsets;
+}
+
 export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
@@ -63,6 +110,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
   // stacking context) can clip or reposition it. Portals need the DOM, so
   // render nothing until after hydration.
   const [mounted, setMounted] = useState(false);
+  const vv = useVisualViewportOffsets();
 
   useEffect(() => {
     setMounted(true);
@@ -257,6 +305,11 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
         aria-modal="true"
         aria-label={chat.title}
         className="fixed inset-0 z-50 flex h-[100dvh] w-full flex-col overflow-hidden bg-card sm:inset-auto sm:bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:right-4 sm:h-[min(72dvh,580px)] sm:w-[390px] sm:rounded-2xl sm:border sm:border-border sm:shadow-2xl"
+        style={
+          vv && window.innerWidth < 640
+            ? { top: vv.top, left: vv.left, width: vv.width, height: vv.height }
+            : undefined
+        }
       >
         <div className={cn("flex items-center gap-3 px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))] text-white sm:pt-3", chat.accent)}>
           <button
@@ -377,7 +430,11 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     // it aligned the speed-dial to the LEFT while the launcher sat on the
     // right (the whole stack jumped sides on open). Pinning the column to LTR
     // makes "end" = right; the cards re-declare the page direction inside.
-    <div dir="ltr" className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
+    <div
+      dir="ltr"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2"
+      style={vv ? { right: vv.right + 16, bottom: `calc(${vv.bottom + 16}px + env(safe-area-inset-bottom))` } : undefined}
+    >
       {open ? (
         <div dir={isHe ? "rtl" : "ltr"} className="flex flex-col items-end gap-2">
           {(Object.keys(CHATS) as ChatKind[]).map((kind, i) => {

@@ -800,21 +800,31 @@ async function runOpenAiTurn(input: RunBiChatTurnInput, runtimeContext: string):
 
     let text = "";
     const calls: { name: string; args: string; callId: string }[] = [];
+    // EVERY output item, in order — reasoning items included. When a
+    // reasoning model emits `reasoning` → `function_call`, the next request
+    // must carry that pair back verbatim; resending only a synthesized
+    // function_call is rejected with 400 "function_call provided without its
+    // required reasoning item". Replaying the model's own items is the
+    // documented shape and costs nothing when no reasoning item was emitted.
+    const outputItems: unknown[] = [];
 
     for await (const event of stream) {
       if (event.type === "response.output_text.delta" && event.delta) {
         text += event.delta;
         input.onTextDelta?.(event.delta);
       }
-      // Function calls arrive complete on output_item.done — the Responses
-      // API assembles the streamed argument fragments for us, unlike
+      // Items arrive complete on output_item.done — the Responses API
+      // assembles the streamed argument fragments for us, unlike
       // chat/completions where they must be concatenated by index.
-      if (event.type === "response.output_item.done" && event.item?.type === "function_call") {
-        calls.push({
-          name: event.item.name ?? "",
-          args: event.item.arguments ?? "{}",
-          callId: event.item.call_id ?? ""
-        });
+      if (event.type === "response.output_item.done" && event.item) {
+        outputItems.push(event.item);
+        if (event.item.type === "function_call") {
+          calls.push({
+            name: event.item.name ?? "",
+            args: event.item.arguments ?? "{}",
+            callId: event.item.call_id ?? ""
+          });
+        }
       }
     }
 
@@ -841,14 +851,9 @@ async function runOpenAiTurn(input: RunBiChatTurnInput, runtimeContext: string):
       })
     );
 
-    for (const call of calls) {
-      conversation.push({
-        type: "function_call",
-        call_id: call.callId,
-        name: call.name,
-        arguments: call.args
-      });
-    }
+    // Replay the model's own output (reasoning + calls + any text) and then
+    // answer each call. Order matters: outputs must follow their calls.
+    for (const item of outputItems) conversation.push(item);
     for (const result of results) {
       conversation.push({
         type: "function_call_output",

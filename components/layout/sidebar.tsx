@@ -353,20 +353,23 @@ export function Sidebar({
 
   return (
     <>
+      {/* Menu button at the inline-START (right in Hebrew, left in English)
+          and the drawer opens from the same edge, so the nav is on the
+          reading-start side in both directions. */}
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-border/70 bg-background/90 px-4 py-3 backdrop-blur lg:hidden">
+        <Button variant="secondary" size="sm" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+          <Menu className="me-2 h-4 w-4" />
+          {labels.common.menu}
+        </Button>
         <div className="flex items-center gap-2.5">
-          <HiloomyMark className="h-8 w-8" />
-          <div>
+          <div className="text-end">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
               {labels.common.appName}
             </p>
             <p className="font-semibold">{storeName}</p>
           </div>
+          <HiloomyMark className="h-8 w-8" />
         </div>
-        <Button variant="secondary" size="sm" onClick={() => setOpen((value) => !value)}>
-          <Menu className={cn("h-4 w-4", locale === "he" ? "ms-2" : "me-2")} />
-          {labels.common.menu}
-        </Button>
       </div>
       <aside className="hidden w-80 shrink-0 border-r border-border/70 bg-muted/40 lg:block">
         <NavContent
@@ -380,8 +383,8 @@ export function Sidebar({
         />
       </aside>
       {open ? (
-        <div className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden" onClick={() => setOpen(false)}>
-          <div className="h-full w-[82%] max-w-80 bg-background shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-40 flex justify-start bg-slate-950/40 lg:hidden" onClick={() => setOpen(false)}>
+          <div className="h-full w-[82%] max-w-80 overflow-y-auto bg-background shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <NavContent
               pathname={pathname}
               storeName={storeName}

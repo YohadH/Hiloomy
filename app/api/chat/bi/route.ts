@@ -110,12 +110,21 @@ export async function POST(request: Request) {
         } catch (err) {
           console.error("[chat/bi] direct turn failed:", err);
           // Mid-stream failure: append an apology rather than dropping the
-          // connection with no explanation.
+          // connection with no explanation. Name the one cause the merchant
+          // can act on themselves (provider quota / rate limit); everything
+          // else stays generic — the detail is in the server log above.
+          const status = (err as { status?: number } | null)?.status;
+          const quota =
+            status === 429 || /insufficient_quota|rate.?limit/i.test(String((err as Error | null)?.message ?? ""));
           controller.enqueue(
             encoder.encode(
-              locale === "he"
-                ? "\n\n(שגיאה טכנית — נסו שוב בעוד רגע.)"
-                : "\n\n(Technical error — please try again in a moment.)"
+              quota
+                ? locale === "he"
+                  ? "\n\n(ספק המודל דחה את הבקשה — מכסה או מגבלת קצב. נסו שוב בעוד דקה.)"
+                  : "\n\n(The model provider refused the request — quota or rate limit. Try again in a minute.)"
+                : locale === "he"
+                  ? "\n\n(שגיאה טכנית — נסו שוב בעוד רגע.)"
+                  : "\n\n(Technical error — please try again in a moment.)"
             )
           );
         } finally {
