@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import type { Decision } from "@/lib/domain/decision";
-import { DecisionCard } from "./decision-card";
+import { DecisionCard, tierOf } from "./decision-card";
 import { DecisionDrawer } from "./decision-drawer";
 import type { DecideChoice } from "./decision-receipt";
 
@@ -14,6 +14,10 @@ type Locale = "he" | "en";
 // Client shell for the inbox: owns which receipt is open and posts the
 // manager's decision. A decided card leaves the list immediately (it now
 // belongs to Memory) and the page re-fetches so the counts follow.
+//
+// Layout answers "what needs me?" in one glance: decisions that need a call
+// come first (ACT, CHANGE PLAN, TEST), then a quieter block of what Hiloomy
+// has already decided does NOT need action (WATCH, DO NOT ACT).
 export function DecisionInbox({
   decisions,
   locale,
@@ -84,19 +88,47 @@ export function DecisionInbox({
     );
   }
 
+  const needsCall = list.filter((d) => tierOf(d.status) !== "compact");
+  const noAction = list.filter((d) => tierOf(d.status) === "compact");
+  const leadId = needsCall.find((d) => tierOf(d.status) === "prominent")?.id ?? null;
+
   return (
     <>
-      <div className="space-y-4">
-        {list.map((d) => (
-          <DecisionCard
-            key={d.id}
-            decision={d}
-            locale={locale}
-            onOpen={setOpenId}
-            onIgnore={(id) => void decide(id, "ignore")}
-            busy={busyId === d.id}
-          />
-        ))}
+      <div className="space-y-8">
+        {needsCall.length > 0 ? (
+          <div className="space-y-4">
+            {needsCall.map((d) => (
+              <DecisionCard
+                key={d.id}
+                decision={d}
+                locale={locale}
+                onOpen={setOpenId}
+                onIgnore={(id) => void decide(id, "ignore")}
+                busy={busyId === d.id}
+                lead={d.id === leadId}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {noAction.length > 0 ? (
+          <section className="space-y-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {t("לא דורש פעולה — הילומי ממשיכה לעקוב", "No action needed — Hiloomy keeps watching")}
+            </p>
+            {noAction.map((d) => (
+              <DecisionCard
+                key={d.id}
+                decision={d}
+                locale={locale}
+                onOpen={setOpenId}
+                onIgnore={(id) => void decide(id, "ignore")}
+                busy={busyId === d.id}
+              />
+            ))}
+          </section>
+        ) : null}
+
         {error && !open ? <p className="text-sm text-danger">{error}</p> : null}
       </div>
       <DecisionDrawer

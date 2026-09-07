@@ -70,6 +70,10 @@ export interface Decision {
   status: DecisionStatus;
   title: Localized;
   question: Localized;
+  // One short line for the inbox card: the two facts that make this matter
+  // now ("₪41.6K sales / 14d · Meta campaign still active"). Everything
+  // else waits for the receipt.
+  whyNow: Localized;
   trigger: Localized;
   evidence: EvidenceFact[];
   // Commercial exposure — always labelled by what it IS (recent revenue
@@ -107,6 +111,7 @@ export interface WatchItem {
 
 export interface InboxStats {
   decisions: number;
+  byStatus: Record<DecisionStatus, number>;
   watching: number;
   reviewed: number;
   suppressed: number;

@@ -33,15 +33,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
   return (
     <AppShell store={chrome.store}>
-      <div className="space-y-8 sm:space-y-10">
-        <PageHead
-          eyebrow={t("היום", "Today")}
-          title={t("תיבת ההחלטות המסחריות", "Commercial Decision Inbox")}
-          description={t(
-            "הילומי סקרה את הפעילות העסקית והשוקית שלכם והעלתה רק את מה שדורש תשומת לב ניהולית.",
-            "Hiloomy reviewed your business and market activity and surfaced only what requires management attention."
-          )}
-        />
+      <div className="space-y-7 sm:space-y-8">
+        <PageHead eyebrow={t("היום", "Today")} title={t("תיבת ההחלטות המסחריות", "Commercial Decision Inbox")} />
 
         <TodaySummary
           locale={isHe ? "he" : "en"}

@@ -66,6 +66,8 @@ const DECISION_TYPES = [
 
 const L = (he: string, en: string): Localized => ({ he, en });
 const ils = (n: number) => `₪${Math.round(n).toLocaleString("en-US")}`;
+// Card-level currency: ₪41.6K above ten thousand, exact below.
+const ilsK = (n: number) => (Math.abs(n) >= 10_000 ? `₪${(n / 1000).toFixed(1)}K` : ils(n));
 const pct = (n: number, digits = 0) => `${(n * 100).toFixed(digits)}%`;
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -280,7 +282,10 @@ function stockoutDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     id: alert.id,
     kind: "stockout_imminent",
     status,
-    title: L(`${title} צפוי להיגמר במלאי`, `${title} is likely to stock out`),
+    title: L(`${title} צפוי להיגמר תוך ${days.toFixed(1)} ימים`, `${title} is likely to stock out in ${days.toFixed(1)} days`),
+    whyNow: paidTraffic
+      ? L(`${ilsK(revenue14)} מכירות ב־14 יום · קמפיין Meta עדיין פעיל (${ilsK(spend7)} / 7 ימים)`, `${ilsK(revenue14)} sales / 14 days · Meta campaign still active (${ilsK(spend7)} / 7 days)`)
+      : L(`${ilsK(revenue14)} מכירות ב־14 יום · ${inventory} יחידות במלאי · אין קמפיין פעיל`, `${ilsK(revenue14)} sales / 14 days · ${inventory} units left · no active campaign`),
     question: paidTraffic
       ? L("האם להמשיך לשלוח תנועה ממומנת כשהמלאי כל כך נמוך?", "Should we continue sending paid traffic while inventory is this low?")
       : L("האם לחדש מלאי עכשיו, לפני שהמוצר נעלם מהמדף?", "Should we replenish now, before the product disappears?"),
@@ -349,6 +354,10 @@ function affiliateDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     kind: "commission_leakage",
     status: "test",
     title: L("האם אנחנו משלמים עמלת שותפים מיותרת?", "Are we overpaying affiliate commission?"),
+    whyNow: L(
+      `${ilsK(returningCommission)} עמלות על ${returningConversions} לקוחות חוזרים ב־30 יום${share === null ? "" : ` · ${pct(share)} מכלל העמלות`}`,
+      `${ilsK(returningCommission)} commission on ${returningConversions} returning customers in 30 days${share === null ? "" : ` · ${pct(share)} of all commission`}`
+    ),
     question: L("האם לקוחות חוזרים צריכים לייצר עמלת שותפים מלאה?", "Should returning customers generate full affiliate commission?"),
     trigger: L(
       `${share === null ? "חלק משמעותי" : pct(share)} מעמלות השותפים ב־30 הימים האחרונים שולמו על רכישות של לקוחות קיימים.`,
@@ -422,7 +431,11 @@ function standaloneLossDecision(alert: AlertRow, ctx: DecisionContext): Decision
     id: alert.id,
     kind: "decision_standalone_loss",
     status: "do_not_act",
-    title: L(`${title} נראה לא רווחי — אבל עדיין לא להסיר את ההצעה`, `${title} looks unprofitable — but don't remove the offer yet`),
+    title: L(`${title} מפסיד ${ilsK(Math.abs(contribution))} ב־90 יום — אבל עדיין לא להסיר את ההצעה`, `${title} loses ${ilsK(Math.abs(contribution))} over 90 days — but don't remove the offer yet`),
+    whyNow: L(
+      `${units} יחידות · ${ilsK(discounts)} הנחות · עלות אמיתית ידועה · כלכלת הסל לא נמדדה`,
+      `${units} units · ${ilsK(discounts)} discounts · real cost on file · basket economics not measured`
+    ),
     question: L("האם להסיר את ההצעה על סמך הכלכלה של המוצר בפני עצמו?", "Should the offer be removed based on the SKU's standalone economics?"),
     trigger: L(
       `תרומת המוצר ב־90 הימים האחרונים שלילית (${ils(contribution)}) עם עלות אמיתית ידועה.`,
@@ -482,6 +495,10 @@ function competitorDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     title: demandHit
       ? L(`${name} השיקו מבצע${discount !== null ? ` של ${discount}%` : ""} — הביקוש שלכם נפגע`, `${name} launched a ${discount !== null ? `${discount}% ` : ""}promotion — your demand is affected`)
       : L(`${name} השיקו מבצע${discount !== null ? ` של ${discount}%` : ""} — עדיין אין הצדקה לתגובה`, `${name} launched a ${discount !== null ? `${discount}% ` : ""}promotion — no response justified yet`),
+    whyNow: L(
+      `מבצע${discount !== null ? ` ${discount}%` : ""} מלפני ${startedDays} ימים · המכירות שלכם: ${velocityLabel ? velocityLabel.he : "אין מדידה"}`,
+      `${discount !== null ? `${discount}% ` : ""}promotion ${startedDays} days ago · your sales: ${velocityLabel ? velocityLabel.en : "not measurable"}`
+    ),
     question: L("האם להשוות את ההנחה של המתחרה?", "Should we match the competitor's discount?"),
     trigger: L(`זוהה מבצע חדש אצל ${name}${discount !== null ? ` (עד ${discount}%)` : ""}.`, `A new promotion was detected at ${name}${discount !== null ? ` (up to ${discount}%)` : ""}.`),
     evidence,
@@ -543,6 +560,10 @@ function roasDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     kind: "roas_collapse",
     status: "change_plan",
     title: L(`הקמפיין ${campaign} איבד יעילות`, `Campaign ${campaign} lost efficiency`),
+    whyNow: L(
+      `${ilsK(spend)} הוצאה · ROAS ${roas === null ? "לא ידוע" : `${roas.toFixed(1)}×`}${breakeven !== null ? ` מול נקודת איזון ${breakeven.toFixed(1)}×` : ""}`,
+      `${ilsK(spend)} spend · ROAS ${roas === null ? "unknown" : `${roas.toFixed(1)}×`}${breakeven !== null ? ` vs breakeven ${breakeven.toFixed(1)}×` : ""}`
+    ),
     question: L("האם להמשיך להשקיע בקמפיין הזה במתכונת הנוכחית?", "Should this campaign keep running in its current form?"),
     trigger: L("ה־ROAS של הקמפיין ירד מתחת ליעד בחלון הדוח.", "The campaign's ROAS fell below target in the report window."),
     evidence,
@@ -757,13 +778,24 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
   const decisionAlerts = openAlerts.filter((a) => (DECISION_TYPES as readonly string[]).includes(a.type));
   const otherAlerts = openAlerts.filter((a) => !(DECISION_TYPES as readonly string[]).includes(a.type));
 
-  const all = decisionAlerts
+  const allRaw = decisionAlerts
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     .map((a) => decisionFromAlert(a, ctx))
     .filter((d): d is Decision => d !== null)
     // Pending decisions only — a decision the manager already made leaves
     // the inbox and lives in Memory.
     .filter((d) => d.human.choice === "pending")
     .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || b.rank - a.rank);
+  // One card per situation. The commission-leakage engine keys its alert by
+  // month, so at a month boundary two rows are open for the same question —
+  // keep the newest and let the older one age out.
+  const seenSingleton = new Set<string>();
+  const all = allRaw.filter((d) => {
+    if (d.kind !== "commission_leakage") return true;
+    if (seenSingleton.has(d.kind)) return false;
+    seenSingleton.add(d.kind);
+    return true;
+  });
 
   const decisions = all.slice(0, MAX_INBOX_CARDS);
   const overflow = all.slice(MAX_INBOX_CARDS);
@@ -804,6 +836,10 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
     watchlist,
     stats: {
       decisions: decisions.length,
+      byStatus: decisions.reduce(
+        (acc, d) => ({ ...acc, [d.status]: acc[d.status] + 1 }),
+        { act: 0, watch: 0, do_not_act: 0, test: 0, change_plan: 0 } as Record<DecisionStatus, number>
+      ),
       watching: watchingDistinct,
       reviewed,
       suppressed: Math.max(0, reviewed - decisions.length - watchingDistinct),
