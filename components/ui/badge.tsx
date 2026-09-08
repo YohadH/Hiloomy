@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 
+// A quiet label. No uppercase, no letter-spacing — a badge should read as a
+// word, not a component. Pill shape is kept because badges ARE statuses.
 export function Badge({
   className,
   children,
@@ -13,7 +15,7 @@ export function Badge({
   return (
     <span
       title={title}
-      className={cn("inline-flex items-center rounded-full border border-border bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground", className)}
+      className={cn("inline-flex items-center rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-muted-foreground", className)}
     >
       {children}
     </span>

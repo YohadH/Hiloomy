@@ -8,8 +8,8 @@ import { CONFIDENCE_LABEL, DECISION_STATUS_LABEL, type Confidence, type Decision
 // first-class and must not look like errors.
 const STATUS_STYLE: Record<DecisionStatus, string> = {
   act: "bg-primary text-primary-foreground border-primary",
-  change_plan: "border-orange-300 bg-orange-50 text-orange-800 dark:border-orange-500/40 dark:bg-orange-500/10 dark:text-orange-200",
-  test: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200",
+  change_plan: "border-warning/40 bg-warning/10 text-warning",
+  test: "border-success/40 bg-success/10 text-success",
   do_not_act: "border-border bg-muted text-foreground",
   watch: "border-border bg-transparent text-muted-foreground"
 };
@@ -26,7 +26,7 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em]",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold uppercase",
         STATUS_STYLE[status],
         className
       )}
@@ -44,9 +44,9 @@ export function StatusPill({
 }
 
 const CONFIDENCE_STYLE: Record<Confidence, string> = {
-  high: "text-emerald-700 dark:text-emerald-300",
+  high: "text-success",
   medium: "text-foreground",
-  low: "text-orange-700 dark:text-orange-300"
+  low: "text-warning"
 };
 
 export function ConfidenceTag({

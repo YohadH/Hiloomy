@@ -31,9 +31,18 @@ export function tierOf(status: DecisionStatus): CardTier {
   return "compact";
 }
 
+const STATUS_RULE: Record<DecisionStatus, string> = {
+  act: "bg-primary",
+  change_plan: "bg-warning",
+  test: "bg-success/70",
+  watch: "bg-transparent",
+  do_not_act: "bg-transparent"
+};
+
 // A card shows exactly four things: status, decision, why now, recommended
 // action — plus a one-line confidence/missing note. Evidence, sources,
-// options and history live in the receipt.
+// options and history live in the receipt. Metadata (which systems were
+// connected) sits under a divider, not in the first view.
 export function DecisionCard({
   decision,
   locale,
@@ -59,20 +68,23 @@ export function DecisionCard({
   const confidenceLine = `${t("ביטחון", "Confidence")}: ${CONFIDENCE_LABEL[d.confidence][locale]}${
     missing ? ` · ${t("חסר", "Missing")}: ${missing}${d.missingEvidence.length > 1 ? ` +${d.missingEvidence.length - 1}` : ""}` : ""
   }`;
+  const connected = d.connected.inputs.map((input) => input[locale]).join(" × ");
 
   if (tier === "compact") {
+    // Titles wrap to two lines on phones — truncation there removes exactly
+    // the words the manager needs. From `sm` the row is wide enough to clip.
     return (
-      <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/60 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+      <div className="flex flex-col gap-2 border-b border-border py-3 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
         <StatusPill status={d.status} locale={locale} className="shrink-0 self-start sm:self-center" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{d.title[locale]}</p>
-          <p className="truncate text-xs text-muted-foreground">{d.whyNow[locale]}</p>
+          <p className="line-clamp-2 text-sm font-semibold sm:line-clamp-none sm:truncate">{d.title[locale]}</p>
+          <p className="line-clamp-2 text-xs text-muted-foreground sm:line-clamp-none sm:truncate">{d.whyNow[locale]}</p>
         </div>
         <button
           type="button"
           onClick={() => onOpen(d.id)}
           disabled={busy}
-          className="inline-flex shrink-0 items-center gap-1 self-start text-xs font-semibold text-muted-foreground hover:text-foreground sm:self-center"
+          className="inline-flex min-h-11 shrink-0 items-center gap-1 self-start text-sm font-semibold text-muted-foreground hover:text-foreground sm:min-h-0 sm:self-center sm:text-xs"
         >
           {t("לסקור", "Review")}
           <ArrowUpRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
@@ -83,24 +95,12 @@ export function DecisionCard({
 
   const prominent = tier === "prominent";
   return (
-    <Card
-      className={cn(
-        "relative overflow-hidden",
-        prominent && "border-primary/30",
-        lead && "border-primary/50 shadow-[0_28px_70px_-32px_rgba(27,67,50,0.45)]"
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-y-0 start-0 w-1",
-          d.status === "act" ? "bg-primary" : d.status === "change_plan" ? "bg-orange-400" : "bg-emerald-500/70"
-        )}
-      />
-      <div className={cn("space-y-4", prominent ? "p-6 sm:p-8" : "p-5 sm:p-6")}>
+    <Card className={cn("relative overflow-hidden", prominent && "border-primary/40")}>
+      <span aria-hidden className={cn("absolute inset-y-0 start-0 w-1", STATUS_RULE[d.status])} />
+      <div className={cn("space-y-4", prominent ? "p-5 sm:p-7" : "p-5 sm:p-6")}>
         <div className="flex items-center justify-between gap-3">
           <StatusPill status={d.status} locale={locale} />
-          <p className="text-[11px] text-muted-foreground" suppressHydrationWarning>
+          <p className="text-xs text-muted-foreground" suppressHydrationWarning>
             {formatWhen(d.createdAt, locale)}
           </p>
         </div>
@@ -109,53 +109,44 @@ export function DecisionCard({
           <h3 className={cn("font-semibold leading-snug tracking-tight", lead ? "text-2xl sm:text-3xl" : prominent ? "text-xl sm:text-2xl" : "text-lg sm:text-xl")}>
             {d.title[locale]}
           </h3>
-          <p className="text-sm text-muted-foreground">{d.whyNow[locale]}</p>
-          {/* The cross-domain join IS the value — say which systems were
-              connected, in one quiet line. */}
-          <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            <span>{t("חיבור", "Connected")}:</span>
-            {d.connected.inputs.map((input, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5">
-                {i > 0 ? <span aria-hidden className="text-border">×</span> : null}
-                <span className="text-foreground/80">{input[locale]}</span>
-              </span>
-            ))}
-          </p>
+          <p className="text-sm leading-6 text-muted-foreground">{d.whyNow[locale]}</p>
         </div>
 
         <div className="space-y-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
-            {t("הילומי ממליצה", "Hiloomy recommends")}
-          </p>
+          <p className="text-xs font-medium text-muted-foreground">{t("הילומי ממליצה", "Hiloomy recommends")}</p>
           <p className={cn("leading-6", prominent ? "text-base font-medium" : "text-sm")}>{d.recommendation[locale]}</p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 pt-1">
-          <p className="text-xs text-muted-foreground">{confidenceLine}</p>
-          <div className="flex items-center gap-1">
+        <div className="space-y-3 border-t border-border pt-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">{confidenceLine}</p>
             {prominent ? (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => onIgnore(d.id)} disabled={busy}>
+              // Phones: the main action is a full 48px target, one-handed.
+              <div className="grid grid-cols-[auto_1fr] gap-2 sm:flex sm:items-center sm:gap-1">
+                <Button variant="ghost" size="lg" className="sm:h-9 sm:px-3" onClick={() => onIgnore(d.id)} disabled={busy}>
                   {busy ? <Loader2 className="me-1.5 h-4 w-4 animate-spin" aria-hidden /> : null}
                   {t("להתעלם", "Ignore")}
                 </Button>
-                <Button onClick={() => onOpen(d.id)} disabled={busy}>
+                <Button size="lg" className="sm:h-10" onClick={() => onOpen(d.id)} disabled={busy}>
                   {reviewLabel}
                   <ArrowUpRight className="ms-1.5 h-4 w-4 rtl:-scale-x-100" aria-hidden />
                 </Button>
-              </>
+              </div>
             ) : (
               <button
                 type="button"
                 onClick={() => onOpen(d.id)}
                 disabled={busy}
-                className="inline-flex items-center gap-1 text-sm font-semibold text-foreground hover:text-emerald-700 dark:hover:text-emerald-300"
+                className="inline-flex min-h-11 items-center gap-1 self-start text-sm font-semibold text-foreground underline-offset-4 hover:underline sm:min-h-0"
               >
                 {reviewLabel}
                 <ArrowUpRight className="h-4 w-4 rtl:-scale-x-100" aria-hidden />
               </button>
             )}
           </div>
+          {/* The cross-domain join IS the value — say which systems were
+              connected, in one quiet line at the bottom. */}
+          {connected ? <p className="text-xs text-muted-foreground">{connected}</p> : null}
         </div>
       </div>
     </Card>

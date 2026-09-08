@@ -2,6 +2,8 @@
 
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Activity,
   BadgePercent,
@@ -17,27 +19,39 @@ import {
   LayoutGrid,
   Loader2,
   Lock,
+  LogOut,
   Megaphone,
-  Menu,
+  MoreHorizontal,
   PackageSearch,
   Radar,
   Settings2,
   Sparkles,
   Store as StoreIcon,
   UserRound,
+  X,
   type LucideIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { HiloomyMark } from "@/components/ui/logo";
-import { useMemo, useState } from "react";
+import { AccountMenu } from "@/components/layout/account-menu";
+import { OrgSwitcher, type OrgSwitcherOrg } from "@/components/layout/org-switcher";
+import { StoreSwitcher, type StoreSwitcherStore } from "@/components/layout/store-switcher";
 import type { AppLocale } from "@/lib/i18n";
 
-// Two-group nav: the decision system on top, the tools below (see the
-// comment on `nav` inside getNavigation).
+// App navigation (docs/UI-FOUNDATION-PLAN.md, batch 2).
+//
+//   Desktop (≥lg): a 248px sidebar — mark, primary nav (the decision system),
+//   Tools, account footer. No brand hero card: the user is already inside
+//   Hiloomy.
+//   Phones: a 56px top bar (mark + store switcher) and a 5-slot bottom nav
+//   Today / Watch / Market / Plan / More. "More" is a bottom sheet with the
+//   rest of the primary group, the tools, and the account.
+
 type NavItem = {
   href: string;
   label: string;
+  // Short label for the bottom nav (falls back to `label`).
+  short?: string;
   icon: LucideIcon;
   // Module slug matched against DISABLED_MODULES (lib/server/module-flags.ts).
   // Items without a slug (Command Center, Settings) are core — never hidden.
@@ -48,6 +62,12 @@ type NavItem = {
 // nav greyed-out with a padlock (LOCKED_MODULES) — visible-but-gated, the
 // upsell surface. Disabled items (DISABLED_MODULES) are filtered out.
 type ResolvedNavItem = NavItem & { locked: boolean };
+
+export type SidebarAccount = {
+  email: string;
+  orgName: string | null;
+  orgs: OrgSwitcherOrg[];
+};
 
 function getNavigation(
   locale: AppLocale,
@@ -65,17 +85,14 @@ function getNavigation(
     ...item,
     locked: Boolean(item.module && lockedModules.includes(item.module))
   });
-  // Decision-system nav — 2026-09-07.
-  //
   // The primary group is the product: Today (the Decision Inbox), what is
   // being watched, the market as decision input, the plan, decision memory,
   // and the data the decisions rest on. Everything that used to be a
-  // top-level dashboard is still reachable under "Tools" — it just no
-  // longer defines the experience.
+  // top-level dashboard is still reachable under "Tools".
   const nav = {
     primary: [
       { href: "/today", label: isHe ? "היום" : "Today", icon: Inbox },
-      { href: "/watchlist", label: isHe ? "מעקב" : "Watchlist", icon: Eye },
+      { href: "/watchlist", label: isHe ? "מעקב" : "Watchlist", short: isHe ? "מעקב" : "Watch", icon: Eye },
       { href: "/market", label: isHe ? "שוק" : "Market", icon: Radar, module: "competitors" },
       {
         href: "/marketing-planner",
@@ -185,6 +202,10 @@ function getNavigation(
   };
 }
 
+function isActivePath(pathname: string, href: string): boolean {
+  return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+}
+
 /**
  * Renders the nav item's icon, swapping it for a spinner while a click on this
  * link has a navigation in flight. `useLinkStatus` only reports `pending` for
@@ -194,158 +215,311 @@ function getNavigation(
 function NavLinkIcon({
   Icon,
   isActive,
-  locale = "he"
+  locale = "he",
+  className
 }: {
   Icon: LucideIcon;
   isActive: boolean;
   locale?: AppLocale;
+  className?: string;
 }) {
   const { pending } = useLinkStatus();
-  const className = cn(
-    "h-4 w-4 shrink-0",
-    isActive ? "text-foreground" : "text-muted-foreground group-hover/nav:text-foreground"
-  );
+  const cls = cn("shrink-0", className ?? "h-4 w-4", isActive ? "text-foreground" : "text-muted-foreground group-hover/nav:text-foreground");
   if (pending) {
-    return (
-      <Loader2
-        className={cn(className, "animate-spin")}
-        aria-label={locale === "he" ? "טוען" : "Loading"}
-      />
-    );
+    return <Loader2 className={cn(cls, "animate-spin")} aria-label={locale === "he" ? "טוען" : "Loading"} />;
   }
-  return <Icon className={className} aria-hidden />;
+  return <Icon className={cls} aria-hidden />;
 }
 
-function NavContent({
+// One nav row — shared by the desktop sidebar and the More sheet.
+function NavRow({
+  item,
   pathname,
-  storeName,
   locale,
-  labels,
-  showPortfolio,
-  disabledModules,
-  lockedModules
+  onNavigate
+}: {
+  item: ResolvedNavItem;
+  pathname: string;
+  locale: AppLocale;
+  onNavigate?: () => void;
+}) {
+  const Icon = item.icon;
+  const lockedHint = locale === "he" ? "נעול בתוכנית הנוכחית — שדרגו כדי לפתוח" : "Locked on your current plan — upgrade to unlock";
+  if (item.locked) {
+    // Visible-but-gated: not a link, greyed, padlock at the end. The row
+    // deliberately keeps its place in the nav so the module's existence
+    // stays discoverable (the whole point of LOCKED_MODULES).
+    return (
+      <div
+        title={lockedHint}
+        aria-disabled
+        className="flex min-h-11 cursor-not-allowed select-none items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50 lg:min-h-0"
+      >
+        <Icon className="h-4 w-4 shrink-0 text-muted-foreground/40" aria-hidden />
+        <span className="truncate">{item.label}</span>
+        <Lock className="ms-auto h-3.5 w-3.5 shrink-0 text-muted-foreground/40" aria-label={lockedHint} />
+      </div>
+    );
+  }
+  const isActive = isActivePath(pathname, item.href);
+  return (
+    <Link
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      href={item.href as any}
+      aria-current={isActive ? "page" : undefined}
+      onClick={onNavigate}
+      className={cn(
+        "group/nav flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors lg:min-h-0",
+        isActive ? "bg-accent font-semibold text-foreground" : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+      )}
+    >
+      <NavLinkIcon Icon={Icon} isActive={isActive} locale={locale} />
+      <span className="truncate">{item.label}</span>
+    </Link>
+  );
+}
+
+function AccountFooter({ account, locale, openUp }: { account: SidebarAccount | null; locale: AppLocale; openUp: boolean }) {
+  if (!account) return null;
+  const lang = locale === "he" ? "he" : "en";
+  return (
+    <div className="space-y-2">
+      {account.orgs.length > 1 ? <OrgSwitcher orgs={account.orgs} locale={lang} /> : null}
+      <AccountMenu email={account.email} displayName={null} orgName={account.orgName} locale={lang} variant="row" openUp={openUp} />
+    </div>
+  );
+}
+
+// ─── Desktop sidebar body ─────────────────────────────────────────────────
+function DesktopNav({
+  pathname,
+  locale,
+  navigation,
+  account
 }: {
   pathname: string;
-  storeName: string;
   locale: AppLocale;
-  labels: {
-    common: Record<string, string>;
-    nav: Record<string, string>;
-  };
-  showPortfolio: boolean;
-  disabledModules: readonly string[];
-  lockedModules: readonly string[];
+  navigation: ReturnType<typeof getNavigation>;
+  account: SidebarAccount | null;
 }) {
-  const navigation = useMemo(
-    () => getNavigation(locale, showPortfolio, disabledModules, lockedModules),
-    [locale, showPortfolio, disabledModules, lockedModules]
-  );
-
-  const lockedHint =
-    locale === "he" ? "נעול בתוכנית הנוכחית — שדרגו כדי לפתוח" : "Locked on your current plan — upgrade to unlock";
-
-  const renderNavLink = (item: ResolvedNavItem) => {
-    const Icon = item.icon;
-    if (item.locked) {
-      // Visible-but-gated: not a link, greyed, padlock at the end. The row
-      // deliberately keeps its place in the nav so the module's existence
-      // stays discoverable (the whole point of LOCKED_MODULES).
-      return (
-        <div
-          key={item.href}
-          title={lockedHint}
-          aria-disabled
-          className="relative flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground/50 select-none"
-        >
-          <Icon className="h-4 w-4 shrink-0 text-muted-foreground/40" aria-hidden />
-          <span className="truncate">{item.label}</span>
-          <Lock className="ms-auto h-3.5 w-3.5 shrink-0 text-muted-foreground/40" aria-label={lockedHint} />
-        </div>
-      );
-    }
-    const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
-    return (
-      <Link
-        key={item.href}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        href={item.href as any}
-        aria-current={isActive ? "page" : undefined}
-        className={cn(
-          "group/nav relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-          isActive
-            ? "bg-card text-foreground shadow-soft"
-            : "text-muted-foreground hover:bg-card/70 hover:text-foreground"
-        )}
-      >
-        <span
-          aria-hidden
-          className={cn(
-            "absolute inset-y-2 start-0 w-1 rounded-full transition-colors",
-            isActive ? "bg-foreground" : "bg-transparent group-hover/nav:bg-border"
-          )}
-        />
-        <NavLinkIcon Icon={Icon} isActive={isActive} locale={locale} />
-        <span className="truncate">{item.label}</span>
-      </Link>
-    );
-  };
-
   return (
     <div className="flex h-full flex-col">
-      <div className="px-4 pb-8 pt-6">
-        <div className="rounded-2xl bg-primary px-4 py-5 text-primary-foreground shadow-soft">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5">
-              <HiloomyMark className="h-7 w-7" />
-            </span>
-            <p className="text-xs uppercase tracking-[0.22em] text-primary-foreground/70">
-              {labels.common.appName}
-            </p>
-          </div>
-          <h2 className="mt-3 text-xl font-semibold">{storeName}</h2>
-          <p className="mt-2 text-sm leading-6 text-primary-foreground/75">
-            {labels.common.shellHeroCopy}
-          </p>
-        </div>
+      <div className="flex h-14 items-center gap-2.5 px-5">
+        <HiloomyMark className="h-7 w-7" />
+        <span className="text-sm font-semibold tracking-tight">Hiloomy</span>
       </div>
-      <nav
-        className="flex-1 space-y-4 px-3"
-        aria-label={locale === "he" ? "ניווט ראשי" : "Primary"}
-      >
-        <div className="space-y-1">{navigation.primary.map(renderNavLink)}</div>
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pt-2" aria-label={locale === "he" ? "ניווט ראשי" : "Primary"}>
+        <div className="space-y-0.5">
+          {navigation.primary.map((item) => (
+            <NavRow key={item.href} item={item} pathname={pathname} locale={locale} />
+          ))}
+        </div>
         {navigation.dashboards.length > 0 ? (
-          <div className="space-y-1">
-            <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              {navigation.dashboardsHeading}
-            </p>
-            {navigation.dashboards.map(renderNavLink)}
+          <div className="space-y-0.5">
+            <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">{navigation.dashboardsHeading}</p>
+            {navigation.dashboards.map((item) => (
+              <NavRow key={item.href} item={item} pathname={pathname} locale={locale} />
+            ))}
           </div>
         ) : null}
       </nav>
-      {/* The "מוכן לאוטומציה" roadmap block used to live here — removed
-          (F-021): it promised capability instead of delivering information,
-          and the owner asked for it gone. */}
+      <div className="border-t border-border p-3">
+        <AccountFooter account={account} locale={locale} openUp />
+      </div>
     </div>
+  );
+}
+
+// ─── Mobile: bottom nav + More sheet ──────────────────────────────────────
+const BOTTOM_SLOTS = ["/today", "/watchlist", "/market", "/marketing-planner"] as const;
+
+function MoreSheet({
+  open,
+  onClose,
+  pathname,
+  locale,
+  items,
+  account
+}: {
+  open: boolean;
+  onClose: () => void;
+  pathname: string;
+  locale: AppLocale;
+  items: readonly ResolvedNavItem[];
+  account: SidebarAccount | null;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+  if (!mounted || !open) return null;
+  const isHe = locale === "he";
+  const signOut = isHe ? "התנתקות" : "Sign out";
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40 lg:hidden" onClick={onClose} role="dialog" aria-modal="true" aria-label={isHe ? "עוד" : "More"}>
+      <div
+        dir={isHe ? "rtl" : "ltr"}
+        className="flex max-h-[85dvh] w-full flex-col rounded-t-3xl border-t border-border bg-card shadow-dialog"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+          <p className="text-base font-semibold">{isHe ? "עוד" : "More"}</p>
+          <button type="button" onClick={onClose} className="-me-2 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={isHe ? "סגירה" : "Close"}>
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto overscroll-contain px-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="space-y-0.5">
+            {items.map((item) => (
+              <NavRow key={item.href} item={item} pathname={pathname} locale={locale} onNavigate={onClose} />
+            ))}
+          </div>
+          {account ? (
+            <div className="mt-3 space-y-0.5 border-t border-border pt-3">
+              {account.orgs.length > 1 ? (
+                <div className="px-3 pb-2">
+                  <OrgSwitcher orgs={account.orgs} locale={isHe ? "he" : "en"} />
+                </div>
+              ) : null}
+              <Link
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                href={"/settings/account" as any}
+                onClick={onClose}
+                className="flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+              >
+                <UserRound className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">{account.email}</span>
+              </Link>
+              <form action="/api/auth/signout" method="POST">
+                <button type="submit" className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-start text-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground">
+                  <LogOut className="h-4 w-4 shrink-0" aria-hidden />
+                  {signOut}
+                </button>
+              </form>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function BottomNav({
+  pathname,
+  locale,
+  navigation,
+  account
+}: {
+  pathname: string;
+  locale: AppLocale;
+  navigation: ReturnType<typeof getNavigation>;
+  account: SidebarAccount | null;
+}) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const isHe = locale === "he";
+  // Four fixed slots from the primary group (missing/disabled ones are
+  // back-filled from the rest of the primary group), then More.
+  const slots = useMemo(() => {
+    const byHref = new Map(navigation.primary.map((i) => [i.href, i] as const));
+    const picked: ResolvedNavItem[] = [];
+    for (const href of BOTTOM_SLOTS) {
+      const item = byHref.get(href);
+      if (item) picked.push(item);
+    }
+    for (const item of navigation.primary) {
+      if (picked.length >= 4) break;
+      if (!picked.includes(item)) picked.push(item);
+    }
+    return picked;
+  }, [navigation.primary]);
+  const rest = useMemo(
+    () => [...navigation.primary.filter((i) => !slots.includes(i)), ...navigation.dashboards],
+    [navigation, slots]
+  );
+  const moreActive = rest.some((i) => isActivePath(pathname, i.href));
+
+  return (
+    <>
+      <nav
+        aria-label={locale === "he" ? "ניווט ראשי" : "Primary"}
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card pb-[env(safe-area-inset-bottom)] lg:hidden"
+      >
+        <ul className="grid h-16 grid-cols-5">
+          {slots.map((item) => {
+            const Icon = item.icon;
+            const active = isActivePath(pathname, item.href);
+            const label = item.short ?? item.label;
+            if (item.locked) {
+              return (
+                <li key={item.href} className="flex flex-col items-center justify-center gap-1 text-muted-foreground/40" aria-disabled>
+                  <Lock className="h-5 w-5" aria-hidden />
+                  <span className="text-xs">{label}</span>
+                </li>
+              );
+            }
+            return (
+              <li key={item.href}>
+                <Link
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  href={item.href as any}
+                  aria-current={active ? "page" : undefined}
+                  className={cn("group/nav flex h-full flex-col items-center justify-center gap-1", active ? "text-foreground" : "text-muted-foreground")}
+                >
+                  <NavLinkIcon Icon={Icon} isActive={active} locale={locale} className="h-5 w-5" />
+                  <span className={cn("text-xs", active && "font-semibold")}>{label}</span>
+                </Link>
+              </li>
+            );
+          })}
+          <li>
+            <button
+              type="button"
+              onClick={() => setMoreOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={moreOpen}
+              className={cn("flex h-full w-full flex-col items-center justify-center gap-1", moreActive ? "text-foreground" : "text-muted-foreground")}
+            >
+              <MoreHorizontal className="h-5 w-5" aria-hidden />
+              <span className={cn("text-xs", moreActive && "font-semibold")}>{isHe ? "עוד" : "More"}</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+      <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} pathname={pathname} locale={locale} items={rest} account={account} />
+    </>
   );
 }
 
 export function Sidebar({
   storeName,
+  currentStoreId,
+  stores = [],
   locale,
-  labels,
   showPortfolio = false,
   disabledModules = [],
-  lockedModules = []
+  lockedModules = [],
+  account = null
 }: {
   storeName: string;
+  currentStoreId: string;
+  // Every installed brand — the mobile top bar hosts the switcher when
+  // there is more than one.
+  stores?: StoreSwitcherStore[];
   locale: AppLocale;
-  labels: {
-    common: Record<string, string>;
-    nav: Record<string, string>;
-  };
   // True when the org has 2+ connected stores (app-shell decides).
-  // Surfaces "All brands" (/portfolio) as the first nav item — the
-  // organization-level rollup dashboard for multi-store operators.
+  // Surfaces "All brands" (/portfolio) in Tools.
   showPortfolio?: boolean;
   // Module slugs hidden from the nav (DISABLED_MODULES env — app-shell
   // resolves it server-side via lib/server/module-flags.ts).
@@ -353,56 +527,36 @@ export function Sidebar({
   // Module slugs shown greyed-out with a padlock (LOCKED_MODULES env) —
   // visible-but-gated upsell rows rather than removed.
   lockedModules?: readonly string[];
+  account?: SidebarAccount | null;
 }) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const navigation = useMemo(
+    () => getNavigation(locale, showPortfolio, disabledModules, lockedModules),
+    [locale, showPortfolio, disabledModules, lockedModules]
+  );
+  const lang = locale === "he" ? "he" : "en";
 
   return (
     <>
-      {/* Menu button at the inline-START (right in Hebrew, left in English)
-          and the drawer opens from the same edge, so the nav is on the
-          reading-start side in both directions. */}
-      <div className="sticky top-0 z-30 flex items-center justify-between border-b border-border/70 bg-background/90 px-4 py-3 backdrop-blur lg:hidden">
-        <Button variant="secondary" size="sm" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-          <Menu className="me-2 h-4 w-4" />
-          {labels.common.menu}
-        </Button>
-        <div className="flex items-center gap-2.5">
-          <div className="text-end">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-              {labels.common.appName}
-            </p>
-            <p className="font-semibold">{storeName}</p>
-          </div>
-          <HiloomyMark className="h-8 w-8" />
+      {/* Phone top bar: 56px, mark + store. Content starts right under it. */}
+      <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background px-4 lg:hidden">
+        <HiloomyMark className="h-7 w-7 shrink-0" />
+        <div className="min-w-0 flex-1">
+          {stores.length > 1 ? (
+            <StoreSwitcher currentStoreId={currentStoreId} stores={stores} locale={lang} />
+          ) : (
+            <p className="truncate text-sm font-semibold">{storeName}</p>
+          )}
         </div>
       </div>
-      <aside className="hidden w-80 shrink-0 border-r border-border/70 bg-muted/40 lg:block">
-        <NavContent
-          pathname={pathname}
-          storeName={storeName}
-          locale={locale}
-          labels={labels}
-          showPortfolio={showPortfolio}
-          disabledModules={disabledModules}
-          lockedModules={lockedModules}
-        />
-      </aside>
-      {open ? (
-        <div className="fixed inset-0 z-40 flex justify-start bg-slate-950/40 lg:hidden" onClick={() => setOpen(false)}>
-          <div className="h-full w-[82%] max-w-80 overflow-y-auto bg-background shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <NavContent
-              pathname={pathname}
-              storeName={storeName}
-              locale={locale}
-              labels={labels}
-              showPortfolio={showPortfolio}
-              disabledModules={disabledModules}
-              lockedModules={lockedModules}
-            />
-          </div>
+
+      <aside className="hidden w-[248px] shrink-0 border-e border-border bg-background lg:block">
+        <div className="sticky top-0 h-screen">
+          <DesktopNav pathname={pathname} locale={locale} navigation={navigation} account={account} />
         </div>
-      ) : null}
+      </aside>
+
+      <BottomNav pathname={pathname} locale={locale} navigation={navigation} account={account} />
     </>
   );
 }

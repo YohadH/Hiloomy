@@ -40,19 +40,25 @@ const config: Config = {
           foreground: "hsl(var(--danger-foreground))"
         }
       },
+      // Operator-console radius scale (docs/UI-FOUNDATION-PLAN.md): the
+      // existing rounded-xl / rounded-2xl call sites flatten to 12px without
+      // touching each file. Buttons/inputs use md (8px), panels lg/xl.
       borderRadius: {
-        xl: "1.25rem",
-        "2xl": "1.75rem"
+        DEFAULT: "8px",
+        md: "8px",
+        lg: "10px",
+        xl: "12px",
+        "2xl": "12px",
+        "3xl": "14px"
       },
+      // Static UI carries no shadow. Only floating UI (menus, dialogs) does.
       boxShadow: {
-        soft: "0 18px 45px -24px rgba(15, 23, 42, 0.28)"
+        soft: "none",
+        menu: "0 8px 24px rgba(25, 33, 29, 0.12)",
+        dialog: "0 20px 50px rgba(25, 33, 29, 0.18)"
       },
       fontFamily: {
         sans: ["var(--font-sans)"]
-      },
-      backgroundImage: {
-        "dashboard-glow":
-          "radial-gradient(circle at top right, rgba(122, 136, 255, 0.1), transparent 28%), radial-gradient(circle at top left, rgba(34, 197, 94, 0.1), transparent 24%)"
       }
     }
   },

@@ -2,55 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Hiloomy brand theme — derived from the logo: forest-green ink (#1B4332),
-   leaf green (#16A34A), signal orange (#F97316) on warm paper. */
+/* Hiloomy operator-console palette (docs/UI-FOUNDATION-PLAN.md).
+   Flat warm canvas, ink text, one brand green used for actions and positive
+   state only, orange for warning/change, red for danger. No gradients. */
 :root {
-  --background: 42 30% 96%;
-  --foreground: 152 42% 12%;
-  --card: 0 0% 100%;
-  --card-foreground: 152 42% 12%;
-  --muted: 44 22% 92%;
-  --muted-foreground: 152 18% 30%;
-  --border: 44 18% 86%;
-  --input: 44 18% 86%;
-  --ring: 142 72% 33%;
-  --primary: 152 42% 18%;
-  --primary-foreground: 0 0% 98%;
-  --accent: 141 45% 92%;
-  --accent-foreground: 152 42% 15%;
-  --success: 142 47% 38%;
-  --success-foreground: 144 70% 97%;
-  --warning: 35 92% 48%;
-  --warning-foreground: 26 83% 14%;
-  --danger: 0 72% 50%;
-  --danger-foreground: 0 0% 98%;
+  --background: 60 16% 96%;        /* canvas  #F7F7F4 */
+  --foreground: 150 14% 11%;       /* ink     #19211D */
+  --card: 0 0% 100%;               /* surface #FFFFFF */
+  --card-foreground: 150 14% 11%;
+  --muted: 60 10% 93%;             /* quiet surface */
+  --muted-foreground: 146 3% 43%;  /* muted   #69706C */
+  --border: 90 7% 88%;             /* border  #E1E3DF */
+  --input: 90 7% 88%;
+  --ring: 155 58% 25%;
+  --primary: 155 58% 25%;          /* Hiloomy green #1B6747 */
+  --primary-foreground: 0 0% 100%;
+  --accent: 60 10% 93%;            /* hover surface — neutral, not green */
+  --accent-foreground: 150 14% 11%;
+  --success: 148 71% 31%;          /* positive #17854B */
+  --success-foreground: 0 0% 100%;
+  --warning: 29 79% 43%;           /* warning  #C56A17 */
+  --warning-foreground: 0 0% 100%;
+  --danger: 0 52% 50%;             /* danger   #C33D3D */
+  --danger-foreground: 0 0% 100%;
   --font-sans: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
 }
 
 .dark {
-  --background: 160 25% 7%;
-  --foreground: 150 15% 96%;
-  --card: 160 21% 9%;
-  --card-foreground: 150 15% 96%;
-  --muted: 160 16% 14%;
-  --muted-foreground: 150 12% 75%;
-  --border: 160 14% 20%;
-  --input: 160 14% 20%;
-  --ring: 142 69% 45%;
-  --primary: 150 15% 98%;
-  --primary-foreground: 160 25% 7%;
-  --accent: 160 15% 17%;
-  --accent-foreground: 150 15% 96%;
-  --success: 142 58% 52%;
-  --success-foreground: 144 70% 97%;
-  --warning: 36 91% 62%;
-  --warning-foreground: 26 83% 14%;
-  --danger: 0 84% 65%;
-  --danger-foreground: 0 0% 98%;
+  --background: 150 8% 8%;
+  --foreground: 60 10% 94%;
+  --card: 150 7% 11%;
+  --card-foreground: 60 10% 94%;
+  --muted: 150 6% 15%;
+  --muted-foreground: 146 5% 65%;
+  --border: 150 6% 20%;
+  --input: 150 6% 20%;
+  --ring: 152 45% 45%;
+  --primary: 152 45% 40%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 150 6% 16%;
+  --accent-foreground: 60 10% 94%;
+  --success: 148 55% 45%;
+  --success-foreground: 0 0% 100%;
+  --warning: 30 80% 55%;
+  --warning-foreground: 0 0% 100%;
+  --danger: 0 60% 58%;
+  --danger-foreground: 0 0% 100%;
 }
 
 * {
   @apply border-border;
+}
+
+/* Phone bottom navigation height (components/layout/sidebar.tsx). Fixed
+   elements (chat launcher, sync dock) and the page's bottom padding add it
+   so nothing renders under the nav. Zero from `lg`, where the sidebar is. */
+:root {
+  --hl-bottom-nav: 64px;
+}
+@media (min-width: 1024px) {
+  :root {
+    --hl-bottom-nav: 0px;
+  }
 }
 
 html {
@@ -97,13 +110,8 @@ html {
 body {
   @apply bg-background text-foreground antialiased;
   font-family: var(--font-sans);
-  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.96)),
-    radial-gradient(circle at top, rgba(22, 163, 74, 0.1), transparent 48%);
-}
-
-.dark body {
-  background-image: linear-gradient(to bottom, rgba(6, 18, 12, 0.9), rgba(6, 18, 12, 1)),
-    radial-gradient(circle at top, rgba(22, 163, 74, 0.14), transparent 38%);
+  /* Flat canvas — no gradient, no glow. Numbers line up in every table. */
+  font-variant-numeric: tabular-nums;
 }
 
 :focus-visible {
@@ -144,11 +152,11 @@ body {
 }
 
 .recharts-default-tooltip {
-  border-radius: 0.75rem !important;
+  border-radius: 8px !important;
   border: 1px solid hsl(var(--border)) !important;
   background: hsl(var(--card)) !important;
   color: hsl(var(--foreground)) !important;
-  box-shadow: 0 18px 45px -24px rgba(15, 23, 42, 0.28) !important;
+  box-shadow: 0 8px 24px rgba(25, 33, 29, 0.12) !important;
 }
 
 /* ─── Mobile responsiveness helpers ─────────────────────────────────────

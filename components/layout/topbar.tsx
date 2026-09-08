@@ -1,15 +1,7 @@
-import { Badge } from "@/components/ui/badge";
 import type { Store } from "@/lib/domain/types";
 import type { AppLocale } from "@/lib/i18n";
 import { ReportingPicker } from "@/components/layout/reporting-picker";
-import { AccountMenu } from "@/components/layout/account-menu";
-import {
-  StoreSwitcher,
-  type StoreSwitcherStore
-} from "@/components/layout/store-switcher";
-import { OrgSwitcher } from "@/components/layout/org-switcher";
-import { getAuthContext, listUserOrgsForSwitcher } from "@/lib/auth/session";
-import { getDb } from "@/lib/server/db";
+import { StoreSwitcher, type StoreSwitcherStore } from "@/components/layout/store-switcher";
 
 export interface TopbarControls {
   dateRangeLabel?: string;
@@ -26,7 +18,11 @@ export interface TopbarControls {
   };
 }
 
-export async function Topbar({
+// One row of chrome above the page: the store (desktop — on phones the top
+// bar in the sidebar carries it) and the date range. Domain, marketing copy,
+// org and account moved out (sidebar footer / More sheet) so the product
+// starts sooner. Connection state is only shown when something is wrong.
+export function Topbar({
   store,
   controls,
   labels,
@@ -40,81 +36,44 @@ export async function Topbar({
     common: Record<string, string>;
   };
   // List of every installed brand. When length > 1, the StoreSwitcher
-  // renders as a dropdown next to the brand name. When length <= 1, it
-  // renders as a subtle "+ Connect another brand" link.
+  // renders as a dropdown; otherwise the store name.
   allStores?: StoreSwitcherStore[];
 }) {
-  // Auth context for the account menu — bail to anonymous-friendly
-  // defaults if not signed in (legacy path during Phase 1 rollout).
-  const auth = await getAuthContext().catch(() => null);
-  let orgName: string | null = null;
-  if (auth?.orgId) {
-    try {
-      const db = getDb();
-      const org = (await db.organization.findUnique({
-        where: { id: auth.orgId },
-        select: { name: true }
-      })) as { name: string } | null;
-      orgName = org?.name ?? null;
-    } catch {
-      // ignore
-    }
-  }
-  // Orgs the user can switch between (own + any they were invited into).
-  // Renders as a switcher only when there's more than one.
-  const userOrgs = await listUserOrgsForSwitcher().catch((error) => {
-    // Never swallow this silently: a throw here hides the org switcher for
-    // EVERY multi-org user, and that is indistinguishable from "one org".
-    console.error("[topbar] listUserOrgsForSwitcher failed:", error instanceof Error ? error.message : error);
-    return [];
-  });
+  const lang = locale === "he" ? "he" : "en";
+  const demoLabel = locale === "he" ? "נתוני הדגמה" : "Demo data";
+  const demoTitle = locale === "he" ? "חנות הדגמה — כל הנתונים סינתטיים" : "Demo store — all data is synthetic";
   return (
-    <div className="flex flex-col gap-4 border-b border-border/70 pb-5 sm:pb-6 lg:flex-row lg:items-center lg:justify-between">
-      <div className="space-y-2 min-w-0">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <Badge className="whitespace-nowrap">
-            {store.connected ? labels.common.connectedStore : labels.common.storeSetup}
-          </Badge>
-          {store.isDemo ? (
-            <span
-              className="inline-flex items-center whitespace-nowrap rounded-full border border-green-300 bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-800"
-              title={
-                locale === "he"
-                  ? "חנות הדגמה — כל הנתונים סינתטיים"
-                  : "Demo store — all data is synthetic"
-              }
-            >
-              {locale === "he" ? "נתוני הדגמה" : "Demo data"}
-            </span>
-          ) : null}
-          <p className="text-sm text-muted-foreground truncate max-w-full">{store.domain}</p>
-          {allStores ? (
-            <StoreSwitcher currentStoreId={store.id} stores={allStores} locale={locale === "he" ? "he" : "en"} />
-          ) : null}
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-xl font-semibold tracking-tight sm:text-2xl break-words">{store.name}</h2>
-          <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            {labels.common.founderAnalyticsCopy}
-          </p>
-        </div>
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-border pb-4">
+      <div className="hidden min-w-0 items-center gap-3 lg:flex">
+        {allStores && allStores.length > 1 ? (
+          <StoreSwitcher currentStoreId={store.id} stores={allStores} locale={lang} />
+        ) : (
+          <h2 className="truncate text-xl font-semibold tracking-tight">{store.name}</h2>
+        )}
+        {!store.connected ? (
+          <span className="inline-flex items-center rounded-full border border-warning/40 bg-warning/10 px-2.5 py-0.5 text-xs font-medium text-warning">
+            {labels.common.storeSetup}
+          </span>
+        ) : null}
+        {store.isDemo ? (
+          <span className="inline-flex items-center rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-muted-foreground" title={demoTitle}>
+            {demoLabel}
+          </span>
+        ) : null}
       </div>
-      {/* "סנכרון עכשיו" removed per the owner — applying a date range now
-          syncs EVERY platform in one shot (/api/reporting/refresh), so a
-          separate manual sync button was redundant noise. The 2h cron still
-          covers the background cadence. */}
-      <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
-        {userOrgs.length > 1 ? (
-          <OrgSwitcher orgs={userOrgs} locale={locale === "he" ? "he" : "en"} />
+      <div className="flex items-center gap-2 lg:hidden">
+        {!store.connected ? (
+          <span className="inline-flex items-center rounded-full border border-warning/40 bg-warning/10 px-2.5 py-0.5 text-xs font-medium text-warning">
+            {labels.common.storeSetup}
+          </span>
         ) : null}
-        {auth?.email ? (
-          <AccountMenu
-            email={auth.email}
-            displayName={null}
-            orgName={orgName}
-            locale={locale === "he" ? "he" : "en"}
-          />
+        {store.isDemo ? (
+          <span className="inline-flex items-center rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-muted-foreground" title={demoTitle}>
+            {demoLabel}
+          </span>
         ) : null}
+      </div>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none">
         <ReportingPicker
           storeId={store.id}
           storeConnected={store.connected}
@@ -126,7 +85,7 @@ export async function Topbar({
           initialComparisonEnd={controls?.comparison?.endDate ?? ""}
           initialRangeLabel={controls?.dateRangeLabel ?? "Last 30 days"}
           initialComparisonLabel={controls?.comparisonLabel ?? "Previous period"}
-          locale={locale === "he" ? "he" : "en"}
+          locale={lang}
         />
       </div>
     </div>

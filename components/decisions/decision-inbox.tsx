@@ -67,11 +67,9 @@ export function DecisionInbox({
 
   if (list.length === 0) {
     return (
-      <Card className="border-emerald-200/70 bg-emerald-50/40 dark:border-emerald-500/20 dark:bg-emerald-500/5">
-        <div className="flex flex-col items-start gap-3 p-8 sm:flex-row sm:items-center sm:gap-5">
-          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
-            <CheckCircle2 className="h-6 w-6" aria-hidden />
-          </span>
+      <Card>
+        <div className="flex flex-col items-start gap-3 p-6 sm:flex-row sm:items-center sm:gap-5 sm:p-8">
+          <CheckCircle2 className="h-7 w-7 shrink-0 text-success" aria-hidden />
           <div className="space-y-1">
             <h3 className="text-xl font-semibold tracking-tight sm:text-2xl">
               {t("שום דבר לא דורש את ההחלטה שלכם כרגע.", "Nothing needs your decision right now.")}
@@ -112,8 +110,8 @@ export function DecisionInbox({
         ) : null}
 
         {noAction.length > 0 ? (
-          <section className="space-y-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          <section className="space-y-1">
+            <p className="text-sm font-medium text-muted-foreground">
               {t("לא דורש פעולה — הילומי ממשיכה לעקוב", "No action needed — Hiloomy keeps watching")}
             </p>
             {noAction.map((d) => (

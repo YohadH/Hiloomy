@@ -109,24 +109,24 @@ export function StoreSwitcher({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold transition-colors hover:bg-accent"
+        className="-ms-2 inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-base font-semibold tracking-tight transition-colors hover:bg-accent lg:text-xl"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={locale === "he" ? "החלפת מותג" : "Switch brand"}
       >
-        {pending ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-        {/* The current brand name already appears as the page's <h2> title;
-            repeating it here rendered "hbosem hbosem" side by side once a
-            second brand made this switcher appear (QA run 6, 2 Sep 2026).
-            This is a switch control, so it says "switch brand", not the name. */}
-        <span>{locale === "he" ? "החלפת מותג" : "Switch brand"}</span>
-        <ChevronDown className="h-3 w-3" aria-hidden />
+        {pending ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden /> : null}
+        {/* Since the shell redesign (docs/UI-FOUNDATION-PLAN.md) this trigger
+            IS the store's name on the page — the old <h2> title is gone — so
+            it reads "Incense Parfums ▾", the way a store picker should. */}
+        <span className="truncate">{current?.name}</span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       </button>
 
       {/* Panel uses bg-card, NOT bg-popover — this project's Tailwind theme
           has no `popover` color token, so bg-popover compiles to nothing and
           the page text bleeds straight through the open dropdown. */}
       {open ? (
-        <div className="absolute z-50 mt-1.5 min-w-[260px] rounded-lg border border-border bg-card shadow-xl start-0">
+        <div className="absolute z-50 mt-1.5 min-w-[260px] rounded-lg border border-border bg-card shadow-menu start-0">
           <ul role="listbox" className="max-h-80 overflow-y-auto py-1">
             {stores.map((s) => {
               const isCurrent = s.id === currentStoreId;

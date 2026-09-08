@@ -63,7 +63,7 @@ export function SyncStatusDock({ locale = "he" }: { locale?: "he" | "en" }) {
       // right (56px FAB + margins). The logical ltr:/rtl: offsets did not
       // resolve on phones — the dock rendered with no horizontal offset,
       // cut off at the left edge and over the header (1 Sep 2026).
-      className="pointer-events-none fixed bottom-4 left-4 z-[60] flex w-[min(22rem,calc(100vw-6.5rem))] flex-col gap-2"
+      className="pointer-events-none fixed bottom-[calc(var(--hl-bottom-nav)+1rem+env(safe-area-inset-bottom))] left-4 z-[60] flex w-[min(22rem,calc(100vw-6.5rem))] flex-col gap-2"
       role="status"
       aria-live="polite"
     >
@@ -71,7 +71,7 @@ export function SyncStatusDock({ locale = "he" }: { locale?: "he" | "en" }) {
         <div
           key={job.id}
           className={cn(
-            "pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 shadow-lg backdrop-blur",
+            "pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 shadow-menu",
             job.status === "running" && "border-emerald-300 bg-emerald-50/95",
             job.status === "success" && "border-emerald-300 bg-white/95",
             job.status === "error" && "border-rose-300 bg-rose-50/95"

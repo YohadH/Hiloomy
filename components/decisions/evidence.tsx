@@ -18,15 +18,15 @@ export function text(value: string | Localized | null | undefined, locale: Local
 // Known / Calculated / Estimated / Unavailable — always visible next to a
 // number so a manager never mistakes an estimate for a fact.
 const QUALITY_STYLE: Record<EvidenceQuality, string> = {
-  known: "text-emerald-700 dark:text-emerald-300",
+  known: "text-success",
   calculated: "text-muted-foreground",
-  estimated: "text-orange-700 dark:text-orange-300",
+  estimated: "text-warning",
   unavailable: "text-muted-foreground/80"
 };
 
 export function QualityTag({ quality, locale, className }: { quality: EvidenceQuality; locale: Locale; className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em]", QUALITY_STYLE[quality], className)}>
+    <span className={cn("inline-flex items-center gap-1 text-xs font-medium", QUALITY_STYLE[quality], className)}>
       <span
         aria-hidden
         className={cn(
@@ -53,7 +53,7 @@ export function EvidenceChip({ fact, locale }: { fact: EvidenceFact; locale: Loc
       )}
       title={`${fact.label[locale]} · ${fact.sourceDetail[locale]} · ${QUALITY_LABEL[fact.quality][locale]}`}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{fact.label[locale]}</span>
+      <span className="text-xs text-muted-foreground">{fact.label[locale]}</span>
       <span className={cn("truncate font-semibold tabular-nums", unavailable && "font-medium")}>
         {unavailable ? QUALITY_LABEL.unavailable[locale] : value}
       </span>
@@ -73,7 +73,7 @@ export function EvidenceGroups({ evidence, locale }: { evidence: EvidenceFact[];
     <div className="grid gap-4 sm:grid-cols-2">
       {groups.map((g) => (
         <div key={g.source} className="rounded-xl border border-border/80 bg-background/60 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{SOURCE_LABEL[g.source][locale]}</p>
+          <p className="text-xs font-medium text-muted-foreground">{SOURCE_LABEL[g.source][locale]}</p>
           <ul className="mt-3 space-y-3">
             {g.facts.map((f, i) => {
               const value = text(f.value, locale);
@@ -88,7 +88,7 @@ export function EvidenceGroups({ evidence, locale }: { evidence: EvidenceFact[];
                   </div>
                   {note ? <p className="text-xs text-muted-foreground">{f.label[locale]}</p> : null}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {locale === "he" ? "מקור" : "Source"}: {f.sourceDetail[locale]}
                     </span>
                     <QualityTag quality={f.quality} locale={locale} />

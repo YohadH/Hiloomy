@@ -432,8 +432,8 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
     // makes "end" = right; the cards re-declare the page direction inside.
     <div
       dir="ltr"
-      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2"
-      style={vv ? { right: vv.right + 16, bottom: `calc(${vv.bottom + 16}px + env(safe-area-inset-bottom))` } : undefined}
+      className="fixed bottom-[calc(var(--hl-bottom-nav)+1rem+env(safe-area-inset-bottom))] right-4 z-50 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2"
+      style={vv ? { right: vv.right + 16, bottom: `calc(${vv.bottom + 16}px + var(--hl-bottom-nav) + env(safe-area-inset-bottom))` } : undefined}
     >
       {open ? (
         <div dir={isHe ? "rtl" : "ltr"} className="flex flex-col items-end gap-2">
@@ -445,7 +445,7 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
                 key={kind}
                 type="button"
                 onClick={() => setActive(kind)}
-                className="flex w-64 items-center gap-3 rounded-2xl border border-border bg-card p-3 text-start shadow-xl transition-transform hover:-translate-y-0.5"
+                className="flex w-64 items-center gap-3 rounded-xl border border-border bg-card p-3 text-start shadow-menu"
                 style={{ animation: `gg-chat-pop 160ms ease-out ${i * 60}ms backwards` }}
               >
                 <span className={cn("inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white", chat.accent)}>
@@ -464,8 +464,8 @@ export function ChatWidget({ locale = "he" }: { locale?: "he" | "en" }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "inline-flex h-14 w-14 items-center justify-center rounded-full text-white shadow-2xl transition-transform hover:scale-105",
-          open ? "bg-slate-700" : "bg-emerald-600"
+          "inline-flex h-12 w-12 items-center justify-center rounded-full text-white shadow-menu transition-colors",
+          open ? "bg-foreground" : "bg-primary hover:bg-primary/90"
         )}
         aria-label={lang("פתיחת צ'אט", "Open chat")}
         aria-expanded={open}

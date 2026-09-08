@@ -113,7 +113,7 @@ export function OrgSwitcher({
       </button>
 
       {open ? (
-        <div className="absolute z-50 mt-1.5 min-w-[260px] rounded-lg border border-border bg-card shadow-xl start-0">
+        <div className="absolute z-50 mt-1.5 min-w-[260px] rounded-lg border border-border bg-card shadow-menu start-0">
           <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             {locale === "he" ? "הארגונים שלכם" : "Your organizations"}
           </p>

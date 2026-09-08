@@ -10,12 +10,19 @@ export function AccountMenu({
   email,
   displayName,
   orgName,
-  locale = "he"
+  locale = "he",
+  variant = "avatar",
+  openUp = false
 }: {
   email: string;
   displayName?: string | null;
   orgName?: string | null;
   locale?: "he" | "en";
+  // "avatar": the round initials button. "row": a full-width row (initials +
+  // name + org) for the sidebar footer.
+  variant?: "avatar" | "row";
+  // Open the menu above the trigger (sidebar footer sits at the bottom).
+  openUp?: boolean;
 }) {
   const t =
     locale === "he"
@@ -62,22 +69,43 @@ export function AccountMenu({
 
   return (
     <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-green-600 to-emerald-600 text-white text-xs font-bold shadow-sm hover:shadow-md transition-shadow"
-        title={email}
-      >
-        {initials}
-      </button>
+      {variant === "row" ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-start transition-colors hover:bg-accent"
+          title={email}
+        >
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{initials}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{displayName ?? email}</span>
+            {orgName ? <span className="block truncate text-xs text-muted-foreground">{orgName}</span> : null}
+          </span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
+          title={email}
+        >
+          {initials}
+        </button>
+      )}
 
       {open ? (
         <div
           role="menu"
           dir={locale === "he" ? "rtl" : "ltr"}
-          className="absolute end-0 top-full z-50 mt-2 w-64 rounded-xl border border-border bg-card text-card-foreground shadow-xl overflow-hidden"
+          className={
+            openUp
+              ? "absolute start-0 bottom-full z-50 mb-2 w-64 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-menu"
+              : "absolute end-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-menu"
+          }
         >
           <div className="px-4 py-3 border-b border-border/70">
             <p className="text-sm font-semibold truncate" title={displayName ?? email}>

@@ -24,7 +24,7 @@ export type DecideChoice = "approve" | "alternative" | "ignore";
 function Section({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
     <section className={cn("space-y-3", className)}>
-      <h4 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">{title}</h4>
+      <h4 className="text-sm font-semibold">{title}</h4>
       {children}
     </section>
   );
@@ -114,8 +114,8 @@ export function DecisionReceipt({
       <header className="space-y-3">
         <div className="flex flex-wrap items-center gap-2.5">
           <StatusPill status={d.status} locale={locale} />
-          <span className="text-[11px] font-medium tracking-[0.12em] text-muted-foreground">{displayDecisionId(d.id)}</span>
-          <span className="text-[11px] text-muted-foreground">· {DECISION_STATE_LABEL[d.ledger.state][locale]}</span>
+          <span className="text-xs font-medium text-muted-foreground">{displayDecisionId(d.id)}</span>
+          <span className="text-xs text-muted-foreground">· {DECISION_STATE_LABEL[d.ledger.state][locale]}</span>
         </div>
         <h2 className="text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">{d.title[locale]}</h2>
       </header>
@@ -135,7 +135,7 @@ export function DecisionReceipt({
             <span className="text-muted-foreground">= </span>
             <span className="font-semibold">{d.connected.conclusion[locale]}</span>
           </p>
-          <div className="mt-4 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <div className="mt-4 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span>{t("מקורות", "Sources")}:</span>
             {d.connected.inputs.map((input, i) => (
               <span key={i} className="inline-flex items-center gap-1.5">
@@ -158,7 +158,7 @@ export function DecisionReceipt({
         <div className="grid gap-3 sm:grid-cols-3">
           {d.exposure.map((x, i) => (
             <div key={i} className={cn("rounded-xl border p-4", x.value === null ? "border-dashed border-border" : "border-border/80 bg-background/60")}>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{x.label[locale]}</p>
+              <p className="text-xs font-medium text-muted-foreground">{x.label[locale]}</p>
               <p className={cn("mt-1 text-xl font-semibold tabular-nums", x.value === null && "text-muted-foreground")}>
                 {x.value === null ? QUALITY_LABEL.unavailable[locale] : x.value}
               </p>
@@ -180,12 +180,12 @@ export function DecisionReceipt({
               key={o.key}
               className={cn("flex items-start gap-3 rounded-xl border px-4 py-3 text-sm", o.recommended ? "border-primary/40 bg-primary/5 font-semibold" : "border-border/80")}
             >
-              <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current text-[11px] font-bold">
+              <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current text-xs font-bold">
                 {String.fromCharCode(65 + i)}
               </span>
               <span className="flex-1 leading-6">{o.label[locale]}</span>
               {o.recommended ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary">
                   <Check className="h-3 w-3" aria-hidden />
                   {t("מומלץ", "Recommended")}
                 </span>
@@ -212,7 +212,7 @@ export function DecisionReceipt({
         <p className="text-sm leading-6 text-muted-foreground">{d.confidenceReason[locale]}</p>
         {d.unknown ? (
           <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-3 text-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("מה הילומי לא יודעת", "What Hiloomy doesn't know")}</p>
+            <p className="text-xs font-medium text-muted-foreground">{t("מה הילומי לא יודעת", "What Hiloomy doesn't know")}</p>
             <p className="mt-1 leading-6">{d.unknown[locale]}</p>
           </div>
         ) : null}
@@ -225,7 +225,7 @@ export function DecisionReceipt({
           <ul className="space-y-1.5">
             {d.missingEvidence.map((m, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" aria-hidden />
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
                 <span>
                   {m[locale]} <span className="text-muted-foreground">— {t("לא זמין", "unavailable")}</span>
                 </span>
@@ -350,7 +350,7 @@ export function DecisionReceipt({
       </Section>
 
       <footer className="rounded-xl border border-border/80 bg-muted/20 p-4 text-xs text-muted-foreground">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em]">{t("קבלת החלטה", "Decision receipt")}</p>
+        <p className="mb-2 text-xs font-medium text-muted-foreground">{t("קבלת החלטה", "Decision receipt")}</p>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3">
           <dt>{t("מזהה החלטה", "Decision ID")}</dt>
           <dd className="font-semibold text-foreground sm:col-span-2">{displayDecisionId(d.id)}</dd>
