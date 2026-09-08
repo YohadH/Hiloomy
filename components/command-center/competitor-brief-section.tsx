@@ -49,12 +49,6 @@ export function CompetitorBriefSection({
                     </li>
                   ))}
                 </ul>
-                <p className="mt-2 border-t border-border/60 pt-2 text-xs leading-5 text-muted-foreground">
-                  <span className="font-semibold text-foreground">
-                    {lang("מה זה אומר לכם: ", "What it means for you: ")}
-                  </span>
-                  {c.implication}
-                </p>
                 {c.lastChecked ? (
                   <p className="mt-1.5 text-xs text-muted-foreground">
                     {lang(`נבדק לאחרונה: ${c.lastChecked}`, `Last checked: ${c.lastChecked}`)}

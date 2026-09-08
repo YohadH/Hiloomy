@@ -32,20 +32,20 @@ export function GoogleAdsSection({
           </div>
           <dl className="flex gap-5 text-end">
             <div>
-              <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("הוצאה", "Spend")}</dt>
+              <dt className="text-xs text-muted-foreground">{t("הוצאה", "Spend")}</dt>
               <dd className="text-sm font-semibold tabular-nums">{money(overview.totalSpend)}</dd>
             </div>
             <div>
-              <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("המרות", "Conversions")}</dt>
+              <dt className="text-xs text-muted-foreground">{t("המרות", "Conversions")}</dt>
               <dd className="text-sm font-semibold tabular-nums">{nf(Math.round(overview.totalConversions))}</dd>
             </div>
             <div>
-              <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("ערך המרות", "Conv. value")}</dt>
+              <dt className="text-xs text-muted-foreground">{t("ערך המרות", "Conv. value")}</dt>
               <dd className="text-sm font-semibold tabular-nums">{money(overview.totalConversionsValue)}</dd>
             </div>
             <div>
-              <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">ROAS</dt>
-              <dd className={cn("text-sm font-semibold tabular-nums", overview.blendedRoas !== null && breakevenRoas !== null && overview.blendedRoas < breakevenRoas ? "text-red-700" : "text-emerald-700")}>
+              <dt className="text-xs text-muted-foreground">ROAS</dt>
+              <dd className={cn("text-sm font-semibold tabular-nums", overview.blendedRoas !== null && breakevenRoas !== null && overview.blendedRoas < breakevenRoas ? "text-danger" : "text-success")}>
                 {overview.blendedRoas === null ? "—" : `${overview.blendedRoas.toFixed(2)}×`}
               </dd>
             </div>
@@ -57,7 +57,7 @@ export function GoogleAdsSection({
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-border text-sm">
-              <thead className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <thead className="text-xs font-medium text-muted-foreground">
                 <tr>
                   <th className="py-2 pe-4 text-start">{t("קמפיין", "Campaign")}</th>
                   <th className="py-2 pe-4 text-start">{t("סוג", "Type")}</th>
@@ -76,7 +76,7 @@ export function GoogleAdsSection({
                     <tr key={c.campaignId}>
                       <td className="py-2 pe-4">
                         <span className="inline-flex items-center gap-2">
-                          <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", c.activeRecently ? "bg-emerald-500" : "bg-border")} />
+                          <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", c.activeRecently ? "bg-success" : "bg-border")} />
                           <span className="font-medium">{c.campaignName}</span>
                         </span>
                       </td>
@@ -86,7 +86,7 @@ export function GoogleAdsSection({
                       <td className="py-2 pe-4 text-end tabular-nums">{c.ctr === null ? "—" : `${(c.ctr * 100).toFixed(2)}%`}</td>
                       <td className="py-2 pe-4 text-end tabular-nums">{c.conversions === 0 ? "0" : c.conversions.toFixed(1)}</td>
                       <td className="py-2 pe-4 text-end tabular-nums">{c.cpa === null ? "—" : money(c.cpa)}</td>
-                      <td className={cn("py-2 text-end font-semibold tabular-nums", below ? "text-red-700" : c.roas !== null ? "text-emerald-700" : "text-muted-foreground")}>
+                      <td className={cn("py-2 text-end font-semibold tabular-nums", below ? "text-danger" : c.roas !== null ? "text-success" : "text-muted-foreground")}>
                         {c.roas === null ? t("ללא המרות", "no conv.") : `${c.roas.toFixed(2)}×`}
                       </td>
                     </tr>
