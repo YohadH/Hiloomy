@@ -8,6 +8,7 @@ import { reconcileAffiliateAttributionOrphans } from "@/lib/services/affiliate-a
 import { syncGscData, getGscSelectedSiteUrl, GSC_PLATFORM } from "@/lib/services/gsc-service";
 import { syncGa4Data, getGa4SelectedProperty, GA4_PLATFORM } from "@/lib/services/ga4-service";
 import { syncGoogleAdsData, getGoogleAdsSelectedCustomer, GOOGLE_ADS_PLATFORM } from "@/lib/services/google-ads-service";
+import { syncAllGoogleSheets } from "@/lib/services/google-sheets-service";
 import {
   syncCompetitorSignals,
   upsertCompetitorResponseAlerts
@@ -105,6 +106,7 @@ interface PerStoreResult {
   gsc: { ok: boolean; skipped?: boolean; pagesUpserted?: number; queriesUpserted?: number; error?: string };
   ga4: { ok: boolean; skipped?: boolean; rowsUpserted?: number; days?: number; error?: string };
   googleAds: { ok: boolean; skipped?: boolean; rowsUpserted?: number; days?: number; campaigns?: number; error?: string };
+  googleSheets: { ok: boolean; skipped?: boolean; sheets?: number; changed?: number; errors?: number; error?: string };
   competitors: {
     ok: boolean;
     skipped?: boolean;
@@ -196,6 +198,7 @@ async function handler(request: Request) {
         gsc: { ok: true, skipped: true },
         ga4: { ok: true, skipped: true },
         googleAds: { ok: true, skipped: true },
+        googleSheets: { ok: true, skipped: true },
         competitors: { ok: true, skipped: true }
       };
 
@@ -401,6 +404,15 @@ async function handler(request: Request) {
             error: err instanceof Error ? err.message : String(err)
           };
         }
+      }
+
+      // ── Google Sheets–linked Gantts: re-read each linked tab, log changes ──
+      try {
+        const r = await syncAllGoogleSheets(store.id);
+        result.googleSheets = r.sheets === 0 ? { ok: true, skipped: true } : { ok: r.errors === 0, sheets: r.sheets, changed: r.changed, errors: r.errors };
+      } catch (err) {
+        console.error(`[refresh-all] Google Sheets sync failed for ${store.id}:`, err);
+        result.googleSheets = { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
 
       // ── Competitor signals (optional) ─────────────────────────────

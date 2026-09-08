@@ -218,8 +218,8 @@ export default async function SettingsPage({
       // coming soon" long after it shipped, and the status ignored GA4, so a
       // brand with GA4 connected looked unconnected and vice versa.
       description: lang(
-        "Search Console ו-GA4 — שני חיבורים נפרדים (כל אחד עם בחירת נכס). מחברים כל אחד בנפרד בפאנל.",
-        "Search Console and GA4 — two separate connections (each with its own property picker). Connect each inside the panel."
+        "Search Console ו-GA4 — שני חיבורים נפרדים (כל אחד עם בחירת נכס). Google Sheets לגאנט מתחברים מתוך עמוד התוכנית.",
+        "Search Console and GA4 — two separate connections (each with its own property picker). Google Sheets for the Gantt connects from the Plan page."
       ),
       status: (() => {
         const gscOk = Boolean(gscConnection) && gscConnection?.status !== "error";

@@ -20,6 +20,8 @@ import {
   Download
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { GoogleSheetLink } from "@/components/gantt/google-sheet-link";
+import { SheetSyncPanel } from "@/components/gantt/sheet-sync-panel";
 
 // Interactive Gantt studio. Three panes stacked:
 //   1. Upload / sheet picker
@@ -71,6 +73,11 @@ type GanttSheetSummary = {
   parsedSheetName: string | null;
   insightsGeneratedAt: string | null;
   createdAt: string;
+  sourceType: string;
+  sourceSheetName: string | null;
+  sourceUrl: string | null;
+  sourceLastSyncedAt: string | null;
+  sourceSyncError: string | null;
 };
 
 type GanttSheetFull = GanttSheetSummary & { rows: GanttRow[] };
@@ -241,10 +248,18 @@ function categoryColor(category: string | null | undefined): (typeof CATEGORY_PA
 
 export function GanttStudio({
   initialSheets,
-  locale = "he"
+  locale = "he",
+  storeId,
+  googleSheetsConnected = false,
+  sheetsNotice = null
 }: {
   initialSheets: GanttSheetSummary[];
   locale?: "he" | "en";
+  storeId: string;
+  // Google Sheets connection state (lib/services/google-sheets-service.ts).
+  googleSheetsConnected?: boolean;
+  // Outcome of an OAuth round-trip that just landed here.
+  sheetsNotice?: { kind: "connected" | "error"; message?: string } | null;
 }) {
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
@@ -560,9 +575,22 @@ export function GanttStudio({
               )}
             </p>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+          <GoogleSheetLink
+            storeId={storeId}
+            connected={googleSheetsConnected}
+            locale={locale}
+            onLinked={async (sheetId) => {
+              const listRes = await fetch("/api/gantt");
+              const listBody = await listRes.json().catch(() => ({}));
+              if (listBody.ok) setSheets(listBody.sheets);
+              setSelectedSheetId(sheetId);
+              router.refresh();
+            }}
+          />
           <label
             className={cn(
-              "inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 px-3 py-2 text-sm font-semibold text-emerald-700 hover:border-emerald-400",
+              "inline-flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-accent",
               uploading && "pointer-events-none opacity-50"
             )}
           >
@@ -581,7 +609,15 @@ export function GanttStudio({
               onChange={handleUpload}
             />
           </label>
+          </div>
         </div>
+        {sheetsNotice ? (
+          <p className={cn("mt-3 text-sm", sheetsNotice.kind === "error" ? "text-danger" : "text-success")}>
+            {sheetsNotice.kind === "error"
+              ? sheetsNotice.message ?? lang("חיבור Google Sheets נכשל.", "Google Sheets connection failed.")
+              : lang("Google Sheets חובר. עכשיו אפשר לקשר לשונית.", "Google Sheets connected. You can link a tab now.")}
+          </p>
+        ) : null}
         {uploadError ? (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
@@ -646,6 +682,18 @@ export function GanttStudio({
 
       {sheet && !loadingSheet ? (
         <>
+          {sheet.sourceType === "google_sheet" ? (
+            <SheetSyncPanel
+              sheet={sheet}
+              locale={locale}
+              onSynced={async () => {
+                const refreshed = await fetch(`/api/gantt/${sheet.id}`).then((r) => r.json());
+                if (refreshed.ok) setSheet(refreshed.sheet);
+                const listRes = await fetch("/api/gantt").then((r) => r.json());
+                if (listRes.ok) setSheets(listRes.sheets);
+              }}
+            />
+          ) : null}
           {/* ── Parsed range banner — visual sanity check ──────────── */}
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 text-sm">
             <div className="flex flex-wrap items-center gap-3">

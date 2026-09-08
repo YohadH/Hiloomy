@@ -224,6 +224,10 @@ services:
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_SECRET
         sync: false
+      # Google Sheets (same OAuth app; spreadsheets.readonly scope) backs the
+      # Gantt link on /marketing-planner. No new keys — but add
+      # <APP_URL>/api/google-sheets/oauth/callback to the OAuth client's
+      # redirect URIs and enable the "Google Sheets API" in the Cloud project.
       # Google Ads (same OAuth app; adds the adwords scope). Paste the Hiloomy
       # app's existing developer token (Google Ads API Center). Optional:
       # GOOGLE_ADS_LOGIN_CUSTOMER_ID (manager account id, digits only) when the

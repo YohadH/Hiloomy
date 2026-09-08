@@ -1881,12 +1881,42 @@ model GanttSheet {
   // Cached MarketingBrief output (see gantt-brief-generator-service).
   briefJson           Json?
   briefGeneratedAt    DateTime?
+  // Where the plan comes from. "upload" = the operator dropped a file;
+  // "google_sheet" = linked to a Google Sheets tab and re-synced by the
+  // cron so edits the team makes in the sheet show up as changes here.
+  sourceType          String     @default("upload")
+  sourceSpreadsheetId String?
+  sourceSheetName     String?
+  sourceUrl           String?
+  sourceLastSyncedAt  DateTime?
+  // sha256 of the tab's values at the last sync — unchanged → no re-parse.
+  sourceContentHash   String?
+  sourceSyncError     String?
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
   store               Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   rows                GanttRow[]
+  syncs               GanttSheetSync[]
 
   @@index([storeId, createdAt(sort: Desc)])
+}
+
+// One row per sync that found a difference in a linked Google Sheet — the
+// "what changed in the plan" log (google-sheets-service.ts).
+model GanttSheetSync {
+  id        String     @id @default(cuid())
+  sheetId   String
+  storeId   String
+  syncedAt  DateTime   @default(now())
+  added     Int        @default(0)
+  removed   Int        @default(0)
+  changed   Int        @default(0)
+  // { added: [{task, role, date}], removed: [...], changed: [{task, field, from, to}] }
+  detailsJson Json?
+  sheet     GanttSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  @@index([sheetId, syncedAt(sort: Desc)])
+  @@index([storeId, syncedAt(sort: Desc)])
 }
 
 // One task row parsed from a Gantt upload. Minimum required fields are

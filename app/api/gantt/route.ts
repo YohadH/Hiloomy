@@ -35,7 +35,12 @@ export async function GET() {
         sheetNamesJson: true,
         parsedSheetName: true,
         insightsGeneratedAt: true,
-        createdAt: true
+        createdAt: true,
+        sourceType: true,
+        sourceSheetName: true,
+        sourceUrl: true,
+        sourceLastSyncedAt: true,
+        sourceSyncError: true
       }
     });
     return NextResponse.json({ ok: true, sheets });
