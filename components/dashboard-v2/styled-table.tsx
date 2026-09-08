@@ -9,7 +9,7 @@ export interface StyledColumn<T> {
   render?: (row: T) => React.ReactNode;
   tooltip?: React.ReactNode;
   align?: "start" | "end" | "center";
-  /** Tint the cell value as profit-positive (emerald). */
+  /** Tint the cell value as profit-positive. */
   emphasis?: boolean;
 }
 
@@ -19,13 +19,18 @@ function alignClass(align?: "start" | "end" | "center") {
   return "text-start";
 }
 
+// One data primitive, two layouts. Desktop (md+) is the table. Phones get
+// `mobileRender` when the caller provides one — an intentional per-row
+// layout instead of an eight-column horizontal pan. Without it the table
+// scrolls inside its own box (the fallback, not the strategy).
 export function StyledTable<T extends object>({
   columns,
   rows,
   numbered = false,
   emptyMessage,
   rowKey,
-  locale = "en"
+  locale = "en",
+  mobileRender
 }: {
   columns: StyledColumn<T>[];
   rows: T[];
@@ -34,6 +39,8 @@ export function StyledTable<T extends object>({
   emptyMessage?: string;
   rowKey?: (row: T, index: number) => string;
   locale?: AppLocale;
+  /** Phone layout for one row. When given, the table is hidden below `md`. */
+  mobileRender?: (row: T, index: number) => React.ReactNode;
 }) {
   // No "yet" — that word sends people to re-sync when the real causes are
   // usually the selected range or a failed query, and it hid a real bug
@@ -46,16 +53,23 @@ export function StyledTable<T extends object>({
   return (
     <Card>
       <CardContent className="p-0">
-        <div className="overflow-x-auto table-scroll scroll-fade-end">
+        {mobileRender ? (
+          <ul className="divide-y divide-border md:hidden">
+            {rows.length === 0 ? <li className="px-4 py-6 text-center text-sm text-muted-foreground">{resolvedEmptyMessage}</li> : null}
+            {rows.map((row, index) => (
+              <li key={rowKey ? rowKey(row, index) : index} className="px-4 py-3">
+                {mobileRender(row, index)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className={cn("overflow-x-auto table-scroll scroll-fade-end", mobileRender && "hidden md:block")}>
           <table className="min-w-full divide-y divide-border text-sm">
-            <thead className="bg-muted/40 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <thead className="bg-muted/40 text-xs font-medium text-muted-foreground">
               <tr>
                 {numbered ? <th className="px-4 py-2.5 text-start">#</th> : null}
                 {columns.map((column) => (
-                  <th
-                    key={String(column.key)}
-                    className={cn("px-4 py-2.5", alignClass(column.align))}
-                  >
+                  <th key={String(column.key)} className={cn("px-4 py-2.5 font-medium", alignClass(column.align))}>
                     <span className="inline-flex items-center gap-1">
                       {column.label}
                       {column.tooltip ? <HelpTip>{column.tooltip}</HelpTip> : null}
@@ -67,35 +81,16 @@ export function StyledTable<T extends object>({
             <tbody className="divide-y divide-border/60">
               {rows.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={columns.length + (numbered ? 1 : 0)}
-                    className="px-4 py-6 text-center text-sm text-muted-foreground"
-                  >
+                  <td colSpan={columns.length + (numbered ? 1 : 0)} className="px-4 py-6 text-center text-sm text-muted-foreground">
                     {resolvedEmptyMessage}
                   </td>
                 </tr>
               ) : null}
               {rows.map((row, index) => (
-                <tr
-                  key={rowKey ? rowKey(row, index) : index}
-                  className="transition-colors hover:bg-muted/30"
-                >
-                  {numbered ? (
-                    <td className="px-4 py-3 text-muted-foreground">
-                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                        {index + 1}
-                      </span>
-                    </td>
-                  ) : null}
+                <tr key={rowKey ? rowKey(row, index) : index} className="transition-colors hover:bg-muted/30">
+                  {numbered ? <td className="px-4 py-3 text-xs text-muted-foreground">{index + 1}</td> : null}
                   {columns.map((column) => (
-                    <td
-                      key={String(column.key)}
-                      className={cn(
-                        "px-4 py-3 tabular-nums",
-                        alignClass(column.align),
-                        column.emphasis && "font-semibold text-emerald-600"
-                      )}
-                    >
+                    <td key={String(column.key)} className={cn("px-4 py-3", alignClass(column.align), column.emphasis && "font-semibold text-success")}>
                       {column.render ? column.render(row) : String(row[column.key as keyof T] ?? "")}
                     </td>
                   ))}
@@ -106,5 +101,19 @@ export function StyledTable<T extends object>({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// Helper for `mobileRender`: a label/value pair list under a row title.
+export function MobileRowFacts({ facts }: { facts: Array<{ label: string; value: React.ReactNode; muted?: boolean }> }) {
+  return (
+    <dl className="mt-1.5 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
+      {facts.map((f, i) => (
+        <div key={i} className="contents">
+          <dt className="text-muted-foreground">{f.label}</dt>
+          <dd className={cn("text-end font-medium", f.muted && "font-normal text-muted-foreground")}>{f.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

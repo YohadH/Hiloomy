@@ -57,11 +57,23 @@ statuses; no decorative icon boxes; no `text-[10px]`.
 | `components/decisions/decision-inbox.tsx` | "No action needed" heading in normal type; the empty state is a flat panel. |
 | `tests/e2e/responsive.spec.ts` | 390×844, 768×1024, 1440×900 on Today, Command Center, Market, Watchlist, Plan, Memory, Data Health, Product follow-ups: no horizontal overflow (`scrollWidth <= innerWidth`), screenshots written for review. |
 
-## Out of scope now (P1/P2, after the two-week wedge measurement)
+## P1 — shipped 2026-09-08 (owner asked to continue past P0)
 
-Command Center metric system, chart tap-state, `StyledTable.mobileRender`,
-Market mobile rows, Watchlist as divider list, date picker bottom sheet,
-chat redesign, typography family change (Manrope stays).
+| File | Change |
+| --- | --- |
+| `components/layout/reporting-picker.tsx` | Phones: one trigger ("Last 30 days · Previous period") opening one bottom sheet with presets, custom dates, comparison, Cancel/Apply; range + comparison commit together. Desktop keeps the two popovers, flattened. |
+| `app/watchlist/page.tsx` | Divider list, no card per row, no icon bubble. |
+| `app/market/page.tsx` | Editorial event blocks; competitor table becomes one block per competitor below `md`; desktop table kept. |
+| `app/data-health/page.tsx` | Diagnostic report: three headline numbers in a row, by-source list with dividers, decision impact as text + one action. |
+| `components/dashboard-v2/styled-table.tsx` | `mobileRender` prop + `MobileRowFacts` helper; table hidden below `md` when a phone layout is given. Used on the Command Center top-products table. |
+| `components/ui/section-heading.tsx` | Eyebrow as muted text, not a badge (Plan page and other tool pages). |
+
+## P2 — after the two-week wedge measurement
+
+Command Center metric rows instead of six KPI tiles, chart tap-state on
+phones, `mobileRender` on the remaining tables (profit, discounts,
+retention, campaigns), chat launcher redesign, typography family change
+(Manrope stays for now).
 
 ## Acceptance
 

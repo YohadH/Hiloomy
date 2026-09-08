@@ -797,7 +797,7 @@ export function GanttStudio({
           </div>
 
           {/* ── Marketing brief generator (BIG CTA) ──────────────────── */}
-          <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-pink-50 via-white to-amber-50 p-5">
+          <div className="rounded-2xl border border-warning/40 bg-card p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex-1">
                 <div className="flex items-center gap-2">

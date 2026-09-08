@@ -6,7 +6,7 @@ import { getAuthContext, listUserOrgsForSwitcher } from "@/lib/auth/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SectionHead } from "@/components/dashboard-v2/section-head";
 import { KpiTile } from "@/components/dashboard-v2/kpi-tile";
-import { StyledTable } from "@/components/dashboard-v2/styled-table";
+import { StyledTable, MobileRowFacts } from "@/components/dashboard-v2/styled-table";
 import { RevenueChartV2 } from "@/components/dashboard-v2/revenue-chart-v2";
 import { EnrichedRevenueChart } from "@/components/dashboard-v2/enriched-revenue-chart";
 import { getDailyTrendContext } from "@/lib/services/daily-trend-context-service";
@@ -650,6 +650,25 @@ export default async function CommandCenterPage() {
             locale={locale}
             rowKey={(row) => row.productId}
             rows={topProducts}
+            mobileRender={(row, i) => (
+              <div>
+                <p className="text-sm font-semibold">
+                  <span className="me-2 text-xs text-muted-foreground">{i + 1}</span>
+                  {row.productTitle}
+                </p>
+                <MobileRowFacts
+                  facts={[
+                    { label: lang("הכנסה", "Revenue"), value: formatCurrency(row.revenue, overview.store.currency) },
+                    { label: lang("רווח מוערך", "Est. profit"), value: formatCurrency(row.estimatedProfit, overview.store.currency) },
+                    { label: lang("יחידות", "Units"), value: formatNumber(row.unitsSold) },
+                    { label: lang("במלאי", "In stock"), value: <StockBadge quantity={row.inventoryQuantity} locale={locale} /> }
+                  ]}
+                />
+                <div className="mt-2">
+                  <CollectionChips collections={row.collections} fallback={row.collection} />
+                </div>
+              </div>
+            )}
             columns={[
               { key: "productTitle", label: lang("מוצר", "Product") },
               {

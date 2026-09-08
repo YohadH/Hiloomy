@@ -9,6 +9,7 @@ import { getAppChromeData } from "@/lib/services/analytics-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { buildMarketView } from "@/lib/services/decision-inbox-service";
 import { getAppLocale } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import type { CompetitorMarketSignals } from "@/lib/clients/rivalsweeper-client";
 
 export const dynamic = "force-dynamic";
@@ -36,9 +37,22 @@ function MarketSignals({ market, lc }: { market: CompetitorMarketSignals | null;
   return <p className="text-xs text-muted-foreground">{parts.join(" · ")}</p>;
 }
 
+// The per-competitor facts, shared by the desktop table and the phone rows.
+function competitorFacts(m: CompetitorMarketSignals | null, t: (he: string, en: string) => string) {
+  return [
+    { label: t("הורדות מחיר", "Price cuts"), value: m && m.markdowns.count > 0 ? String(m.markdowns.count) : null },
+    { label: t("הנחה מקסימלית", "Deepest cut"), value: m && m.markdowns.maxDropPct !== null ? `${Math.round(m.markdowns.maxDropPct)}%` : null },
+    { label: t("מהקטלוג במבצע", "Catalog on sale"), value: m?.priceIndex && m.priceIndex.onSalePct !== null ? `${m.priceIndex.onSalePct}%` : null },
+    { label: t("אזלו מהמלאי", "Out of stock"), value: m && m.outOfStock.count > 0 ? String(m.outOfStock.count) : null },
+    { label: t("מודעות פעילות", "Active ads"), value: m?.adPresence ? String(m.adPresence.activeAds) : null },
+    { label: t("מחיר חציוני", "Median price"), value: m?.priceIndex && m.priceIndex.medianPrice !== null ? `₪${Math.round(m.priceIndex.medianPrice)}` : null }
+  ];
+}
+
 // Market — competitor signals as INPUTS to commercial decisions. Each
 // relevant event is shown next to your own sales, conversion and exposure,
-// and points at the decision it feeds. Not a competitor feed.
+// and points at the decision it feeds. Not a competitor feed. A supporting
+// evidence screen: editorial blocks, one table that becomes rows on phones.
 export default async function MarketPage() {
   const locale = await getAppLocale();
   const isHe = locale === "he";
@@ -52,50 +66,39 @@ export default async function MarketPage() {
     v === null ? null : Math.abs(v) < 0.05 ? t("יציב", "stable") : v > 0 ? t(`עלייה ${Math.round(v * 100)}%`, `up ${Math.round(v * 100)}%`) : t(`ירידה ${Math.round(-v * 100)}%`, `down ${Math.round(-v * 100)}%`);
   const conversion = market.pulse.conversionRate === null ? null : `${(market.pulse.conversionRate * 100).toFixed(1)}%`;
 
+  const stateRows = [...market.events.map((e) => ({ name: e.name, domain: e.domain, summary: e.summary, market: e.market, event: true })), ...market.quiet.map((q) => ({ ...q, event: false }))].sort(
+    (a, b) => Number(b.event) - Number(a.event) || (b.market?.priceIndex?.onSalePct ?? 0) - (a.market?.priceIndex?.onSalePct ?? 0) || (b.market?.markdowns.count ?? 0) - (a.market?.markdowns.count ?? 0)
+  );
+  const adRows = [...market.events, ...market.quiet].filter((r) => r.market?.ads && (r.market.ads.longestRunning.length > 0 || r.market.ads.active > 0));
+
   return (
     <AppShell store={chrome.store}>
       <div className="space-y-8">
         <PageHead
           eyebrow={t("שוק", "Market")}
-          title={t("אותות שוק כקלט להחלטות", "Market signals as decision inputs")}
-          description={t(
-            "מידע על מתחרים הוא ראיה תומכת, לא המוצר. הילומי מדווחת רק על אירועים שיש להם משמעות מסחרית מול הנתונים שלכם.",
-            "Competitor data is supporting evidence, not the product. Hiloomy reports only the events that matter commercially against your own numbers."
-          )}
+          title={t(`${market.detected} אירועי מתחרים זוהו השבוע`, `${market.detected} competitor event${market.detected === 1 ? "" : "s"} detected this week`)}
+          description={
+            t(`${market.relevant} רלוונטיים מסחרית · ${market.suppressed} הושתקו · ${market.tracked} מתחרים במעקב`, `${market.relevant} commercially relevant · ${market.suppressed} suppressed · ${market.tracked} competitors tracked`) +
+            (market.crawl ? ` · ${t("סריקה אחרונה", "Last crawl")}: ${new Date(market.crawl.at).toLocaleDateString(isHe ? "he-IL" : "en-US", { month: "short", day: "numeric" })}` : "")
+          }
         />
 
-        <div className="space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            {t(`${market.detected} אירועי מתחרים זוהו השבוע`, `${market.detected} competitor event${market.detected === 1 ? "" : "s"} detected this week`)}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {t(`${market.relevant} רלוונטיים מסחרית · ${market.suppressed} הושתקו · ${market.tracked} מתחרים במעקב`, `${market.relevant} commercially relevant · ${market.suppressed} suppressed · ${market.tracked} competitors tracked`)}
-            {market.crawl ? (
-              <span suppressHydrationWarning>
-                {" · "}
-                {t("סריקה אחרונה", "Last crawl")}: {new Date(market.crawl.at).toLocaleDateString(isHe ? "he-IL" : "en-US", { month: "short", day: "numeric" })}
-              </span>
-            ) : null}
-          </p>
-        </div>
-
         {market.tracked === 0 ? (
-          <Card className="p-8 text-sm text-muted-foreground">
+          <p className="border-t border-border pt-6 text-sm text-muted-foreground">
             {t("עדיין לא הוגדרו מתחרים למעקב. ", "No competitors are being monitored yet. ")}
-            <Link href={"/settings" as never} className="font-semibold text-emerald-700 hover:text-emerald-600 dark:text-emerald-300">
+            <Link href={"/settings" as never} className="font-semibold text-foreground underline-offset-4 hover:underline">
               {t("להוסיף מתחרים בהגדרות", "Add competitors in Settings")}
             </Link>
-          </Card>
+          </p>
         ) : market.events.length === 0 ? (
-          <Card className="p-8 text-sm text-muted-foreground">
+          <p className="border-t border-border pt-6 text-sm text-muted-foreground">
             {t("לא זוהו אירועים עם משמעות מסחרית השבוע. המתחרים במעקב לא פתחו או העמיקו מבצעים.", "No commercially relevant events this week. Tracked competitors did not open or deepen promotions.")}
-          </Card>
+          </p>
         ) : (
           <div className="space-y-4">
             {market.events.map((e) => (
-              <Card key={e.competitorId} className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t("אות שוק", "Market signal")}</p>
+              <Card key={e.competitorId} className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+                <div className="space-y-2">
                   <h3 className="text-xl font-semibold tracking-tight">{e.name}</h3>
                   <p className="text-base font-medium">
                     {e.changeKind === "opened_promo"
@@ -105,16 +108,13 @@ export default async function MarketPage() {
                   <p className="text-sm leading-6 text-muted-foreground">{e.summary[lc]}</p>
                   <MarketSignals market={e.market} lc={lc} />
                   {e.homepageMessage ? <p className="text-xs text-muted-foreground">“{e.homepageMessage}”</p> : null}
-                  <div className="space-y-1 pt-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t("מוצר תואם", "Matched to")}</p>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span>{t("התאמה למוצר שלכם עדיין לא זמינה", "Match to your SKU not available yet")}</span>
-                      <QualityTag quality="unavailable" locale={lc} />
-                    </div>
+                  <div className="flex items-center gap-2 pt-1 text-sm text-muted-foreground">
+                    <span>{t("התאמה למוצר שלכם עדיין לא זמינה", "Match to your SKU not available yet")}</span>
+                    <QualityTag quality="unavailable" locale={lc} />
                   </div>
                 </div>
-                <div className="space-y-3 rounded-xl border border-border/80 bg-muted/30 p-5">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">{t("משמעות מסחרית", "Commercial relevance")}</p>
+                <div className="space-y-3 border-t border-border pt-4 lg:border-s lg:border-t-0 lg:ps-6 lg:pt-0">
+                  <p className="text-sm font-semibold">{t("משמעות מסחרית", "Commercial relevance")}</p>
                   <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
                     <dt className="text-muted-foreground">{t("המכירות שלכם", "Your sales")}</dt>
                     <dd className="flex items-center gap-2 font-semibold">
@@ -135,10 +135,7 @@ export default async function MarketPage() {
                     <dd>{e.decisionStatus ? <StatusPill status={e.decisionStatus} locale={lc} /> : <span className="text-muted-foreground">{t("טרם נוצרה", "Not created yet")}</span>}</dd>
                   </dl>
                   {e.decisionId ? (
-                    <Link
-                      href={`/today/${e.decisionId}` as never}
-                      className="inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-soft hover:opacity-90"
-                    >
+                    <Link href={`/today/${e.decisionId}` as never} className="inline-flex h-11 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 sm:h-10">
                       {t("לראות את ההחלטה", "View decision")}
                     </Link>
                   ) : null}
@@ -158,43 +155,67 @@ export default async function MarketPage() {
                 "Price cuts, stockouts, active ads and catalog price. Facts, not decisions — a decision opens only when something changed versus last week."
               )}
             />
-            <Card className="overflow-hidden">
+
+            {/* Phones: one block per competitor. */}
+            <ul className="divide-y divide-border border-y border-border md:hidden">
+              {stateRows.map((r) => {
+                const facts = competitorFacts(r.market, t).filter((f) => f.value !== null);
+                return (
+                  <li key={r.domain} className="py-3.5">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="text-sm font-semibold">{r.name}</p>
+                      {r.event ? <span className="text-xs font-semibold text-warning">{t("שינוי השבוע", "Changed this week")}</span> : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{r.summary[lc]}</p>
+                    {facts.length > 0 ? (
+                      <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
+                        {facts.map((f) => (
+                          <div key={f.label} className="contents">
+                            <dt className="text-muted-foreground">{f.label}</dt>
+                            <dd className="text-end font-medium">{f.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : (
+                      <p className="mt-1 text-xs text-muted-foreground">{t("הספק לא מדווח נתונים למתחרה הזה", "The provider reports nothing for this competitor")}</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+
+            {/* Desktop: the table. */}
+            <Card className="hidden overflow-hidden md:block">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-border text-sm">
-                  <thead className="bg-muted/40 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <thead className="bg-muted/40 text-xs font-medium text-muted-foreground">
                     <tr>
-                      <th className="px-4 py-2.5 text-start">{t("מתחרה", "Competitor")}</th>
-                      <th className="px-4 py-2.5 text-start">{t("מול שבוע שעבר", "vs last week")}</th>
-                      <th className="px-4 py-2.5 text-end">{t("הורדות מחיר", "Price cuts")}</th>
-                      <th className="px-4 py-2.5 text-end">{t("הנחה מקסימלית", "Deepest cut")}</th>
-                      <th className="px-4 py-2.5 text-end">{t("מהקטלוג במבצע", "Catalog on sale")}</th>
-                      <th className="px-4 py-2.5 text-end">{t("אזלו מהמלאי", "Out of stock")}</th>
-                      <th className="px-4 py-2.5 text-end">{t("מודעות פעילות", "Active ads")}</th>
-                      <th className="px-4 py-2.5 text-end">{t("מחיר חציוני", "Median price")}</th>
+                      <th className="px-4 py-2.5 text-start font-medium">{t("מתחרה", "Competitor")}</th>
+                      <th className="px-4 py-2.5 text-start font-medium">{t("מול שבוע שעבר", "vs last week")}</th>
+                      {competitorFacts(null, t).map((f) => (
+                        <th key={f.label} className="px-4 py-2.5 text-end font-medium">
+                          {f.label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
-                    {[...market.events.map((e) => ({ name: e.name, domain: e.domain, summary: e.summary, market: e.market, event: true })), ...market.quiet.map((q) => ({ ...q, event: false }))]
-                      .sort((a, b) => Number(b.event) - Number(a.event) || (b.market?.priceIndex?.onSalePct ?? 0) - (a.market?.priceIndex?.onSalePct ?? 0) || (b.market?.markdowns.count ?? 0) - (a.market?.markdowns.count ?? 0))
-                      .map((r) => {
-                        const m = r.market;
-                        const cell = (v: string | null) => <span className={v === null ? "text-muted-foreground" : "tabular-nums"}>{v ?? "—"}</span>;
-                        return (
-                          <tr key={r.domain} className={r.event ? "bg-emerald-50/40 dark:bg-emerald-500/5" : undefined}>
-                            <td className="px-4 py-3">
-                              <p className="font-semibold">{r.name}</p>
-                              <p className="text-xs text-muted-foreground" dir="ltr">{r.domain}</p>
-                            </td>
-                            <td className="px-4 py-3 text-xs text-muted-foreground">{r.summary[lc]}</td>
-                            <td className="px-4 py-3 text-end">{cell(m && m.markdowns.count > 0 ? String(m.markdowns.count) : null)}</td>
-                            <td className="px-4 py-3 text-end">{cell(m && m.markdowns.maxDropPct !== null ? `${Math.round(m.markdowns.maxDropPct)}%` : null)}</td>
-                            <td className="px-4 py-3 text-end">{cell(m?.priceIndex && m.priceIndex.onSalePct !== null ? `${m.priceIndex.onSalePct}%` : null)}</td>
-                            <td className="px-4 py-3 text-end">{cell(m && m.outOfStock.count > 0 ? String(m.outOfStock.count) : null)}</td>
-                            <td className="px-4 py-3 text-end">{cell(m?.adPresence ? String(m.adPresence.activeAds) : null)}</td>
-                            <td className="px-4 py-3 text-end">{cell(m?.priceIndex && m.priceIndex.medianPrice !== null ? `₪${Math.round(m.priceIndex.medianPrice)}` : null)}</td>
-                          </tr>
-                        );
-                      })}
+                    {stateRows.map((r) => (
+                      <tr key={r.domain} className={cn(r.event && "bg-warning/5")}>
+                        <td className="px-4 py-3">
+                          <p className="font-semibold">{r.name}</p>
+                          <p className="text-xs text-muted-foreground" dir="ltr">
+                            {r.domain}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">{r.summary[lc]}</td>
+                        {competitorFacts(r.market, t).map((f) => (
+                          <td key={f.label} className={cn("px-4 py-3 text-end", f.value === null && "text-muted-foreground")}>
+                            {f.value ?? "—"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -205,65 +226,61 @@ export default async function MarketPage() {
           </section>
         ) : null}
 
-        {(() => {
-          const rows = [...market.events, ...market.quiet].filter((r) => r.market?.ads && (r.market.ads.longestRunning.length > 0 || r.market.ads.active > 0));
-          if (rows.length === 0) return null;
-          return (
-            <section className="space-y-3">
-              <SectionHead
-                eyebrow={t("מודעות", "Ads")}
-                title={t("מה המתחרים משאירים באוויר", "What competitors keep on air")}
-                hint={t(
-                  "ספריית המודעות של Meta לא חושפת ביצועים. מה שכן: מודעה שרצה חודשים היא מודעה שהמתחרה ממשיך לשלם עליה — זה הקירוב הכי כן ל\"מה עובד להם\".",
-                  "Meta's ad library exposes no performance data. What it does show: an ad running for months is one the competitor keeps paying for — the honest proxy for \"what works for them\"."
-                )}
-              />
-              <div className="grid gap-4 md:grid-cols-2">
-                {rows.map((r) => {
-                  const ads = r.market!.ads!;
-                  return (
-                    <Card key={`ads-${r.domain}`} className="space-y-3 p-5">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <h3 className="text-base font-semibold">{r.name}</h3>
-                        <p className="text-xs text-muted-foreground">
-                          {t(`${ads.active} פעילות מתוך ${ads.total}`, `${ads.active} active of ${ads.total}`)}
-                          {ads.promoShare !== null ? ` · ${t(`${Math.round(ads.promoShare * 100)}% מודעות מבצע`, `${Math.round(ads.promoShare * 100)}% promo ads`)}` : ""}
-                        </p>
-                      </div>
-                      {ads.longestRunning.length > 0 ? (
-                        <ol className="space-y-2">
-                          {ads.longestRunning.map((ad, i) => (
-                            <li key={i} className="flex items-start gap-3 text-sm">
-                              <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border border-border px-1 text-[11px] font-bold text-muted-foreground">{i + 1}</span>
-                              <div className="min-w-0 flex-1">
-                                <p className="leading-5">“{ad.headline}”</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {t(`רצה ${ad.days} ימים`, `${ad.days} days live`)}
-                                  {ad.cta ? ` · ${ad.cta.toLowerCase().replace(/_/g, " ")}` : ""}
-                                  {ad.platforms ? ` · ${ad.platforms}` : ""}
-                                  {ad.snapshotUrl ? (
-                                    <>
-                                      {" · "}
-                                      <a href={ad.snapshotUrl} target="_blank" rel="noreferrer" className="font-semibold text-emerald-700 hover:text-emerald-600 dark:text-emerald-300">
-                                        {t("לצפייה", "View")}
-                                      </a>
-                                    </>
-                                  ) : null}
-                                </p>
-                              </div>
-                            </li>
-                          ))}
-                        </ol>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">{t("אין מודעות פעילות עם תאריך התחלה.", "No active ads with a start date.")}</p>
-                      )}
-                    </Card>
-                  );
-                })}
-              </div>
-            </section>
-          );
-        })()}
+        {adRows.length > 0 ? (
+          <section className="space-y-3">
+            <SectionHead
+              eyebrow={t("מודעות", "Ads")}
+              title={t("מה המתחרים משאירים באוויר", "What competitors keep on air")}
+              hint={t(
+                "ספריית המודעות של Meta לא חושפת ביצועים. מה שכן: מודעה שרצה חודשים היא מודעה שהמתחרה ממשיך לשלם עליה — זה הקירוב הכי כן ל\"מה עובד להם\".",
+                "Meta's ad library exposes no performance data. What it does show: an ad running for months is one the competitor keeps paying for — the honest proxy for \"what works for them\"."
+              )}
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              {adRows.map((r) => {
+                const ads = r.market!.ads!;
+                return (
+                  <Card key={`ads-${r.domain}`} className="space-y-3 p-5">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className="text-base font-semibold">{r.name}</h3>
+                      <p className="text-xs text-muted-foreground">
+                        {t(`${ads.active} פעילות מתוך ${ads.total}`, `${ads.active} active of ${ads.total}`)}
+                        {ads.promoShare !== null ? ` · ${t(`${Math.round(ads.promoShare * 100)}% מודעות מבצע`, `${Math.round(ads.promoShare * 100)}% promo ads`)}` : ""}
+                      </p>
+                    </div>
+                    {ads.longestRunning.length > 0 ? (
+                      <ol className="space-y-2">
+                        {ads.longestRunning.map((ad, i) => (
+                          <li key={i} className="flex items-start gap-3 text-sm">
+                            <span className="mt-0.5 w-4 shrink-0 text-xs font-semibold text-muted-foreground">{i + 1}</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="leading-5">“{ad.headline}”</p>
+                              <p className="text-xs text-muted-foreground">
+                                {t(`רצה ${ad.days} ימים`, `${ad.days} days live`)}
+                                {ad.cta ? ` · ${ad.cta.toLowerCase().replace(/_/g, " ")}` : ""}
+                                {ad.platforms ? ` · ${ad.platforms}` : ""}
+                                {ad.snapshotUrl ? (
+                                  <>
+                                    {" · "}
+                                    <a href={ad.snapshotUrl} target="_blank" rel="noreferrer" className="font-semibold text-foreground underline-offset-4 hover:underline">
+                                      {t("לצפייה", "View")}
+                                    </a>
+                                  </>
+                                ) : null}
+                              </p>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">{t("אין מודעות פעילות עם תאריך התחלה.", "No active ads with a start date.")}</p>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
       </div>
     </AppShell>
   );

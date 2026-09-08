@@ -18,14 +18,20 @@ const STATE_LABEL: Record<HealthState, { he: string; en: string }> = {
 };
 
 const STATE_DOT: Record<HealthState, string> = {
-  healthy: "bg-emerald-600",
-  partial: "bg-orange-500",
-  missing: "border border-current bg-transparent text-muted-foreground"
+  healthy: "bg-success",
+  partial: "bg-warning",
+  missing: "border border-muted-foreground bg-transparent"
 };
 
-// Data Health — coverage and confidence by source, and what it costs in
-// decisions. Hiloomy would rather say "I don't know" than give unreliable
-// financial advice; this page shows where that is happening.
+const STATE_TEXT: Record<HealthState, string> = {
+  healthy: "text-success",
+  partial: "text-warning",
+  missing: "text-muted-foreground"
+};
+
+// Data Health — a diagnostic report: coverage and confidence by source, and
+// what it costs in decisions. Hiloomy would rather say "I don't know" than
+// give unreliable financial advice; this page shows where that is happening.
 export default async function DataHealthPage() {
   const locale = await getAppLocale();
   const isHe = locale === "he";
@@ -35,10 +41,16 @@ export default async function DataHealthPage() {
   if (!storeId) redirect("/dashboard" as never);
   const [chrome, health] = await Promise.all([getAppChromeData(), buildDataHealth(storeId)]);
   const n = health.suppressedDecisions;
+  const summary =
+    health.confidence === "high"
+      ? t("הראיות מספיקות לרוב ההחלטות.", "The evidence is sufficient for most decisions.")
+      : health.confidence === "medium"
+        ? t("רוב ההחלטות נתמכות; החלטות רווח מוגבלות בכיסוי העלויות.", "Most decisions are supported; profit decisions are limited by cost coverage.")
+        : t("החיבורים חלקיים. הילומי תגביל את עצמה להחלטות שיש להן ראיות.", "Connections are partial. Hiloomy limits itself to decisions that have evidence.");
 
   return (
     <AppShell store={chrome.store}>
-      <div className="space-y-8">
+      <div className="space-y-6">
         <PageHead
           eyebrow={t("בריאות הנתונים", "Data Health")}
           title={t("על מה ההחלטות נשענות", "What the decisions rest on")}
@@ -48,64 +60,55 @@ export default async function DataHealthPage() {
           )}
         />
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <Card className="divide-y divide-border/70">
-            {health.rows.map((r) => (
-              <div key={r.key} className="flex items-start gap-4 px-6 py-4">
-                <span aria-hidden className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", STATE_DOT[r.state])} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                    <p className="text-base font-semibold">{r.label[lc]}</p>
-                    <p className={cn("text-sm font-semibold", r.state === "healthy" ? "text-emerald-700 dark:text-emerald-300" : r.state === "partial" ? "text-orange-700 dark:text-orange-300" : "text-muted-foreground")}>
-                      {r.key === "cogs" && r.state !== "healthy"
-                        ? t(`${Math.round(health.costCoveragePct * 100)}% כיסוי הכנסות`, `${Math.round(health.costCoveragePct * 100)}% revenue coverage`)
-                        : STATE_LABEL[r.state][lc]}
-                    </p>
+        {/* Headline figures: three numbers in one row, no tiles. */}
+        <dl className="grid grid-cols-3 gap-4 border-y border-border py-4">
+          <div>
+            <dt className="text-xs text-muted-foreground">{t("ביטחון בנתונים", "Data confidence")}</dt>
+            <dd className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{health.score === null ? "—" : `${health.score}%`}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">{t("כיסוי עלויות", "Cost coverage")}</dt>
+            <dd className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{Math.round(health.costCoveragePct * 100)}%</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">{t("החלטות מושתקות", "Decisions suppressed")}</dt>
+            <dd className={cn("mt-1 text-2xl font-semibold tracking-tight sm:text-3xl", n > 0 && "text-warning")}>{n}</dd>
+          </div>
+        </dl>
+        <p className="text-sm leading-6 text-muted-foreground">{summary}</p>
+
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">{t("לפי מקור", "By source")}</h2>
+            <ul className="divide-y divide-border border-y border-border">
+              {health.rows.map((r) => (
+                <li key={r.key} className="flex items-start gap-3 py-3.5">
+                  <span aria-hidden className={cn("mt-2 h-2 w-2 shrink-0 rounded-full", STATE_DOT[r.state])} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
+                      <p className="text-sm font-semibold">{r.label[lc]}</p>
+                      <p className={cn("text-sm font-medium", STATE_TEXT[r.state])}>
+                        {r.key === "cogs" && r.state !== "healthy"
+                          ? t(`${Math.round(health.costCoveragePct * 100)}% כיסוי הכנסות`, `${Math.round(health.costCoveragePct * 100)}% revenue coverage`)
+                          : STATE_LABEL[r.state][lc]}
+                      </p>
+                    </div>
+                    <p className="mt-0.5 text-sm leading-6 text-muted-foreground">{r.detail[lc]}</p>
+                    {r.fixHref ? (
+                      <Link href={r.fixHref as never} className="mt-1 inline-flex min-h-8 items-center text-sm font-semibold text-foreground underline-offset-4 hover:underline">
+                        {t("לשפר", "Improve")}
+                      </Link>
+                    ) : null}
                   </div>
-                  <p className="mt-0.5 text-sm leading-6 text-muted-foreground">{r.detail[lc]}</p>
-                  {r.fixHref ? (
-                    <Link href={r.fixHref as never} className="mt-1 inline-block text-sm font-semibold text-emerald-700 hover:text-emerald-600 dark:text-emerald-300">
-                      {t("לשפר", "Improve")}
-                    </Link>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </Card>
+                </li>
+              ))}
+            </ul>
+          </section>
 
           <div className="space-y-6">
-            <Card className="space-y-3 p-6">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t("ביטחון כולל בנתונים", "Overall data confidence")}</p>
-              <p className="text-4xl font-semibold tabular-nums tracking-tight">{health.score === null ? "—" : `${health.score}%`}</p>
-              <p className="text-sm leading-6 text-muted-foreground">
-                {health.confidence === "high"
-                  ? t("הראיות מספיקות לרוב ההחלטות.", "The evidence is sufficient for most decisions.")
-                  : health.confidence === "medium"
-                    ? t("רוב ההחלטות נתמכות; החלטות רווח מוגבלות בכיסוי העלויות.", "Most decisions are supported; profit decisions are limited by cost coverage.")
-                    : t("החיבורים חלקיים. הילומי תגביל את עצמה להחלטות שיש להן ראיות.", "Connections are partial. Hiloomy limits itself to decisions that have evidence.")}
-              </p>
-            </Card>
-
-            <Card className="space-y-2 p-6">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t("שימוש ב־AI היום", "AI usage today")}</p>
-              <p className="text-2xl font-semibold tabular-nums tracking-tight">
-                ~${health.ai.estimatedUsd.toFixed(2)}
-                <span className="text-sm font-normal text-muted-foreground"> / ${health.ai.budgetUsd.toFixed(0)} {t("תקציב יומי", "daily budget")}</span>
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {t(`${health.ai.calls} קריאות למודל`, `${health.ai.calls} model calls`)}
-                {health.ai.byFeature.length > 0
-                  ? ` · ${health.ai.byFeature.map((f) => `${f.feature} ~$${f.estimatedUsd.toFixed(2)}`).join(" · ")}`
-                  : ""}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {t("אומדן לפי מחירי המודל; החשבון האמיתי אצל ספק המודל. כשהתקציב נגמר, הצ׳אט ותובנות חדשות נעצרים עד מחר; מה שכבר חושב ממשיך להופיע.", "Estimate at the model's prices; the real bill is at the provider. When the budget is spent, chat and new insights pause until tomorrow; already-computed insights keep showing.")}
-              </p>
-            </Card>
-
-            <Card className="space-y-4 border-orange-200/70 bg-orange-50/30 p-6 dark:border-orange-500/20 dark:bg-orange-500/5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t("השפעה על החלטות", "Decision impact")}</p>
-              <p className="text-lg font-semibold leading-7">
+            <section className="space-y-2">
+              <h2 className="text-lg font-semibold tracking-tight">{t("השפעה על החלטות", "Decision impact")}</h2>
+              <p className="text-sm leading-6">
                 {n === 0
                   ? t("אף החלטה לא מושתקת כרגע בגלל חוסר בראיות פיננסיות.", "No decisions are currently suppressed for lack of financial evidence.")
                   : t(
@@ -119,12 +122,29 @@ export default async function DataHealthPage() {
                   `${health.productsMissingCost} products sold this month have no real cost on file. Without a cost, Hiloomy will not say whether they are profitable.`
                 )}
               </p>
-              <Link
-                href={"/products/costs" as never}
-                className="inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-soft hover:opacity-90"
-              >
-                {t("לשפר את כיסוי העלויות", "Improve COGS coverage")}
-              </Link>
+              {health.productsMissingCost > 0 ? (
+                <Link href={"/products/costs" as never} className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
+                  {t("לשפר את כיסוי העלויות", "Improve COGS coverage")}
+                </Link>
+              ) : null}
+            </section>
+
+            <Card className="space-y-2 p-5">
+              <p className="text-xs font-medium text-muted-foreground">{t("שימוש ב־AI היום", "AI usage today")}</p>
+              <p className="text-2xl font-semibold tracking-tight">
+                ~${health.ai.estimatedUsd.toFixed(2)}
+                <span className="text-sm font-normal text-muted-foreground"> / ${health.ai.budgetUsd.toFixed(0)} {t("תקציב יומי", "daily budget")}</span>
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {t(`${health.ai.calls} קריאות למודל`, `${health.ai.calls} model calls`)}
+                {health.ai.byFeature.length > 0 ? ` · ${health.ai.byFeature.map((f) => `${f.feature} ~$${f.estimatedUsd.toFixed(2)}`).join(" · ")}` : ""}
+              </p>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {t(
+                  "אומדן לפי מחירי המודל; החשבון האמיתי אצל ספק המודל. כשהתקציב נגמר, הצ׳אט ותובנות חדשות נעצרים עד מחר; מה שכבר חושב ממשיך להופיע.",
+                  "Estimate at the model's prices; the real bill is at the provider. When the budget is spent, chat and new insights pause until tomorrow; already-computed insights keep showing."
+                )}
+              </p>
             </Card>
           </div>
         </div>

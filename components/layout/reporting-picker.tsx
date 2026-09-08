@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Calendar, ChevronDown, GitCompareArrows, Check, Loader2 } from "lucide-react";
+import { Calendar, ChevronDown, GitCompareArrows, Check, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AppLocale } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -150,21 +151,11 @@ function Popover({ open, onClose, children, className, align = "end" }: PopoverP
       {/* Mobile-only backdrop. Dimmed overlay makes the bottom sheet feel
           like a modal and provides a tap target to close. Hidden on sm+ */}
       <div
-        className="fixed inset-0 z-40 bg-slate-900/40 sm:hidden"
-        onClick={onClose}
-        aria-hidden
-      />
-      <div
         ref={ref}
         role="dialog"
         className={cn(
-          // Mobile: bottom-anchored sheet, full width minus 16px gutters,
-          // capped height with internal scroll. Lives in fixed coordinates
-          // so it doesn't get clipped by parent overflow.
-          "fixed bottom-2 start-2 end-2 z-50 max-h-[calc(100vh-1rem)] overflow-y-auto rounded-2xl border border-border/70 bg-card text-card-foreground shadow-xl",
-          // Desktop: restore the original anchored popover behavior.
-          "sm:absolute sm:bottom-auto sm:start-auto sm:end-auto sm:mt-2 sm:max-h-none sm:overflow-visible",
-          align === "end" ? "sm:end-0" : "sm:start-0",
+          "absolute z-50 mt-2 rounded-xl border border-border bg-card text-card-foreground shadow-menu",
+          align === "end" ? "end-0" : "start-0",
           className
         )}
       >
@@ -198,6 +189,10 @@ export function ReportingPicker(props: ReportingPickerProps) {
   const [isPending, startTransition] = useTransition();
   const [rangeOpen, setRangeOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  // Phones: one sheet for range + comparison (docs/UI-FOUNDATION-PLAN.md).
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [syncing, setSyncing] = useState(false);
   // Brief "✓ synced" confirmation after a successful resync — the sync used
   // to just vanish with no signal that the data actually landed. It fires
@@ -245,19 +240,19 @@ export function ReportingPicker(props: ReportingPickerProps) {
   // closing the popover without applying doesn't leave stale "pending" state
   // on the next open.
   useEffect(() => {
-    if (compareOpen) setPendingComparisonMode(comparisonMode);
-  }, [compareOpen, comparisonMode]);
+    if (compareOpen || sheetOpen) setPendingComparisonMode(comparisonMode);
+  }, [compareOpen, sheetOpen, comparisonMode]);
 
   // Re-sync pending state every time the popover opens
   useEffect(() => {
-    if (rangeOpen) {
+    if (rangeOpen || sheetOpen) {
       setPendingStart(parseInputDate(start));
       setPendingEnd(parseInputDate(end));
       setPendingPreset(preset);
       setStartText(start);
       setEndText(end);
     }
-  }, [rangeOpen, start, end, preset]);
+  }, [rangeOpen, sheetOpen, start, end, preset]);
 
   // When router.refresh() finishes after a successful sync, isPending falls
   // true → false. THAT is when the fresh page is on screen, so THAT is when
@@ -273,6 +268,47 @@ export function ReportingPicker(props: ReportingPickerProps) {
       return () => clearTimeout(timer);
     }
   }, [isPending, awaitingRefresh]);
+
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSheetOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [sheetOpen]);
+
+  // Phone sheet Apply: range and comparison commit together, in one refresh.
+  async function handleApplySheet() {
+    const custom = pendingPreset === "custom";
+    if (custom && (!pendingStart || !pendingEnd)) return;
+    if (pendingComparisonMode === "custom" && (!comparisonStart || !comparisonEnd || comparisonStart > comparisonEnd)) return;
+    const nextStart = custom && pendingStart ? toInputDate(pendingStart) : start;
+    const nextEnd = custom && pendingEnd ? toInputDate(pendingEnd) : end;
+    const rangeChanged = pendingPreset !== preset || nextStart !== start || nextEnd !== end;
+    setPreset(pendingPreset);
+    setStart(nextStart);
+    setEnd(nextEnd);
+    setComparisonMode(pendingComparisonMode);
+    setSheetOpen(false);
+    await commit(
+      {
+        preset: pendingPreset,
+        start: nextStart,
+        end: nextEnd,
+        comparison:
+          pendingComparisonMode === "custom"
+            ? { mode: "custom", start: comparisonStart, end: comparisonEnd }
+            : { mode: pendingComparisonMode }
+      },
+      { resync: rangeChanged }
+    );
+  }
 
   async function resyncDataSources(): Promise<boolean> {
     // Pressing Apply / picking a preset means "show me this window as it looks
@@ -455,7 +491,7 @@ export function ReportingPicker(props: ReportingPickerProps) {
 
   return (
     // Mobile: items wrap and each goes full-width if needed. Desktop: row of pills.
-    <div className="flex flex-wrap items-stretch gap-2 sm:items-center">
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
       {/* Top-of-page progress bar — pinned, always visible while any apply/sync
           is in flight. Indeterminate animation because the underlying page
           refresh has no real progress to measure. Inline keyframes so we
@@ -470,15 +506,15 @@ export function ReportingPicker(props: ReportingPickerProps) {
             role="progressbar"
             aria-label={loadingLabel}
             aria-busy="true"
-            className="pointer-events-none fixed inset-x-0 top-0 z-[9999] h-1 overflow-hidden bg-emerald-100"
+            className="pointer-events-none fixed inset-x-0 top-0 z-[9999] h-1 overflow-hidden bg-primary/20"
           >
             <div
-              className="h-full w-1/3 bg-emerald-600"
+              className="h-full w-1/3 bg-primary"
               style={{ animation: "pwr-progress 1.4s ease-in-out infinite" }}
             />
           </div>
           <div className="pointer-events-none fixed inset-x-0 top-1 z-[9998] flex justify-center">
-            <span className="rounded-b-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white shadow-md">
+            <span className="rounded-b-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow-menu">
               <Loader2 className="me-1.5 inline h-3 w-3 animate-spin" aria-hidden />
               {loadingLabel}
             </span>
@@ -490,7 +526,7 @@ export function ReportingPicker(props: ReportingPickerProps) {
         <span
           role="status"
           aria-live="polite"
-          className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium text-muted-foreground shadow-sm"
+          className="hidden items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-muted-foreground sm:inline-flex"
         >
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           {isHe ? "מסנכרן את Shopify, Meta וInstagram…" : "Syncing Shopify, Meta & Instagram…"}
@@ -499,15 +535,134 @@ export function ReportingPicker(props: ReportingPickerProps) {
         <span
           role="status"
           aria-live="polite"
-          className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-sm font-medium text-emerald-800 shadow-sm"
+          className="hidden items-center gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm font-medium text-success sm:inline-flex"
         >
           <Check className="h-4 w-4" aria-hidden />
           {isHe ? "הנתונים סונכרנו ועודכנו" : "Data synced & updated"}
         </span>
       ) : null}
 
-      {/* RANGE BUTTON */}
-      <div className="relative flex-1 sm:flex-none">
+      {/* PHONES: one trigger, one sheet (range + comparison). */}
+      <button
+        type="button"
+        disabled={syncing}
+        onClick={() => setSheetOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={sheetOpen}
+        className="inline-flex h-10 max-w-full items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-60 sm:hidden"
+      >
+        <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="truncate">{rangeButtonLabel}</span>
+        {comparisonMode !== "none" ? <span className="truncate text-muted-foreground">· {props.initialComparisonLabel}</span> : null}
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {mounted && sheetOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40 sm:hidden" onClick={() => setSheetOpen(false)} role="dialog" aria-modal="true" aria-label={isHe ? "טווח תאריכים" : "Date range"}>
+              <div
+                dir={isHe ? "rtl" : "ltr"}
+                className="flex max-h-[88dvh] w-full flex-col rounded-t-3xl border-t border-border bg-card text-card-foreground shadow-dialog"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-5 pb-2 pt-4">
+                  <p className="text-base font-semibold">{isHe ? "טווח תאריכים" : "Date range"}</p>
+                  <button type="button" onClick={() => setSheetOpen(false)} className="-me-2 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={isHe ? "סגירה" : "Close"}>
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto overscroll-contain px-3 pb-3">
+                  <div className="space-y-0.5">
+                    {PRESET_GROUPS.flatMap((g) => g.presets).map((option) => {
+                      const active = pendingPreset === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setPendingPreset(option.value)}
+                          className={cn("flex min-h-11 w-full items-center justify-between rounded-md px-3 text-start text-sm", active ? "bg-accent font-semibold" : "hover:bg-accent/70")}
+                        >
+                          <span>{option.label}</span>
+                          {active ? <Check className="h-4 w-4 text-muted-foreground" aria-hidden /> : null}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setPendingPreset("custom")}
+                      className={cn("flex min-h-11 w-full items-center justify-between rounded-md px-3 text-start text-sm", pendingPreset === "custom" ? "bg-accent font-semibold" : "hover:bg-accent/70")}
+                    >
+                      <span>{isHe ? "טווח מותאם" : "Custom"}</span>
+                      {pendingPreset === "custom" ? <Check className="h-4 w-4 text-muted-foreground" aria-hidden /> : null}
+                    </button>
+                    {pendingPreset === "custom" ? (
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <input
+                          type="date"
+                          value={startText}
+                          onChange={(e) => handleStartTextChange(e.target.value)}
+                          max={endText || toInputDate(new Date()) || undefined}
+                          className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm"
+                          aria-label={isHe ? "תאריך התחלה" : "Start date"}
+                        />
+                        <span className="text-muted-foreground" aria-hidden>→</span>
+                        <input
+                          type="date"
+                          value={endText}
+                          onChange={(e) => handleEndTextChange(e.target.value)}
+                          min={startText || undefined}
+                          max={toInputDate(new Date())}
+                          className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm"
+                          aria-label={isHe ? "תאריך סיום" : "End date"}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                  <p className="mt-3 px-3 pb-1 text-xs font-medium text-muted-foreground">{isHe ? "השוואה" : "Compare with"}</p>
+                  <div className="space-y-0.5">
+                    {COMPARISON_OPTIONS.map((option) => {
+                      const active = pendingComparisonMode === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setPendingComparisonMode(option.value)}
+                          className={cn("flex min-h-11 w-full items-center justify-between rounded-md px-3 text-start text-sm", active ? "bg-accent font-semibold" : "hover:bg-accent/70")}
+                        >
+                          <span>{option.label}</span>
+                          {active ? <Check className="h-4 w-4 text-muted-foreground" aria-hidden /> : null}
+                        </button>
+                      );
+                    })}
+                    {pendingComparisonMode === "custom" ? (
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <input type="date" value={comparisonStart} onChange={(e) => setComparisonStart(e.target.value)} className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm" aria-label={isHe ? "מתאריך" : "From"} />
+                        <span className="text-muted-foreground" aria-hidden>→</span>
+                        <input type="date" value={comparisonEnd} onChange={(e) => setComparisonEnd(e.target.value)} min={comparisonStart || undefined} className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm" aria-label={isHe ? "עד תאריך" : "To"} />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="grid grid-cols-[auto_1fr] gap-2 border-t border-border px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+                  <Button type="button" variant="secondary" size="lg" onClick={() => setSheetOpen(false)}>
+                    {isHe ? "ביטול" : "Cancel"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="lg"
+                    disabled={isPending || syncing || (pendingPreset === "custom" && (!pendingStart || !pendingEnd))}
+                    onClick={handleApplySheet}
+                  >
+                    {isPending || syncing ? (isHe ? "מחיל…" : "Applying…") : isHe ? "החילו" : "Apply"}
+                  </Button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {/* RANGE BUTTON (desktop) */}
+      <div className="relative hidden sm:block">
         <button
           type="button"
           disabled={syncing}
@@ -518,10 +673,10 @@ export function ReportingPicker(props: ReportingPickerProps) {
           aria-expanded={rangeOpen}
           aria-haspopup="dialog"
           className={cn(
-            "inline-flex w-full items-center justify-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium shadow-sm transition-colors sm:w-auto sm:justify-start",
-            "hover:bg-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+            "inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium transition-colors",
+            "hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
             "disabled:cursor-not-allowed disabled:opacity-60",
-            rangeOpen && "bg-muted/60"
+            rangeOpen && "bg-accent"
           )}
         >
           <Calendar className="h-4 w-4 text-muted-foreground" aria-hidden />
@@ -536,17 +691,15 @@ export function ReportingPicker(props: ReportingPickerProps) {
           open={rangeOpen}
           onClose={() => setRangeOpen(false)}
           align="end"
-          className="w-auto sm:w-[min(820px,calc(100vw-2rem))]"
+          className="w-[min(820px,calc(100vw-2rem))]"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr]">
+          <div className="grid grid-cols-[180px_1fr]">
             {/* PRESETS SIDEBAR */}
-            <div className="border-b border-border/70 p-3 sm:border-b-0 sm:border-e">
+            <div className="border-e border-border p-3">
               <div className="space-y-4">
                 {PRESET_GROUPS.map((group) => (
                   <div key={group.heading}>
-                    <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {group.heading}
-                    </p>
+                    <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">{group.heading}</p>
                     <div className="flex flex-col">
                       {group.presets.map((option) => {
                         const active = pendingPreset === option.value;
@@ -585,7 +738,7 @@ export function ReportingPicker(props: ReportingPickerProps) {
             </div>
 
             {/* CALENDAR */}
-            <div className="p-3 sm:p-5">
+            <div className="p-5">
               {/* Both inputs are capped at today — the calendar grid always
                   blocked future clicks, but a TYPED future end date sailed
                   through and the whole app then reported a window ending in
@@ -597,7 +750,7 @@ export function ReportingPicker(props: ReportingPickerProps) {
                   value={startText}
                   onChange={(e) => handleStartTextChange(e.target.value)}
                   max={endText || toInputDate(new Date()) || undefined}
-                  className="min-w-0 flex-1 sm:flex-none sm:w-[150px] rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/40"
+                  className="w-[150px] rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
                   aria-label={isHe ? "תאריך התחלה" : "Start date"}
                 />
                 <span className="text-muted-foreground" aria-hidden>
@@ -609,7 +762,7 @@ export function ReportingPicker(props: ReportingPickerProps) {
                   onChange={(e) => handleEndTextChange(e.target.value)}
                   min={startText || undefined}
                   max={toInputDate(new Date())}
-                  className="min-w-0 flex-1 sm:flex-none sm:w-[150px] rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring/40"
+                  className="w-[150px] rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
                   aria-label={isHe ? "תאריך סיום" : "End date"}
                 />
               </div>
@@ -623,7 +776,7 @@ export function ReportingPicker(props: ReportingPickerProps) {
                 locale={locale}
               />
 
-              <div className="mt-5 flex items-center justify-end gap-2 border-t border-border/70 pt-4">
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
                 <Button type="button" variant="secondary" size="sm" onClick={() => setRangeOpen(false)}>
                   {isHe ? "ביטול" : "Cancel"}
                 </Button>
@@ -651,8 +804,8 @@ export function ReportingPicker(props: ReportingPickerProps) {
         </Popover>
       </div>
 
-      {/* COMPARISON BUTTON */}
-      <div className="relative flex-1 sm:flex-none">
+      {/* COMPARISON BUTTON (desktop) */}
+      <div className="relative hidden sm:block">
         <button
           type="button"
           disabled={syncing}
@@ -663,10 +816,10 @@ export function ReportingPicker(props: ReportingPickerProps) {
           aria-expanded={compareOpen}
           aria-haspopup="menu"
           className={cn(
-            "inline-flex w-full items-center justify-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium shadow-sm transition-colors sm:w-auto sm:justify-start",
-            "hover:bg-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+            "inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium transition-colors",
+            "hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
             "disabled:cursor-not-allowed disabled:opacity-60",
-            compareOpen && "bg-muted/60"
+            compareOpen && "bg-accent"
           )}
         >
           <GitCompareArrows className="h-4 w-4 text-muted-foreground" aria-hidden />
@@ -694,9 +847,7 @@ export function ReportingPicker(props: ReportingPickerProps) {
                 >
                   <span>{option.label}</span>
                   {active ? <Check className="h-3.5 w-3.5 text-muted-foreground" aria-hidden /> : committed ? (
-                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      {isHe ? "פעיל" : "current"}
-                    </span>
+                    <span className="text-xs text-muted-foreground">{isHe ? "פעיל" : "current"}</span>
                   ) : null}
                 </button>
               );
@@ -705,32 +856,28 @@ export function ReportingPicker(props: ReportingPickerProps) {
             {pendingComparisonMode === "custom" ? (
               <div className="mt-2 space-y-2 border-t border-border/70 px-3 pt-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    {isHe ? "מתאריך" : "From"}
-                  </label>
+                  <label className="text-xs font-medium text-muted-foreground">{isHe ? "מתאריך" : "From"}</label>
                   <input
                     type="date"
                     value={comparisonStart}
                     onChange={(e) => setComparisonStart(e.target.value)}
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums"
+                    className="rounded-md border border-border bg-background px-3 py-2 text-sm"
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    {isHe ? "עד תאריך" : "To"}
-                  </label>
+                  <label className="text-xs font-medium text-muted-foreground">{isHe ? "עד תאריך" : "To"}</label>
                   <input
                     type="date"
                     value={comparisonEnd}
                     onChange={(e) => setComparisonEnd(e.target.value)}
                     min={comparisonStart || undefined}
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums"
+                    className="rounded-md border border-border bg-background px-3 py-2 text-sm"
                   />
                 </div>
               </div>
             ) : null}
 
-            <div className="mt-2 flex items-center justify-end gap-2 border-t border-border/70 px-1 pt-2">
+            <div className="mt-2 flex items-center justify-end gap-2 border-t border-border px-1 pt-2">
               <Button
                 type="button"
                 variant="secondary"
