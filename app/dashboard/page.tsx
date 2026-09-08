@@ -12,22 +12,19 @@ import { EnrichedRevenueChart } from "@/components/dashboard-v2/enriched-revenue
 import { getDailyTrendContext } from "@/lib/services/daily-trend-context-service";
 import { StockBadge } from "@/components/dashboard-v2/stock-badge";
 import { CollectionChips } from "@/components/dashboard-v2/collection-chips";
-import {
-  CommandCenterAlertCard,
-  type CommandCenterAlert
-} from "@/components/command-center/command-center-alert-card";
+import type { CommandCenterAlert } from "@/components/command-center/command-center-alert-card";
+import Link from "next/link";
 import { LeakScanHero } from "@/components/command-center/leak-scan-hero";
 import { buildLeakScan } from "@/lib/services/leak-scan-service";
-import { AlertOctagon, TrendingUp, Wallet } from "lucide-react";
 import { getOverviewPayload, getAppChromeData } from "@/lib/services/analytics-service";
 import { listOpenAlerts } from "@/lib/services/alert-writer-service";
 import { buildStockoutImminentReport } from "@/lib/services/stockout-imminent-service";
 import { buildRoasCollapseReport } from "@/lib/services/roas-collapse-service";
 import { upsertCampaignFunnelAlerts } from "@/lib/services/campaign-funnel-alert-service";
 import { upsertSilentProductAlerts } from "@/lib/services/silent-product-alert-service";
-import { getCompetitorCrawlSummary, upsertCompetitorResponseAlerts } from "@/lib/services/competitor-intel-service";
-import { getCompetitorBrief } from "@/lib/services/competitor-brief-service";
-import { CompetitorBriefSection } from "@/components/command-center/competitor-brief-section";
+import { upsertCompetitorResponseAlerts } from "@/lib/services/competitor-intel-service";
+import { readDecisionInboxSummary, readMarketSummary } from "@/lib/services/command-center-summary-service";
+import { DecisionSummaryBlock, MarketLine } from "@/components/command-center/overview-blocks";
 import { TrafficSearchSection } from "@/components/dashboard/traffic-search-section";
 import { MetaCampaignsSection } from "@/components/dashboard/meta-campaigns-section";
 import { MetaCampaignsInsight } from "@/components/dashboard/meta-campaigns-insight";
@@ -47,40 +44,16 @@ import { CheckCircle2, XCircle, MinusCircle } from "lucide-react";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
-import { heCountPhrase } from "@/lib/i18n/he-plural";
 import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { getDb } from "@/lib/server/db";
 
-/** Priority badge labels and colors, matching Hebrew UX convention. */
-type PriorityLevel = "critical" | "important" | "low";
 
-function PriorityBadge({ level, isHe }: { level: PriorityLevel; isHe: boolean }) {
-  const styles: Record<PriorityLevel, string> = {
-    critical: "bg-red-100 text-red-800 border-red-200",
-    important: "bg-amber-100 text-amber-800 border-amber-200",
-    low: "bg-slate-100 text-slate-600 border-slate-200"
-  };
-  const labels: Record<PriorityLevel, { he: string; en: string }> = {
-    critical: { he: "קריטי", en: "Critical" },
-    important: { he: "חשוב", en: "Important" },
-    low: { he: "נמוך", en: "Low" }
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${styles[level]}`}
-    >
-      {isHe ? labels[level].he : labels[level].en}
-    </span>
-  );
-}
-
-// Founder Command Center — the new homepage. Lead with what needs action,
-// then show money snapshot, then push trend + top products below the fold
-// as context. Replaces the old "step 1 → step 6" dashboard-of-everything.
+// Command Center = Executive Overview (8 Sep 2026). Order: top risk (Leak
+// Scan) → money → decisions pointer (Today) + one market line (Market) →
+// trend → channel detail → alerts → products behind disclosure.
 //
-// Design: alerts FIRST, money snapshot SECOND, action drawer THIRD,
-// historical context LAST. The founder's first 10 seconds should answer
-// "what do I need to do today" — everything else is supporting material.
+// It produces no decisions of its own. Today is the source of truth for
+// decisions, Market for external context; this page only points at them.
 
 export default async function CommandCenterPage() {
   const locale = await getAppLocale();
@@ -220,26 +193,14 @@ export default async function CommandCenterPage() {
     ? await buildLeakScan({ storeId, start: windowRange.start, end: windowRange.end }).catch(() => null)
     : null;
 
-  // Competitor brief — intel snapshot + BI-prescribed actions (today/this
-  // week). storeId lets the generator feed LIVE store facts (product movers,
-  // campaign ROAS, open alerts) into the prompt so actions name real things.
-  // Cached 24h; falls back to the intel's own action list when the BI agent
-  // is unreachable, so the section always renders.
-  const competitorBrief = await getCompetitorBrief(storeId ?? undefined, isHe ? "he" : "en").catch(() => null);
-  // The brief is null until the FIRST competitor crawl lands (apply a date
-  // range, or the 2h cron). Hiding the whole section then made "I added
-  // competitors, where's the banner?" a support question (Take a Nap,
-  // 1 Sep 2026) — count the active set so we can say "pending" instead.
-  const activeCompetitorCount =
-    !competitorBrief && storeId
-      ? await getDb()
-          .competitor.count({ where: { storeId, status: "active" } })
-          .catch(() => 0)
-      : 0;
-  // What the last crawl actually found — "provider has no data yet for these
-  // domains" is a different message from "crawl hasn't run".
-  const competitorCrawl =
-    activeCompetitorCount > 0 && storeId ? await getCompetitorCrawlSummary(storeId).catch(() => null) : null;
+  // Executive Overview (8 Sep 2026): the Command Center produces NO decisions
+  // of its own. The AI action brief that lived here was a second, unaudited
+  // decision list (and a model call per store per day) that could disagree
+  // with Today. It now points at the two sources of truth — Today for
+  // decisions, Market for external context — via two cheap ledger reads.
+  const [decisionSummary, marketSummary] = storeId
+    ? await Promise.all([readDecisionInboxSummary(storeId), readMarketSummary(storeId)])
+    : [null, null];
 
   // Traffic (GA4) + organic search (GSC) summary — follows the page's
   // selected date window like every other section. Null when neither
@@ -334,29 +295,25 @@ export default async function CommandCenterPage() {
           <LeakScanHero scan={leakScan} currency={overview.store.currency} isHe={isHe} />
         ) : null}
 
-        {/* ── HEADLINE — what's on fire right now + data confidence ───── */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex-1">
-            <CommandCenterHeadline
-              isHe={isHe}
-              criticalCount={alertCards.filter((a) => a.severity === "critical").length}
-              highCount={alertCards.filter((a) => a.severity === "high").length}
-              mediumCount={alertCards.filter((a) => a.severity === "medium").length}
-              totalOpen={alertCards.length}
-            />
+        {/* ── ATTENTION — pointer to Today (the only place decisions are made)
+            + data confidence. Replaces the old alerts headline: open alerts
+            are the raw material of decisions, not a second list. */}
+        <section className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <DecisionSummaryBlock summary={decisionSummary} locale={isHe ? "he" : "en"} />
+            </div>
+            {setupHealth ? <SetupHealthBadge report={setupHealth} locale={locale} /> : null}
           </div>
-          {setupHealth ? <SetupHealthBadge report={setupHealth} locale={locale} /> : null}
-        </div>
+          <MarketLine summary={marketSummary} locale={isHe ? "he" : "en"} />
+        </section>
 
         {/* ── SECTION — Money snapshot (הכסף) — leads, per CEO order ──── */}
         <section className="space-y-3">
           <SectionHead
             eyebrow={lang("הכסף", "The money")}
             title={lang("מצב פיננסי", "Money snapshot")}
-            hint={lang(
-              "המספרים המהותיים של החלון הנוכחי. שישה מדדים שעונים על השאלה 'האם החנות בריאה?'",
-              "The vitals for this window. Six metrics that answer 'is the store healthy?'"
-            )}
+            hint={lang("המספרים של החלון הנבחר.", "The numbers for the selected window.")}
           />
           {contributionMargin ? (
             <ContributionMarginPanel
@@ -439,61 +396,6 @@ export default async function CommandCenterPage() {
           </Card>
         </section>
 
-        {/* ── SECTION — Competitors (מתחרים): intel + prescribed response ─ */}
-        {competitorBrief ? (
-          <section className="space-y-3">
-            <SectionHead
-              eyebrow={lang("פעולות", "Actions")}
-              title={lang("מה לעשות היום — ומה המתחרים עושים ברקע", "What to do today — and what competitors are doing in the background")}
-              hint={lang(
-                "כל פעולה נובעת ממספר של החנות. מהלכי מתחרים הם הקשר, לא סיבה.",
-                "Every action is driven by a store number. Competitor moves are context, not a reason."
-              )}
-            />
-            {/* key=storeId: same reason as MetaCampaignsInsight below — the
-                actions block seeds its state from `initial` via useState, which
-                a router.refresh() prop change does NOT reset, so it kept the
-                previous brand's competitor brief after a switch. */}
-            <CompetitorBriefSection key={storeId} brief={competitorBrief} isHe={isHe} />
-          </section>
-        ) : activeCompetitorCount > 0 ? (
-          <section className="space-y-3">
-            <SectionHead
-              eyebrow={lang("מתחרים", "Competitors")}
-              title={lang("מה המתחרים עושים — ואיך להגיב", "What competitors are doing — and the response")}
-            />
-            <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-5 py-4 text-sm text-muted-foreground">
-              {competitorCrawl ? (
-                <>
-                  <p>
-                    {isHe
-                      ? `${activeCompetitorCount} מתחרים במעקב. הסריקה האחרונה (${new Date(competitorCrawl.at).toLocaleString("he-IL")}, ${competitorCrawl.source === "mock" ? "מצב הדגמה — מפתחות RivalSweeper לא מוגדרים בשרת" : "דרך RivalSweeper"}) החזירה נתונים עבור ${competitorCrawl.snapshotsUpserted} מתוכם.`
-                      : `${activeCompetitorCount} competitors tracked. The last crawl (${new Date(competitorCrawl.at).toLocaleString("en-GB")}, ${competitorCrawl.source === "mock" ? "mock mode — RivalSweeper keys not set on the server" : "via RivalSweeper"}) returned data for ${competitorCrawl.snapshotsUpserted} of them.`}
-                  </p>
-                  {competitorCrawl.outcomes.some((o) => o.result === "not_monitored") ? (
-                    <p className="mt-1.5 font-medium text-amber-900">
-                      {isHe
-                        ? `לא במעקב ב-RivalSweeper: ${competitorCrawl.outcomes.filter((o) => o.result === "not_monitored").map((o) => o.domain).join(", ")}. הוספת מתחרה ב-Hiloomy לא רושמת אותו אצל הספק — הוסיפו את הדומיינים האלה בלוח הבקרה של RivalSweeper (Domains), והסנכרון הבא יאסוף אותם.`
-                        : `Not monitored on RivalSweeper: ${competitorCrawl.outcomes.filter((o) => o.result === "not_monitored").map((o) => o.domain).join(", ")}. Adding a competitor in Hiloomy does not register it with the provider — add these domains in the RivalSweeper dashboard (Domains) and the next sync picks them up.`}
-                    </p>
-                  ) : null}
-                  {competitorCrawl.outcomes.some((o) => o.result === "no_data") ? (
-                    <p className="mt-1.5">
-                      {isHe
-                        ? `במעקב אך עדיין ללא נתונים: ${competitorCrawl.outcomes.filter((o) => o.result === "no_data").map((o) => o.domain).join(", ")}. הסריקה של הספק מתמלאת תוך ימים — הסנכרון האוטומטי ימשיך לבדוק כל שעתיים.`
-                        : `Monitored but no data yet: ${competitorCrawl.outcomes.filter((o) => o.result === "no_data").map((o) => o.domain).join(", ")}. The provider's crawl fills within days — the automatic sync keeps checking every 2 hours.`}
-                    </p>
-                  ) : null}
-                </>
-              ) : isHe ? (
-                `${activeCompetitorCount} מתחרים במעקב — הסריקה הראשונה עדיין לא רצה. החילו טווח תאריכים (למעלה) כדי להריץ אותה עכשיו, או המתינו לסנכרון האוטומטי (עד שעתיים). התובנות והמלצות הפעולה יופיעו כאן אחרי הסריקה.`
-              ) : (
-                `${activeCompetitorCount} competitors tracked — the first crawl hasn't run yet. Apply a date range (top of the page) to run it now, or wait for the automatic sync (up to 2 hours). Intel and prescribed actions appear here once it lands.`
-              )}
-            </div>
-          </section>
-        ) : null}
-
         {/* ── SECTION — Traffic & organic search (תנועה וחיפוש) ────────── */}
         {trafficSearch ? (
           <section className="space-y-3">
@@ -568,49 +470,34 @@ export default async function CommandCenterPage() {
           </section>
         ) : null}
 
-        {/* ── SECTION — Critical + High alerts (התראות גבוהות) ────────── */}
-        {criticalAndHigh.length > 0 ? (
-          <section className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <SectionHead
-                eyebrow={lang("דורש פעולה היום", "Needs action today")}
-                title={lang("התראות בעדיפות גבוהה", "High-priority alerts")}
-                hint={lang("כל כרטיס כולל פעולה מומלצת.", "Each card has a suggested action.")}
-              />
-              <PriorityBadge level="critical" isHe={isHe} />
-            </div>
-            <div className="grid gap-3 lg:grid-cols-2">
-              {criticalAndHigh.map((alert) => (
-                <CommandCenterAlertCard key={alert.id} alert={alert} locale={locale} />
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {/* ── SECTION — Medium/Low alerts (התראות) ────────────────────── */}
-        {/* Collapsed by default (F-016): this is the NOT-urgent tier, but
-            expanded it took more space than the critical section above —
-            inverting the priority the split is meant to communicate. */}
-        {mediumAndLow.length > 0 ? (
-          <details className="group rounded-2xl border border-border bg-card/40 open:bg-card">
-            <summary className="cursor-pointer list-none rounded-2xl px-5 py-4 hover:bg-muted/40">
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="text-muted-foreground transition-transform group-open:rotate-90">▸</span>
-                <span className="text-sm font-semibold text-foreground">
-                  {lang(`התראות לבדיקה (${mediumAndLow.length})`, `Alerts to review (${mediumAndLow.length})`)}
-                </span>
-                <PriorityBadge level="important" isHe={isHe} />
-                <span className="text-xs font-normal text-muted-foreground">
-                  {lang("לא דחוף — שווה לבדוק במהלך השבוע. לחצו לפתיחה.", "Not urgent — check during weekly planning. Click to expand.")}
-                </span>
+        {/* ── ALERTS — counts + link only. The cards that used to render here
+            were the same rows Today turns into decisions, each with its own
+            "recommended action": a second decision list. The full list stays
+            on /alerts for audit; judgment happens on Today. */}
+        {alertCards.length > 0 ? (
+          <p className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-y border-border py-3 text-sm">
+            <span>
+              <span className="font-semibold">{lang("התראות פתוחות", "Open alerts")}: </span>
+              <span className="text-muted-foreground">
+                {[
+                  criticalAndHigh.filter((a) => a.severity === "critical").length > 0
+                    ? lang(`${criticalAndHigh.filter((a) => a.severity === "critical").length} קריטיות`, `${criticalAndHigh.filter((a) => a.severity === "critical").length} critical`)
+                    : null,
+                  criticalAndHigh.filter((a) => a.severity === "high").length > 0
+                    ? lang(`${criticalAndHigh.filter((a) => a.severity === "high").length} גבוהות`, `${criticalAndHigh.filter((a) => a.severity === "high").length} high`)
+                    : null,
+                  mediumAndLow.length > 0 ? lang(`${mediumAndLow.length} לבדיקה`, `${mediumAndLow.length} to review`) : null
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+                {" · "}
+                {lang("ההחלטות שנגזרות מהן נמצאות בעמוד היום.", "The decisions they feed are on Today.")}
               </span>
-            </summary>
-            <div className="grid gap-3 border-t border-border px-5 py-4 lg:grid-cols-2">
-              {mediumAndLow.map((alert) => (
-                <CommandCenterAlertCard key={alert.id} alert={alert} locale={locale} />
-              ))}
-            </div>
-          </details>
+            </span>
+            <Link href={"/alerts" as never} className="inline-flex min-h-8 items-center font-semibold text-foreground underline-offset-4 hover:underline">
+              {lang("לרשימה המלאה", "Full list")}
+            </Link>
+          </p>
         ) : null}
 
         {/* ── CLOSED LOOP — "you did X last week → result Y" ──────────── */}
@@ -877,88 +764,3 @@ function BreakdownTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CommandCenterHeadline({
-  isHe,
-  criticalCount,
-  highCount,
-  mediumCount,
-  totalOpen
-}: {
-  isHe: boolean;
-  criticalCount: number;
-  highCount: number;
-  mediumCount: number;
-  totalOpen: number;
-}) {
-  const lang = (he: string, en: string) => (isHe ? he : en);
-
-  if (totalOpen === 0) {
-    return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4">
-        <div className="flex items-center gap-3">
-          <TrendingUp className="h-5 w-5 text-emerald-700" aria-hidden />
-          <div>
-            <p className="text-sm font-semibold text-emerald-900">
-              {lang("הכל תקין", "All clear")}
-            </p>
-            <p className="text-xs text-emerald-800">
-              {lang(
-                "אין התראות פתוחות. המשיכו לפי התכנון השבועי.",
-                "No open alerts. Stay on your weekly plan."
-              )}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const isCritical = criticalCount > 0;
-  return (
-    <div
-      className={`rounded-xl border px-5 py-4 ${
-        isCritical
-          ? "border-red-300 bg-red-50"
-          : highCount > 0
-            ? "border-rose-200 bg-rose-50"
-            : "border-amber-200 bg-amber-50"
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        {isCritical ? (
-          <AlertOctagon className="h-5 w-5 text-red-700" aria-hidden />
-        ) : (
-          <Wallet className="h-5 w-5 text-amber-700" aria-hidden />
-        )}
-        <div>
-          <p
-            className={`text-sm font-bold ${
-              isCritical ? "text-red-900" : highCount > 0 ? "text-rose-900" : "text-amber-900"
-            }`}
-          >
-            {isCritical
-              ? lang(
-                  `🚩 ${heCountPhrase(criticalCount, { one: "התראה אחת", many: "התראות" }, { one: "קריטית פתוחה", many: "קריטיות פתוחות" })} — דורש פעולה היום`,
-                  `🚩 ${criticalCount} critical alert${criticalCount === 1 ? "" : "s"} — needs action today`
-                )
-              : highCount > 0
-                ? lang(
-                    heCountPhrase(highCount, { one: "התראה אחת", many: "התראות" }, { one: "גבוהה פתוחה", many: "גבוהות פתוחות" }),
-                    `${highCount} high-priority alert${highCount === 1 ? "" : "s"} open`
-                  )
-                : lang(
-                    `${heCountPhrase(mediumCount, { one: "התראה אחת", many: "התראות" })} לבדיקה השבוע`,
-                    `${mediumCount} alert${mediumCount === 1 ? "" : "s"} to review this week`
-                  )}
-          </p>
-          <p className="mt-0.5 text-xs">
-            {lang(
-              `סה״כ ${totalOpen} פתוחות — כולן למטה עם פעולה מומלצת.`,
-              `${totalOpen} total open — all listed below with a recommended action.`
-            )}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}

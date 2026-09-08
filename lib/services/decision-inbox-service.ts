@@ -48,6 +48,7 @@ import { buildSetupHealth, type SetupHealthReport } from "@/lib/services/setup-h
 import { getMetaCampaignsOverview, type MetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
 import { getBundleOverview } from "@/lib/services/bundle-profitability-service";
 import { getLlmUsageToday, llmDailyBudgetUsd, LLM_GLOBAL_BUCKET } from "@/lib/services/llm-usage-service";
+import { writeDecisionInboxSummary } from "@/lib/services/command-center-summary-service";
 import type {
   Decision,
   DecisionInbox,
@@ -1252,16 +1253,20 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
   const reviewed =
     counts.productsReviewed + Math.max(counts.campaignsReviewed, meta?.campaigns.length ?? 0) + affiliateReviewed + competitorSnapshots + openAlerts.length;
   const watchingDistinct = new Set(watchlist.map((w) => w.decisionId ?? w.id)).size;
+  const byStatus = cards.reduce(
+    (acc, d) => ({ ...acc, [d.status]: acc[d.status] + 1 }),
+    { act: 0, watch: 0, do_not_act: 0, test: 0, change_plan: 0 } as Record<DecisionStatus, number>
+  );
+  // The Command Center reads this instead of re-running the engines, so its
+  // "N decisions need your attention" is exactly what Today last showed.
+  await writeDecisionInboxSummary(storeId, { decisions: cards.length, byStatus, watching: watchingDistinct, updatedAt: now.toISOString() });
 
   return {
     decisions: cards,
     watchlist,
     stats: {
       decisions: cards.length,
-      byStatus: cards.reduce(
-        (acc, d) => ({ ...acc, [d.status]: acc[d.status] + 1 }),
-        { act: 0, watch: 0, do_not_act: 0, test: 0, change_plan: 0 } as Record<DecisionStatus, number>
-      ),
+      byStatus,
       watching: watchingDistinct,
       reviewed,
       suppressed: Math.max(0, reviewed - cards.length - watchingDistinct),

@@ -5,6 +5,52 @@ that Hiloomy reviews everything, suppresses routine noise, and surfaces only the
 commercial decisions that deserve a Brand Manager's attention. This document is the plan
 that the implementation follows; it is kept next to the code so future work stays on it.
 
+## 0. Design rule — one place for decisions (2026-09-08)
+
+> **A recommendation can be generated anywhere. A decision can live only in
+> one place.**
+
+Everything that requires the manager's judgment ends up on **Today**. The
+engines produce Decisions into the ledger; no surface renders its own list of
+recommendations next to it. Shopify (Sidekick Pulse), Triple Whale (Moby
+Actions) and Marklo all converge on a single action workflow; Hiloomy's
+difference is not the centralization but *which* decisions get there —
+cross-domain ones (Inventory × Sales × Meta, Affiliate × Customer history,
+Discount × Profit × Product, Competitor × Product × own performance).
+
+```text
+Inventory engine ──────┐
+Profit engine ─────────┤
+Campaign engine ───────┤
+Affiliate engine ──────┤
+Competitor engine ─────┤
+Plan engine ───────────┘
+          ↓
+    DECISION LAYER (Alert ledger: state, evidence snapshots, judgment)
+          ↓
+       TODAY
+          ↓
+ Receipt → Approve / Ignore / Watch
+          ↓
+        Memory
+```
+
+Roles:
+
+| Surface | Role | May it recommend? |
+| --- | --- | --- |
+| Today | source of truth for decisions | yes — the only place |
+| Market | external context / evidence | no; a competitor move becomes a decision only through the competitor engine |
+| Command Center | executive overview: risk, money, pointer to Today, one market line | no |
+| Data Health | what the decisions rest on | no |
+| Hiloma chat | explain, prepare | debt: answers that are decisions must end in "added to Today" |
+| Weekly summary | narrative | debt: must reference ledger decisions, not invent parallel ones |
+
+Applied on 2026-09-08: the Command Center's AI action brief (a second,
+model-generated decision list) and its alert cards (the same ledger rows
+re-rendered with "recommended action") were removed; the page now shows
+counts and links. The Meta insight card lost its "what to do now" list.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

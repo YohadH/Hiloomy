@@ -7,7 +7,7 @@
 // a regeneration.
 
 import { useEffect, useState } from "react";
-import { Bot, ChevronDown, Loader2, RefreshCw, Wrench } from "lucide-react";
+import { Bot, ChevronDown, Loader2, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 type Confidence = "high" | "medium" | "low";
@@ -212,21 +212,9 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
                 </div>
               ) : null}
             </div>
-            {insight.actions.length > 0 ? (
-              <div className="rounded-xl border border-border bg-muted/30 p-3">
-                <p className="text-xs font-semibold">
-                  {lang("מה לעשות עכשיו", "What to do now")}
-                </p>
-                <div className="mt-1.5 space-y-1.5">
-                  {insight.actions.map((line, i) => (
-                    <p key={i} className="flex items-start gap-2 text-xs text-foreground">
-                      <Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                      <span>{line}</span>
-                    </p>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+            {/* The model's "what to do now" list used to render here. Removed
+                (8 Sep 2026): the Command Center describes, it does not decide —
+                campaign decisions come from the reallocation engine on Today. */}
             {insight.evidence.length > 0 ? (
               <div>
                 <button
