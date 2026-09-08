@@ -443,11 +443,11 @@ export default async function CommandCenterPage() {
         {competitorBrief ? (
           <section className="space-y-3">
             <SectionHead
-              eyebrow={lang("מתחרים", "Competitors")}
-              title={lang("מה המתחרים עושים — ואיך להגיב", "What competitors are doing — and the response")}
+              eyebrow={lang("פעולות", "Actions")}
+              title={lang("מה לעשות היום — ומה המתחרים עושים ברקע", "What to do today — and what competitors are doing in the background")}
               hint={lang(
-                "תמונת מודיעין עדכנית ופעולות מומלצות להיום ולשבוע.",
-                "Current intel snapshot plus prescribed actions for today and this week."
+                "כל פעולה נובעת ממספר של החנות. מהלכי מתחרים הם הקשר, לא סיבה.",
+                "Every action is driven by a store number. Competitor moves are context, not a reason."
               )}
             />
             {/* key=storeId: same reason as MetaCampaignsInsight below — the

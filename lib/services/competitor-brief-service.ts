@@ -26,13 +26,34 @@ import {
   type CompetitorIntel
 } from "@/lib/data/competitor-intel-latest";
 
-// A single prescribed action, structured for clarity: the WHAT stays a
-// short clean imperative; the numbers and reasoning live in `why`; `how`
-// says where/how to actually do it; `target` is the measurable goal.
+export type BriefLevel = "high" | "medium" | "low";
+
+// A single prescribed action (schema s3, 8 Sep 2026 — decision/action console,
+// not a consultant's list):
+//   action           short imperative, the WHAT.
+//   driver           the store number that makes this worth doing NOW. Always
+//                    a fact about THIS store (a campaign's ROAS, a SKU's
+//                    revenue, days of cover). Never a competitor.
+//   marketContext    optional: what a competitor is doing that colours the
+//                    call. Context only — it never justifies the action.
+//   impact           how much money/risk rides on it.
+//   confidence       how sure the data is (COGS coverage, sample size…).
+//   connected        the systems joined to reach it, e.g. ["Meta","Shopify"].
+//   successCondition how we will know it worked — a check Hiloomy can run
+//                    against its own data, not a wished-for number.
+//   how              the step-by-step (which screen, what to change). Lives
+//                    behind "Review", never in the overview.
+// `why` / `target` remain readable for older cached briefs.
 export interface BriefAction {
   action: string;
-  why?: string | null;
+  driver?: string | null;
+  marketContext?: string | null;
+  impact?: BriefLevel | null;
+  confidence?: BriefLevel | null;
+  connected?: string[] | null;
+  successCondition?: string | null;
   how?: string | null;
+  why?: string | null;
   target?: string | null;
 }
 
@@ -66,6 +87,59 @@ function isValidAction(a: unknown): a is BriefAction {
     typeof (a as BriefAction).action === "string" &&
     (a as BriefAction).action.trim().length > 0
   );
+}
+
+const LEVELS: readonly BriefLevel[] = ["high", "medium", "low"];
+function asLevel(v: unknown): BriefLevel | null {
+  return typeof v === "string" && (LEVELS as readonly string[]).includes(v.toLowerCase()) ? (v.toLowerCase() as BriefLevel) : null;
+}
+function asText(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+// Coerce a model answer into the schema: levels lower-cased, `connected` a
+// clean string list, empty strings → null. Older cached briefs (why/how/
+// target only) pass through untouched.
+function normalizeAction(a: BriefAction): BriefAction {
+  return {
+    action: a.action.trim(),
+    driver: asText(a.driver),
+    marketContext: asText(a.marketContext),
+    impact: asLevel(a.impact),
+    confidence: asLevel(a.confidence),
+    connected: Array.isArray(a.connected) ? a.connected.map((c) => String(c).trim()).filter(Boolean).slice(0, 4) : null,
+    successCondition: asText(a.successCondition),
+    how: asText(a.how),
+    why: asText(a.why),
+    target: asText(a.target)
+  };
+}
+
+// The logic audit (8 Sep 2026): the old prompt REQUIRED every action to cross
+// a competitor move, so the model bolted "Byredo runs 288 ads" onto a budget
+// shift whose real reason was 702's ROAS vs Paz's. An action is grounded
+// only when its driver is a store number: it must carry a digit and must not
+// be a competitor. Ungrounded actions are dropped, not rendered.
+function isGroundedAction(a: BriefAction, competitorNames: string[]): boolean {
+  const driver = a.driver ?? a.why ?? "";
+  if (!driver.trim()) return false;
+  if (!/\d/.test(driver)) return false;
+  const lower = driver.toLowerCase();
+  const namesCompetitor = competitorNames.some((n) => n && lower.includes(n.toLowerCase()));
+  // A competitor may be NAMED in the driver only alongside a store metric
+  // (e.g. "...vs your ROAS 4.4"); a driver that is only about them fails.
+  const storeWords = /(your|you|our|ROAS|margin|revenue|stock|inventory|orders|units|customers|commission|שלכם|שלך|מרווח|הכנס|מלאי|הזמנ|יחיד|לקוח|עמל)/i;
+  if (namesCompetitor && !storeWords.test(driver)) return false;
+  return true;
+}
+
+function groundAnswer(answer: BiBriefAnswer, competitorNames: string[]): BiBriefAnswer | null {
+  const today = answer.today.map(normalizeAction).filter((a) => isGroundedAction(a, competitorNames));
+  const thisWeek = answer.thisWeek.map(normalizeAction).filter((a) => isGroundedAction(a, competitorNames));
+  const dropped = answer.today.length + answer.thisWeek.length - today.length - thisWeek.length;
+  if (dropped > 0) console.warn(`[competitor-brief] dropped ${dropped} ungrounded action(s) (competitor-only driver or no store number)`);
+  if (today.length === 0) return null;
+  return { today, thisWeek };
 }
 
 function isValidAnswer(answer: BiBriefAnswer | null | undefined): answer is BiBriefAnswer {
@@ -673,7 +747,10 @@ export async function getCompetitorBriefBlocking(
 // getting a Hebrew brief because the old prompt was hard-coded Hebrew and
 // cached under the EN key) AND leads with the competitor×margin cross. Both
 // changes make every "s1" cached answer stale, so bump to force regeneration.
-const CACHE_SCHEMA = "s2";
+// "s3" (8 Sep 2026): action schema is driver / marketContext / impact /
+// confidence / connected / successCondition / how, and the prompt no longer
+// forces a competitor cross. Every s2 brief is a consultant list — stale.
+const CACHE_SCHEMA = "s3";
 function cacheKey(version: string, storeId?: string): string {
   return `${version}:${storeId ?? "org"}:${CACHE_SCHEMA}`;
 }
@@ -682,7 +759,7 @@ function cacheKey(version: string, storeId?: string): string {
 // copy — the model quotes competitor headlines back verbatim.
 function isCleanAnswer(answer: BiBriefAnswer): boolean {
   return [...answer.today, ...answer.thisWeek].every((a) =>
-    [a.action, a.why, a.how, a.target].every((t) => isSafeScrapedText(t))
+    [a.action, a.driver, a.marketContext, a.successCondition, a.why, a.how, a.target].every((t) => isSafeScrapedText(t))
   );
 }
 
@@ -870,22 +947,26 @@ export async function generateBiBrief(
         .map((c) => `- ${c.name}: ${c.move} משמעות: ${c.implication}`)
         .join("\n") +
       `\n\nמשפיעניות: ${intel.influencerNote}\n\n` +
-      `היתרון שלך הוא ההצלבה: כל פעולה חוצה בין מהלך מתחרה ספציפי לבין נתון האמת של החנות ` +
-      `(מרווח, מוצר, קמפיין). מהלך מתחרה בלי הצלבה למספר של החנות אינו פעולה.\n\n` +
-      `תני בדיוק 3 פעולות לביצוע היום ו3 פעולות לשבוע הקרוב, כל אחת כאובייקט עם 4 שדות:\n` +
-      `- action: משפט פקודה קצר ונקי (עד 12 מילים), בלי סוגריים ובלי מספרים.\n` +
-      `- why: הסבר במשפט-שניים בעברית פשוטה — כאן שמים את המספרים מהנתונים, ומסבירים ` +
-      `כל מונח מקצועי במילים פשוטות (למשל: ROAS = כמה שקלים חוזרים על כל שקל פרסום).\n` +
-      `- how: איך מבצעים בפועל — באיזה מסך/כלי (מנהל המודעות של מטא, ההגדרות בשופיפיי, ` +
-      `מסך ההתראות באפליקציה) ומה בדיוק לוחצים/משנים.\n` +
-      `- target: יעד מדיד לשבוע במספרים, או null אם אין.\n` +
+      `זה מסך החלטות של מנהל/ת מותג, לא רשימת הוראות של יועץ. כל פעולה נובעת ממספר של החנות עצמה. ` +
+      `מידע על מתחרים הוא הקשר בלבד — הוא יכול לצבוע החלטה, לעולם לא להצדיק אותה. ` +
+      `אם אין מהלך מתחרה שרלוונטי לפעולה, השדה marketContext הוא null, וזה בסדר גמור.\n\n` +
+      `תני בדיוק 3 פעולות לביצוע היום ו3 פעולות לשבוע הקרוב, כל אחת כאובייקט עם השדות:\n` +
+      `- action: משפט פקודה קצר ונקי (עד 10 מילים), בלי סוגריים ובלי מספרים.\n` +
+      `- driver: משפט אחד עם המספר של החנות שבגללו זה דחוף עכשיו (למשל "702 מחזיר ₪10.4 לכל ₪1 מול ₪4.4 בPaz"). ` +
+      `חובה מספר מהנתונים החיים. אסור שמתחרה יהיה הסיבה.\n` +
+      `- marketContext: משפט אחד על מהלך מתחרה שמשנה את המשקל של ההחלטה, או null.\n` +
+      `- impact: "high" / "medium" / "low" — כמה כסף או סיכון תלוי בפעולה.\n` +
+      `- confidence: "high" / "medium" / "low" — כמה הנתונים מספיקים (כיסוי עלויות, גודל מדגם, ייחוס).\n` +
+      `- connected: רשימת המערכות שחוברו כדי להגיע לפעולה, מתוך: "Meta", "Shopify", "Inventory", "Affiliates", "Market", "Google". 1 עד 3 פריטים.\n` +
+      `- successCondition: איך נדע שזה עבד — בדיקה שאפשר להריץ על הנתונים תוך 3–7 ימים ` +
+      `(למשל "הROAS המשוקלל של מטא לא יורד 3 ימים אחרי ההעברה"). לא יעד רצוי, לא מספר שהפעולה לא שולטת בו.\n` +
+      `- how: 2–4 צעדים קצרים, מופרדים ב" | " — באיזה מסך ומה משנים.\n` +
       `רף איכות — פעולה שלא עומדת בו פסולה:\n` +
-      `(1) לפחות 2 מ-3 הפעולות בכל רשימה חוצות מהלך מתחרה מפורש מול נתון אמת של החנות ` +
-      `(למשל "המתחרה X מוריד ל-40% — המרווח שלך Y%, אל תתאים").\n` +
+      `(1) driver תמיד מספר של החנות. פעולה שה־driver שלה הוא מתחרה — פסולה.\n` +
       `(2) אסורות פעולות כלליות ("השק קמפיין עם סיפור", "הגדר מעקב", "שקול", "בחן").\n` +
       `(3) אל תסיקי סיבתיות שלא נמדדה ואל תמציאי תאריכים/מספרים/מבצעים/מתחרים.\n` +
       `(4) משפיעניות: רק אם יש להן אזכור בנתונים, ורק כצעד תהליכי — לא "surge".\n` +
-      `(5) הנחת מתחרה נצלבת תמיד מול שיעור המרווח של החנות לפני המלצה על תגובת מחיר.\n` +
+      `(5) תגובת מחיר להנחת מתחרה מותרת רק אחרי הצלבה מול שיעור המרווח של החנות.\n` +
       `(6) סגנון: אל תשתמשי במקף מחבר בין אותיות שימוש למספרים או מילים לועזיות — ` +
       `כתבי "ב31 אוגוסט", "הROAS", "מ4" (בלי מקף).`
     : `You are Hiloma, a BI analyst for an e-commerce brand. You have (a) live store facts and ` +
@@ -897,29 +978,32 @@ export async function generateBiBrief(
         .map((c) => `- ${c.name}: ${c.move} Implication: ${c.implication}`)
         .join("\n") +
       `\n\nInfluencers: ${intel.influencerNote}\n\n` +
-      `Your edge is the CROSS: every action crosses a specific competitor move against a real ` +
-      `store number (margin, product, campaign). A competitor move with no cross to a store number ` +
-      `is not an action.\n\n` +
-      `Give EXACTLY 3 actions to do today and 3 for this coming week, each an object with 4 fields:\n` +
-      `- action: a short, clean imperative (max 12 words), no parentheses and no numbers.\n` +
-      `- why: a one-to-two sentence plain-English explanation — put the numbers from the facts HERE, ` +
-      `and explain any jargon in plain words (e.g. ROAS = shekels returned per shekel of ad spend).\n` +
-      `- how: how to actually do it — which screen/tool (Meta Ads Manager, Shopify settings, the ` +
-      `in-app alerts screen) and exactly what to click/change.\n` +
-      `- target: a measurable weekly target in numbers, or null if none.\n` +
+      `This is a brand manager's decision console, not a consultant's checklist. Every action is ` +
+      `driven by a number from THIS store. Competitor information is context only — it may colour a ` +
+      `decision, it never justifies one. If no competitor move bears on an action, marketContext is null, ` +
+      `and that is fine.\n\n` +
+      `Give EXACTLY 3 actions to do today and 3 for this coming week, each an object with these fields:\n` +
+      `- action: a short, clean imperative (max 10 words), no parentheses and no numbers.\n` +
+      `- driver: one sentence with the store number that makes this worth doing now ` +
+      `(e.g. "702 returns ₪10.4 per ₪1 vs ₪4.4 on Paz"). Must contain a number from the live facts. A competitor is never the driver.\n` +
+      `- marketContext: one sentence on a competitor move that changes the weight of this call, or null.\n` +
+      `- impact: "high" / "medium" / "low" — how much money or risk rides on it.\n` +
+      `- confidence: "high" / "medium" / "low" — how sufficient the data is (cost coverage, sample size, attribution).\n` +
+      `- connected: the systems joined to reach the action, from: "Meta", "Shopify", "Inventory", "Affiliates", "Market", "Google". 1 to 3 items.\n` +
+      `- successCondition: how we will know it worked — a check runnable on the data within 3–7 days ` +
+      `(e.g. "blended Meta ROAS does not decline 3 days after the shift"). Not a wished-for target, not a number the action does not control.\n` +
+      `- how: 2–4 short steps separated by " | " — which screen, what to change.\n` +
       `Quality bar — an action that fails it is rejected:\n` +
-      `(1) At least 2 of the 3 actions in each list cross an explicit competitor move against a real ` +
-      `store number (e.g. "competitor X is cutting to 40% — your margin is Y%, don't match").\n` +
+      `(1) The driver is always a store number. An action whose driver is a competitor is rejected.\n` +
       `(2) No generic actions ("launch a campaign with a story", "set up tracking", "consider", "review").\n` +
       `(3) Never infer causation that wasn't measured, and never invent dates/numbers/promos/competitors.\n` +
       `(4) Influencers: only if they appear in the facts, and only as a process step — never a "surge".\n` +
-      `(5) A competitor discount is ALWAYS crossed against the store's margin rate before recommending a price response.\n` +
+      `(5) A price response to a competitor discount is allowed only after crossing it against the store's margin rate.\n` +
       `(6) Style: write clean prose, no bracketed notes.`;
-  const jsonHint = isHe
-    ? `{"today": [{"action": "...", "why": "...", "how": "...", "target": "... או null"}, ...3 פריטים], ` +
-      `"thisWeek": [{"action": "...", "why": "...", "how": "...", "target": null}, ...3 פריטים]}`
-    : `{"today": [{"action": "...", "why": "...", "how": "...", "target": "... or null"}, ...3 items], ` +
-      `"thisWeek": [{"action": "...", "why": "...", "how": "...", "target": null}, ...3 items]}`;
+  const item =
+    `{"action": "...", "driver": "...", "marketContext": "... or null", "impact": "high|medium|low", ` +
+    `"confidence": "high|medium|low", "connected": ["Meta", "Shopify"], "successCondition": "...", "how": "step | step | step"}`;
+  const jsonHint = `{"today": [${item}, ...3 items], "thisWeek": [${item}, ...3 items]}`;
   // Provider waterfall. OpenAI FIRST — it's the BI provider actually wired
   // on this deployment (same one the chat widget uses via bi-chat-service),
   // and the brief's question already carries every live fact it needs, so a
@@ -940,7 +1024,7 @@ export async function generateBiBrief(
   let answer: BiBriefAnswer | null = null;
   if (isOpenAiConfigured()) {
     answer = await attempt("openai", () =>
-      askOpenAiJson<BiBriefAnswer>({ question, jsonHint, timeoutMs: BI_TIMEOUT_MS, maxOutputTokens: 3000, storeId: storeId ?? null, feature: "competitor_brief" })
+      askOpenAiJson<BiBriefAnswer>({ question, jsonHint, timeoutMs: BI_TIMEOUT_MS, maxOutputTokens: 4000, storeId: storeId ?? null, feature: "competitor_brief" })
     );
   }
   if (!isValidAnswer(answer) && isBiAgentConfigured()) {
@@ -958,8 +1042,13 @@ export async function generateBiBrief(
       console.warn("[competitor-brief] answer repeated unsafe scraped copy — not served, not cached");
       return null;
     }
-    await writeCache(cacheKey(intel.version, storeId), answer);
-    return answer;
+    const grounded = groundAnswer(answer, intel.competitors.map((c) => c.name));
+    if (!grounded) {
+      console.warn("[competitor-brief] no grounded action survived — not served, not cached");
+      return null;
+    }
+    await writeCache(cacheKey(intel.version, storeId), grounded);
+    return grounded;
   }
   return null;
 }
@@ -998,3 +1087,6 @@ async function writeCache(version: string, answer: BiBriefAnswer): Promise<void>
     console.warn("[competitor-brief] cache write failed:", err instanceof Error ? err.message : err);
   }
 }
+
+// Test seam for the grounding rules (tests/unit/competitor-brief-grounding.test.ts).
+export const __testing = { isGroundedAction, groundAnswer, normalizeAction };

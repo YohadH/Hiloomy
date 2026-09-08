@@ -8,10 +8,10 @@ import { CompetitorBriefActionsBlock } from "@/components/command-center/competi
 // the source chip tells the founder which one they're reading.
 
 const TIER_LABEL: Record<string, { he: string; en: string; cls: string }> = {
-  "luxury-import": { he: "יוקרה מיובאת", en: "Luxury import", cls: "bg-slate-100 text-slate-700 border-slate-300" },
-  "mid-niche": { he: "ביניים", en: "Mid niche", cls: "bg-amber-50 text-amber-800 border-amber-300" },
-  "budget-dupe": { he: "חיקויי בשמים", en: "Budget dupes", cls: "bg-rose-50 text-rose-800 border-rose-300" },
-  tracked: { he: "במעקב", en: "Tracked", cls: "bg-emerald-50 text-emerald-800 border-emerald-300" }
+  "luxury-import": { he: "יוקרה מיובאת", en: "Luxury import", cls: "bg-card text-muted-foreground border-border" },
+  "mid-niche": { he: "ביניים", en: "Mid niche", cls: "bg-card text-muted-foreground border-border" },
+  "budget-dupe": { he: "חיקויי בשמים", en: "Budget dupes", cls: "bg-warning/10 text-warning border-warning/40" },
+  tracked: { he: "במעקב", en: "Tracked", cls: "bg-card text-muted-foreground border-border" }
 };
 
 export function CompetitorBriefSection({
@@ -37,14 +37,14 @@ export function CompetitorBriefSection({
               <CardContent className="p-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-semibold">{c.name}</p>
-                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${tier.cls}`}>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${tier.cls}`}>
                     {isHe ? tier.he : tier.en}
                   </span>
                 </div>
                 <ul className="mt-2 space-y-1">
                   {moveParts.map((part, i) => (
                     <li key={i} className="flex items-start gap-1.5 text-sm leading-6 text-foreground">
-                      <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-emerald-600" aria-hidden />
+                      <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" aria-hidden />
                       <span className="min-w-0">{part}</span>
                     </li>
                   ))}
@@ -56,7 +56,7 @@ export function CompetitorBriefSection({
                   {c.implication}
                 </p>
                 {c.lastChecked ? (
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  <p className="mt-1.5 text-xs text-muted-foreground">
                     {lang(`נבדק לאחרונה: ${c.lastChecked}`, `Last checked: ${c.lastChecked}`)}
                   </p>
                 ) : null}

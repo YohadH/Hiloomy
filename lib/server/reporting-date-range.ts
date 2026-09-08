@@ -95,9 +95,16 @@ function intlParts(date: Date, timeZone: string) {
 
 /** ms to add to a UTC instant to get wall-clock time in `timeZone`. */
 function tzOffsetMs(date: Date, timeZone: string): number {
-  const p = intlParts(date, timeZone);
+  // Intl gives wall-clock parts at SECOND precision. Measure the offset from
+  // the instant truncated to the same second, or the sub-second part of the
+  // input leaks into the offset: for an end-of-day guess of 23:59:59.999 the
+  // offset came out 999ms short and every window END landed ~1s past
+  // midnight of the NEXT day — formatted as that next day ("Sep 1 – Sep 9"
+  // for a 1–8 Sep window), and pushed 1s of the next day into the query.
+  const whole = new Date(Math.floor(date.getTime() / 1000) * 1000);
+  const p = intlParts(whole, timeZone);
   const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
-  return asUtc - date.getTime();
+  return asUtc - whole.getTime();
 }
 
 /** The UTC instant for start/end-of-day of a calendar date in `timeZone`. */
@@ -171,12 +178,13 @@ export function lastCompleteDaysRange(
 }
 
 /**
- * The last N days INCLUDING today, as store-timezone day boundaries:
- * start-of (today − (N−1)) → end-of today. This matches the reporting
- * picker's "Last 7/30/90 days" presets (resolvePreset) exactly, so any
- * consumer that needs an arbitrary N-day window (e.g. the BI chat tools)
- * lands on the same calendar days as the dashboard — instead of a raw
- * `Date.now() − N×24h` rolling window that drifts by up to a day.
+ * "The last N days" the way Shopify Analytics means it: N full days before
+ * today, plus today, as store-timezone day boundaries — start-of (today − N)
+ * → end-of today. Identical to the reporting picker's "Last 7/30/90 days"
+ * presets (resolvePreset), so any consumer that needs an arbitrary N-day
+ * window (e.g. the BI chat tools) lands on the same calendar days as the
+ * dashboard and as Shopify — instead of a raw `Date.now() − N×24h` rolling
+ * window that drifts by up to a day.
  */
 export function lastNDaysRange(
   days: number,
@@ -186,7 +194,7 @@ export function lastNDaysRange(
   const today = zonedToday(timeZone, now);
   const span = Math.max(1, Math.floor(days));
   return {
-    start: zonedBoundaryUtc(addCalendarDays(today, -(span - 1)), "start", timeZone),
+    start: zonedBoundaryUtc(addCalendarDays(today, -span), "start", timeZone),
     end: zonedBoundaryUtc(today, "end", timeZone)
   };
 }
@@ -314,12 +322,18 @@ export function resolvePreset(
       const y = addCalendarDays(today, -1);
       return { start: startOf(y), end: endOf(y) };
     }
+    // "Last N days" = N FULL days before today, plus today — Shopify
+    // Analytics' definition with "Include today" on (its default view), so
+    // "Last 7 days" on 8 Sep is 1–8 Sep in both tools. The previous
+    // today−(N−1) window (2–8 Sep) was one day short of Shopify and the
+    // owner read the gap as a data bug (8 Sep 2026). The comparison window
+    // follows automatically (previousPeriod is length-based).
     case "last_7":
-      return { start: startOf(addCalendarDays(today, -6)), end: endOf(today) };
+      return { start: startOf(addCalendarDays(today, -7)), end: endOf(today) };
     case "last_30":
-      return { start: startOf(addCalendarDays(today, -29)), end: endOf(today) };
+      return { start: startOf(addCalendarDays(today, -30)), end: endOf(today) };
     case "last_90":
-      return { start: startOf(addCalendarDays(today, -89)), end: endOf(today) };
+      return { start: startOf(addCalendarDays(today, -90)), end: endOf(today) };
     case "wtd":
       return { start: startOf(addCalendarDays(today, -calWeekday(today))), end: endOf(today) };
     case "mtd":
@@ -340,9 +354,9 @@ export function resolvePreset(
       };
     case "custom":
     default:
-      // Fallback when a custom range is missing/invalid.
+      // Fallback when a custom range is missing/invalid — same as last_30.
       return {
-        start: startOf(addCalendarDays(today, -29)),
+        start: startOf(addCalendarDays(today, -30)),
         end: endOf(today)
       };
   }
@@ -422,6 +436,21 @@ function describeRange(
   const startStr = formatter.format(start);
   const endStr = formatter.format(end);
   return startStr === endStr ? startStr : `${startStr} – ${endStr}`;
+}
+
+// Same as describeRange without the year: "Sep 1 – Sep 8" (year only when
+// the window spans a year boundary).
+function describeRangeShort(start: Date, end: Date, locale: "en" | "he" = "en", timeZone: string = DEFAULT_TIME_ZONE) {
+  const sameYear = intlParts(start, timeZone).year === intlParts(end, timeZone).year;
+  const formatter = new Intl.DateTimeFormat(locale === "he" ? "he-IL" : "en-US", {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+    timeZone
+  });
+  const a = formatter.format(start);
+  const b = formatter.format(end);
+  return a === b ? a : `${a} – ${b}`;
 }
 
 function previousPeriod(current: { start: Date; end: Date }): { start: Date; end: Date } {
@@ -555,7 +584,10 @@ export async function getReportingDateRangeSelection(locale: "en" | "he" = "en")
     end: current.end,
     startInput: toInputDate(current.start, timeZone),
     endInput: toInputDate(current.end, timeZone),
-    label: presetLabel(preset, locale) + (preset === "custom" ? "" : ""),
+    // "Last 7 days · Sep 1 – Sep 8": the preset AND the calendar days it
+    // resolved to, so a comparison with Shopify never hinges on guessing
+    // whether "7 days" includes today.
+    label: preset === "custom" ? presetLabel(preset, locale) : `${presetLabel(preset, locale)} · ${describeRangeShort(current.start, current.end, locale, timeZone)}`,
     preset,
     comparison: {
       mode: comparisonRaw.mode,

@@ -56,3 +56,7 @@ FEATURES.md
 # script to run report when checking hiloomy demand 
 incense-report.html
 .gitignore
+
+# Playwright output (traces, screenshots, error-context) — never commit
+test-results/
+playwright-report/
