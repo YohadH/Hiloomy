@@ -24,7 +24,12 @@ export type LlmFeature =
   | "weekly_commentary"
   | "gantt_brief"
   | "creative"
+  | "report_insights"
   | "other";
+
+// Calls without a store (report insights, org-level briefs) are counted under
+// this bucket so the day's total is complete even when it can't be attributed.
+export const LLM_GLOBAL_BUCKET = "global";
 
 export interface LlmUsageDay {
   day: string;

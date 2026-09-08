@@ -47,7 +47,7 @@ import { computeCostCoverage } from "@/lib/services/cost-coverage";
 import { buildSetupHealth, type SetupHealthReport } from "@/lib/services/setup-health-service";
 import { getMetaCampaignsOverview, type MetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
 import { getBundleOverview } from "@/lib/services/bundle-profitability-service";
-import { getLlmUsageToday, llmDailyBudgetUsd } from "@/lib/services/llm-usage-service";
+import { getLlmUsageToday, llmDailyBudgetUsd, LLM_GLOBAL_BUCKET } from "@/lib/services/llm-usage-service";
 import type {
   Decision,
   DecisionInbox,
@@ -1608,14 +1608,15 @@ export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth
   const now = new Date();
   const d30 = new Date(now.getTime() - 30 * DAY_MS);
   const db = getDb() as any;
-  const [health, cost, crawl, competitors, ganttSheets, leakage, llm] = await Promise.all([
+  const [health, cost, crawl, competitors, ganttSheets, leakage, llm, llmGlobal] = await Promise.all([
     buildSetupHealth({ storeId }).catch(() => null),
     computeCostCoverage(storeId, d30, now),
     getCompetitorCrawlSummary(storeId).catch(() => null),
     listCompetitors(storeId).catch(() => []),
     db.ganttSheet.count({ where: { storeId } }).catch(() => 0) as Promise<number>,
     getCommissionLeakageSummary({ storeId, start: d30, end: now }).catch(() => null),
-    getLlmUsageToday(storeId)
+    getLlmUsageToday(storeId),
+    getLlmUsageToday(LLM_GLOBAL_BUCKET)
   ]);
   const check = (id: string) => health?.checks.find((c) => c.id === id) ?? null;
   const stateOf = (status: "pass" | "fail" | "warning" | undefined | null): HealthState =>
@@ -1694,12 +1695,13 @@ export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth
     // suppressed for lack of financial evidence.
     suppressedDecisions: cost.productsMissing,
     ai: {
-      calls: llm.calls,
-      estimatedUsd: llm.estimatedUsd,
+      calls: llm.calls + llmGlobal.calls,
+      estimatedUsd: Math.round((llm.estimatedUsd + llmGlobal.estimatedUsd) * 100) / 100,
       budgetUsd: llmDailyBudgetUsd(),
-      byFeature: Object.entries(llm.byFeature)
-        .map(([feature, f]) => ({ feature, calls: f.calls, estimatedUsd: f.estimatedUsd }))
-        .sort((a, b) => b.estimatedUsd - a.estimatedUsd)
+      byFeature: [
+        ...Object.entries(llm.byFeature).map(([feature, f]) => ({ feature, calls: f.calls, estimatedUsd: f.estimatedUsd })),
+        ...Object.entries(llmGlobal.byFeature).map(([feature, f]) => ({ feature: `${feature} (all stores)`, calls: f.calls, estimatedUsd: f.estimatedUsd }))
+      ].sort((a, b) => b.estimatedUsd - a.estimatedUsd)
     }
   };
 });

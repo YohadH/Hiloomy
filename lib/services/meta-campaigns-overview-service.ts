@@ -260,6 +260,7 @@ export interface MetaCampaignsInsight {
 }
 
 const INSIGHT_TTL_MS = 6 * 60 * 60 * 1000;
+const INSIGHT_FAILURE_TTL_MS = 30 * 60 * 1000;
 // Version suffix (v3 = localized prompt + locale in the key): v2 keys ignored
 // the viewer's language, so whichever locale generated first was served to
 // every viewer of that store+window for the whole TTL. Bumping retires the
@@ -594,11 +595,29 @@ Respond with ONLY a JSON object, no markdown fences:
 Rules: judge good/bad ROAS against the store's breakeven; name real campaigns verbatim; cite the funnel numbers; a ROAS below breakeven loses money — say it; if a funnel stage shows 0/n-a it may be a missing pixel event, so flag tracking rather than inventing a story; never invent data not shown.`;
 
   // Cached insights were served above; only a fresh generation spends.
+  // Negative cache: a failed generation used to be retried on every
+  // dashboard mount (the card fetches after load) — a full call, discarded,
+  // per page view. Remember the failure for 30 minutes unless forced.
+  const failedKey = `${key}:failed`;
+  if (!input.force && db?.systemConfig) {
+    const failedRow = (await db.systemConfig
+      .findUnique({ where: { key: failedKey }, select: { updatedAt: true } })
+      .catch(() => null)) as { updatedAt: Date } | null;
+    if (failedRow && Date.now() - new Date(failedRow.updatedAt).getTime() < INSIGHT_FAILURE_TTL_MS) {
+      throw new AppError("recent_failure", 503);
+    }
+  }
+  const markFailed = async () => {
+    if (!db?.systemConfig) return;
+    const value = new Date().toISOString();
+    await db.systemConfig.upsert({ where: { key: failedKey }, update: { value }, create: { key: failedKey, value } }).catch(() => null);
+  };
   await assertLlmBudget(input.storeId, "meta_insight");
   let raw: string | null;
   try {
     raw = await callInsightModel(prompt, input.storeId);
   } catch (err) {
+    await markFailed();
     console.error("[meta-campaigns-insight] model call failed:", err);
     const status = (err as { status?: number } | null)?.status;
     const message = err instanceof Error ? err.message : String(err);
@@ -609,11 +628,15 @@ Rules: judge good/bad ROAS against the store's breakeven; name real campaigns ve
       502
     );
   }
-  if (!raw) throw new AppError("model_no_output", 502);
+  if (!raw) {
+    await markFailed();
+    throw new AppError("model_no_output", 502);
+  }
   const parsed = extractJson(raw);
   const modelInsight = parsed ? sanitizeInsight(parsed) : null;
   if (!modelInsight) {
     console.error("[meta-campaigns-insight] unparseable model output (first 400 chars):", raw.slice(0, 400));
+    await markFailed();
     throw new AppError(parsed ? "model_output_incomplete" : "model_output_unparseable", 502);
   }
   const insight: MetaCampaignsInsight = {

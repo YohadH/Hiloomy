@@ -70,7 +70,8 @@ export async function generateInsightsJsonTraced<T>(input: GenerateInsightsInput
         jsonHint: input.jsonHint,
         timeoutMs,
         maxOutputTokens: input.maxTokens ?? 1500,
-        account: "bi"
+        account: "bi",
+        feature: "report_insights"
       });
       return { data, trace: { provider: "openai" } };
     } catch (err) {

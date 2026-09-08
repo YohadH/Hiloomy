@@ -81,6 +81,58 @@ function isValidAnswer(answer: BiBriefAnswer | null | undefined): answer is BiBr
 // One background generation at a time per process.
 let biRefreshInFlight = false;
 
+// One generation per cache key at a time, shared by the server render and
+// the client's polling loader. Before this, the dashboard could start a
+// generation on render AND one per poll (up to 6) while the first was still
+// running — seven full-priced calls for one brief (7 Sep 2026).
+const inflightByKey = new Map<string, Promise<BiBriefAnswer | null>>();
+function generateOnce(intel: CompetitorIntel, storeId: string | undefined, locale: "he" | "en"): Promise<BiBriefAnswer | null> {
+  const key = cacheKey(intel.version, storeId);
+  const existing = inflightByKey.get(key);
+  if (existing) return existing;
+  const run = generateBiBrief(intel, storeId, locale)
+    .catch((err) => {
+      console.warn("[competitor-brief] BI generation failed:", err instanceof Error ? err.message : err);
+      return null;
+    })
+    .then((answer) => {
+      if (!answer) void markFailed(key);
+      return answer;
+    })
+    .finally(() => {
+      inflightByKey.delete(key);
+    });
+  inflightByKey.set(key, run);
+  return run;
+}
+
+// Negative cache. Only SUCCESSES were cached, so a generation that failed
+// (model error, cut-off JSON, or an answer rejected for quoting unsafe
+// scraped copy — Sacara's mis-mapped ads did exactly that on 7 Sep 2026)
+// was retried on EVERY dashboard load: a full-priced, discarded call per
+// page view. A failure now pins the key for 30 minutes.
+const FAILURE_TTL_MS = 30 * 60 * 1000;
+async function recentlyFailed(version: string): Promise<boolean> {
+  try {
+    const row = await getDb().systemConfig.findUnique({
+      where: { key: `${CACHE_KEY_PREFIX}${version}:failed` },
+      select: { updatedAt: true }
+    });
+    return !!row && Date.now() - new Date(row.updatedAt).getTime() < FAILURE_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+async function markFailed(version: string): Promise<void> {
+  try {
+    const key = `${CACHE_KEY_PREFIX}${version}:failed`;
+    const value = new Date().toISOString();
+    await getDb().systemConfig.upsert({ where: { key }, update: { value }, create: { key, value } });
+  } catch {
+    // best-effort
+  }
+}
+
 // Direct-API fallback availability — the tunnel is optional when the
 // deployment carries an Anthropic key.
 function isAnthropicDirectAvailable(): boolean {
@@ -533,19 +585,13 @@ export async function getCompetitorBrief(
   // of being stuck on the generic fallback tips forever.
   if (
     (isOpenAiConfigured() || isBiAgentConfigured() || isAnthropicDirectAvailable()) &&
-    !biRefreshInFlight
+    !biRefreshInFlight &&
+    !(await recentlyFailed(cacheKey(intel.version, storeId)))
   ) {
     biRefreshInFlight = true;
-    void generateBiBrief(intel, storeId, locale)
-      .catch((err) =>
-        console.warn(
-          "[competitor-brief] background BI generation failed:",
-          err instanceof Error ? err.message : err
-        )
-      )
-      .finally(() => {
-        biRefreshInFlight = false;
-      });
+    void generateOnce(intel, storeId, locale).finally(() => {
+      biRefreshInFlight = false;
+    });
   }
 
   return {
@@ -595,13 +641,14 @@ export async function getCompetitorBriefBlocking(
   if (cached) {
     return { source: "bi-agent", today: cached.today, thisWeek: cached.thisWeek, generatedAt: intel.generatedAt };
   }
-  if (isOpenAiConfigured() || isBiAgentConfigured() || isAnthropicDirectAvailable()) {
+  if (
+    (isOpenAiConfigured() || isBiAgentConfigured() || isAnthropicDirectAvailable()) &&
+    !(await recentlyFailed(cacheKey(intel.version, storeId)))
+  ) {
     let settled = false;
-    const generation = generateBiBrief(intel, storeId, locale)
-      .catch(() => null)
-      .finally(() => {
-        settled = true;
-      });
+    const generation = generateOnce(intel, storeId, locale).finally(() => {
+      settled = true;
+    });
     let timer: ReturnType<typeof setTimeout> | null = null;
     const deadline = new Promise<null>((resolve) => {
       timer = setTimeout(() => resolve(null), BLOCKING_WAIT_MS);

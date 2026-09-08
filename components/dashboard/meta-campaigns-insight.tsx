@@ -127,7 +127,11 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
         ) : state === "failed" ? (
           <div className="mt-3 space-y-2 text-xs text-muted-foreground">
             <p>
-              {failure === "provider_rate_limited"
+              {failure === "recent_failure"
+                ? lang("הניסיון האחרון לנתח נכשל; הילומה תנסה שוב אוטומטית בעוד כמה דקות.", "The last analysis attempt failed; Hiloma retries automatically in a few minutes.")
+                : failure === "llm_budget_exhausted"
+                  ? lang("תקציב ה־AI היומי של החנות נוצל. תובנה חדשה מחר.", "Today's AI budget for this store is used up. A new insight tomorrow.")
+                  : failure === "provider_rate_limited"
                 ? lang("ספק המודל דחה את הבקשה (מכסה או מגבלת קצב). נסו שוב בעוד דקה.", "The model provider refused the request (quota or rate limit). Try again in a minute.")
                 : failure === "model_output_incomplete" || failure === "model_output_unparseable"
                   ? lang("הילומה לא סיימה את הניתוח הפעם (התשובה נחתכה). נסו שוב.", "Hiloma did not finish the analysis this time (the answer was cut off). Try again.")

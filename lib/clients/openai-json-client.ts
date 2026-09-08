@@ -21,7 +21,7 @@
 // between the chat/completions and Responses surfaces.
 
 import OpenAI from "openai";
-import { assertLlmBudget, recordLlmUsage, type LlmFeature } from "@/lib/services/llm-usage-service";
+import { assertLlmBudget, recordLlmUsage, LLM_GLOBAL_BUCKET, type LlmFeature } from "@/lib/services/llm-usage-service";
 
 export type OpenAiJsonAccount = "bi" | "creative";
 
@@ -122,9 +122,9 @@ export async function askOpenAiJson<T>(input: {
     }
   }
 
-  if (input.storeId && response.usage) {
+  if (response.usage) {
     void recordLlmUsage({
-      storeId: input.storeId,
+      storeId: input.storeId ?? LLM_GLOBAL_BUCKET,
       feature: input.feature ?? "other",
       model: pinned,
       inputTokens: response.usage.input_tokens ?? 0,
