@@ -52,11 +52,31 @@ for (const vp of VIEWPORTS) {
         expect(res, `no response for ${route}`).toBeTruthy();
         expect(res!.status(), `HTTP status for ${route}`).toBeLessThan(400);
 
-        const { scrollWidth, innerWidth } = await page.evaluate(() => ({
-          scrollWidth: document.documentElement.scrollWidth,
-          innerWidth: window.innerWidth
-        }));
+        const { scrollWidth, innerWidth, wide } = await page.evaluate(() => {
+          // Elements whose box extends past the viewport. Children of a
+          // horizontally scrolling container are expected (tables scroll
+          // inside their own box) and skipped.
+          const out: string[] = [];
+          const scrolls = (el: Element | null): boolean => {
+            for (let n = el; n && n !== document.body; n = n.parentElement) {
+              const ox = getComputedStyle(n).overflowX;
+              if (ox === "auto" || ox === "scroll") return true;
+            }
+            return false;
+          };
+          for (const el of Array.from(document.body.querySelectorAll("*"))) {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0) continue;
+            if ((r.right > window.innerWidth + 1 || r.left < -1) && !scrolls(el.parentElement)) {
+              const cls = (el.getAttribute("class") ?? "").slice(0, 80);
+              out.push(`${el.tagName.toLowerCase()}.${cls} [${Math.round(r.left)}..${Math.round(r.right)}]`);
+              if (out.length >= 8) break;
+            }
+          }
+          return { scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth, wide: out };
+        });
         expect(scrollWidth, `${route} scrolls horizontally at ${vp.width}px`).toBeLessThanOrEqual(innerWidth);
+        expect(wide, `${route}: elements wider than the viewport at ${vp.width}px: ${wide.join(" | ")}`).toEqual([]);
 
         const isPhone = vp.width < 1024;
         const bottomNav = page.locator("nav.fixed.bottom-0");

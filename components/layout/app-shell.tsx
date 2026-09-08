@@ -87,7 +87,7 @@ export async function AppShell({
           lockedModules={getLockedModules()}
           account={account}
         />
-        <main className="min-w-0 flex-1">
+        <main className="min-w-0 flex-1 overflow-x-clip">
           {sub ? <TrialBanner info={sub} locale={locale === "he" ? "he" : "en"} /> : null}
           {/* Bottom padding reserves the phone bottom nav (--hl-bottom-nav)
               plus the floating chat launcher, so the last block on any page

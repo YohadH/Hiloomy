@@ -70,6 +70,18 @@ html {
   scroll-behavior: smooth;
 }
 
+/* The document must never be wider than the viewport. On Android Chrome a
+   single wide element makes the layout viewport wider than the visual one,
+   and every `position: fixed` element (bottom nav, chat launcher) is then
+   placed against the wider box — off-screen until the user scrolls, or
+   shifted sideways (Command Center, 8 Sep 2026). `clip` keeps sticky
+   headers working; `hidden` is the fallback for older engines. */
+html,
+body {
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
 /* ─── Accessibility: motion, transparency, contrast ──────────────────────
    The apple-design skill treats these as three independent signals. Reduced
    motion isn't "no feedback" — it's a gentler, non-vestibular equivalent, so
