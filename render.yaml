@@ -224,6 +224,13 @@ services:
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_SECRET
         sync: false
+      # Google Ads (same OAuth app; adds the adwords scope). Paste the Hiloomy
+      # app's existing developer token (Google Ads API Center). Optional:
+      # GOOGLE_ADS_LOGIN_CUSTOMER_ID (manager account id, digits only) when the
+      # token's manager account should be used as login-customer-id;
+      # GOOGLE_ADS_API_VERSION (e.g. v24) if the version probe ever fails.
+      - key: GOOGLE_ADS_DEVELOPER_TOKEN
+        sync: false
 
       # ─── Meta Ads ──────────────────────────────────────────────────────
       - key: META_ADS_CLIENT_ID

@@ -1608,7 +1608,7 @@ export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth
   const now = new Date();
   const d30 = new Date(now.getTime() - 30 * DAY_MS);
   const db = getDb() as any;
-  const [health, cost, crawl, competitors, ganttSheets, leakage, llm, llmGlobal] = await Promise.all([
+  const [health, cost, crawl, competitors, ganttSheets, leakage, llm, llmGlobal, googleAdsConn] = await Promise.all([
     buildSetupHealth({ storeId }).catch(() => null),
     computeCostCoverage(storeId, d30, now),
     getCompetitorCrawlSummary(storeId).catch(() => null),
@@ -1616,7 +1616,10 @@ export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth
     db.ganttSheet.count({ where: { storeId } }).catch(() => 0) as Promise<number>,
     getCommissionLeakageSummary({ storeId, start: d30, end: now }).catch(() => null),
     getLlmUsageToday(storeId),
-    getLlmUsageToday(LLM_GLOBAL_BUCKET)
+    getLlmUsageToday(LLM_GLOBAL_BUCKET),
+    db.platformConnection
+      .findUnique({ where: { storeId_platform: { storeId, platform: "googleAds" } }, select: { status: true, lastSyncAt: true } })
+      .catch(() => null) as Promise<{ status: string; lastSyncAt: Date | null } | null>
   ]);
   const check = (id: string) => health?.checks.find((c) => c.id === id) ?? null;
   const stateOf = (status: "pass" | "fail" | "warning" | undefined | null): HealthState =>
@@ -1638,6 +1641,18 @@ export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth
       fixHref: shopify?.status === "pass" ? null : (shopify?.fixHref ?? "/settings")
     },
     { key: "meta", label: L("Meta", "Meta"), state: stateOf(metaC?.status), detail: metaC?.description ?? L("לא נבדק", "Not checked"), fixHref: metaC?.status === "pass" ? null : (metaC?.fixHref ?? "/settings") },
+    {
+      key: "google_ads",
+      label: L("Google Ads", "Google Ads"),
+      state: googleAdsConn?.status === "connected" ? (googleAdsConn.lastSyncAt ? "healthy" : "partial") : "missing",
+      detail:
+        googleAdsConn?.status === "connected"
+          ? googleAdsConn.lastSyncAt
+            ? L("מחובר ומסונכרן", "Connected and synced")
+            : L("מחובר — עדיין לא סונכרן; בחרו חשבון מודעות ולחצו סנכרון", "Connected — not synced yet; pick an ad account and press sync")
+          : L("לא מחובר — הוצאות Google לא נכללות ברווח ובהחלטות", "Not connected — Google spend is missing from profit and decisions"),
+      fixHref: "/settings"
+    },
     {
       key: "inventory",
       label: L("מלאי", "Inventory"),

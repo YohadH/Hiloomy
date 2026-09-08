@@ -32,6 +32,8 @@ import { TrafficSearchSection } from "@/components/dashboard/traffic-search-sect
 import { MetaCampaignsSection } from "@/components/dashboard/meta-campaigns-section";
 import { MetaCampaignsInsight } from "@/components/dashboard/meta-campaigns-insight";
 import { getMetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
+import { getGoogleAdsOverview } from "@/lib/services/google-ads-service";
+import { GoogleAdsSection } from "@/components/dashboard/google-ads-section";
 import { buildTrafficSearchSummary } from "@/lib/services/traffic-search-summary-service";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
 import { buildSetupHealth } from "@/lib/services/setup-health-service";
@@ -252,6 +254,8 @@ export default async function CommandCenterPage() {
   const metaCampaigns = storeId
     ? await getMetaCampaignsOverview(storeId, windowRange).catch(() => null)
     : null;
+  // Google Ads, same window. null until an ad account is connected and synced.
+  const googleAds = storeId ? await getGoogleAdsOverview(storeId, windowRange).catch(() => null) : null;
 
   // Contribution margin for the same window the controls have selected.
   // This is the "money snapshot" anchor — explicit accuracy label, no
@@ -539,6 +543,28 @@ export default async function CommandCenterPage() {
                 Incense, 7 Sep 2026). Keying on the active store forces a remount
                 — and a fresh fetch — whenever the brand changes. */}
             <MetaCampaignsInsight key={storeId} isHe={isHe} />
+          </section>
+        ) : null}
+
+        {/* ── SECTION — Google Ads campaigns ───────────────────────────── */}
+        {googleAds ? (
+          <section id="google-ads" className="scroll-mt-24 space-y-3">
+            <SectionHead
+              eyebrow={lang("קמפיינים", "Campaigns")}
+              title={lang("הקמפיינים שרצים ב־Google Ads — ומה הם מחזירים", "The Google Ads campaigns running — and what they return")}
+              hint={lang("הוצאה, המרות וערך המרות לכל קמפיין בטווח הנבחר, מול נקודת האיזון של החנות.", "Spend, conversions and conversion value per campaign for the selected window, against the store's breakeven.")}
+            />
+            <GoogleAdsSection
+              overview={googleAds}
+              isHe={isHe}
+              breakevenRoas={
+                contributionMargin &&
+                contributionMargin.quality.costCoverage >= 0.6 &&
+                contributionMargin.totals.contributionMarginRate > 0
+                  ? 1 / contributionMargin.totals.contributionMarginRate
+                  : null
+              }
+            />
           </section>
         ) : null}
 

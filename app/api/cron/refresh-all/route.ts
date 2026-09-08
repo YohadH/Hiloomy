@@ -7,6 +7,7 @@ import { refreshMetaTokensNearExpiry } from "@/lib/services/meta-token-refresh-s
 import { reconcileAffiliateAttributionOrphans } from "@/lib/services/affiliate-attribution-reconciler";
 import { syncGscData, getGscSelectedSiteUrl, GSC_PLATFORM } from "@/lib/services/gsc-service";
 import { syncGa4Data, getGa4SelectedProperty, GA4_PLATFORM } from "@/lib/services/ga4-service";
+import { syncGoogleAdsData, getGoogleAdsSelectedCustomer, GOOGLE_ADS_PLATFORM } from "@/lib/services/google-ads-service";
 import {
   syncCompetitorSignals,
   upsertCompetitorResponseAlerts
@@ -103,6 +104,7 @@ interface PerStoreResult {
   bixgrow: { ok: boolean; skipped: boolean };
   gsc: { ok: boolean; skipped?: boolean; pagesUpserted?: number; queriesUpserted?: number; error?: string };
   ga4: { ok: boolean; skipped?: boolean; rowsUpserted?: number; days?: number; error?: string };
+  googleAds: { ok: boolean; skipped?: boolean; rowsUpserted?: number; days?: number; campaigns?: number; error?: string };
   competitors: {
     ok: boolean;
     skipped?: boolean;
@@ -193,6 +195,7 @@ async function handler(request: Request) {
         bixgrow: { ok: true, skipped: true },
         gsc: { ok: true, skipped: true },
         ga4: { ok: true, skipped: true },
+        googleAds: { ok: true, skipped: true },
         competitors: { ok: true, skipped: true }
       };
 
@@ -367,6 +370,33 @@ async function handler(request: Request) {
         } catch (err) {
           console.error(`[refresh-all] GA4 sync failed for ${store.id}:`, err);
           result.ga4 = {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err)
+          };
+        }
+      }
+
+      // ── Google Ads (optional) — same isolation as GA4 ─────────────
+      const gadsConn = await db.platformConnection
+        .findUnique({
+          where: { storeId_platform: { storeId: store.id, platform: GOOGLE_ADS_PLATFORM } },
+          select: { id: true, status: true }
+        })
+        .catch(() => null);
+      if (!gadsConn || gadsConn.status !== "connected") {
+        result.googleAds = { ok: true, skipped: true };
+      } else {
+        try {
+          const customer = await getGoogleAdsSelectedCustomer(store.id);
+          if (!customer) {
+            result.googleAds = { ok: true, skipped: true };
+          } else {
+            const r = await syncGoogleAdsData(store.id);
+            result.googleAds = { ok: true, rowsUpserted: r.rowsUpserted, days: r.days, campaigns: r.campaigns };
+          }
+        } catch (err) {
+          console.error(`[refresh-all] Google Ads sync failed for ${store.id}:`, err);
+          result.googleAds = {
             ok: false,
             error: err instanceof Error ? err.message : String(err)
           };

@@ -12,6 +12,7 @@ import { CampaignProductManager } from "@/components/settings/campaign-product-m
 import { BundleManager } from "@/components/settings/bundle-manager";
 import { GscConnectionManager } from "@/components/settings/gsc-connection-manager";
 import { Ga4ConnectionManager } from "@/components/settings/ga4-connection-manager";
+import { GoogleAdsConnectionManager } from "@/components/settings/google-ads-connection-manager";
 import { IntegrationsHub, type IntegrationItem } from "@/components/settings/integrations-hub";
 import { SettingsTabs, type SettingsNavItem } from "@/components/settings/settings-nav";
 import { BixGrowWebhookCard } from "@/components/settings/bixgrow-webhook-card";
@@ -32,6 +33,7 @@ import { getAppLocale, getDictionary } from "@/lib/i18n";
 import { getDb } from "@/lib/server/db";
 import { GSC_PLATFORM } from "@/lib/services/gsc-service";
 import { GA4_PLATFORM } from "@/lib/services/ga4-service";
+import { GOOGLE_ADS_PLATFORM, isGoogleAdsDeveloperTokenConfigured } from "@/lib/services/google-ads-service";
 import { getAuthContext } from "@/lib/auth/session";
 
 export default async function SettingsPage({
@@ -42,6 +44,8 @@ export default async function SettingsPage({
     gsc_error?: string;
     ga4_connected?: string;
     ga4_error?: string;
+    googleads_connected?: string;
+    googleads_error?: string;
     meta_connected?: string;
     meta_error?: string;
     meta_account?: string;
@@ -59,6 +63,8 @@ export default async function SettingsPage({
   const gscError = params.gsc_error ?? null;
   const ga4Connected = params.ga4_connected === "true";
   const ga4Error = params.ga4_error ?? null;
+  const googleAdsConnected = params.googleads_connected === "true";
+  const googleAdsError = params.googleads_error ?? null;
   const metaOauthResult =
     params.meta_connected === "true" || params.meta_error
       ? {
@@ -110,6 +116,18 @@ export default async function SettingsPage({
       select: { status: true, tokenLastFour: true, healthMessage: true, lastSyncAt: true }
     })
     .catch(() => null);
+  const googleAdsConnection = (await getDb()
+    .platformConnection.findUnique({
+      where: { storeId_platform: { storeId: chrome.store.id, platform: GOOGLE_ADS_PLATFORM } },
+      select: { status: true, tokenLastFour: true, healthMessage: true, lastSyncAt: true, config: true }
+    })
+    .catch(() => null)) as {
+    status: string;
+    tokenLastFour: string | null;
+    healthMessage: string | null;
+    lastSyncAt: Date | null;
+    config: { customerId?: string; customerName?: string } | null;
+  } | null;
 
   // Organization context — best-effort: a dev environment without auth
   // simply hides the section.
@@ -178,7 +196,8 @@ export default async function SettingsPage({
         "ביצועי קמפיינים בGoogle — חיפוש, שופינג וPMax — בחישוב הרווח.",
         "Google campaign performance — Search, Shopping and PMax — in profit math."
       ),
-      status: "soon"
+      status: googleAdsConnection?.status === "connected" ? "connected" : "not_connected",
+      meta: googleAdsConnection?.config?.customerName ?? null
     },
     {
       id: "tiktok",
@@ -299,6 +318,27 @@ export default async function SettingsPage({
       />
     ),
     instagram: <CreatorConnectionsManager labels={dictionary.creator} />,
+    googleads: (
+      <GoogleAdsConnectionManager
+        storeId={chrome.store.id}
+        initialConnection={
+          googleAdsConnection
+            ? {
+                status: googleAdsConnection.status,
+                tokenLastFour: googleAdsConnection.tokenLastFour ?? null,
+                healthMessage: googleAdsConnection.healthMessage ?? null,
+                lastSyncAt: googleAdsConnection.lastSyncAt?.toISOString() ?? null,
+                customerName: googleAdsConnection.config?.customerName ?? null,
+                customerId: googleAdsConnection.config?.customerId ?? null
+              }
+            : null
+        }
+        connected={googleAdsConnected}
+        error={googleAdsError}
+        developerTokenConfigured={isGoogleAdsDeveloperTokenConfigured()}
+        locale={locale}
+      />
+    ),
     google: (
       <div className="space-y-4">
       <GscConnectionManager
@@ -350,7 +390,7 @@ export default async function SettingsPage({
   // Auto-open the relevant modal: OAuth round-trips land back here with
   // query params; otherwise an unconnected store is the top priority.
   const initialOpen =
-    metaOauthResult ? "meta" : gscConnected || gscError ? "google" : !isConnected ? "shopify" : null;
+    metaOauthResult ? "meta" : googleAdsConnected || googleAdsError ? "googleads" : gscConnected || gscError ? "google" : !isConnected ? "shopify" : null;
 
   // ── Sub-navigation model ───────────────────────────────────────────
   const navItems: SettingsNavItem[] = [

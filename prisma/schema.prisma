@@ -279,6 +279,7 @@ model Store {
   searchConsoleQueries       SearchConsoleQuery[]
   gaTrafficDaily             GaTrafficDaily[]
   gaTrafficBreakdowns        GaTrafficBreakdown[]
+  googleAdsCampaignInsights  GoogleAdsCampaignInsight[]
   ganttSheets                GanttSheet[]
   ganttRows                  GanttRow[]
   competitors                Competitor[]
@@ -1987,4 +1988,29 @@ model VariantInventoryLevel {
 
   @@unique([storeId, shopifyVariantId, shopifyLocationId])
   @@index([storeId, shopifyLocationId])
+}
+
+// Google Ads daily campaign metrics (google-ads-service.ts). Connection +
+// selected customer live in PlatformConnection(platform = "googleAds").
+model GoogleAdsCampaignInsight {
+  id               String   @id @default(cuid())
+  storeId          String
+  customerId       String
+  campaignId       String
+  campaignName     String
+  campaignStatus   String?
+  channelType      String?
+  date             DateTime @db.Date
+  spend            Decimal  @default(0) @db.Decimal(12, 2)
+  impressions      Int      @default(0)
+  clicks           Int      @default(0)
+  conversions      Decimal  @default(0) @db.Decimal(12, 2)
+  conversionsValue Decimal  @default(0) @db.Decimal(12, 2)
+  syncedAt         DateTime @default(now())
+  createdAt        DateTime @default(now())
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, customerId, campaignId, date])
+  @@index([storeId, date(sort: Desc)])
+  @@index([storeId, customerId])
 }
