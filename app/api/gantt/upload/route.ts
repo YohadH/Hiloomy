@@ -73,9 +73,24 @@ async function readUpload(request: Request): Promise<{ file: File; title: string
   //    studio since 9 Sep 2026 after a raw binary body arrived altered in
   //    production (SheetJS then read the workbook as text: "tabular, 0 tasks").
   if (contentType.toLowerCase().startsWith("application/json")) {
-    const body = (await request.json().catch(() => null)) as { name?: string; title?: string; sheetName?: string; size?: number; sha256?: string; dataBase64?: string } | null;
-    if (!body || typeof body.dataBase64 !== "string" || !body.dataBase64) {
-      throw new AppError("Upload envelope had no file data.", 400);
+    const text = await request.text();
+    let body: { name?: string; title?: string; sheetName?: string; size?: number; sha256?: string; dataBase64?: string } | null = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = null;
+    }
+    if (!body) {
+      const declared = request.headers.get("content-length");
+      throw new AppError(
+        `Upload body did not arrive as JSON: ${text.length} characters received` +
+          `${declared ? ` (content-length ${declared})` : ""}, starts with ${JSON.stringify(text.slice(0, 40))}, ends with ${JSON.stringify(text.slice(-20))}. ` +
+          `The browser sent a complete JSON envelope, so something between the browser and this server changed the request body.`,
+        400
+      );
+    }
+    if (typeof body.dataBase64 !== "string" || !body.dataBase64) {
+      throw new AppError(`Upload envelope had no file data (keys: ${Object.keys(body).join(", ") || "none"}).`, 400);
     }
     const buf = Buffer.from(body.dataBase64, "base64");
     const sha = createHash("sha256").update(buf).digest("hex");

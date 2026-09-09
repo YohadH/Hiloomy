@@ -255,6 +255,14 @@ export const config = {
     // Run on every request EXCEPT:
     //   _next/static, _next/image, /favicon.ico, /robots.txt, /sitemap.xml,
     //   files with extensions (images, fonts, etc.)
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\..*).*)"
+    //   … and every /api/* route EXCEPT /api/cron/* (whose CRON_SECRET gate
+    //   lives here). Running the nodejs-runtime middleware around an API
+    //   request — even the bare NextResponse.next() short-circuit above —
+    //   still wraps the request body; on 9 Sep 2026 an 868 KB Gantt upload
+    //   reached its route altered three times in a row (multipart lost the
+    //   file part, a raw body lost its zip signature, a JSON body failed to
+    //   parse) while a 155 KB file passed every time. Route handlers self-
+    //   auth, so the middleware has nothing to add for /api/*.
+    "/((?!api/(?!cron/)|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\..*).*)"
   ]
 };
