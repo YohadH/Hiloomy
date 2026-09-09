@@ -34,6 +34,8 @@
 //                 overrides. (Tier 3.)
 
 import { getDb } from "@/lib/server/db";
+import { orderChannelWhere } from "@/lib/server/sales-channel-filter";
+import type { SalesChannelFilter } from "@/lib/domain/sales-channel";
 import { computeCostCoverage } from "@/lib/services/cost-coverage";
 import { formatDateInTimeZone, getStoreTimeZone } from "@/lib/server/reporting-date-range";
 import {
@@ -80,6 +82,8 @@ export interface BuildContributionMarginInput {
   storeId: string;
   start: Date;
   end: Date;
+  // Command Center channel filter (all / online / POS). Defaults to all.
+  channel?: SalesChannelFilter;
 }
 
 export async function buildContributionMargin(
@@ -91,10 +95,12 @@ export async function buildContributionMargin(
   // This computes grossSales, discounts, refunds, cogs, units etc. using
   // EXACTLY the same logic that powers the Overview KPI. The Money
   // snapshot and the KPI now reconcile because they share this primitive.
+  const channel = input.channel ?? "all";
   const parity = await getShopifySalesSummaryForWindow(
     input.storeId,
     input.start,
-    input.end
+    input.end,
+    channel
   );
 
   if (!parity) {
@@ -140,12 +146,12 @@ export async function buildContributionMargin(
   // Single shared implementation (SA clarity fix 2026-08-23) — the same
   // number the overview KPI's estimated profit deducts, so the snapshot
   // and the KPI card can never drift apart again.
-  const affiliateCommission = await computeWindowAffiliateCommission(
-    db,
-    input.storeId,
-    input.start,
-    input.end
-  );
+  // Affiliate codes are redeemed online — a POS-only view owes none (same
+  // rule as the parity summary, so the KPI and the snapshot still agree).
+  const affiliateCommission =
+    channel === "pos"
+      ? 0
+      : await computeWindowAffiliateCommission(db, input.storeId, input.start, input.end);
 
   // ── Quality assessment ────────────────────────────────────────────
   // Coverage = share of the window's line revenue whose PRODUCT has a real
@@ -170,6 +176,7 @@ export async function buildContributionMargin(
       createdAt: { gte: input.start, lte: input.end },
       cancelledAt: null,
       test: false,
+      ...orderChannelWhere(channel),
       lineItems: { some: { estimatedCostAmount: { gt: 0 } } }
     }
   })) as number;

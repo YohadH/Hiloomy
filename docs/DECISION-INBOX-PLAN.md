@@ -41,7 +41,7 @@ Roles:
 | --- | --- | --- |
 | Today | source of truth for decisions | yes — the only place |
 | Market | external context / evidence | no; a competitor move becomes a decision only through the competitor engine |
-| Command Center | executive overview: risk, money, pointer to Today, one market line | no |
+| Command Center | executive overview: risk, money, pointer to Today, one market line; `?channel=online|pos` filters the money snapshot, KPI grid and trend chart only (the rest of the page and every engine stay whole-store) | no |
 | Data Health | what the decisions rest on | no |
 | Hiloma chat | explain, prepare | debt: answers that are decisions must end in "added to Today" |
 | Weekly summary | narrative | debt: must reference ledger decisions, not invent parallel ones |

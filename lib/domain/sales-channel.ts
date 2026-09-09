@@ -27,3 +27,27 @@ export function classifySalesChannel(sourceName: string | null | undefined): Sal
   // customer-facing online orders.
   return "online";
 }
+
+// ─── Channel FILTER (Command Center money + trend, 9 Sep 2026) ────────────
+// The manager can look at the store's money for everything, for the online
+// store only, or for Shopify POS only. "Online" here means every order that
+// is not POS — web, sales channels, draft/manual and orders with no source —
+// the same rule the offline comparison uses, so the two surfaces agree.
+export type SalesChannelFilter = "all" | "online" | "pos";
+
+export const SALES_CHANNEL_FILTERS: SalesChannelFilter[] = ["all", "online", "pos"];
+
+export const SALES_CHANNEL_FILTER_LABEL: Record<SalesChannelFilter, { he: string; en: string }> = {
+  all: { he: "הכול", en: "All" },
+  online: { he: "אונליין בלבד", en: "Online only" },
+  pos: { he: "קופה (POS) בלבד", en: "POS only" }
+};
+
+// Exact and prefixed POS source names Shopify stamps on point-of-sale orders.
+export const POS_SOURCE_NAMES = ["pos", "shopify_pos"] as const;
+export const POS_SOURCE_PREFIX = "pos_";
+
+export function parseSalesChannelFilter(value: string | string[] | null | undefined): SalesChannelFilter {
+  const v = (Array.isArray(value) ? value[0] : value ?? "").trim().toLowerCase();
+  return v === "online" || v === "pos" ? v : "all";
+}

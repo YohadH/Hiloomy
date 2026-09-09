@@ -46,6 +46,9 @@ import { formatCurrency, formatNumber } from "@/lib/utils";
 import { getAppLocale } from "@/lib/i18n";
 import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { getDb } from "@/lib/server/db";
+import { parseSalesChannelFilter, SALES_CHANNEL_FILTER_LABEL } from "@/lib/domain/sales-channel";
+import { orderChannelWhere } from "@/lib/server/sales-channel-filter";
+import { ChannelFilterControl } from "@/components/command-center/channel-filter";
 
 
 // Command Center = Executive Overview (8 Sep 2026). Order: top risk (Leak
@@ -55,10 +58,20 @@ import { getDb } from "@/lib/server/db";
 // It produces no decisions of its own. Today is the source of truth for
 // decisions, Market for external context; this page only points at them.
 
-export default async function CommandCenterPage() {
+export default async function CommandCenterPage({
+  searchParams
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const locale = await getAppLocale();
   const isHe = locale === "he";
   const lang = (he: string, en: string) => (isHe ? he : en);
+  // Sales-channel filter (9 Sep 2026): the owner wants the MONEY and the
+  // TREND CHART to be viewable for the online store alone or for Shopify
+  // POS alone. Only those two sections follow it — every other section and
+  // every decision engine keeps the full store, on purpose.
+  const query = await searchParams;
+  const channel = parseSalesChannelFilter(query.channel);
 
   // Onboarding gate — if this is a fresh user with no connected brands,
   // render the wizard instead of the empty dashboard. Wizard takes them
@@ -87,7 +100,7 @@ export default async function CommandCenterPage() {
   }
 
   const [overview, chrome, storeId, selection] = await Promise.all([
-    getOverviewPayload(),
+    getOverviewPayload({ channel }),
     getAppChromeData(),
     resolveActiveStoreId(),
     // The selection carries the REAL window instants (store-timezone day
@@ -225,9 +238,20 @@ export default async function CommandCenterPage() {
     ? await buildContributionMargin({
         storeId,
         start: windowRange.start,
-        end: windowRange.end
+        end: windowRange.end,
+        channel
       }).catch(() => null)
     : null;
+
+  // Show the channel control only where it means something: a store that
+  // has ever taken a POS order (or when a filter is already in the URL).
+  const hasPosOrders = storeId
+    ? (await getDb()
+        .order.count({ where: { storeId, ...orderChannelWhere("pos") } })
+        .catch(() => 0)) > 0
+    : false;
+  const showChannelFilter = hasPosOrders || channel !== "all";
+  const channelSuffix = channel === "all" ? "" : ` · ${SALES_CHANNEL_FILTER_LABEL[channel][isHe ? "he" : "en"]}`;
 
   // Per-day context for the trend chart — top products, active Meta
   // campaigns, IG posts, discounts redeemed. Powers the rich hover
@@ -313,8 +337,16 @@ export default async function CommandCenterPage() {
           <SectionHead
             eyebrow={lang("הכסף", "The money")}
             title={lang("מצב פיננסי", "Money snapshot")}
-            hint={lang("המספרים של החלון הנבחר.", "The numbers for the selected window.")}
+            hint={lang(`המספרים של החלון הנבחר${channelSuffix}.`, `The numbers for the selected window${channelSuffix}.`)}
           />
+          {showChannelFilter ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <ChannelFilterControl value={channel} query={query} locale={isHe ? "he" : "en"} />
+              <p className="text-xs text-muted-foreground">
+                {lang("משפיע על הכסף ועל גרף המגמה בלבד. שאר העמוד — כל החנות.", "Applies to the money and the trend chart only. The rest of the page is the whole store.")}
+              </p>
+            </div>
+          ) : null}
           {contributionMargin ? (
             <ContributionMarginPanel
               report={contributionMargin}
@@ -358,7 +390,7 @@ export default async function CommandCenterPage() {
         <section className="space-y-3">
           <SectionHead
             eyebrow={lang("מגמה", "Trend")}
-            title={lang("הכנסות ורווח יומיים", "Daily revenue & estimated profit")}
+            title={lang(`הכנסות ורווח יומיים${channelSuffix}`, `Daily revenue & estimated profit${channelSuffix}`)}
             hint={lang(
               // No color names here — they rotted once already (the caption
               // said indigo/blue over a green/orange chart). The in-card

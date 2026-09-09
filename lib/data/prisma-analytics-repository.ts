@@ -9,7 +9,10 @@ import type {
   StockFlag,
   Store,
   Summary, ProductVariantStock } from "@/lib/domain/types";
+import { Prisma } from "@prisma/client";
 import { withOptionalDb } from "@/lib/server/db";
+import { orderChannelSqlText, orderChannelWhere } from "@/lib/server/sales-channel-filter";
+import type { SalesChannelFilter } from "@/lib/domain/sales-channel";
 import { toNumber } from "@/lib/server/numbers";
 import { buildDailyMetrics, buildDiscountUsage, buildProductPerformance } from "@/lib/server/analytics";
 import { pickAnalyticsDiscountCode, shouldIgnoreOrderForAnalytics } from "@/lib/server/analytics-order-rules";
@@ -293,17 +296,22 @@ async function computeSalesSummary(
   db: any,
   storeId: string,
   start: Date,
-  end: Date
+  end: Date,
+  // Optional sales-channel filter (Command Center: all / online / POS).
+  // "all" keeps the historical behaviour byte-for-byte.
+  channel: SalesChannelFilter = "all"
 ): Promise<ShopifySalesSummary> {
-  const [orderAgg, lineAgg, refundAgg, returningRows, affiliateCommission] = await Promise.all([
+  const channelWhere = orderChannelWhere(channel);
+  const channelSql = Prisma.raw(orderChannelSqlText(channel, "o"));
+  const [orderAgg, lineAgg, refundAgg, returningRows, affiliateCommissionAll] = await Promise.all([
     db.order.aggregate({
       // Shopify's Sales report excludes cancelled and test orders.
-      where: { storeId, createdAt: { gte: start, lte: end }, cancelledAt: null, test: false },
+      where: { storeId, createdAt: { gte: start, lte: end }, cancelledAt: null, test: false, ...channelWhere },
       _count: { _all: true },
       _sum: { totalShipping: true, totalTax: true }
     }),
     db.orderLineItem.aggregate({
-      where: { storeId, order: { createdAt: { gte: start, lte: end }, cancelledAt: null, test: false } },
+      where: { storeId, order: { createdAt: { gte: start, lte: end }, cancelledAt: null, test: false, ...channelWhere } },
       _sum: { lineSubtotal: true, lineDiscountAmount: true, estimatedCostAmount: true, quantity: true }
     }),
     db.refund.aggregate({
@@ -322,7 +330,7 @@ async function computeSalesSummary(
       where: {
         storeId,
         createdAt: { gte: start, lte: end },
-        order: { cancelledAt: null, test: false }
+        order: { cancelledAt: null, test: false, ...channelWhere }
       },
       _sum: { refundedAmount: true, refundedLineItemsAmount: true }
     }),
@@ -342,9 +350,11 @@ async function computeSalesSummary(
       WHERE o."storeId" = ${storeId}
         AND o."createdAt" >= ${start} AND o."createdAt" <= ${end}
         AND o."cancelledAt" IS NULL AND o."test" = false
-        AND o."createdAt" > f.first_at`,
+        AND o."createdAt" > f.first_at${channelSql}`,
     computeWindowAffiliateCommission(db, storeId, start, end).catch(() => 0)
   ]);
+  // Affiliate codes are redeemed online; a POS-only view owes no commission.
+  const affiliateCommission = channel === "pos" ? 0 : affiliateCommissionAll;
 
   const orders = num(orderAgg._count?._all);
   const grossSales = num(lineAgg._sum?.lineSubtotal);
@@ -419,8 +429,11 @@ async function computeDailySeries(
   storeId: string,
   start: Date,
   end: Date,
-  timeZone: string
+  timeZone: string,
+  channel: SalesChannelFilter = "all"
 ): Promise<DailyMetric[]> {
+  // Constant text (see sales-channel-filter.ts) — safe to splice.
+  const channelSql = orderChannelSqlText(channel, "o");
   // (1) sales by ORDER day, (2) shipping/tax/orders/returning by ORDER day,
   // (3) returns by REFUND day. Timestamps are stored UTC; reinterpret as UTC
   // then convert to the store timezone before bucketing to a calendar day.
@@ -433,7 +446,7 @@ async function computeDailySeries(
               SUM(li."quantity") AS units
        FROM "Order" o JOIN "OrderLineItem" li ON li."orderId" = o."id"
        WHERE o."storeId" = $1 AND o."createdAt" >= $2 AND o."createdAt" <= $3
-         AND o."cancelledAt" IS NULL AND o."test" = false
+         AND o."cancelledAt" IS NULL AND o."test" = false${channelSql}
        GROUP BY 1`,
       storeId,
       start,
@@ -458,7 +471,7 @@ async function computeDailySeries(
        FROM "Order" o
        LEFT JOIN firsts f ON f."customerId" = o."customerId"
        WHERE o."storeId" = $1 AND o."createdAt" >= $2 AND o."createdAt" <= $3
-         AND o."cancelledAt" IS NULL AND o."test" = false
+         AND o."cancelledAt" IS NULL AND o."test" = false${channelSql}
        GROUP BY 1`,
       storeId,
       start,
@@ -491,7 +504,7 @@ async function computeDailySeries(
        FROM "Refund" r
        JOIN "Order" o ON o."id" = r."orderId"
        WHERE r."storeId" = $1 AND o."createdAt" >= $2 AND o."createdAt" <= $3
-         AND o."cancelledAt" IS NULL AND o."test" = false
+         AND o."cancelledAt" IS NULL AND o."test" = false${channelSql}
        GROUP BY 1`,
       storeId,
       start,
@@ -560,10 +573,11 @@ export interface ShopifyParityOverview {
 export async function getShopifySalesSummaryForWindow(
   storeId: string,
   start: Date,
-  end: Date
+  end: Date,
+  channel: SalesChannelFilter = "all"
 ): Promise<ShopifySalesSummary | null> {
   return withOptionalDb(
-    async (db) => computeSalesSummary(db, storeId, start, end),
+    async (db) => computeSalesSummary(db, storeId, start, end, channel),
     null
   );
 }
@@ -572,7 +586,7 @@ export async function getShopifySalesSummaryForWindow(
  * Single source of truth for the headline numbers, computed to reconcile with
  * Shopify's Sales report for the active reporting window.
  */
-export async function getShopifyParityOverview(): Promise<ShopifyParityOverview | null> {
+export async function getShopifyParityOverview(channel: SalesChannelFilter = "all"): Promise<ShopifyParityOverview | null> {
   // Active-store aware — must resolve the SAME store as the מצב פיננסי card,
   // or the two "רווח תרומה" figures on the dashboard can diverge (F-010).
   const store = await getStoreRecord(undefined);
@@ -582,9 +596,9 @@ export async function getShopifyParityOverview(): Promise<ShopifyParityOverview 
   return withOptionalDb(
     async (db) => {
       const [current, previous, daily] = await Promise.all([
-        computeSalesSummary(db, store.id, range.current.start, range.current.end),
-        computeSalesSummary(db, store.id, range.previous.start, range.previous.end),
-        computeDailySeries(db, store.id, range.current.start, range.current.end, timeZone)
+        computeSalesSummary(db, store.id, range.current.start, range.current.end, channel),
+        computeSalesSummary(db, store.id, range.previous.start, range.previous.end, channel),
+        computeDailySeries(db, store.id, range.current.start, range.current.end, timeZone, channel)
       ]);
       return { current, previous, daily };
     },

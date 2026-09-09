@@ -1,4 +1,5 @@
 ﻿import { getProfitAnalyticsFromDb, getRetentionAnalyticsFromDb, getShopifyParityOverview } from "@/lib/data/prisma-analytics-repository";
+import type { SalesChannelFilter } from "@/lib/domain/sales-channel";
 import { getAnalyticsRepository } from "@/lib/repositories";
 import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import { getAppLocale, getDictionary } from "@/lib/i18n";
@@ -200,7 +201,8 @@ function buildOverviewAlerts(locale: "en" | "he", refundRate: number, discountRa
   ];
 }
 
-export async function getOverviewPayload(): Promise<OverviewPayload> {
+export async function getOverviewPayload(options: { channel?: SalesChannelFilter } = {}): Promise<OverviewPayload> {
+  const channel = options.channel ?? "all";
   const locale = await getAppLocale();
   const dictionary = getDictionary(locale);
   const repository = await getAnalyticsRepository();
@@ -209,7 +211,7 @@ export async function getOverviewPayload(): Promise<OverviewPayload> {
 
   const [store, parity, collectionPerformance, discounts, productPerformance] = await Promise.all([
     repository.getStore(),
-    getShopifyParityOverview(),
+    getShopifyParityOverview(channel),
     repository.getCollectionPerformance(),
     repository.getDiscountUsage(),
     getProfitAnalyticsPayload().then((payload) => payload.productPerformance)
