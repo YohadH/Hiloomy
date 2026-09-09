@@ -263,6 +263,9 @@ function humanOf(alert: AlertRow): HumanDecision {
   if (alert.status === "resolved" && alert.resolvedBy?.startsWith("user")) {
     return { choice: "approved", decidedAt: alert.resolvedAt?.toISOString() };
   }
+  if (alert.status === "resolved" && alert.resolvedBy === "system:expired") {
+    return { choice: "expired", decidedAt: alert.resolvedAt?.toISOString() };
+  }
   if (alert.status === "resolved") {
     return { choice: "auto_closed", decidedAt: alert.resolvedAt?.toISOString() };
   }
@@ -1377,7 +1380,7 @@ async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> 
   const keep: string[] = [];
   let created = 0;
   for (const i of plan.initiatives) {
-    if (i.status === "completed") continue;
+    if (i.status === "completed" || i.excludedFromEngine) continue;
     for (const hook of i.decisionHooks) {
       if (hook.windowStart > today || hook.windowEnd < today) continue;
       const fp = `plan_decision:${sheetId}:${hook.id}`;
@@ -1405,6 +1408,13 @@ async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> 
           question: hook.question,
           windowStart: hook.windowStart,
           windowEnd: hook.windowEnd,
+          // Re-written on every engine run while the window is open: one
+          // hook → one decision → fresh evidence each day (snapshots come
+          // from the ledger's advanceLedger).
+          evidenceRefreshedAt: now.toISOString(),
+          // The verdict rule is a V0 materiality heuristic, not reasoning.
+          // Recorded so the two-week table can judge it.
+          triggerRule: "v0: conflict when 7d sales pace ≥ +10% vs prior 7d, or a named product's cover < 14 days",
           start: i.start,
           end: i.end,
           discountPct: i.offer.discountPct,
@@ -1416,8 +1426,37 @@ async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> 
       }).catch(() => null);
     }
   }
-  await resolveStaleAlerts({ storeId, detectedBy: "decision-inbox-service", type: "plan_decision", keepFingerprints: keep }).catch(() => null);
+  // A window that closed without a decision is EXPIRED — the ledger must
+  // say "not decided", never "resolved". (resolveStaleAlerts would write
+  // system:auto, which the receipt shows as "condition passed".)
+  await expirePlanDecisions(storeId, keep).catch((err) => console.warn("[decision-inbox] expire plan decisions failed:", err instanceof Error ? err.message : err));
   return created;
+}
+
+async function expirePlanDecisions(storeId: string, keepFingerprints: string[]): Promise<number> {
+  const db = getDb() as any;
+  const stale = (await db.alert.findMany({
+    where: { storeId, type: "plan_decision", detectedBy: "decision-inbox-service", status: "open", ...(keepFingerprints.length ? { fingerprint: { notIn: keepFingerprints } } : {}) },
+    select: { id: true, fingerprint: true, payloadJson: true }
+  })) as Array<{ id: string; fingerprint: string; payloadJson: Record<string, unknown> | null }>;
+  const at = new Date();
+  for (const a of stale) {
+    const prev = a.payloadJson ?? {};
+    const human = prev.humanDecision as { choice?: string } | undefined;
+    if (human?.choice && human.choice !== "pending") continue; // decided — leave it
+    // Same unique-index care as resolveAlertByFingerprint.
+    await db.alert.deleteMany({ where: { storeId, fingerprint: a.fingerprint, status: "resolved" } });
+    await db.alert.update({
+      where: { id: a.id },
+      data: {
+        status: "resolved",
+        resolvedAt: at,
+        resolvedBy: "system:expired",
+        payloadJson: { ...prev, humanDecision: { choice: "expired", decidedAt: at.toISOString() } } as any
+      }
+    });
+  }
+  return stale.length;
 }
 
 // The Decision a plan hook becomes. Evidence is only what is measured: the
@@ -1438,8 +1477,10 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
   const start = String(p.start ?? "");
   const end = String(p.end ?? "");
 
+  const refreshedAt = typeof p.evidenceRefreshedAt === "string" ? p.evidenceRefreshedAt.slice(0, 10) : null;
   const evidence: EvidenceFact[] = [
     fact(L("מה התוכנית אומרת", "What the plan says"), hookText.slice(0, 160), "plan", L("הגאנט", "The Gantt"), "known", L(`${start} → ${end}`, `${start} → ${end}`)),
+    fact(L("בסיס הטריגר", "Trigger basis"), L("כלל V0", "V0 rule"), "plan", L("היוריסטיקת מהותיות, לא הסקה", "Materiality heuristic, not reasoning"), "calculated", L(`קצב 7 ימים ≥ +10% או כיסוי מלאי < 14 יום${refreshedAt ? ` · ראיות נכון ל־${refreshedAt}` : ""}`, `7d pace ≥ +10% or stock cover < 14d${refreshedAt ? ` · evidence as of ${refreshedAt}` : ""}`)),
     fact(L("קצב מכירות", "Sales velocity"), velocityLabel, "shopify", L("הזמנות Shopify, 7 ימים מול 7 קודמים", "Shopify Orders, 7d vs prior 7d"), v === null ? "unavailable" : "calculated"),
     fact(L("מכירות נטו / 7 ימים", "Net sales / 7 days"), ctx.pulse.sales7 === null ? null : ils(ctx.pulse.sales7), "shopify", L("הזמנות Shopify", "Shopify Orders"), ctx.pulse.sales7 === null ? "unavailable" : "known"),
     fact(L("מרווח תרומה", "Contribution margin"), ctx.pulse.marginRate === null ? null : pct(ctx.pulse.marginRate), "profit", L("30 ימים", "30 days"), ctx.pulse.marginQuality, ctx.pulse.marginRate === null ? L("כיסוי עלויות חסר", "cost coverage missing") : undefined),
@@ -1517,10 +1558,10 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     reason: null,
     confidence: v === null ? "low" : realCost ? "medium" : "medium",
     confidenceReason: v === null
-      ? L("אין מספיק מכירות בשני חלונות של 7 ימים כדי למדוד קצב.", "Not enough sales in two 7-day windows to measure pace.")
+      ? L("אין מספיק מכירות בשני חלונות של 7 ימים כדי למדוד קצב. הטריגר מבוסס כלל V0.", "Not enough sales in two 7-day windows to measure pace. The trigger is a V0 rule.")
       : realCost
-        ? L("קצב, מלאי ועלות נמדדו.", "Pace, inventory and cost are measured.")
-        : L("קצב ומלאי נמדדו; הרווחיות לא מאומתת בלי עלות לכל המוצרים.", "Pace and inventory are measured; profitability is unverified without a cost on every product."),
+        ? L("קצב, מלאי ועלות נמדדו. הטריגר מבוסס כלל V0, לא הסקה.", "Pace, inventory and cost are measured. The trigger is a V0 rule, not reasoning.")
+        : L("קצב ומלאי נמדדו; הרווחיות לא מאומתת בלי עלות לכל המוצרים. הטריגר מבוסס כלל V0.", "Pace and inventory are measured; profitability is unverified without a cost on every product. The trigger is a V0 rule."),
     missingEvidence: [...(products.length === 0 ? [L("מוצרים שהתוכנית מתייחסת אליהם", "Which products the plan refers to")] : []), ...(realCost ? [] : [L("עלות אמיתית לכל המוצרים", "A real cost on every product")])],
     wouldChange: [L("קצב המכירות משתנה ביותר מ־10%.", "Sales velocity moves more than 10%."), L("כיסוי המלאי יורד מתחת ל־14 יום.", "Stock cover drops under 14 days."), L("החלטה קודמת על אותה יוזמה.", "A prior decision on the same initiative.")],
     unknown: L("הילומי לא יודעת מה היעד המסחרי של היוזמה — הגאנט לא מציין אותו.", "Hiloomy does not know the initiative's commercial target — the Gantt does not state one."),
@@ -1715,7 +1756,7 @@ export async function buildDecisionReport(storeId: string, days = 14): Promise<D
     judged: 0,
     judgments: { useful: 0, obvious: 0, wrong: 0, missing_context: 0 },
     changedDecision: 0,
-    human: { pending: 0, approved: 0, alternative: 0, ignored: 0, auto_closed: 0 },
+    human: { pending: 0, approved: 0, alternative: 0, ignored: 0, auto_closed: 0, expired: 0 },
     outcomes: { win: 0, neutral: 0, miss: 0, no_data: 0 },
     rows: []
   };

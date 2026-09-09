@@ -625,12 +625,21 @@ export function GanttStudio({
             sheetId={sheet.id}
             locale={locale}
             refreshKey={planRefresh}
-            rowActionFor={(rowId) => {
+            rowActionFor={(rowId, actionType, context) => {
               const row = sheet.rows.find((r) => r.id === rowId);
-              if (!row?.actionType) return null;
-              const meta = ACTION_META[row.actionType];
-              return { label: meta.label, ctaLabel: meta.ctaLabel, href: meta.href(row) };
+              if (!row) return null;
+              // The plan view knows the CHANNEL (a newsletter cell is an email
+              // even when it mentions "15%"), so its action wins over the
+              // row's parse-time guess. The creative studio gets the whole
+              // move as its brief: initiative · offer · dates · channel · cell.
+              const kind = (actionType ?? row.actionType) as GanttRow["actionType"];
+              if (!kind) return null;
+              const meta = ACTION_META[kind];
+              const briefed: GanttRow = context ? { ...row, task: `${context}
+${row.task}` } : row;
+              return { label: meta.label, ctaLabel: meta.ctaLabel, href: meta.href(briefed) };
             }}
+            onGroupingChanged={() => setPlanRefresh((n) => n + 1)}
             onExecuteRow={(rowId) => {
               const row = sheet.rows.find((r) => r.id === rowId);
               if (row) void handleExecuteRow(row);

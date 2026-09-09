@@ -68,7 +68,9 @@ export interface PreparedChange {
 
 // auto_closed — the engine resolved the row itself because the condition
 // passed (stock arrived, promo ended) before anyone decided.
-export type HumanChoice = "pending" | "approved" | "alternative" | "ignored" | "auto_closed";
+// expired — the decision window closed and NO ONE decided. Distinct from
+// auto_closed on purpose: the ledger must say "not decided", not "resolved".
+export type HumanChoice = "pending" | "approved" | "alternative" | "ignored" | "auto_closed" | "expired";
 
 export interface HumanDecision {
   choice: HumanChoice;

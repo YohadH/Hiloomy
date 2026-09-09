@@ -35,7 +35,8 @@ const HUMAN_LABEL: Record<HumanChoice, { he: string; en: string }> = {
   approved: { he: "ההמלצה אושרה", en: "Recommendation approved" },
   alternative: { he: "נבחרה אפשרות אחרת", en: "Another option chosen" },
   ignored: { he: "התעלמות", en: "Ignored" },
-  auto_closed: { he: "נסגר אוטומטית — התנאי חלף", en: "Closed automatically — condition passed" }
+  auto_closed: { he: "נסגר אוטומטית — התנאי חלף", en: "Closed automatically — condition passed" },
+  expired: { he: "פג תוקף — לא התקבלה החלטה", en: "Expired — no decision was made" }
 };
 
 const JUDGMENT_TAGS: JudgmentTag[] = ["useful", "obvious", "wrong", "missing_context"];

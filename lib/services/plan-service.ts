@@ -14,6 +14,7 @@ import {
   type InitiativeProduct,
   type InitiativeStatus,
   type PlanDay,
+  type PlanOverrides,
   type PlanView,
   type RelatedDecision
 } from "@/lib/domain/plan";
@@ -173,11 +174,126 @@ export function detectDecisionHooks(row: { id: string; task: string; start: stri
 }
 
 // ─── Grouping ─────────────────────────────────────────────────────────────
-interface Cluster {
+export interface Cluster {
+  id: string; // hash(anchor.key | start) — the handle for overrides
   anchor: Anchor;
   start: string;
   end: string;
   rows: Array<RowLite & { s: string; e: string; anchors: Anchor[] }>;
+}
+
+export function executionKey(r: { task: string; category: string | null; s: string }): string {
+  return `${norm(r.task)}|${norm(r.category)}|${r.s}`;
+}
+
+const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [] };
+
+export async function readPlanOverrides(sheetId: string): Promise<PlanOverrides> {
+  try {
+    const row = await getDb().systemConfig.findUnique({ where: { key: `plan_overrides:${sheetId}` }, select: { value: true } });
+    if (!row) return EMPTY_OVERRIDES;
+    const parsed = JSON.parse(row.value) as Partial<PlanOverrides>;
+    return {
+      moves: Array.isArray(parsed.moves) ? parsed.moves : [],
+      splits: Array.isArray(parsed.splits) ? parsed.splits : [],
+      merges: Array.isArray(parsed.merges) ? parsed.merges : [],
+      excludedFromEngine: Array.isArray(parsed.excludedFromEngine) ? parsed.excludedFromEngine : []
+    };
+  } catch {
+    return EMPTY_OVERRIDES;
+  }
+}
+
+export type PlanOverrideOp =
+  | { op: "move"; executionKey: string; toInitiativeId: string }
+  | { op: "split"; executionKey: string }
+  | { op: "merge"; initiativeId: string; intoInitiativeId: string }
+  | { op: "exclude"; initiativeId: string }
+  | { op: "include"; initiativeId: string }
+  | { op: "reset" };
+
+export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Promise<PlanOverrides> {
+  const cur = await readPlanOverrides(sheetId);
+  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine] };
+  switch (op.op) {
+    case "move":
+      next.moves = [...next.moves.filter((m) => m.executionKey !== op.executionKey), { executionKey: op.executionKey, toInitiativeId: op.toInitiativeId }];
+      next.splits = next.splits.filter((k) => k !== op.executionKey);
+      break;
+    case "split":
+      next.splits = [...new Set([...next.splits, op.executionKey])];
+      next.moves = next.moves.filter((m) => m.executionKey !== op.executionKey);
+      break;
+    case "merge":
+      if (op.initiativeId !== op.intoInitiativeId) next.merges = [...next.merges.filter((m) => m.initiativeId !== op.initiativeId), { initiativeId: op.initiativeId, intoInitiativeId: op.intoInitiativeId }];
+      break;
+    case "exclude":
+      next.excludedFromEngine = [...new Set([...next.excludedFromEngine, op.initiativeId])];
+      break;
+    case "include":
+      next.excludedFromEngine = next.excludedFromEngine.filter((id) => id !== op.initiativeId);
+      break;
+    case "reset":
+      next = { ...EMPTY_OVERRIDES };
+      break;
+  }
+  const key = `plan_overrides:${sheetId}`;
+  const value = JSON.stringify(next);
+  await getDb().systemConfig.upsert({ where: { key }, update: { value }, create: { key, value } });
+  return next;
+}
+
+// Operator corrections, applied after automatic grouping. Order: splits
+// (pull spans out), moves (span → another initiative), merges (whole
+// initiative → another). Unknown targets are ignored, never invented.
+export function applyOverrides(clusters: Cluster[], o: PlanOverrides): Cluster[] {
+  if (!o.moves.length && !o.splits.length && !o.merges.length) return clusters;
+  const byId = new Map(clusters.map((c) => [c.id, c]));
+  const recompute = (c: Cluster) => {
+    if (c.rows.length === 0) return;
+    c.start = c.rows.reduce((m, r) => (r.s < m ? r.s : m), c.rows[0].s);
+    c.end = c.rows.reduce((m, r) => (r.e > m ? r.e : m), c.rows[0].e);
+  };
+  // An execution key names a SPAN (text + channel + the span's first day),
+  // so locate it through the same span merge the view uses.
+  const takeSpan = (key: string) => {
+    for (const c of byId.values()) {
+      const span = mergeExecutionSpans(c.rows).find((sp) => `${sp.key}|${sp.start}` === key);
+      if (!span) continue;
+      const ids = new Set(span.rowIds);
+      const taken = c.rows.filter((r) => ids.has(r.id));
+      c.rows = c.rows.filter((r) => !ids.has(r.id));
+      recompute(c);
+      return taken;
+    }
+    return [];
+  };
+  for (const key of o.splits) {
+    const rows = takeSpan(key);
+    if (rows.length === 0) continue;
+    const id = hash(`split|${key}`);
+    const c: Cluster = { id, anchor: { kind: "text", key: `text:${key}`, label: firstLine(rows[0].task, 60) }, start: rows[0].s, end: rows[0].e, rows };
+    recompute(c);
+    byId.set(id, c);
+  }
+  for (const m of o.moves) {
+    const target = byId.get(m.toInitiativeId);
+    if (!target) continue;
+    const rows = takeSpan(m.executionKey);
+    if (rows.length === 0) continue;
+    target.rows.push(...rows);
+    recompute(target);
+  }
+  for (const m of o.merges) {
+    const from = byId.get(m.initiativeId);
+    const into = byId.get(m.intoInitiativeId);
+    if (!from || !into || from === into) continue;
+    into.rows.push(...from.rows);
+    from.rows = [];
+    recompute(into);
+    byId.delete(from.id);
+  }
+  return [...byId.values()].filter((c) => c.rows.length > 0).sort((a, b) => a.start.localeCompare(b.start) || a.anchor.label.localeCompare(b.anchor.label));
 }
 
 export function groupIntoClusters(rows: RowLite[], productTitles: string[] = []): Cluster[] {
@@ -200,7 +316,7 @@ export function groupIntoClusters(rows: RowLite[], productTitles: string[] = [])
       last.rows.push(r);
       if (r.e > last.end) last.end = r.e;
     } else {
-      list.push({ anchor: a, start: r.s, end: r.e, rows: [r] });
+      list.push({ id: hash(`${a.key}|${r.s}`), anchor: a, start: r.s, end: r.e, rows: [r] });
     }
     byKey.set(a.key, list);
   }
@@ -258,6 +374,26 @@ function confidenceFor(c: Cluster): Initiative["groupingConfidence"] {
   return "low";
 }
 
+// The channel decides the action; the cell's wording only fills in when the
+// channel has none. Fixes rows parsed before 9 Sep 2026, when "15% הנחה" in
+// a newsletter cell made it a "create a Shopify coupon" action.
+const CHANNEL_ACTION: Array<[RegExp, string]> = [
+  [/ניוזלטר|מייל|email|newsletter/i, "email_campaign"],
+  [/סמס|sms|מסרון/i, "sms_campaign"],
+  [/משפיע|influenc|creator|יוצר/i, "social_post"],
+  [/סושיאל|פוסט|סטורי|social|story|ריל|reel|אינסט|instagram|tiktok/i, "social_post"],
+  [/קידום ממומן|ממומן|paid|meta|פייסבוק|facebook/i, "creative_banner"],
+  [/אתר|website|באנר|banner|landing|דף נחיתה|hero|הירו/i, "creative_banner"],
+  [/קופון|coupon|הנחות|discount/i, "discount_code"],
+  [/בלוג|blog|מאמר/i, "blog_post"],
+  [/וידאו|video|סרטון/i, "creative_video"]
+];
+export function effectiveActionType(channel: string | null, rowActionType: string | null): string | null {
+  const c = channel ?? "";
+  for (const [re, action] of CHANNEL_ACTION) if (re.test(c)) return action;
+  return rowActionType;
+}
+
 // ─── Catalogue facts ──────────────────────────────────────────────────────
 interface CatalogueProduct {
   id: string;
@@ -283,7 +419,7 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
 
   const d14 = new Date(now.getTime() - 14 * DAY_MS);
   const d28 = new Date(now.getTime() - 28 * DAY_MS);
-  const [products, campaignsByProduct, usedCodes, affiliateCodes, planAlerts] = await Promise.all([
+  const [products, campaignsByProduct, usedCodes, affiliateCodes, planAlerts, overrides] = await Promise.all([
     db.product.findMany({
       where: { storeId },
       select: { id: true, title: true, estimatedCost: true, costOverrideAmount: true, variants: { select: { inventoryQuantity: true } } }
@@ -299,7 +435,8 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
         orderBy: { createdAt: "desc" },
         take: 100
       })
-      .catch(() => []) as Promise<Array<{ id: string; status: string; payloadJson: Record<string, unknown> | null; createdAt: Date }>>
+      .catch(() => []) as Promise<Array<{ id: string; status: string; payloadJson: Record<string, unknown> | null; createdAt: Date }>>,
+    readPlanOverrides(sheetId)
   ]);
   const knownCodes = new Set<string>([...usedCodes.map((c) => c.code), ...affiliateCodes.map((c) => c.code ?? "")].map((c) => c.trim().toUpperCase()).filter(Boolean));
   const catalogue: CatalogueProduct[] = products.map((p) => ({
@@ -338,7 +475,8 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
     });
   }
 
-  const clusters = groupIntoClusters(sheet.rows as RowLite[], catalogue.map((p) => p.title));
+  const clusters = applyOverrides(groupIntoClusters(sheet.rows as RowLite[], catalogue.map((p) => p.title)), overrides);
+  const excluded = new Set(overrides.excludedFromEngine);
   const initiatives: Initiative[] = clusters.map((c) => {
     const title = titleFor(c);
     const allText = c.rows.map((r) => r.task).join("\n");
@@ -373,7 +511,8 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
         text: firstLine(sp.task, 120),
         channel: sp.category,
         role: sp.role,
-        actionType: sp.actionType,
+        actionType: effectiveActionType(sp.category, sp.actionType),
+        key: `${sp.key}|${sp.start}`,
         start: sp.start,
         end: sp.end,
         state: sp.executedAt || couponDone ? "done" : "open",
@@ -420,7 +559,7 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
     }
 
     // Decision hooks, per execution span (not per day), keyed by initiative.
-    const scopeKey = `${c.anchor.key}|${c.start}`;
+    const scopeKey = c.id;
     // One hook per kind per initiative: the same sentence repeats across
     // channels; keep the widest window.
     const byKind = new Map<DecisionHook["kind"], DecisionHook>();
@@ -461,9 +600,12 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
       reason = L(`עודכן לפי החלטה ${displayId(resolved.id)}`, `Updated by decision ${displayId(resolved.id)}`);
     }
 
+    const isMove = c.anchor.kind !== "text" || spans.length > 1 || hooks.length > 0;
     return {
-      id: hash(`${c.anchor.key}|${c.start}`),
+      id: c.id,
       sheetId: sheet.id,
+      kind: isMove ? "move" : "unattached",
+      excludedFromEngine: excluded.has(c.id),
       title,
       anchor: { kind: c.anchor.kind, label: c.anchor.label },
       groupingConfidence: confidenceFor(c),
@@ -498,10 +640,11 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
     }
   }
 
-  const counts = { ...emptyStatusCounts(), total: initiatives.length } as PlanView["counts"];
-  for (const i of initiatives) counts[i.status] += 1;
+  const moves = initiatives.filter((i) => i.kind === "move");
+  const counts = { ...emptyStatusCounts(), total: moves.length } as PlanView["counts"];
+  for (const i of moves) counts[i.status] += 1;
 
-  const upcoming = initiatives
+  const upcoming = moves
     .filter((i) => i.status !== "completed" && i.start >= today && daysBetween(today, i.start) <= 14)
     .sort((a, b) => INITIATIVE_STATUS_ORDER.indexOf(a.status) - INITIATIVE_STATUS_ORDER.indexOf(b.status) || a.start.localeCompare(b.start))
     .slice(0, 5);
@@ -516,7 +659,7 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
   );
 
   const health: PlanView["health"] =
-    initiatives.length === 0
+    moves.length === 0
       ? { tone: "quiet", line: L("אין יוזמות בתוכנית.", "No initiatives in the plan.") }
       : counts.needs_decision > 0 || counts.blocked > 0
         ? {
@@ -535,6 +678,7 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
     rangeEnd,
     today,
     initiatives,
+    unattachedCount: initiatives.length - moves.length,
     executionsTotal: initiatives.reduce((n, i) => n + i.executions.length, 0),
     days,
     counts,
@@ -560,4 +704,4 @@ export async function currentPlanSheetId(storeId: string, on: Date): Promise<str
 }
 
 // Test seam (tests/unit/plan-service.test.ts).
-export const __testing = { groupIntoClusters, extractAnchors, detectDecisionHooks, titleFor, confidenceFor, mergeExecutionSpans };
+export const __testing = { groupIntoClusters, extractAnchors, detectDecisionHooks, titleFor, confidenceFor, mergeExecutionSpans, applyOverrides, executionKey, effectiveActionType };

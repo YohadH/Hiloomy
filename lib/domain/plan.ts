@@ -62,6 +62,8 @@ export interface ExecutionAction {
   channel: string | null; // the sheet's category (paid, website, CRM…)
   role: string | null;
   actionType: string | null;
+  // Span key (norm(text)|norm(channel)|start) — the handle for overrides.
+  key: string;
   start: string;
   end: string;
   // done = observable (operator clicked the action, coupon exists);
@@ -89,7 +91,7 @@ export interface RelatedDecision {
   id: string; // Alert id (ledger)
   hookId: string;
   state: "open" | "resolved";
-  choice: "pending" | "approved" | "alternative" | "ignored" | "auto_closed";
+  choice: "pending" | "approved" | "alternative" | "ignored" | "auto_closed" | "expired";
   optionKey: string | null;
   decidedAt: string | null;
   question: Localized;
@@ -98,6 +100,12 @@ export interface RelatedDecision {
 export interface Initiative {
   id: string; // stable within a sheet: hash(anchor + start)
   sheetId: string;
+  // move = a commercial initiative (shared anchor, several channels, or a
+  // decision hook). unattached = a single channel action the parser could
+  // not tie to a move; it is listed, but it is not counted as an initiative.
+  kind: "move" | "unattached";
+  // True when the operator excluded this initiative from the decision engine.
+  excludedFromEngine: boolean;
   title: string;
   // Why rows were grouped: the shared anchor, and how sure we are.
   anchor: { kind: "event" | "launch" | "coupon" | "product" | "text"; label: string };
@@ -127,6 +135,19 @@ export interface PlanDay {
   byStatus: Record<InitiativeStatus, number>;
 }
 
+// Operator corrections to the automatic grouping, stored per sheet
+// (SystemConfig `plan_overrides:<sheetId>`). Applied on every read.
+export interface PlanOverrides {
+  // execution span key → the initiative it belongs to
+  moves: Array<{ executionKey: string; toInitiativeId: string }>;
+  // execution span keys pulled out into their own initiative
+  splits: string[];
+  // initiative id → the initiative it is merged into
+  merges: Array<{ initiativeId: string; intoInitiativeId: string }>;
+  // initiative ids whose hooks never reach Today
+  excludedFromEngine: string[];
+}
+
 export interface PlanView {
   sheetId: string;
   title: string;
@@ -134,6 +155,8 @@ export interface PlanView {
   rangeEnd: string | null;
   today: string;
   initiatives: Initiative[];
+  // Single channel actions without a move (kind "unattached").
+  unattachedCount: number;
   executionsTotal: number;
   days: PlanDay[];
   counts: Record<InitiativeStatus, number> & { total: number };

@@ -107,14 +107,15 @@ const CHANNEL_RULES: Array<{
       /discount/i,
       /coupon/i,
       /code/i,
-      /קוד/i,
-      /קידום ממומן/i,
-      /קידום/i,
-      /ממומן/i,
-      /paid/i,
-      /budget/i
+      /קוד/i
     ],
     action: "discount_code",
+    role: "marketing"
+  },
+  // Paid media — the deliverable is the ad creative, not a coupon.
+  {
+    patterns: [/קידום ממומן/i, /קידום/i, /ממומן/i, /paid/i, /budget/i, /meta ads/i],
+    action: "creative_banner",
     role: "marketing"
   },
   // Banners / image creatives
@@ -371,9 +372,12 @@ function parseMatrix(rows: unknown[][]): {
       // Per-cell action inference — start with channel classification,
       // then upgrade based on cell content (e.g. NAME15 coupon code in
       // a social post cell → discount_code).
+      // The CHANNEL decides the action (a newsletter cell is an email even
+      // when it mentions "15% הנחה"); the cell's wording only fills in when
+      // the channel has none (9 Sep 2026).
       const cellClass = classifyChannel(cellText);
-      const action = cellClass.action ?? classification.action;
-      const role = cellClass.role ?? classification.role;
+      const action = classification.action ?? cellClass.action;
+      const role = classification.role ?? cellClass.role;
       if (role) roles.add(role);
       categories.add(channelText);
       if (date) {

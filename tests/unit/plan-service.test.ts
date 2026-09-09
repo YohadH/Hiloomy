@@ -103,3 +103,63 @@ test("hook ids are stable", () => {
   const b = detectDecisionHooks({ id: "r1", task: "אופציונלי", start: "2026-09-25", end: "2026-09-25" }, "y")[0].id;
   assert.equal(a, b);
 });
+
+// ─── Operator overrides: split / move / merge ─────────────────────────────
+const { applyOverrides, executionKey, effectiveActionType, mergeExecutionSpans } = __testing;
+const noOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [] };
+
+test("split pulls one execution span into its own initiative; the source keeps the rest", () => {
+  const rows = [
+    row("a", "ראש השנה 15%", "2026-09-01", { end: "2026-09-13", category: "סיפור ראשי" }),
+    row("b", "ניוזלטר ראש השנה", "2026-09-02", { category: "ניוזלטר" }),
+    row("c", "SMS ראש השנה", "2026-09-03", { category: "SMS" })
+  ];
+  const clusters = groupIntoClusters(rows);
+  assert.equal(clusters.length, 1);
+  const sms = mergeExecutionSpans(clusters[0].rows).find((sp) => sp.category === "SMS")!;
+  const out = applyOverrides(clusters, { ...noOverrides, splits: [`${sms.key}|${sms.start}`] });
+  assert.equal(out.length, 2);
+  const src = out.find((c) => c.id === clusters[0].id)!;
+  assert.equal(src.rows.length, 2);
+  assert.equal(out.find((c) => c.id !== clusters[0].id)!.rows[0].id, "c");
+});
+
+test("move attaches an execution to another initiative and recomputes its dates", () => {
+  const rows = [row("a", "ראש השנה 15%", "2026-09-01", { end: "2026-09-05" }), row("b", "סוכות 15%", "2026-09-20"), row("c", "ניוזלטר ראש השנה", "2026-09-12", { category: "ניוזלטר" })];
+  const clusters = groupIntoClusters(rows);
+  const rosh = clusters.find((c) => c.rows.some((r) => r.id === "a"))!;
+  const sukkot = clusters.find((c) => c.rows.some((r) => r.id === "b"))!;
+  const src = clusters.find((c) => c.rows.some((r) => r.id === "c"))!;
+  const nl = mergeExecutionSpans(src.rows).find((sp) => sp.rowIds.includes("c"))!;
+  const out = applyOverrides(clusters, { ...noOverrides, moves: [{ executionKey: `${nl.key}|${nl.start}`, toInitiativeId: sukkot.id }] });
+  const target = out.find((c) => c.id === sukkot.id)!;
+  assert.deepEqual(target.rows.map((r) => r.id).sort(), ["b", "c"]);
+  assert.equal(target.start, "2026-09-12");
+  assert.equal(out.find((c) => c.id === rosh.id)!.end, "2026-09-05");
+  assert.ok(!out.some((c) => c.id !== sukkot.id && c.rows.some((r) => r.id === "c")));
+});
+
+test("merge folds one initiative into another and drops the source id", () => {
+  const rows = [row("a", "ראש השנה 15%", "2026-09-01"), row("b", "Back in stock", "2026-09-02")];
+  const clusters = groupIntoClusters(rows);
+  const out = applyOverrides(clusters, { ...noOverrides, merges: [{ initiativeId: clusters[1].id, intoInitiativeId: clusters[0].id }] });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].id, clusters[0].id);
+  assert.equal(out[0].rows.length, 2);
+});
+
+test("a stale override (unknown ids) is ignored, never throws", () => {
+  const clusters = groupIntoClusters([row("a", "ראש השנה 15%", "2026-09-01")]);
+  const out = applyOverrides(clusters, { ...noOverrides, moves: [{ executionKey: "nope|2026-09-01", toInitiativeId: "ghost" }], merges: [{ initiativeId: "x", intoInitiativeId: "y" }] });
+  assert.equal(out.length, 1);
+});
+
+// ─── Channel decides the action, not the cell's mention of "15%" ──────────
+test("a newsletter cell that mentions 15% is an email, not a Shopify coupon", () => {
+  assert.equal(effectiveActionType("ניוזלטר", "discount_code"), "email_campaign");
+  assert.equal(effectiveActionType("SMS", "discount_code"), "sms_campaign");
+  assert.equal(effectiveActionType("קידום ממומן", "discount_code"), "creative_banner");
+  // No channel signal → the parser's guess stands.
+  assert.equal(effectiveActionType("סיפור ראשי", "discount_code"), "discount_code");
+  assert.equal(effectiveActionType(null, null), null);
+});

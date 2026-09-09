@@ -17,7 +17,8 @@ const HUMAN: Record<HumanChoice, { he: string; en: string }> = {
   approved: { he: "ההמלצה אושרה", en: "Approved recommendation" },
   alternative: { he: "נבחרה אפשרות אחרת", en: "Chose another option" },
   ignored: { he: "ללא שינוי", en: "No change" },
-  auto_closed: { he: "נסגר אוטומטית — התנאי חלף", en: "Closed automatically — condition passed" }
+  auto_closed: { he: "נסגר אוטומטית — התנאי חלף", en: "Closed automatically — condition passed" },
+  expired: { he: "פג תוקף — לא התקבלה החלטה", en: "Expired — no decision was made" }
 };
 
 // Memory — the decision timeline. Every decision Hiloomy raised, what the

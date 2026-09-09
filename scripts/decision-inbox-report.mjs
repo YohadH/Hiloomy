@@ -55,7 +55,7 @@ line("  missing context", r.judgments.missing_context);
 line("changed management decision", r.changedDecision);
 console.log("");
 line("approved / alt / ignored", `${r.human.approved} / ${r.human.alternative} / ${r.human.ignored}`);
-line("pending / auto-closed", `${r.human.pending} / ${r.human.auto_closed}`);
+line("pending / auto-closed / expired", `${r.human.pending} / ${r.human.auto_closed} / ${r.human.expired ?? 0}`);
 line("outcomes win/neutral/miss", `${r.outcomes.win} / ${r.outcomes.neutral} / ${r.outcomes.miss} (no data: ${r.outcomes.no_data})`);
 
 console.log("\nrows:");

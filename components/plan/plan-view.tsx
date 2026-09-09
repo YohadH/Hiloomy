@@ -54,20 +54,25 @@ export interface RowAction {
   href: string;
 }
 
+export type RowActionFor = (rowId: string, actionType: string | null, context: string | null) => RowAction | null;
+
 export function PlanView({
   sheetId,
   locale,
   refreshKey,
   rowActionFor,
   onExecuteRow,
-  executingRowId
+  executingRowId,
+  onGroupingChanged
 }: {
   sheetId: string;
   locale: Locale;
   refreshKey: number;
-  rowActionFor: (rowId: string) => RowAction | null;
+  rowActionFor: RowActionFor;
   onExecuteRow: (rowId: string) => void;
   executingRowId: string | null;
+  // The operator corrected the grouping — host bumps refreshKey.
+  onGroupingChanged?: () => void;
 }) {
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
@@ -123,8 +128,10 @@ export function PlanView({
 
   const monthLabel = fmtDay(`${month}-01`, locale, { month: "long", year: "numeric" });
   const inMonth = plan.initiatives.filter((i) => i.start.slice(0, 7) <= month && i.end.slice(0, 7) >= month);
+  const movesInMonth = inMonth.filter((i) => i.kind === "move");
+  const unattachedInMonth = inMonth.length - movesInMonth.length;
   const c = emptyStatusCounts();
-  for (const i of inMonth) c[i.status] += 1;
+  for (const i of movesInMonth) c[i.status] += 1;
   const execInMonth = inMonth.reduce((n, i) => n + i.executions.filter((e) => e.start.slice(0, 7) <= month && e.end.slice(0, 7) >= month).length, 0);
   const weekDays = Array.from({ length: 7 }, (_, k) => addDays(plan.today, k));
   const chip = (s: InitiativeStatus, n: number) =>
@@ -164,7 +171,8 @@ export function PlanView({
           </div>
         </div>
         <p className="text-base font-semibold">
-          {t(`${inMonth.length} מהלכים מסחריים · ${execInMonth} פעולות ביצוע`, `${inMonth.length} commercial initiatives · ${execInMonth} execution actions`)}
+          {t(`${movesInMonth.length} מהלכים מסחריים · ${execInMonth} פעולות ביצוע`, `${movesInMonth.length} commercial initiatives · ${execInMonth} execution actions`)}
+          {unattachedInMonth > 0 ? <span className="text-sm font-normal text-muted-foreground"> · {t(`${unattachedInMonth} פעולות ללא מהלך`, `${unattachedInMonth} actions without a move`)}</span> : null}
         </p>
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1">{INITIATIVE_STATUS_ORDER.map((s) => chip(s, c[s]))}</p>
       </header>
@@ -263,7 +271,7 @@ export function PlanView({
           {monthDays.map((d) => {
             const day = dayMap.get(d);
             const ids = day?.initiativeIds ?? [];
-            const items = ids.map((id) => byId.get(id)!).filter(Boolean).sort((a, b) => INITIATIVE_STATUS_ORDER.indexOf(a.status) - INITIATIVE_STATUS_ORDER.indexOf(b.status));
+            const items = ids.map((id) => byId.get(id)!).filter(Boolean).filter((i) => i.kind === "move").sort((a, b) => INITIATIVE_STATUS_ORDER.indexOf(a.status) - INITIATIVE_STATUS_ORDER.indexOf(b.status));
             const decisions = day?.byStatus.needs_decision ?? 0;
             const blocked = day?.byStatus.blocked ?? 0;
             const isToday = d === plan.today;
@@ -300,7 +308,7 @@ export function PlanView({
         </div>
       </section>
 
-      <DayPanel day={openDay} plan={plan} byId={byId} locale={locale} onClose={close} onShift={(n) => setOpenDay((d) => (d ? addDays(d, n) : d))} rowActionFor={rowActionFor} onExecuteRow={onExecuteRow} executingRowId={executingRowId} />
+      <DayPanel day={openDay} plan={plan} byId={byId} locale={locale} onClose={close} onShift={(n) => setOpenDay((d) => (d ? addDays(d, n) : d))} rowActionFor={rowActionFor} onExecuteRow={onExecuteRow} executingRowId={executingRowId} onGroupingChanged={onGroupingChanged} />
     </div>
   );
 }
@@ -332,7 +340,8 @@ function DayPanel({
   onShift,
   rowActionFor,
   onExecuteRow,
-  executingRowId
+  executingRowId,
+  onGroupingChanged
 }: {
   day: string | null;
   plan: PlanViewData;
@@ -340,9 +349,10 @@ function DayPanel({
   locale: Locale;
   onClose: () => void;
   onShift: (n: number) => void;
-  rowActionFor: (rowId: string) => RowAction | null;
+  rowActionFor: RowActionFor;
   onExecuteRow: (rowId: string) => void;
   executingRowId: string | null;
+  onGroupingChanged?: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -363,7 +373,11 @@ function DayPanel({
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
   const info = plan.days.find((d) => d.date === day);
-  const items = (info?.initiativeIds ?? []).map((id) => byId.get(id)!).filter(Boolean).sort((a, b) => INITIATIVE_STATUS_ORDER.indexOf(a.status) - INITIATIVE_STATUS_ORDER.indexOf(b.status));
+  const all = (info?.initiativeIds ?? []).map((id) => byId.get(id)!).filter(Boolean).sort((a, b) => INITIATIVE_STATUS_ORDER.indexOf(a.status) - INITIATIVE_STATUS_ORDER.indexOf(b.status));
+  const items = all.filter((i) => i.kind === "move");
+  const unattached = all.filter((i) => i.kind !== "move");
+  // Move targets: every commercial initiative in the plan, nearest first.
+  const targets = plan.initiatives.filter((i) => i.kind === "move").sort((a, b) => Math.abs(daysBetween(day, a.start)) - Math.abs(daysBetween(day, b.start)));
 
   return createPortal(
     <div dir={isHe ? "rtl" : "ltr"} className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" onClick={onClose} role="dialog" aria-modal="true">
@@ -377,6 +391,7 @@ function DayPanel({
             <h3 className="truncate text-base font-semibold">{fmtDay(day, locale, { weekday: "long", day: "numeric", month: "long" })}</h3>
             <p className="text-xs text-muted-foreground">
               {t(`${items.length} מהלכים · ${info?.executionCount ?? 0} פעולות ביצוע`, `${items.length} initiatives · ${info?.executionCount ?? 0} execution actions`)}
+              {unattached.length > 0 ? ` · ${t(`${unattached.length} ללא מהלך`, `${unattached.length} without a move`)}` : ""}
             </p>
           </div>
           <button type="button" onClick={() => onShift(1)} className="rounded-md border border-border p-2 hover:bg-accent" aria-label={t("יום הבא", "Next day")}>
@@ -388,10 +403,18 @@ function DayPanel({
           </button>
         </div>
         <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-5">
-          {items.length === 0 ? <p className="text-sm text-muted-foreground">{t("אין מהלכים ביום הזה.", "No initiatives on this day.")}</p> : null}
+          {items.length === 0 && unattached.length === 0 ? <p className="text-sm text-muted-foreground">{t("אין מהלכים ביום הזה.", "No initiatives on this day.")}</p> : null}
           {items.map((i) => (
-            <InitiativeCard key={i.id} initiative={i} day={day} locale={locale} rowActionFor={rowActionFor} onExecuteRow={onExecuteRow} executingRowId={executingRowId} />
+            <InitiativeCard key={i.id} initiative={i} day={day} locale={locale} sheetId={plan.sheetId} targets={targets} rowActionFor={rowActionFor} onExecuteRow={onExecuteRow} executingRowId={executingRowId} onGroupingChanged={onGroupingChanged} />
           ))}
+          {unattached.length > 0 ? (
+            <section className="space-y-2">
+              <h4 className="text-xs font-medium text-muted-foreground">{t("פעולות ללא מהלך — לצרף למהלך או להשאיר", "Actions without a move — attach to a move or leave as is")}</h4>
+              {unattached.map((i) => (
+                <InitiativeCard key={i.id} initiative={i} day={day} locale={locale} sheetId={plan.sheetId} targets={targets} rowActionFor={rowActionFor} onExecuteRow={onExecuteRow} executingRowId={executingRowId} onGroupingChanged={onGroupingChanged} compact />
+              ))}
+            </section>
+          ) : null}
         </div>
       </div>
     </div>,
@@ -405,21 +428,48 @@ function InitiativeCard({
   initiative: i,
   day,
   locale,
+  sheetId,
+  targets,
   rowActionFor,
   onExecuteRow,
-  executingRowId
+  executingRowId,
+  onGroupingChanged,
+  compact = false
 }: {
   initiative: Initiative;
   day: string;
   locale: Locale;
-  rowActionFor: (rowId: string) => RowAction | null;
+  sheetId: string;
+  targets: Initiative[];
+  rowActionFor: RowActionFor;
   onExecuteRow: (rowId: string) => void;
   executingRowId: string | null;
+  onGroupingChanged?: () => void;
+  compact?: boolean;
 }) {
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const override = async (op: Record<string, unknown>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/gantt/${sheetId}/plan/overrides`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(op) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body?.error ?? "override failed");
+      onGroupingChanged?.();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const brief = [i.title, i.offer.discountPct !== null ? `${i.offer.discountPct}%` : null, i.offer.couponCode, `${i.start}${i.end !== i.start ? ` → ${i.end}` : ""}`].filter(Boolean).join(" · ");
   const openDecision = i.relatedDecisions.find((r) => r.state === "open");
-  const resolved = i.relatedDecisions.find((r) => r.state === "resolved" && r.choice !== "auto_closed");
+  const expired = i.relatedDecisions.find((r) => r.state === "resolved" && r.choice === "expired");
+  const resolved = i.relatedDecisions.find((r) => r.state === "resolved" && r.choice !== "auto_closed" && r.choice !== "expired");
   const missingCost = i.products.filter((p) => !p.hasRealCost);
   const todayExecutions = i.executions.filter((e) => e.start <= day && e.end >= day);
   const otherExecutions = i.executions.filter((e) => !(e.start <= day && e.end >= day));
@@ -461,6 +511,12 @@ function InitiativeCard({
           </Link>
         </div>
       ) : null}
+      {expired && !resolved ? (
+        <p className="mt-3 text-xs text-warning">
+          {t(`החלטה ${displayDecisionId(expired.id)} פגה בלי הכרעה`, `Decision ${displayDecisionId(expired.id)} expired with no decision`)}
+          {expired.decidedAt ? ` · ${new Date(expired.decidedAt).toLocaleDateString(isHe ? "he-IL" : "en-US")}` : ""}
+        </p>
+      ) : null}
       {resolved ? (
         <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
           <p className="font-semibold">{t(`עודכן לפי החלטה ${displayDecisionId(resolved.id)}`, `Updated by decision ${displayDecisionId(resolved.id)}`)}</p>
@@ -481,9 +537,9 @@ function InitiativeCard({
         <p className="text-xs font-medium text-muted-foreground">{t("ביצוע", "Execution")}</p>
         <ul className="mt-1 space-y-1.5">
           {[...todayExecutions, ...otherExecutions].map((e) => {
-            const action = rowActionFor(e.rowId);
+            const action = rowActionFor(e.rowId, e.actionType, `${brief}${e.channel ? ` · ${e.channel}` : ""}`);
             return (
-              <li key={e.rowId} className="flex items-start justify-between gap-3 text-sm">
+              <li key={e.key} className="flex items-start justify-between gap-3 text-sm">
                 <span className="flex min-w-0 items-start gap-2">
                   <span aria-hidden className={cn("mt-0.5 shrink-0 text-xs", e.state === "done" ? "text-success" : "text-muted-foreground")}>
                     {e.state === "done" ? "✓" : "○"}
@@ -493,17 +549,41 @@ function InitiativeCard({
                     <span className="line-clamp-2">{e.text}</span>
                   </span>
                 </span>
-                {action ? (
-                  <button
-                    type="button"
-                    onClick={() => onExecuteRow(e.rowId)}
-                    disabled={executingRowId === e.rowId}
-                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2 text-xs font-semibold hover:bg-accent disabled:opacity-50"
-                  >
-                    {executingRowId === e.rowId ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <ExternalLink className="h-3 w-3" aria-hidden />}
-                    {e.state === "done" ? t("שוב", "Again") : action.ctaLabel}
-                  </button>
-                ) : null}
+                <span className="flex shrink-0 items-center gap-1">
+                  {editing ? (
+                    <>
+                      <select
+                        aria-label={t("העברה למהלך", "Move to initiative")}
+                        className="h-8 max-w-[10rem] rounded-md border border-border bg-background px-1 text-xs"
+                        defaultValue=""
+                        disabled={busy}
+                        onChange={(ev) => ev.target.value && void override({ op: "move", executionKey: e.key, toInitiativeId: ev.target.value })}
+                      >
+                        <option value="">{t("העברה ל…", "Move to…")}</option>
+                        {targets.filter((x) => x.id !== i.id).map((x) => (
+                          <option key={x.id} value={x.id}>
+                            {x.title.slice(0, 40)}
+                          </option>
+                        ))}
+                      </select>
+                      {i.executions.length > 1 ? (
+                        <button type="button" disabled={busy} onClick={() => void override({ op: "split", executionKey: e.key })} className="h-8 rounded-md border border-border px-2 text-xs hover:bg-accent disabled:opacity-50">
+                          {t("פיצול", "Split")}
+                        </button>
+                      ) : null}
+                    </>
+                  ) : action ? (
+                    <button
+                      type="button"
+                      onClick={() => onExecuteRow(e.rowId)}
+                      disabled={executingRowId === e.rowId}
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-card px-2 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+                    >
+                      {executingRowId === e.rowId ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <ExternalLink className="h-3 w-3" aria-hidden />}
+                      {e.state === "done" ? t("שוב", "Again") : action.ctaLabel}
+                    </button>
+                  ) : null}
+                </span>
               </li>
             );
           })}
@@ -553,9 +633,43 @@ function InitiativeCard({
         </div>
       ) : null}
 
-      <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
-        <p className="text-xs text-muted-foreground">{t("מסקנה", "Verdict")}</p>
-        <p className={cn("text-sm font-semibold", verdict.cls)}>{verdict.label}</p>
+      {!compact ? (
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+          <p className="text-xs text-muted-foreground">{t("מסקנה", "Verdict")}</p>
+          <p className={cn("text-sm font-semibold", verdict.cls)}>{verdict.label}</p>
+        </div>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <button type="button" onClick={() => setEditing((v) => !v)} className="text-muted-foreground underline-offset-4 hover:underline">
+          {editing ? t("סיום עריכת הקיבוץ", "Done editing grouping") : t("עריכת קיבוץ", "Edit grouping")}
+        </button>
+        {editing ? (
+          <>
+            <select
+              aria-label={t("מיזוג לתוך", "Merge into")}
+              className="h-8 max-w-[12rem] rounded-md border border-border bg-background px-1 text-xs"
+              defaultValue=""
+              disabled={busy}
+              onChange={(ev) => ev.target.value && void override({ op: "merge", initiativeId: i.id, intoInitiativeId: ev.target.value })}
+            >
+              <option value="">{t("מיזוג המהלך לתוך…", "Merge this into…")}</option>
+              {targets.filter((x) => x.id !== i.id).map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.title.slice(0, 40)}
+                </option>
+              ))}
+            </select>
+            {i.kind === "move" ? (
+              <button type="button" disabled={busy} onClick={() => void override({ op: i.excludedFromEngine ? "include" : "exclude", initiativeId: i.id })} className="rounded-md border border-border px-2 py-1 hover:bg-accent disabled:opacity-50">
+                {i.excludedFromEngine ? t("להחזיר למנוע ההחלטות", "Include in decision engine") : t("להוציא ממנוע ההחלטות", "Exclude from decision engine")}
+              </button>
+            ) : null}
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+          </>
+        ) : i.excludedFromEngine ? (
+          <span className="text-muted-foreground">{t("מחוץ למנוע ההחלטות", "Excluded from the decision engine")}</span>
+        ) : null}
+        {err ? <span className="text-danger">{err}</span> : null}
       </div>
       {i.statusReason && !openDecision ? <p className="mt-1 text-xs text-muted-foreground">{i.statusReason[locale]}</p> : null}
       {i.decisionHooks.length > 0 && !openDecision ? (

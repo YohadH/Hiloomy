@@ -94,8 +94,36 @@ is now cells → Commercial Initiatives → execution actions → decision hooks
   Decision with measured evidence only (7d sales pace vs prior 7d, net sales,
   contribution margin, named products' 14d units / cover / live campaigns);
   status CHANGE PLAN when the plan's assumption conflicts (demand already
-  up ≥10% or cover <14d for a conditional discount), else TEST. Windows that
-  pass undecided auto-resolve.
+  up ≥10% or cover <14d for a conditional discount), else TEST. Those two
+  thresholds are **V0 rule-based heuristics**, not learned; the receipt
+  says so ("בסיס הטריגר / V0 rule" evidence fact + `payloadJson.triggerRule`).
+  One hook → one ledger row → evidence refreshed on every run
+  (`payloadJson.evidenceRefreshedAt`; snapshots via `advanceLedger`).
+  A window that closes with no human choice is **EXPIRED**, never
+  auto-resolved: `resolvedBy: "system:expired"`,
+  `humanDecision.choice = "expired"`, counted separately in the report
+  ("pending / auto-closed / expired") and shown in Plan and Memory as
+  "פג תוקף — לא התקבלה החלטה".
+- Initiatives come in two kinds. `kind: "move"` has an anchor or ≥2 rows
+  (a commercial move); `kind: "unattached"` is a singleton channel task
+  (a newsletter at 10:00, an influencer beat). Unattached rows are listed
+  under "פעולות ללא מהלך" in the day panel, are not counted as initiatives,
+  and never get hooks. Take a Nap September review: of the 28 groups,
+  ~10 are real moves (ראש השנה 5 exec, Back in stock 4, סוכות 3, Give &
+  Take 2, Gift card ×2, השקת סאטן קוטור, …); the rest are unattached.
+- **Manual grouping override (P0, shipped):** the operator can Split an
+  execution into its own initiative, Move it to another initiative, Merge
+  one initiative into another, and Exclude an initiative from the decision
+  engine (its hooks never reach Today; existing open rows expire). Stored
+  in SystemConfig `plan_overrides:<sheetId>` and re-applied on every read
+  (`applyOverrides`); POST `/api/gantt/[sheetId]/plan/overrides`. Ids are
+  stable (`hash(anchor.key|start)`), so overrides survive re-uploads of
+  the same file.
+- Execution action = **channel first**: a newsletter cell that mentions
+  "15%" is an email campaign, not a Shopify coupon (`effectiveActionType`
+  in the view, and the parser's channel classification wins over the
+  cell's coupon pattern). The creative-studio link carries the whole move
+  as its brief: initiative · offer · dates · channel · cell text.
 - Plan reads its decisions back (`payloadJson.sheetId`): NEEDS DECISION +
   "Decision D-xxx is waiting in Today →"; resolved → "Updated by decision
   D-xxx: original / decided". The Plan page never renders the receipt.
@@ -105,10 +133,9 @@ is now cells → Commercial Initiatives → execution actions → decision hooks
   executions (✓ only when observable). The general "Hiloomy insights" pane
   was removed; brief + role PDFs live in a collapsed "Export & tools".
 
-**Still owed (phase 2b):** verdicts WATCH / LIVE REVIEW from live
-performance vs the named products' baseline (no hook needed), proximity-
-tiered evaluation depth, and manual correction of a wrong grouping (the
-confidence is shown; there is no override UI yet).
+**Still owed (phase 2b, post-freeze):** verdicts WATCH / LIVE REVIEW from
+live performance vs the named products' baseline (no hook needed) and
+proximity-tiered evaluation depth.
 
 **Phase 3:** "Prepare" for coupon creation (affiliate portal already
 creates codes), completed initiatives kept with decisions and outcomes for
