@@ -7,6 +7,7 @@ import { friendlyDbError } from "@/lib/server/db-error-friendly";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { assertStoreInActiveOrg } from "@/lib/auth/guards";
 import { buildPlanView } from "@/lib/services/plan-service";
+import { rolesInPlan } from "@/lib/services/plan-brief-service";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,8 @@ export async function GET(_request: Request, context: { params: Promise<{ sheetI
     if (!storeId) throw new AppError("No active store.", 400);
     await assertStoreInActiveOrg(storeId);
     const plan = await buildPlanView(storeId, sheetId);
-    return NextResponse.json({ ok: true, plan });
+    // roles = the team briefs that exist for this plan (Export & Share).
+    return NextResponse.json({ ok: true, plan, roles: rolesInPlan(plan) });
   } catch (rawError) {
     const error = friendlyDbError(rawError);
     const status = error instanceof AppError ? error.statusCode : 500;

@@ -63,7 +63,8 @@ export function PlanView({
   rowActionFor,
   onExecuteRow,
   executingRowId,
-  onGroupingChanged
+  onGroupingChanged,
+  onPlanLoaded
 }: {
   sheetId: string;
   locale: Locale;
@@ -73,6 +74,8 @@ export function PlanView({
   executingRowId: string | null;
   // The operator corrected the grouping — host bumps refreshKey.
   onGroupingChanged?: () => void;
+  // The plan (and the team briefs available for it) after each load.
+  onPlanLoaded?: (plan: PlanViewData, roles: string[]) => void;
 }) {
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
@@ -92,6 +95,7 @@ export function PlanView({
         if (!body.ok) throw new Error(body.error || "plan failed");
         const p = body.plan as PlanViewData;
         setPlan(p);
+        onPlanLoaded?.(p, Array.isArray(body.roles) ? (body.roles as string[]) : []);
         setMonth((m) => m ?? (p.today >= (p.rangeStart ?? "") && p.today <= (p.rangeEnd ?? "") ? p.today.slice(0, 7) : (p.rangeStart ?? p.today).slice(0, 7)));
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));

@@ -133,6 +133,26 @@ is now cells → Commercial Initiatives → execution actions → decision hooks
   executions (✓ only when observable). The general "Hiloomy insights" pane
   was removed; brief + role PDFs live in a collapsed "Export & tools".
 
+- **Exports (9 Sep 2026, owner review "Generate PDFs from Commercial
+  Initiatives, not from raw Gantt tasks"):** two exports only, both
+  deterministic, both from `buildPlanView` — `lib/services/plan-brief-service.ts`
+  (`composePlanBrief`, tested), `/print/plan-brief`, `POST
+  /api/gantt/[sheetId]/export-plan-pdf?kind=commercial|role&role=…|all`.
+  *Monthly Commercial Brief* (management): header counts, then each move
+  once — period · status, offer + coupon, channels, owners, products,
+  dependencies, decision dependency ("⚠ Management decision pending ·
+  D-xxx · Open in Today", or "expected on <date>" for a hook whose window
+  has not opened), ONE consolidated note per move (e.g. a coupon shared by
+  two moves), actions grouped by team, then unattached actions and the
+  sync change log. *Role Action Brief* (per team + customer service +
+  "all" = one document, a page per team): only the moves the team touches,
+  "what <team> owns", first due date, dependencies, absolute links into
+  Hiloomy (creative studio with the move as the brief), plus the team's
+  standalone sends. Nothing invented: no audience, budget or approvals.
+  Studio UI collapsed to one "Export & Share" block (Preview / PDF /
+  team buttons / Download all). The LLM marketing brief and the per-role
+  cell dumps were removed from the UI.
+
 **Still owed (phase 2b, post-freeze):** verdicts WATCH / LIVE REVIEW from
 live performance vs the named products' baseline (no hook needed) and
 proximity-tiered evaluation depth.

@@ -184,106 +184,74 @@ export default async function CommandCenterPage({
     ]);
   }
 
-  // Read closed-loop outcomes (last 14 days of resolved alerts that have
-  // been measured). Surfaces "you did X → result Y" on the Command Center.
-  const closedLoop = storeId
-    ? await getRecentlyResolvedWithOutcomes({ storeId, lookbackDays: 14, limit: 8 }).catch(() => [])
-    : [];
-
-  // Setup health — drives the SaaS "Data confidence" badge next to the
-  // headline. Built once, used in two surfaces.
-  const setupHealth = storeId
-    ? await buildSetupHealth({ storeId }).catch(() => null)
-    : null;
-
-  // Leak Scan — the product's headline "₪ you're leaking" number. Follows
-  // the SELECTED date range (windowRange) so its money-window legs — notably
-  // the roas_burn campaign set — match the Meta campaigns section below,
-  // instead of a separate fixed 30-day window (the "5 vs 4 campaigns"
-  // mismatch the owner flagged). Silent-product/affiliate legs keep their
-  // own longer detection horizons.
-  const leakScan = storeId
-    ? await buildLeakScan({ storeId, start: windowRange.start, end: windowRange.end }).catch(() => null)
-    : null;
-
-  // Executive Overview (8 Sep 2026): the Command Center produces NO decisions
-  // of its own. The AI action brief that lived here was a second, unaudited
-  // decision list (and a model call per store per day) that could disagree
-  // with Today. It now points at the two sources of truth — Today for
-  // decisions, Market for external context — via two cheap ledger reads.
-  const [decisionSummary, marketSummary] = storeId
-    ? await Promise.all([readDecisionInboxSummary(storeId), readMarketSummary(storeId)])
-    : [null, null];
-
-  // Traffic (GA4) + organic search (GSC) summary — follows the page's
-  // selected date window like every other section. Null when neither
-  // source has synced data — the section hides entirely.
-  const trafficSearch = storeId
-    ? await buildTrafficSearchSummary(storeId, windowRange).catch(() => null)
-    : null;
-
-  // Meta campaigns overview — same selected window. Null (section hides)
-  // when no campaign insights are synced. The BI insight card under it
-  // fetches lazily client-side so the page never waits on an LLM.
-  const metaCampaigns = storeId
-    ? await getMetaCampaignsOverview(storeId, windowRange).catch(() => null)
-    : null;
-  // Google Ads, same window. null until an ad account is connected and synced.
-  const googleAds = storeId ? await getGoogleAdsOverview(storeId, windowRange).catch(() => null) : null;
-
-  // Contribution margin for the same window the controls have selected.
-  // This is the "money snapshot" anchor — explicit accuracy label, no
-  // fake precision.
-  const contributionMargin = storeId
-    ? await buildContributionMargin({
-        storeId,
-        start: windowRange.start,
-        end: windowRange.end,
-        channel
-      }).catch(() => null)
-    : null;
-
-  // Show the channel control only where it means something: a store that
-  // has ever taken a POS order (or when a filter is already in the URL).
-  const hasPosOrders = storeId
-    ? (await getDb()
-        .order.count({ where: { storeId, ...orderChannelWhere("pos") } })
-        .catch(() => 0)) > 0
-    : false;
+  // Every read below is independent of the others, so they run together.
+  // They used to be awaited one after another (ten round trips in a row),
+  // which is what made a channel-filter switch feel frozen (owner, 9 Sep
+  // 2026). Only the engines above must finish first — they write the
+  // alerts that listOpenAlerts reads.
+  type OpenAlertRow = {
+    id: string;
+    type: string;
+    severity: "critical" | "high" | "medium" | "low";
+    source: string;
+    title: string;
+    description: string | null;
+    recommendedAction: string | null;
+    metricName: string | null;
+    currentValue: { toString(): string } | null;
+    previousValue: { toString(): string } | null;
+    relatedEntityType: string | null;
+    relatedEntityId: string | null;
+    payloadJson: Record<string, unknown> | null;
+    createdAt: Date;
+  };
+  const [
+    // Closed-loop outcomes: "you did X → result Y" (last 14 days).
+    closedLoop,
+    // Setup health — the "Data confidence" badge next to the headline.
+    setupHealth,
+    // Leak Scan — the headline "₪ you're leaking", on the SELECTED window so
+    // its roas_burn leg matches the Meta section below.
+    leakScan,
+    // Executive Overview: the page produces no decisions; it points at Today
+    // and Market through two cheap ledger reads.
+    decisionSummary,
+    marketSummary,
+    // GA4 + GSC summary — hidden when neither source has data.
+    trafficSearch,
+    // Meta campaigns — hidden when no insights are synced.
+    metaCampaigns,
+    // Google Ads — null until an account is connected and synced.
+    googleAds,
+    // Contribution margin — the money snapshot, same window, channel-aware.
+    contributionMargin,
+    // Whether the store ever took a POS order (shows the channel control).
+    hasPosOrders,
+    // Per-day context for the trend chart's tooltip and markers.
+    trendContext,
+    // Open alerts: critical/high get hero placement, medium/low a list.
+    openAlerts
+  ] = storeId
+    ? await Promise.all([
+        getRecentlyResolvedWithOutcomes({ storeId, lookbackDays: 14, limit: 8 }).catch((): ResolvedAlertWithOutcome[] => []),
+        buildSetupHealth({ storeId }).catch(() => null),
+        buildLeakScan({ storeId, start: windowRange.start, end: windowRange.end }).catch(() => null),
+        readDecisionInboxSummary(storeId),
+        readMarketSummary(storeId),
+        buildTrafficSearchSummary(storeId, windowRange).catch(() => null),
+        getMetaCampaignsOverview(storeId, windowRange).catch(() => null),
+        getGoogleAdsOverview(storeId, windowRange).catch(() => null),
+        buildContributionMargin({ storeId, start: windowRange.start, end: windowRange.end, channel }).catch(() => null),
+        getDb()
+          .order.count({ where: { storeId, ...orderChannelWhere("pos") } })
+          .then((n: number) => n > 0)
+          .catch(() => false),
+        getDailyTrendContext(storeId, windowRange.start, windowRange.end).catch(() => ({})),
+        listOpenAlerts({ storeId, limit: 50 }).then((rows) => rows as unknown as OpenAlertRow[])
+      ])
+    : [[] as ResolvedAlertWithOutcome[], null, null, null, null, null, null, null, null, false, {}, [] as OpenAlertRow[]];
   const showChannelFilter = hasPosOrders || channel !== "all";
   const channelSuffix = channel === "all" ? "" : ` · ${SALES_CHANNEL_FILTER_LABEL[channel][isHe ? "he" : "en"]}`;
-
-  // Per-day context for the trend chart — top products, active Meta
-  // campaigns, IG posts, discounts redeemed. Powers the rich hover
-  // tooltip + event markers so the operator can answer "WHY did
-  // revenue move on this day?".
-  const trendContext = storeId
-    ? await getDailyTrendContext(storeId, windowRange.start, windowRange.end).catch(() => ({}))
-    : {};
-
-  // Pull open alerts from the normalized table. Critical/high get hero
-  // placement; medium/low go below in a compact list.
-  const openAlerts = storeId
-    ? ((await listOpenAlerts({
-        storeId,
-        limit: 50
-      })) as unknown as Array<{
-        id: string;
-        type: string;
-        severity: "critical" | "high" | "medium" | "low";
-        source: string;
-        title: string;
-        description: string | null;
-        recommendedAction: string | null;
-        metricName: string | null;
-        currentValue: { toString(): string } | null;
-        previousValue: { toString(): string } | null;
-        relatedEntityType: string | null;
-        relatedEntityId: string | null;
-        payloadJson: Record<string, unknown> | null;
-        createdAt: Date;
-      }>)
-    : [];
 
   const alertCards: CommandCenterAlert[] = openAlerts.map((a) => ({
     id: a.id,
