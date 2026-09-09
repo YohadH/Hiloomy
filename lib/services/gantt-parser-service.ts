@@ -506,7 +506,8 @@ function readSheetAsRows(ws: XLSX.WorkSheet): unknown[][] {
 // to the first sheet.
 function pickSheet(
   workbook: XLSX.WorkBook,
-  preferredSheetName?: string | null
+  preferredSheetName?: string | null,
+  now: Date = new Date()
 ): { name: string; rows: unknown[][] } {
   if (preferredSheetName) {
     const ws = workbook.Sheets[preferredSheetName];
@@ -517,17 +518,39 @@ function pickSheet(
     }
     return { name: preferredSheetName, rows: readSheetAsRows(ws) };
   }
+  // A brand's workbook holds one tab per month (Incense: 14 tabs, April 2025
+  // → September 2026). Picking the FIRST Gantt-shaped tab loaded a plan from
+  // last year (9 Sep 2026). Prefer the matrix tab whose dates contain today,
+  // else the nearest upcoming month, else the most recent one.
+  const matrixTabs: Array<{ name: string; rows: unknown[][]; start: number; end: number }> = [];
+  let firstTabular: { name: string; rows: unknown[][] } | null = null;
   for (const name of workbook.SheetNames) {
     const ws = workbook.Sheets[name];
     if (!ws) continue;
     const rows = readSheetAsRows(ws);
     if (rows.length === 0) continue;
     const layout = detectLayout(rows);
-    if (layout === "matrix") return { name, rows };
-    const header = (rows[0] ?? []).map((c) => cellToString(c));
-    const tabularHits = header.filter((h) => matchHeader(h)).length;
-    if (tabularHits >= 3) return { name, rows };
+    if (layout === "matrix") {
+      const dates = (rows[0] ?? []).map((c) => parseCellAsDate(c)).filter((d): d is Date => d !== null);
+      if (dates.length === 0) continue;
+      matrixTabs.push({ name, rows, start: Math.min(...dates.map((d) => d.getTime())), end: Math.max(...dates.map((d) => d.getTime())) });
+      continue;
+    }
+    if (!firstTabular) {
+      const header = (rows[0] ?? []).map((c) => cellToString(c));
+      const tabularHits = header.filter((h) => matchHeader(h)).length;
+      if (tabularHits >= 3) firstTabular = { name, rows };
+    }
   }
+  if (matrixTabs.length > 0) {
+    const t = now.getTime();
+    const current = matrixTabs.find((m) => m.start <= t && t <= m.end);
+    const upcoming = matrixTabs.filter((m) => m.start > t).sort((a, b) => a.start - b.start)[0];
+    const latest = [...matrixTabs].sort((a, b) => b.end - a.end)[0];
+    const chosen = current ?? upcoming ?? latest;
+    return { name: chosen.name, rows: chosen.rows };
+  }
+  if (firstTabular) return firstTabular;
   // Fallback: first non-empty sheet.
   const fallback = workbook.SheetNames[0];
   const ws = workbook.Sheets[fallback];
@@ -537,10 +560,10 @@ function pickSheet(
 
 export function parseGanttWorkbook(
   buffer: Buffer,
-  options: { sheetName?: string | null } = {}
+  options: { sheetName?: string | null; now?: Date } = {}
 ): ParsedGanttSheet {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-  const { name, rows } = pickSheet(workbook, options.sheetName ?? null);
+  const { name, rows } = pickSheet(workbook, options.sheetName ?? null, options.now ?? new Date());
   const layout = detectLayout(rows);
   const result = layout === "matrix" ? parseMatrix(rows) : parseTabular(rows);
   return {

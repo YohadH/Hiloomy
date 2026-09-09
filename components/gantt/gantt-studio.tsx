@@ -269,16 +269,20 @@ export function GanttStudio({
         );
       }
 
-      // Rewrap with an ASCII-safe name. The original name still travels as
-      // `title`, so nothing is lost if the sheet was named in Hebrew.
-      const safeName = original.name.replace(/[^\w.\- ]+/g, "_") || "gantt.xlsx";
-      const file = new File([bytes], safeName, {
-        type: original.type || "application/octet-stream"
+      // Send the bytes AS the body — no multipart. The multipart part was
+      // dropped in production on a larger workbook (incense sept.xlsx, 868 KB,
+      // 9 Sep 2026) although the same bytes parsed locally; a raw body has
+      // no parts to lose. Name and title travel percent-encoded in headers
+      // so Hebrew survives HTTP's ASCII-only header rule.
+      const res = await fetch("/api/gantt/upload", {
+        method: "POST",
+        body: bytes,
+        headers: {
+          "Content-Type": original.type || "application/octet-stream",
+          "x-file-name": encodeURIComponent(original.name || "gantt.xlsx"),
+          "x-title": encodeURIComponent(original.name.replace(/\.[^.]+$/, ""))
+        }
       });
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("title", original.name.replace(/\.[^.]+$/, ""));
-      const res = await fetch("/api/gantt/upload", { method: "POST", body: fd });
       const body = await res.json();
       if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
       // Refresh sheet list + select the new one.

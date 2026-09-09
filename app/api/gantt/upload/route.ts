@@ -45,6 +45,86 @@ function hasSpreadsheetExtension(name: string): boolean {
   );
 }
 
+// The upload arrives in one of two shapes:
+//
+//   1. RAW BODY (the studio since 9 Sep 2026): the bytes are the body, the
+//      name travels in `x-file-name`, the title in `x-title`, the preferred
+//      tab in `x-sheet-name` (all percent-encoded so Hebrew survives HTTP
+//      headers). Nothing to parse, so nothing can be dropped — the previous
+//      multipart path lost the file part in production on an 868 KB
+//      workbook (incense sept.xlsx) while the same bytes parsed fine locally.
+//   2. MULTIPART (any other caller): the original `file` + `title` fields.
+async function readUpload(request: Request): Promise<{ file: File; title: string; preferredSheetName: string | null }> {
+  const contentType = request.headers.get("content-type") ?? "";
+  const decode = (v: string | null): string | null => {
+    if (!v) return null;
+    try {
+      const d = decodeURIComponent(v).trim();
+      return d || null;
+    } catch {
+      return v.trim() || null;
+    }
+  };
+
+  if (!contentType.toLowerCase().startsWith("multipart/form-data")) {
+    const bytes = await request.arrayBuffer();
+    if (bytes.byteLength === 0) {
+      throw new AppError("Empty upload body — the file read as 0 bytes. Pick the file again.", 400);
+    }
+    const name = decode(request.headers.get("x-file-name")) ?? "gantt.xlsx";
+    const type = contentType && contentType !== "application/octet-stream" ? contentType.split(";")[0].trim() : "";
+    const file = new File([bytes], name, { type });
+    return {
+      file,
+      title: decode(request.headers.get("x-title")) ?? name.replace(/\.[^.]+$/, ""),
+      preferredSheetName: decode(request.headers.get("x-sheet-name"))
+    };
+  }
+
+  const form = await request.formData();
+
+  // Multipart robustness — Hebrew filenames (יולי.xlsx) sometimes fail
+  // the standard `form.get("file")` path because the multipart parser
+  // is strict about RFC 5987 filename encoding. Fall through the field
+  // aliases and, as a last resort, grab the first File in the form.
+  const FIELD_ALIASES = ["file", "gantt", "upload", "sheet", "xlsx"];
+  let file: File | null = null;
+  for (const key of FIELD_ALIASES) {
+    const candidate = form.get(key);
+    if (candidate instanceof File && candidate.size > 0) {
+      file = candidate;
+      break;
+    }
+  }
+  if (!file) {
+    for (const entry of form.values()) {
+      if (entry instanceof File && entry.size > 0) {
+        file = entry;
+        break;
+      }
+    }
+  }
+  if (!file) {
+    // Return the field shape so the operator knows exactly what got sent.
+    const observed: string[] = [];
+    for (const [name, value] of form.entries()) {
+      observed.push(value instanceof File ? `${name} = File(name="${value.name}", size=${value.size}, type="${value.type}")` : `${name} = string(len=${String(value).length})`);
+    }
+    throw new AppError(
+      `No file received. Multipart body carried: ${observed.length ? observed.join("; ") : "(no fields)"}. ` +
+        `The file part never arrived — re-pick the file and try again.`,
+      400
+    );
+  }
+  const titleField = form.get("title");
+  const sheetNameField = form.get("sheetName");
+  return {
+    file,
+    title: typeof titleField === "string" && titleField.trim() ? titleField.trim() : file.name.replace(/\.[^.]+$/, ""),
+    preferredSheetName: typeof sheetNameField === "string" && sheetNameField.trim() ? sheetNameField.trim() : null
+  };
+}
+
 export async function POST(request: Request) {
   try {
     let storeId: string | null = null;
@@ -66,55 +146,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const form = await request.formData();
-
-    // Multipart robustness — Hebrew filenames (יולי.xlsx) sometimes fail
-    // the standard `form.get("file")` path because the multipart parser
-    // is strict about RFC 5987 filename encoding. Fall through the field
-    // aliases and, as a last resort, grab the first File in the form.
-    const FIELD_ALIASES = ["file", "gantt", "upload", "sheet", "xlsx"];
-    let file: File | null = null;
-    for (const key of FIELD_ALIASES) {
-      const candidate = form.get(key);
-      if (candidate instanceof File && candidate.size > 0) {
-        file = candidate;
-        break;
-      }
-    }
-    if (!file) {
-      // Sweep every entry — if the client used a random field name we still
-      // want to accept a valid File.
-      for (const entry of form.values()) {
-        if (entry instanceof File && entry.size > 0) {
-          file = entry;
-          break;
-        }
-      }
-    }
-    if (!file) {
-      // Return the field shape so the operator (and I, next time) knows
-      // exactly what got sent. This turns a silent multipart failure into
-      // an actionable diagnostic.
-      const observed: string[] = [];
-      for (const [name, value] of form.entries()) {
-        if (value instanceof File) {
-          observed.push(`${name} = File(name="${value.name}", size=${value.size}, type="${value.type}")`);
-        } else {
-          observed.push(`${name} = string(len=${String(value).length})`);
-        }
-      }
-      // The old hint here blamed Hebrew filenames. That was a guess, and a
-      // wrong one — the real cause was the picker clearing its own input
-      // before the bytes were read, which invalidated the File client-side
-      // so the part never reached us. Renaming to ASCII changed nothing.
-      // Fixed in components/gantt/gantt-studio.tsx; this stays as a
-      // diagnostic for whatever comes next.
-      throw new AppError(
-        `No file received. Multipart body carried: ${observed.length ? observed.join("; ") : "(no fields)"}. ` +
-          `The file part never arrived — re-pick the file and try again. If it repeats, the browser may be releasing the file before upload.`,
-        400
-      );
-    }
+    const { file, title, preferredSheetName } = await readUpload(request);
     if (file.size > MAX_BYTES) {
       throw new AppError(`File too large (max ${MAX_BYTES / 1024 / 1024}MB).`, 400);
     }
@@ -124,19 +156,6 @@ export async function POST(request: Request) {
         400
       );
     }
-    const titleField = form.get("title");
-    const title =
-      typeof titleField === "string" && titleField.trim()
-        ? titleField.trim()
-        : file.name.replace(/\.[^.]+$/, "");
-    // Optional — operator explicitly says "parse this tab". Otherwise the
-    // parser auto-picks the first Gantt-shaped tab.
-    const sheetNameField = form.get("sheetName");
-    const preferredSheetName =
-      typeof sheetNameField === "string" && sheetNameField.trim()
-        ? sheetNameField.trim()
-        : null;
-
     const buffer = Buffer.from(await file.arrayBuffer());
 
     let parsed;
