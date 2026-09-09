@@ -56,6 +56,16 @@ export interface DecisionOption {
   recommended: boolean;
 }
 
+// "Prepared change" — the exact move the recommendation implies, computed
+// from the decision's own numbers (spend in the window, daily pace). It
+// replaces click-by-click instructions. Hiloomy does not execute it; the
+// note says where it is applied.
+export interface PreparedChange {
+  title: Localized;
+  lines: Localized[];
+  note: Localized;
+}
+
 // auto_closed — the engine resolved the row itself because the condition
 // passed (stock arrived, promo ended) before anyone decided.
 export type HumanChoice = "pending" | "approved" | "alternative" | "ignored" | "auto_closed";
@@ -153,6 +163,7 @@ export interface Decision {
   // "What Hiloomy doesn't know" — an explicit limit, shown when it matters.
   unknown: Localized | null;
   primaryAction: "review" | "see_evidence";
+  prepared?: PreparedChange | null;
   // Ranking key — ₪ exposure when known, else 0.
   rank: number;
   createdAt: string;

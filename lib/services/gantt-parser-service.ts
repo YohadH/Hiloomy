@@ -278,6 +278,25 @@ function detectLayout(rows: unknown[][]): "matrix" | "tabular" {
 // ─── Matrix parse ─────────────────────────────────────────────────────
 // Walk every cell at (r, c) where r >= 2 (skip date + DoW header) and
 // c >= 1 (skip the channel column itself). Each filled cell is a task.
+// True when every line of the cell is a short label with no value: either
+// "label:" with nothing after the colon, or a bare one/two-word line whose
+// only content is the label itself. Any line carrying a value (a number, a
+// percent, a code, a sentence) makes the cell a real task.
+export function isLabelOnlyCell(text: string): boolean {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return true;
+  return lines.every((line) => {
+    const body = line.replace(/[:：]\s*$/, "").trim();
+    if (!body) return true;
+    // A "label" is at most two words with no digits, %, currency or URL.
+    if (/[\d%₪$€]|https?:/.test(body)) return false;
+    return body.split(/\s+/).length <= 2 && body.length <= 16;
+  });
+}
+
 function parseMatrix(rows: unknown[][]): {
   rows: ParsedGanttRow[];
   rangeStart: Date | null;
@@ -343,6 +362,11 @@ function parseMatrix(rows: unknown[][]): {
     for (let c = 1; c < row.length; c++) {
       const cellText = cellToString(row[c]);
       if (!cellText) continue;
+      // A template cell — field labels with nothing after them ("מסר
+      // מבצע קופון התניות קהלים:") — is scaffolding the team left in,
+      // not a task. Left alone it showed up on every day of the month
+      // (Take a Nap, 9 Sep 2026).
+      if (isLabelOnlyCell(cellText)) continue;
       const date = colDates[c] ?? null;
       // Per-cell action inference — start with channel classification,
       // then upgrade based on cell content (e.g. NAME15 coupon code in

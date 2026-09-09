@@ -756,6 +756,18 @@ function reallocationDecision(alert: AlertRow, ctx: DecisionContext): Decision |
     recommendation: candidate
       ? L(`להעביר את התקציב של ${liveNames[0]} ל־${candidate.econ.title}: תרומה חיובית ו־${Math.round(candidate.cover)} ימי מלאי.`, `Move ${liveNames[0]}'s budget to ${candidate.econ.title}: positive contribution and ${Math.round(candidate.cover)} days of stock.`)
       : L(`להשהות את ${liveNames[0]} עד שהמוצר חוזר למכור; לא זוהה מוצר חלופי עם עלות אמיתית ומלאי מספיק.`, `Pause ${liveNames[0]} until the product sells again; no alternative SKU with a real cost and enough stock was identified.`),
+    prepared:
+      spend7 > 0
+        ? {
+            title: candidate ? L(`להעביר את ${liveNames[0]} ל־${candidate.econ.title}`, `Move ${liveNames[0]} to ${candidate.econ.title}`) : L(`להשהות את ${liveNames[0]}`, `Pause ${liveNames[0]}`),
+            lines: [
+              L(`${liveNames[0]}: ${ils(spend7)} / 7 ימים (${ils(spend7 / 7)} ליום) → 0`, `${liveNames[0]}: ${ils(spend7)} / 7 days (${ils(spend7 / 7)} a day) → 0`),
+              ...(candidate ? [L(`${candidate.econ.title}: +${ils(spend7 / 7)} ליום · ${Math.round(candidate.cover)} ימי מלאי סופגים את זה`, `${candidate.econ.title}: +${ils(spend7 / 7)} a day · ${Math.round(candidate.cover)} days of stock absorb it`)] : []),
+              L("אף קמפיין אחר לא מושפע", "No other campaign affected")
+            ],
+            note: L("מספרים מהוצאת Meta ב־7 הימים האחרונים, לא מתקציב מוגדר. הילומי לא משנה תקציבים — מיישמים במנהל המודעות של Meta.", "Numbers from Meta spend over the last 7 days, not a set budget. Hiloomy does not change budgets — apply in Meta Ads Manager.")
+          }
+        : null,
     reason: null,
     confidence: candidate ? "medium" : "low",
     confidenceReason: L("ההשתתקות ידועה מהזמנות; לא ידוע למה המוצר הפסיק למכור (דף מוצר, מלאי בווריאנטים, קריאייטיב).", "The silence is known from orders; why the product stopped selling (product page, variant stock, creative) is not."),
@@ -898,6 +910,16 @@ function roasDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     recommendation: belowBreakeven
       ? L("להשהות את הקמפיין עד שיש קריאייטיב חדש: כל שקל בו כרגע מפסיד.", "Pause the campaign until new creative is ready: every shekel in it is currently losing.")
       : L("להקטין את התקציב ולרענן קריאייטיב לפני שמגדילים שוב.", "Cut the budget and refresh creative before scaling again."),
+    prepared:
+      spend > 0
+        ? {
+            title: belowBreakeven ? L(`להשהות את ${campaign}`, `Pause ${campaign}`) : L(`להקטין את ${campaign} בחצי`, `Cut ${campaign} by half`),
+            lines: belowBreakeven
+              ? [L(`עוצר ${ils(spend)} הוצאה בקצב של חלון הדוח`, `Stops ${ils(spend)} of spend at the report window's pace`), L("אף קמפיין אחר לא מושפע", "No other campaign affected")]
+              : [L(`${ils(spend)} בחלון הדוח → ${ils(spend / 2)}`, `${ils(spend)} in the report window → ${ils(spend / 2)}`), L("קריאייטיב חדש לפני הגדלה מחדש", "New creative before scaling again"), L("אף קמפיין אחר לא מושפע", "No other campaign affected")],
+            note: L("מספרים מהוצאת Meta בחלון הדוח. הילומי לא משנה תקציבים — מיישמים במנהל המודעות של Meta.", "Numbers from Meta spend in the report window. Hiloomy does not change budgets — apply in Meta Ads Manager.")
+          }
+        : null,
     reason: null,
     confidence: breakeven === null ? "low" : "medium",
     confidenceReason: breakeven === null

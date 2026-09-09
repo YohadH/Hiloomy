@@ -207,6 +207,23 @@ export function DecisionReceipt({
         </blockquote>
       </Section>
 
+      {d.prepared ? (
+        <Section title={t("שינוי מוכן", "Prepared change")}>
+          <div className="rounded-xl border border-border bg-muted/30 p-4">
+            <p className="text-sm font-semibold">{d.prepared.title[locale]}</p>
+            <ul className="mt-2 space-y-1">
+              {d.prepared.lines.map((line, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm leading-6">
+                  <span aria-hidden className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/60" />
+                  <span>{line[locale]}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted-foreground">{d.prepared.note[locale]}</p>
+          </div>
+        </Section>
+      ) : null}
+
       <Section title={t("ביטחון", "Confidence")}>
         <ConfidenceTag confidence={d.confidence} locale={locale} className="text-sm" />
         <p className="text-sm leading-6 text-muted-foreground">{d.confidenceReason[locale]}</p>
