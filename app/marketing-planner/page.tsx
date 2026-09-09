@@ -83,14 +83,14 @@ export default async function MarketingPlannerPage({ searchParams }: { searchPar
 
   return (
     <AppShell store={chrome.store} controls={chrome.controls}>
-      <div className="space-y-6 text-end" dir="rtl">
+      <div className="space-y-6" dir={isHe ? "rtl" : "ltr"}>
         <SectionHeading
-          eyebrow="Marketing Planner"
-          title={isHe ? "גאנט שיווקי אינטראקטיבי" : "Interactive marketing Gantt"}
+          eyebrow={isHe ? "תוכנית" : "Plan"}
+          title={isHe ? "מה אנחנו מתכננים — והאם זה עדיין הגיוני" : "What we plan — and whether it still holds"}
           description={
             isHe
-              ? "מקשרים את הגאנט מ־Google Sheets (או מעלים קובץ), והילומי קוראת אותו, מציעה פעולה לכל משימה, מפיקה בריף PDF לכל תפקיד ומראה מה השתנה בתוכנית בכל סנכרון."
-              : "Link the Gantt from Google Sheets (or upload a file); Hiloomy reads it, suggests an action per task, produces a PDF brief per role, and shows what changed in the plan on every sync."
+              ? "הגאנט הוא הכוונה המסחרית. הילומי בודקת כל מהלך מול המכירות, המלאי, הקמפיינים והרווח; כשהנחה בתוכנית מפסיקה להתקיים, ההחלטה נפתחת בעמוד היום."
+              : "The Gantt is the commercial intent. Hiloomy checks every move against sales, inventory, campaigns and profit; when an assumption in the plan stops holding, the decision opens on Today."
           }
         />
         <GanttStudio initialSheets={initialSheets} locale={isHe ? "he" : "en"} storeId={storeId ?? ""} googleSheetsConnected={googleSheetsConnected} sheetsNotice={sheetsNotice} />

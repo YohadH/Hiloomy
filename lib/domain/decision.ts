@@ -191,6 +191,9 @@ export interface InboxStats {
   watching: number;
   reviewed: number;
   suppressed: number;
+  // The commercial plan as Today sees it: what is on today, what is about
+  // to start, what is blocked. null when no Gantt covers today.
+  plan: { sheetId: string; today: number; live: number; upcoming7: number; blocked: number; ready: number } | null;
   // 0–100, from setup health. null when the score could not be computed.
   confidencePct: number | null;
 }

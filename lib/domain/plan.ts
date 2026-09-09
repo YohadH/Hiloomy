@@ -1,37 +1,44 @@
-// The Plan domain (docs/DECISION-INBOX-PLAN.md §0, 9 Sep 2026):
+// The Plan domain — the business-intent layer (docs/DECISION-INBOX-PLAN.md §0b).
 //
-//   Plan = intent · Data = reality · Today = decisions.
+//   Plan = intent · Live data = reality · Today = decisions.
 //
-// A Gantt row is a task; a group of rows with the same text/role/category
-// over a contiguous date range is one Commercial Initiative. Phase 1 (this
-// file) evaluates initiatives with what is OBSERVABLE from synced data only:
-// dates, a coupon code mentioned in the text, products named in the text
-// (inventory, recent sales, live campaigns, cost on file). Nothing is
-// inferred and nothing is invented: intent, revenue targets, creative
-// readiness or approvals do not exist in the sheet and are not shown.
+// A spreadsheet cell is an EXECUTION ACTION (a channel doing its part). A
+// COMMERCIAL INITIATIVE is one business move — "Rosh Hashana promotion" —
+// that several cells execute. Rows are grouped into initiatives by shared
+// anchors (event/holiday name, launch name, coupon code, named products)
+// over overlapping dates; the original rows and their text are kept.
 //
-// NEEDS DECISION and REVIEW verdicts belong to the Plan × data engine
-// (phase 2). They must arrive as Decisions in the ledger and be shown here
-// as "decision pending in Today" — never as a second decision workflow.
+// DECISION HOOKS are sentences in the plan that already say "management
+// decides here" ("optional depending on sales pace", "review status and
+// decide whether to continue"). Each hook has a window; when it arrives, the
+// plan engine creates a Decision in the ledger and Today shows it. Plan only
+// links to it — a decision lives in exactly one place.
+//
+// Nothing here is invented: intent, revenue targets, creative readiness and
+// approvals do not exist in the sheet and are not represented.
 
 import type { Localized } from "@/lib/domain/decision";
 
-export type InitiativeStatus = "planned" | "ready" | "blocked" | "live" | "completed";
+export type InitiativeStatus = "planned" | "ready" | "watch" | "needs_decision" | "blocked" | "live" | "review" | "completed";
 
-export const INITIATIVE_STATUS_ORDER: InitiativeStatus[] = ["blocked", "live", "ready", "planned", "completed"];
+// Attention first: what needs judgment, what cannot run, what runs, then the rest.
+export const INITIATIVE_STATUS_ORDER: InitiativeStatus[] = ["needs_decision", "blocked", "review", "live", "ready", "watch", "planned", "completed"];
 
 export const INITIATIVE_STATUS_LABEL: Record<InitiativeStatus, Localized> = {
   planned: { he: "מתוכנן", en: "Planned" },
   ready: { he: "מוכן", en: "Ready" },
+  watch: { he: "במעקב", en: "Watch" },
+  needs_decision: { he: "דורש החלטה", en: "Needs decision" },
   blocked: { he: "חסום", en: "Blocked" },
   live: { he: "באוויר", en: "Live" },
+  review: { he: "לבדיקה", en: "Review" },
   completed: { he: "הסתיים", en: "Completed" }
 };
 
 export type DependencyState = "ok" | "missing" | "unverified";
 
 export interface DependencyCheck {
-  kind: "coupon" | "inventory" | "products" | "campaign" | "cost";
+  kind: "coupon" | "inventory" | "campaign" | "cost";
   label: Localized;
   state: DependencyState;
   detail: Localized;
@@ -48,35 +55,75 @@ export interface InitiativeProduct {
   liveCampaigns: number;
 }
 
-export interface Initiative {
-  id: string; // stable within a sheet: hash of key + start
-  sheetId: string;
-  title: string;
-  category: string | null;
+// One spreadsheet cell: a channel executing its part of the initiative.
+export interface ExecutionAction {
+  rowId: string;
+  text: string; // first line(s), trimmed
+  channel: string | null; // the sheet's category (paid, website, CRM…)
   role: string | null;
   actionType: string | null;
-  start: string; // YYYY-MM-DD
-  end: string; // YYYY-MM-DD
-  days: number;
-  rowIds: string[];
-  // Observable "planned move" facts pulled from the text.
-  discountPct: number | null;
-  couponCode: string | null;
-  products: InitiativeProduct[];
-  dependencies: DependencyCheck[];
-  // Which systems were consulted for this initiative.
-  checked: string[];
-  status: InitiativeStatus;
-  statusReason: Localized | null;
-  // Fraction of named products with a real cost on file; null when no product matched.
-  profitConfidence: number | null;
-  // Any executed row (the operator clicked an action).
+  start: string;
+  end: string;
+  // done = observable (operator clicked the action, coupon exists);
+  // open = planned and not observable. Never "done" by assumption.
+  state: "done" | "open";
   executedAt: string | null;
 }
 
+export type DecisionHookKind = "conditional" | "review";
+
+export interface DecisionHook {
+  id: string; // stable: hash(rowId + kind)
+  rowId: string;
+  kind: DecisionHookKind;
+  // The sentence in the plan that implies the decision, verbatim.
+  sourceText: string;
+  question: Localized;
+  // When the decision should be on Today: YYYY-MM-DD, inclusive.
+  windowStart: string;
+  windowEnd: string;
+  requiredEvidence: string[];
+}
+
+export interface RelatedDecision {
+  id: string; // Alert id (ledger)
+  hookId: string;
+  state: "open" | "resolved";
+  choice: "pending" | "approved" | "alternative" | "ignored" | "auto_closed";
+  optionKey: string | null;
+  decidedAt: string | null;
+  question: Localized;
+}
+
+export interface Initiative {
+  id: string; // stable within a sheet: hash(anchor + start)
+  sheetId: string;
+  title: string;
+  // Why rows were grouped: the shared anchor, and how sure we are.
+  anchor: { kind: "event" | "launch" | "coupon" | "product" | "text"; label: string };
+  groupingConfidence: "high" | "medium" | "low";
+  category: string | null; // the main-story / first row's category
+  start: string;
+  end: string;
+  days: number;
+  offer: { discountPct: number | null; couponCode: string | null };
+  products: InitiativeProduct[];
+  channels: string[];
+  executions: ExecutionAction[];
+  dependencies: DependencyCheck[];
+  checked: string[];
+  status: InitiativeStatus;
+  statusReason: Localized | null;
+  profitConfidence: number | null;
+  decisionHooks: DecisionHook[];
+  relatedDecisions: RelatedDecision[];
+  rowIds: string[];
+}
+
 export interface PlanDay {
-  date: string; // YYYY-MM-DD
+  date: string;
   initiativeIds: string[];
+  executionCount: number;
   byStatus: Record<InitiativeStatus, number>;
 }
 
@@ -87,9 +134,16 @@ export interface PlanView {
   rangeEnd: string | null;
   today: string;
   initiatives: Initiative[];
+  executionsTotal: number;
   days: PlanDay[];
   counts: Record<InitiativeStatus, number> & { total: number };
-  upcoming: Initiative[]; // next 14 days, most relevant first
+  upcoming: Initiative[];
+  // Open decisions on Today that came from this plan, with their due date.
+  decisionsPending: Array<{ initiativeId: string; initiativeTitle: string; decisionId: string; question: Localized; due: string }>;
   health: { tone: "good" | "attention" | "quiet"; line: Localized };
   generatedAt: string;
+}
+
+export function emptyStatusCounts(): Record<InitiativeStatus, number> {
+  return { planned: 0, ready: 0, watch: 0, needs_decision: 0, blocked: 0, live: 0, review: 0, completed: 0 };
 }

@@ -51,7 +51,7 @@ export interface UpsertAlertInput {
   currentValue?: number;
   previousValue?: number;
   // Click-through target — UI uses these to deep-link the alert card.
-  relatedEntityType?: "product" | "campaign" | "affiliate" | "order" | "variant" | "sync_run";
+  relatedEntityType?: "product" | "campaign" | "affiliate" | "order" | "variant" | "sync_run" | "plan_initiative";
   relatedEntityId?: string;
   // Engine-specific blob. Renderer reads this when it needs more than the
   // common fields (e.g. restock-hero passes its full detail object).

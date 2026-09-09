@@ -81,23 +81,6 @@ type GanttSheetSummary = {
 
 type GanttSheetFull = GanttSheetSummary & { rows: GanttRow[] };
 
-type Insights = {
-  summary: string;
-  insights: Array<{
-    title: string;
-    severity: "info" | "warning" | "critical";
-    body: string;
-    relatedDates?: string[];
-    relatedCategories?: string[];
-  }>;
-  actions: Array<{
-    title: string;
-    body: string;
-    suggestedDate?: string;
-    suggestedActionType?: string;
-  }>;
-};
-
 type ActionMeta = Record<
   NonNullable<GanttRow["actionType"]>,
   { label: string; icon: typeof Tag; ctaLabel: string; href: (row: GanttRow) => string }
@@ -194,17 +177,11 @@ export function GanttStudio({
   const [loadingSheet, setLoadingSheet] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [insights, setInsights] = useState<Insights | null>(null);
-  const [insightsLoading, setInsightsLoading] = useState(false);
-  const [insightsGeneratedAt, setInsightsGeneratedAt] = useState<string | null>(null);
-  const [insightsError, setInsightsError] = useState<string | null>(null);
   const [executingRowId, setExecutingRowId] = useState<string | null>(null);
   const [downloadingRole, setDownloadingRole] = useState<string | null>(null);
   // Bumped after any change to the rows (sync, reparse, execute) so the
   // plan view re-evaluates.
   const [planRefresh, setPlanRefresh] = useState(0);
-  // A date the insights pane asked the plan to open.
-  const [jumpDay, setJumpDay] = useState<string | null>(null);
   const [reparsing, setReparsing] = useState(false);
   const [reparseError, setReparseError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -267,24 +244,6 @@ export function GanttStudio({
     };
   }, [selectedSheetId]);
 
-  // Load cached insights on sheet change (don't auto-fire — agent costs).
-  useEffect(() => {
-    if (!selectedSheetId) {
-      setInsights(null);
-      setInsightsGeneratedAt(null);
-      return;
-    }
-    fetch(`/api/gantt/${selectedSheetId}/insights`, { method: "POST" })
-      .then((r) => r.json())
-      .then((body) => {
-        if (body.ok && body.cached) {
-          setInsights(body.insights);
-          setInsightsGeneratedAt(body.generatedAt);
-        }
-      })
-      .catch(() => {});
-  }, [selectedSheetId]);
-
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
     const original = input.files?.[0];
@@ -339,24 +298,6 @@ export function GanttStudio({
     }
   };
 
-  const handleRunInsights = async () => {
-    if (!selectedSheetId) return;
-    setInsightsError(null);
-    setInsightsLoading(true);
-    try {
-      const res = await fetch(`/api/gantt/${selectedSheetId}/insights?refresh=1`, {
-        method: "POST"
-      });
-      const body = await res.json();
-      if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setInsights(body.insights);
-      setInsightsGeneratedAt(body.generatedAt);
-    } catch (err) {
-      setInsightsError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setInsightsLoading(false);
-    }
-  };
 
   const handleDownloadRolePdf = async (role: string) => {
     if (!selectedSheetId) return;
@@ -490,7 +431,7 @@ export function GanttStudio({
   };
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6" dir={isHe ? "rtl" : "ltr"}>
       {/* ── Sheet picker + upload ─────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -677,248 +618,6 @@ export function GanttStudio({
             </div>
           </div>
 
-          {/* ── BI insights pane ────────────────────────────────────── */}
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-green-600" aria-hidden />
-                <h3 className="text-base font-semibold">
-                  {lang("תובנות מהילומה", "Insights from Hiloma")}
-                </h3>
-                {insightsGeneratedAt ? (
-                  <span className="text-[11px] text-muted-foreground">
-                    {lang("הופק:", "Generated:")}{" "}
-                    {new Date(insightsGeneratedAt).toLocaleString(dateLocale, {
-                      dateStyle: "short",
-                      timeStyle: "short"
-                    })}
-                  </span>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                onClick={handleRunInsights}
-                disabled={insightsLoading}
-                className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-              >
-                {insightsLoading ? (
-                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                ) : (
-                  <Sparkles className="h-3 w-3" aria-hidden />
-                )}
-                {insights
-                  ? lang("רענון תובנות", "Refresh insights")
-                  : lang("הפעלת ניתוח", "Run analysis")}
-              </button>
-            </div>
-            {insightsError ? (
-              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {insightsError}
-              </div>
-            ) : null}
-            {insights ? (
-              <div className="mt-4 space-y-3">
-                <p className="text-sm leading-6">{insights.summary}</p>
-                {insights.insights.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {insights.insights.map((ins, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "rounded-xl border p-3 text-sm",
-                          ins.severity === "critical"
-                            ? "border-rose-200 bg-rose-50/60"
-                            : ins.severity === "warning"
-                              ? "border-amber-200 bg-amber-50/60"
-                              : "border-slate-200 bg-slate-50/60"
-                        )}
-                      >
-                        <p className="text-[13px] font-semibold">{ins.title}</p>
-                        <p className="mt-1 text-[12px] leading-5 text-slate-700">{ins.body}</p>
-                        {ins.relatedDates?.length ? (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {ins.relatedDates.map((d) => (
-                              <button
-                                key={d}
-                                type="button"
-                                onClick={() => setJumpDay(d)}
-                                className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-50"
-                              >
-                                {d}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                {insights.actions.length > 0 ? (
-                  <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800">
-                      {lang("פעולות מומלצות", "Recommended actions")}
-                    </p>
-                    <ul className="mt-2 space-y-2 text-sm">
-                      {insights.actions.map((a, i) => (
-                        <li key={i}>
-                          <span className="font-semibold">{a.title}</span>
-                          {a.suggestedDate ? (
-                            <span className="ms-2 text-[11px] text-muted-foreground">
-                              ({a.suggestedDate})
-                            </span>
-                          ) : null}
-                          <p className="text-[12px] leading-5 text-slate-700">{a.body}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-muted-foreground">
-                {lang(
-                  'לחצו על "הפעלת ניתוח" כדי לקבל סיכום, אזהרות (חוסרים, התנגשויות, חוסר זמן הכנה) והמלצות מהילומה.',
-                  'Click "Run analysis" to get a summary, warnings (gaps, conflicts, not enough lead time) and recommendations from Hiloma.'
-                )}
-              </p>
-            )}
-          </div>
-
-          {/* ── Marketing brief generator (BIG CTA) ──────────────────── */}
-          <div className="rounded-2xl border border-warning/40 bg-card p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1 basis-[14rem]">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-warning" aria-hidden />
-                  <h3 className="text-base font-semibold">
-                    {lang("בריף שיווקי חודשי", "Monthly marketing brief")}
-                  </h3>
-                </div>
-                <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                  {lang(
-                    "הילומה תבנה בריף מלא בפורמט שאתם משתמשים בו: הטבות קבועות, קודי קופון של משפיעניות, הנחות באתר, בריף קידום ממומן (תקציב + ROAS + קמפיינים), ותוכן UGC — הכל עם הדגשות, קופונים, ותנאי המבצעים.",
-                    "Hiloma builds a full brief in the format you already use: standing perks, influencer coupon codes, on-site discounts, a paid-promotion brief (budget + ROAS + campaigns), and UGC content — all with highlights, coupons, and promo terms."
-                  )}
-                </p>
-              </div>
-            </div>
-            {briefError ? (
-              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {briefError}
-              </div>
-            ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => handleGenerateBrief(!briefReady ? false : true)}
-                disabled={briefGenerating}
-                className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-orange-700 disabled:opacity-50"
-              >
-                {briefGenerating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                ) : (
-                  <Sparkles className="h-4 w-4" aria-hidden />
-                )}
-                {briefReady
-                  ? lang("יצירה מחדש", "Regenerate")
-                  : lang("יצירת בריף שיווקי", "Generate marketing brief")}
-              </button>
-              <button
-                type="button"
-                onClick={handleDownloadBriefPdf}
-                disabled={downloadingBriefPdf || briefGenerating}
-                className="inline-flex items-center gap-2 rounded-xl border border-orange-300 bg-white px-4 py-2 text-sm font-semibold text-orange-700 hover:border-orange-500 disabled:opacity-50"
-              >
-                {downloadingBriefPdf ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                ) : (
-                  <Download className="h-4 w-4" aria-hidden />
-                )}
-                {lang("הורדת PDF", "Download PDF")}
-              </button>
-              <a
-                href={`/print/gantt-marketing-brief?sheetId=${selectedSheetId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-2 text-sm text-muted-foreground hover:border-orange-300"
-              >
-                {lang("תצוגה מקדימה בדפדפן", "Preview in browser")}
-              </a>
-            </div>
-          </div>
-
-          {/* ── Per-role PDF downloads ───────────────────────────────── */}
-          {sheet.rolesJson.length > 0 || sheet.rows.some((r) => r.actionType === "discount_code") ? (
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <h3 className="text-base font-semibold">
-                {lang("בריף PDF לכל תפקיד", "PDF brief per role")}
-              </h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {lang(
-                  "מורידים את הקובץ ושולחים לחבר/ה בצוות. הקובץ כולל רק את המשימות שלהם, מקובצות לפי ערוץ ותאריך. שירות לקוחות מקבל אוטומטית את כל המבצעים וההשקות כדי לענות ללקוחות.",
-                  "Download the file and send it to a teammate. It contains only their tasks, grouped by channel and date. Customer service automatically gets every promo and launch so they can answer customers."
-                )}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {sheet.rolesJson.map((role) => {
-                  const label =
-                    ({
-                      web: lang("אתר", "Site"),
-                      social: lang("סושיאל", "Social"),
-                      graphic: lang("גרפיקה", "Graphics"),
-                      affiliates: lang("אפיליאייטים", "Affiliates"),
-                      email: lang("אימייל / SMS", "Email / SMS"),
-                      marketing: lang("שיווק / מבצעים", "Marketing / promos")
-                    } as Record<string, string>)[role] ?? role;
-                  return (
-                    <button
-                      key={role}
-                      type="button"
-                      onClick={() => handleDownloadRolePdf(role)}
-                      disabled={downloadingRole === role}
-                      className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-1.5 text-sm hover:border-emerald-300 disabled:opacity-50"
-                    >
-                      {downloadingRole === role ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                      ) : (
-                        <Download className="h-3.5 w-3.5" aria-hidden />
-                      )}
-                      {label}
-                    </button>
-                  );
-                })}
-                {/* Customer service — virtual role that filters to
-                    discount/promo/launch tasks. Always available. */}
-                <button
-                  type="button"
-                  onClick={() => handleDownloadRolePdf("customer_service")}
-                  disabled={downloadingRole === "customer_service"}
-                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800 hover:border-emerald-400 disabled:opacity-50"
-                >
-                  {downloadingRole === "customer_service" ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <Download className="h-3.5 w-3.5" aria-hidden />
-                  )}
-                  {lang("שירות לקוחות", "Customer service")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDownloadRolePdf("")}
-                  disabled={downloadingRole === ""}
-                  className="inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-background px-3 py-1.5 text-sm text-muted-foreground hover:border-emerald-300"
-                >
-                  {downloadingRole === "" ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <Download className="h-3.5 w-3.5" aria-hidden />
-                  )}
-                  {lang("כל הצוותים", "All teams")}
-                </button>
-              </div>
-            </div>
-          ) : null}
-
           {/* ── Plan: initiatives, status, calendar, day panel ──────
               (components/plan/plan-view.tsx — Plan = intent, Data =
               reality, Today = decisions; docs/DECISION-INBOX-PLAN.md §0) */}
@@ -926,7 +625,6 @@ export function GanttStudio({
             sheetId={sheet.id}
             locale={locale}
             refreshKey={planRefresh}
-            openDayRequest={jumpDay}
             rowActionFor={(rowId) => {
               const row = sheet.rows.find((r) => r.id === rowId);
               if (!row?.actionType) return null;
@@ -939,6 +637,154 @@ export function GanttStudio({
             }}
             executingRowId={executingRowId}
           />
+
+          {/* ── Export & tools: the brief and the role PDFs. Kept, demoted —
+              the page is for managing the plan, not generating PDFs. */}
+          <details className="group rounded-xl border border-border bg-card">
+            <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold hover:bg-accent/40">
+              <span className="inline-flex items-center gap-2">
+                <span className="text-muted-foreground transition-transform group-open:rotate-90">▸</span>
+                {lang("ייצוא וכלים — בריף חודשי ו־PDF לכל תפקיד", "Export & tools — monthly brief and role PDFs")}
+              </span>
+            </summary>
+            <div className="space-y-4 border-t border-border px-5 py-4">
+          {/* ── Marketing brief generator (BIG CTA) ──────────────────── */}
+              <div className="rounded-2xl border border-warning/40 bg-card p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 basis-[14rem]">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-warning" aria-hidden />
+                      <h3 className="text-base font-semibold">
+                        {lang("בריף שיווקי חודשי", "Monthly marketing brief")}
+                      </h3>
+                    </div>
+                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                      {lang(
+                        "הילומה תבנה בריף מלא בפורמט שאתם משתמשים בו: הטבות קבועות, קודי קופון של משפיעניות, הנחות באתר, בריף קידום ממומן (תקציב + ROAS + קמפיינים), ותוכן UGC — הכל עם הדגשות, קופונים, ותנאי המבצעים.",
+                        "Hiloma builds a full brief in the format you already use: standing perks, influencer coupon codes, on-site discounts, a paid-promotion brief (budget + ROAS + campaigns), and UGC content — all with highlights, coupons, and promo terms."
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {briefError ? (
+                  <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {briefError}
+                  </div>
+                ) : null}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateBrief(!briefReady ? false : true)}
+                    disabled={briefGenerating}
+                    className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-orange-700 disabled:opacity-50"
+                  >
+                    {briefGenerating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Sparkles className="h-4 w-4" aria-hidden />
+                    )}
+                    {briefReady
+                      ? lang("יצירה מחדש", "Regenerate")
+                      : lang("יצירת בריף שיווקי", "Generate marketing brief")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadBriefPdf}
+                    disabled={downloadingBriefPdf || briefGenerating}
+                    className="inline-flex items-center gap-2 rounded-xl border border-orange-300 bg-white px-4 py-2 text-sm font-semibold text-orange-700 hover:border-orange-500 disabled:opacity-50"
+                  >
+                    {downloadingBriefPdf ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Download className="h-4 w-4" aria-hidden />
+                    )}
+                    {lang("הורדת PDF", "Download PDF")}
+                  </button>
+                  <a
+                    href={`/print/gantt-marketing-brief?sheetId=${selectedSheetId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-2 text-sm text-muted-foreground hover:border-orange-300"
+                  >
+                    {lang("תצוגה מקדימה בדפדפן", "Preview in browser")}
+                  </a>
+                </div>
+              </div>
+
+              {/* ── Per-role PDF downloads ───────────────────────────────── */}
+              {sheet.rolesJson.length > 0 || sheet.rows.some((r) => r.actionType === "discount_code") ? (
+                <div className="rounded-2xl border border-border bg-card p-5">
+                  <h3 className="text-base font-semibold">
+                    {lang("בריף PDF לכל תפקיד", "PDF brief per role")}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {lang(
+                      "מורידים את הקובץ ושולחים לחבר/ה בצוות. הקובץ כולל רק את המשימות שלהם, מקובצות לפי ערוץ ותאריך. שירות לקוחות מקבל אוטומטית את כל המבצעים וההשקות כדי לענות ללקוחות.",
+                      "Download the file and send it to a teammate. It contains only their tasks, grouped by channel and date. Customer service automatically gets every promo and launch so they can answer customers."
+                    )}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {sheet.rolesJson.map((role) => {
+                      const label =
+                        ({
+                          web: lang("אתר", "Site"),
+                          social: lang("סושיאל", "Social"),
+                          graphic: lang("גרפיקה", "Graphics"),
+                          affiliates: lang("אפיליאייטים", "Affiliates"),
+                          email: lang("אימייל / SMS", "Email / SMS"),
+                          marketing: lang("שיווק / מבצעים", "Marketing / promos")
+                        } as Record<string, string>)[role] ?? role;
+                      return (
+                        <button
+                          key={role}
+                          type="button"
+                          onClick={() => handleDownloadRolePdf(role)}
+                          disabled={downloadingRole === role}
+                          className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-1.5 text-sm hover:border-emerald-300 disabled:opacity-50"
+                        >
+                          {downloadingRole === role ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                          ) : (
+                            <Download className="h-3.5 w-3.5" aria-hidden />
+                          )}
+                          {label}
+                        </button>
+                      );
+                    })}
+                    {/* Customer service — virtual role that filters to
+                        discount/promo/launch tasks. Always available. */}
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadRolePdf("customer_service")}
+                      disabled={downloadingRole === "customer_service"}
+                      className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800 hover:border-emerald-400 disabled:opacity-50"
+                    >
+                      {downloadingRole === "customer_service" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <Download className="h-3.5 w-3.5" aria-hidden />
+                      )}
+                      {lang("שירות לקוחות", "Customer service")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadRolePdf("")}
+                      disabled={downloadingRole === ""}
+                      className="inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-background px-3 py-1.5 text-sm text-muted-foreground hover:border-emerald-300"
+                    >
+                      {downloadingRole === "" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <Download className="h-3.5 w-3.5" aria-hidden />
+                      )}
+                      {lang("כל הצוותים", "All teams")}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+            </div>
+          </details>
         </>
       ) : null}
 

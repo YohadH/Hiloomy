@@ -50,9 +50,12 @@ import { getBundleOverview } from "@/lib/services/bundle-profitability-service";
 import { getLlmUsageToday, llmDailyBudgetUsd, LLM_GLOBAL_BUCKET } from "@/lib/services/llm-usage-service";
 import { writeDecisionInboxSummary } from "@/lib/services/command-center-summary-service";
 import { getSalesByChannel } from "@/lib/services/sales-channel-service";
+import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
+import type { PlanView } from "@/lib/domain/plan";
 import type {
   Decision,
   DecisionInbox,
+  InboxStats,
   DecisionLedgerState,
   DecisionOutcome,
   DecisionState,
@@ -86,7 +89,8 @@ const DECISION_TYPES = [
   "roas_collapse",
   "product_gone_silent",
   "decision_standalone_loss",
-  "decision_discount_tradeoff"
+  "decision_discount_tradeoff",
+  "plan_decision"
 ] as const;
 
 const L = (he: string, en: string): Localized => ({ he, en });
@@ -950,6 +954,8 @@ function decisionFromAlert(alert: AlertRow, ctx: DecisionContext): Decision | nu
       return competitorDecision(alert, ctx);
     case "roas_collapse":
       return roasDecision(alert, ctx);
+    case "plan_decision":
+      return planDecision(alert, ctx);
     default:
       return null;
   }
@@ -1142,6 +1148,7 @@ async function refreshLedger(storeId: string, now: Date): Promise<EngineCounts> 
     swallow("silent-product engine", upsertSilentProductAlerts(storeId)),
     swallow("standalone-loss engine", upsertStandaloneLossDecisions(storeId, now)),
     swallow("discount-tradeoff engine", upsertDiscountTradeoffDecisions(storeId, now)),
+    swallow("plan engine", upsertPlanDecisions(storeId, now)),
     swallow("outcome measurement", measureOutcomesForResolvedAlerts({ storeId }))
   ]);
   return {
@@ -1211,11 +1218,12 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
   const d30 = new Date(now.getTime() - 30 * DAY_MS);
   const d7 = new Date(now.getTime() - 7 * DAY_MS);
 
-  const [openAlerts, health, meta, competitorSnapshots] = await Promise.all([
+  const [openAlerts, health, meta, competitorSnapshots, plan] = await Promise.all([
     listOpenAlerts({ storeId, limit: 200 }) as Promise<AlertRow[]>,
     buildSetupHealth({ storeId }).catch(() => null),
     getMetaCampaignsOverview(storeId, { start: d30, end: now }).catch(() => null),
-    (getDb() as any).competitorSnapshot.count({ where: { storeId, snapshotDate: { gte: d7 } } }).catch(() => 0) as Promise<number>
+    (getDb() as any).competitorSnapshot.count({ where: { storeId, snapshotDate: { gte: d7 } } }).catch(() => 0) as Promise<number>,
+    currentPlan(storeId, now)
   ]);
 
   const built: Array<{ alert: AlertRow; decision: Decision }> = [];
@@ -1256,6 +1264,7 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
   const watchlist: WatchItem[] = [
     ...overflow.map(watchItemFromDecision),
     ...cards.filter((d) => d.status === "watch").map(watchItemFromDecision),
+    ...planWatchItems(plan, now),
     ...metaWatchItems(meta, ctx.pulse, now),
     ...otherAlerts.filter((a) => a.severity === "medium" || a.severity === "low").slice(0, 8).map(watchItemFromAlert)
   ];
@@ -1274,7 +1283,12 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
     ? ctx.leakage.newCustomer.conversions + ctx.leakage.returningCustomer.conversions + ctx.leakage.unclassified.conversions
     : 0;
   const reviewed =
-    counts.productsReviewed + Math.max(counts.campaignsReviewed, meta?.campaigns.length ?? 0) + affiliateReviewed + competitorSnapshots + openAlerts.length;
+    counts.productsReviewed +
+    Math.max(counts.campaignsReviewed, meta?.campaigns.length ?? 0) +
+    affiliateReviewed +
+    competitorSnapshots +
+    openAlerts.length +
+    (plan?.initiatives.length ?? 0);
   const watchingDistinct = new Set(watchlist.map((w) => w.decisionId ?? w.id)).size;
   const byStatus = cards.reduce(
     (acc, d) => ({ ...acc, [d.status]: acc[d.status] + 1 }),
@@ -1293,11 +1307,228 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
       watching: watchingDistinct,
       reviewed,
       suppressed: Math.max(0, reviewed - cards.length - watchingDistinct),
-      confidencePct: health ? health.score : null
+      confidencePct: health ? health.score : null,
+      plan: plan ? planStats(plan) : null
     },
     updatedAt: now.toISOString()
   };
 });
+
+// ── The plan as Today sees it ─────────────────────────────────────────
+// Read-only: the newest Gantt covering today. Decisions from the plan come
+// from upsertPlanDecisions below, never from here.
+async function currentPlan(storeId: string, now: Date): Promise<PlanView | null> {
+  try {
+    const sheetId = await currentPlanSheetId(storeId, now);
+    if (!sheetId) return null;
+    return await buildPlanView(storeId, sheetId, now);
+  } catch (err) {
+    console.warn("[decision-inbox] plan read failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+function planStats(plan: PlanView): NonNullable<InboxStats["plan"]> {
+  const today = plan.today;
+  const in7 = (d: string) => d > today && d <= new Date(new Date(`${today}T00:00:00.000Z`).getTime() + 7 * DAY_MS).toISOString().slice(0, 10);
+  return {
+    sheetId: plan.sheetId,
+    today: plan.initiatives.filter((i) => i.start <= today && i.end >= today).length,
+    live: plan.counts.live,
+    upcoming7: plan.initiatives.filter((i) => in7(i.start)).length,
+    blocked: plan.initiatives.filter((i) => i.status === "blocked" && (i.start <= today || in7(i.start))).length,
+    ready: plan.counts.ready
+  };
+}
+
+// A blocked initiative that is live or starts within 7 days is watched on
+// Today. Not a decision: "the plan assumes stock that is not there" is
+// operational until the plan engine or the stockout engine says otherwise.
+function planWatchItems(plan: PlanView | null, now: Date): WatchItem[] {
+  if (!plan) return [];
+  const today = plan.today;
+  const horizon = new Date(new Date(`${today}T00:00:00.000Z`).getTime() + 7 * DAY_MS).toISOString().slice(0, 10);
+  return plan.initiatives
+    .filter((i) => i.status === "blocked" && i.end >= today && i.start <= horizon)
+    .slice(0, 5)
+    .map((i) => ({
+      id: `plan:${i.id}`,
+      title: L(`בתוכנית: "${i.title.slice(0, 60)}" — חסומה`, `Planned: "${i.title.slice(0, 60)}" — blocked`),
+      detail: L(
+        `${i.start === today ? "מתחילה היום" : i.start < today ? "כבר באוויר" : `מתחילה ${i.start}`} · ${i.statusReason?.he ?? "תלות חסרה"}`,
+        `${i.start === today ? "Starts today" : i.start < today ? "Already live" : `Starts ${i.start}`} · ${i.statusReason?.en ?? "a dependency is missing"}`
+      ),
+      source: "plan",
+      since: now.toISOString(),
+      decisionId: null
+    }));
+}
+
+// ── Plan engine: decision hooks → Decisions on Today ─────────────────────
+// A hook whose window contains today becomes a ledger row (type
+// plan_decision) keyed by hook id, so it is created once, judged like every
+// other decision, and shows on the Plan page as "decision waiting in Today".
+// Hooks whose window passed without a decision are auto-resolved.
+async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> {
+  const sheetId = await currentPlanSheetId(storeId, now);
+  if (!sheetId) return 0;
+  const plan = await buildPlanView(storeId, sheetId, now);
+  const today = plan.today;
+  const keep: string[] = [];
+  let created = 0;
+  for (const i of plan.initiatives) {
+    if (i.status === "completed") continue;
+    for (const hook of i.decisionHooks) {
+      if (hook.windowStart > today || hook.windowEnd < today) continue;
+      const fp = `plan_decision:${sheetId}:${hook.id}`;
+      keep.push(fp);
+      created += 1;
+      await upsertAlert({
+        storeId,
+        type: "plan_decision",
+        fingerprint: fp,
+        severity: "medium",
+        source: "Calculated",
+        detectedBy: "decision-inbox-service",
+        title: hook.question.he,
+        description: `מהתוכנית: "${hook.sourceText.slice(0, 200)}"`,
+        recommendedAction: "להחליט לפי הנתונים בעמוד היום.",
+        relatedEntityType: "plan_initiative",
+        relatedEntityId: i.id,
+        payloadJson: {
+          sheetId,
+          initiativeId: i.id,
+          initiativeTitle: i.title,
+          hookId: hook.id,
+          hookKind: hook.kind,
+          hookText: hook.sourceText,
+          question: hook.question,
+          windowStart: hook.windowStart,
+          windowEnd: hook.windowEnd,
+          start: i.start,
+          end: i.end,
+          discountPct: i.offer.discountPct,
+          couponCode: i.offer.couponCode,
+          channels: i.channels,
+          products: i.products.map((p) => ({ title: p.title, units14d: p.units14d, unitsPrior14d: p.unitsPrior14d, coverDays: p.coverDays, inventory: p.inventory, hasRealCost: p.hasRealCost, liveCampaigns: p.liveCampaigns }))
+        },
+        periodLabel: `${hook.windowStart} → ${hook.windowEnd}`
+      }).catch(() => null);
+    }
+  }
+  await resolveStaleAlerts({ storeId, detectedBy: "decision-inbox-service", type: "plan_decision", keepFingerprints: keep }).catch(() => null);
+  return created;
+}
+
+// The Decision a plan hook becomes. Evidence is only what is measured: the
+// store's sales pace, margin, and the named products' velocity and cover.
+// The recommendation is a rule on those numbers, stated with them.
+function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
+  const p = payloadOf(alert);
+  const title = String(p.initiativeTitle ?? alert.title);
+  const kind = p.hookKind === "review" ? "review" : "conditional";
+  const question = (p.question as Localized | undefined) ?? L(alert.title, alert.title);
+  const hookText = String(p.hookText ?? "");
+  const discountPct = p.discountPct == null ? null : num(p.discountPct);
+  const products = Array.isArray(p.products) ? (p.products as Array<{ title: string; units14d: number; unitsPrior14d: number; coverDays: number | null; inventory: number | null; hasRealCost: boolean; liveCampaigns: number }>) : [];
+  const v = ctx.pulse.velocityChangePct;
+  const velocityLabel = v === null ? null : Math.abs(v) < 0.05 ? L("יציב", "stable") : v > 0 ? L(`עלייה ${pct(v)}`, `up ${pct(v)}`) : L(`ירידה ${pct(-v)}`, `down ${pct(-v)}`);
+  const thin = products.filter((x) => x.coverDays !== null && x.coverDays < 14);
+  const realCost = products.length > 0 && products.every((x) => x.hasRealCost);
+  const start = String(p.start ?? "");
+  const end = String(p.end ?? "");
+
+  const evidence: EvidenceFact[] = [
+    fact(L("מה התוכנית אומרת", "What the plan says"), hookText.slice(0, 160), "plan", L("הגאנט", "The Gantt"), "known", L(`${start} → ${end}`, `${start} → ${end}`)),
+    fact(L("קצב מכירות", "Sales velocity"), velocityLabel, "shopify", L("הזמנות Shopify, 7 ימים מול 7 קודמים", "Shopify Orders, 7d vs prior 7d"), v === null ? "unavailable" : "calculated"),
+    fact(L("מכירות נטו / 7 ימים", "Net sales / 7 days"), ctx.pulse.sales7 === null ? null : ils(ctx.pulse.sales7), "shopify", L("הזמנות Shopify", "Shopify Orders"), ctx.pulse.sales7 === null ? "unavailable" : "known"),
+    fact(L("מרווח תרומה", "Contribution margin"), ctx.pulse.marginRate === null ? null : pct(ctx.pulse.marginRate), "profit", L("30 ימים", "30 days"), ctx.pulse.marginQuality, ctx.pulse.marginRate === null ? L("כיסוי עלויות חסר", "cost coverage missing") : undefined),
+    ...products.slice(0, 4).map((x) =>
+      fact(
+        L(x.title, x.title),
+        `${x.units14d}`,
+        "inventory",
+        L("יחידות ב־14 יום · מלאי Shopify", "units / 14d · Shopify Inventory"),
+        "known",
+        L(
+          `${x.unitsPrior14d > 0 ? `${x.units14d >= x.unitsPrior14d ? "+" : ""}${Math.round(((x.units14d - x.unitsPrior14d) / x.unitsPrior14d) * 100)}% מול 14 הקודמים · ` : ""}${x.coverDays !== null ? `${x.coverDays} ימי כיסוי` : x.inventory !== null ? `${x.inventory} במלאי` : "מלאי לא ידוע"}${x.liveCampaigns > 0 ? ` · ${x.liveCampaigns} קמפיינים` : ""}`,
+          `${x.unitsPrior14d > 0 ? `${x.units14d >= x.unitsPrior14d ? "+" : ""}${Math.round(((x.units14d - x.unitsPrior14d) / x.unitsPrior14d) * 100)}% vs prior 14d · ` : ""}${x.coverDays !== null ? `${x.coverDays} days cover` : x.inventory !== null ? `${x.inventory} in stock` : "inventory unknown"}${x.liveCampaigns > 0 ? ` · ${x.liveCampaigns} campaigns` : ""}`
+        )
+      )
+    )
+  ];
+
+  // The rule, stated with the numbers. No causation, no invented targets.
+  const demandUp = v !== null && v >= 0.1;
+  const demandDown = v !== null && v <= -0.1;
+  const conflict = kind === "conditional" && (demandUp || thin.length > 0);
+  const status: DecisionStatus = conflict ? "change_plan" : "test";
+  const recommendation =
+    kind === "conditional"
+      ? demandUp && thin.length > 0
+        ? L(`לא להפעיל את ההנחה${discountPct !== null ? ` של ${discountPct}%` : ""} כמתוכנן: הביקוש כבר ${velocityLabel!.he} ו־${thin.map((x) => x.title).join(", ")} עם פחות מ־14 ימי כיסוי.`, `Do not activate the${discountPct !== null ? ` ${discountPct}%` : ""} discount as planned: demand is already ${velocityLabel!.en} and ${thin.map((x) => x.title).join(", ")} has under 14 days of cover.`)
+        : demandUp
+          ? L(`לשקול הנחה רדודה יותר${discountPct !== null ? ` מ־${discountPct}%` : ""}: הביקוש כבר ${velocityLabel!.he} בלי ההנחה.`, `Consider a shallower discount${discountPct !== null ? ` than ${discountPct}%` : ""}: demand is already ${velocityLabel!.en} without it.`)
+          : demandDown
+            ? L(`להפעיל כמתוכנן: קצב המכירות ${velocityLabel!.he} — התנאי שהתוכנית קבעה מתקיים.`, `Activate as planned: sales velocity is ${velocityLabel!.en} — the condition the plan set is met.`)
+            : L("להחליט לפי הקצב: המכירות יציבות, אין אות חד לכאן או לכאן. הנתונים למטה.", "Decide on pace: sales are stable, no strong signal either way. The numbers are below.")
+      : demandDown
+        ? L(`הביקוש ${velocityLabel!.he} — זה הרגע לשנות, לא להשאיר כמו שהוא.`, `Demand is ${velocityLabel!.en} — this is the moment to change, not to keep as is.`)
+        : demandUp
+          ? L(`הביקוש ${velocityLabel!.he} — אין סיבה מהנתונים להעמיק הנחה.`, `Demand is ${velocityLabel!.en} — nothing in the data argues for a deeper discount.`)
+          : L("להחליט לפי מה שנמדד: קצב יציב. הנתונים למטה.", "Decide on what is measured: pace is stable. The numbers are below.");
+
+  return finish(alert, {
+    id: alert.id,
+    kind: "plan_decision",
+    status,
+    title: question,
+    whyNow: L(
+      `${kind === "conditional" ? "ההפעלה מתוכננת ל־" : "בדיקה מתוכננת ל־"}${start}${velocityLabel ? ` · המכירות: ${velocityLabel.he}` : ""}${thin.length > 0 ? ` · ${thin.length} מוצרים עם מלאי דק` : ""}`,
+      `${kind === "conditional" ? "Activation planned for " : "Review scheduled for "}${start}${velocityLabel ? ` · sales: ${velocityLabel.en}` : ""}${thin.length > 0 ? ` · ${thin.length} products with thin cover` : ""}`
+    ),
+    question,
+    trigger: L(`התוכנית קבעה כאן החלטה: "${hookText.slice(0, 120)}"`, `The plan set a decision here: "${hookText.slice(0, 120)}"`),
+    evidence,
+    exposure: [
+      ctx.pulse.sales7 === null ? dim(L("מכירות נטו / 7 ימים", "Net sales / 7 days"), null, "unavailable") : dim(L("מכירות נטו / 7 ימים", "Net sales / 7 days"), ilsK(ctx.pulse.sales7), "known", velocityLabel ?? undefined),
+      ctx.pulse.marginRate === null ? dim(L("מרווח", "Margin"), null, "unavailable", L("כיסוי עלויות חסר", "cost coverage missing")) : dim(L("מרווח תרומה", "Contribution margin"), pct(ctx.pulse.marginRate), ctx.pulse.marginQuality),
+      products.length > 0 ? dim(L("כיסוי מלאי", "Stock cover"), thin.length > 0 ? `${Math.min(...thin.map((x) => x.coverDays ?? 0))}` : products[0].coverDays !== null ? `${products[0].coverDays}` : null, products.some((x) => x.coverDays !== null) ? "calculated" : "unavailable", L("ימים, המוצר הדק ביותר", "days, thinnest product")) : dim(L("כיסוי מלאי", "Stock cover"), null, "unavailable", L("לא זוהו מוצרים בתוכנית", "no products named in the plan"))
+    ],
+    connected: {
+      inputs: [L("תוכנית", "Plan"), L("מכירות", "Sales"), ...(products.length > 0 ? [L("מלאי", "Inventory")] : []), L("רווח", "Profit")],
+      statement: kind === "conditional" ? L("תנאי בתוכנית + קצב מכירות + מלאי", "A condition in the plan + sales pace + inventory") : L("בדיקה מתוכננת + מה שנמדד מאז", "A scheduled review + what was measured since"),
+      conclusion: conflict ? L("ההנחה שמאחורי התוכנית כבר לא מתקיימת", "The assumption behind the plan no longer holds") : L("ההחלטה שהתוכנית קבעה הגיעה — הנתונים לצדה", "The decision the plan scheduled is here — with its numbers")
+    },
+    materiality: null,
+    options:
+      kind === "conditional"
+        ? [
+            { key: "activate", label: L("להפעיל כמתוכנן", "Activate as planned"), recommended: demandDown },
+            { key: "shallower", label: L("להפעיל בהנחה רדודה יותר", "Activate with a shallower discount"), recommended: demandUp && thin.length === 0 },
+            { key: "hold", label: L("לא להפעיל עכשיו", "Do not activate now"), recommended: demandUp && thin.length > 0 }
+          ]
+        : [
+            { key: "keep", label: L("להשאיר כמו שהוא", "Keep as is"), recommended: !demandDown },
+            { key: "change", label: L("לשנות את ההצעה", "Change the offer"), recommended: demandDown },
+            { key: "stop", label: L("לעצור", "Stop"), recommended: false }
+          ],
+    recommendation,
+    reason: null,
+    confidence: v === null ? "low" : realCost ? "medium" : "medium",
+    confidenceReason: v === null
+      ? L("אין מספיק מכירות בשני חלונות של 7 ימים כדי למדוד קצב.", "Not enough sales in two 7-day windows to measure pace.")
+      : realCost
+        ? L("קצב, מלאי ועלות נמדדו.", "Pace, inventory and cost are measured.")
+        : L("קצב ומלאי נמדדו; הרווחיות לא מאומתת בלי עלות לכל המוצרים.", "Pace and inventory are measured; profitability is unverified without a cost on every product."),
+    missingEvidence: [...(products.length === 0 ? [L("מוצרים שהתוכנית מתייחסת אליהם", "Which products the plan refers to")] : []), ...(realCost ? [] : [L("עלות אמיתית לכל המוצרים", "A real cost on every product")])],
+    wouldChange: [L("קצב המכירות משתנה ביותר מ־10%.", "Sales velocity moves more than 10%."), L("כיסוי המלאי יורד מתחת ל־14 יום.", "Stock cover drops under 14 days."), L("החלטה קודמת על אותה יוזמה.", "A prior decision on the same initiative.")],
+    unknown: L("הילומי לא יודעת מה היעד המסחרי של היוזמה — הגאנט לא מציין אותו.", "Hiloomy does not know the initiative's commercial target — the Gantt does not state one."),
+    primaryAction: "review",
+    rank: ctx.pulse.sales7 ?? 0,
+    entity: { type: "plan_initiative", id: String(p.initiativeId ?? ""), label: title }
+  });
+}
 
 export async function getDecision(storeId: string, id: string): Promise<Decision | null> {
   const db = getDb();

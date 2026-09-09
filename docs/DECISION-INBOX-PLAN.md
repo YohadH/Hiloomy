@@ -73,13 +73,42 @@ cards with "Hiloomy checked" and current facts, "fix data" when cost is
 missing. Nothing invented: no intent, no revenue targets, no creative or
 approval state.
 
-**Phase 2 — after the wedge measurement (the "Plan × performance engine"):**
-proximity-based evaluation (>14d minimal; 7–14d dependencies; ≤7d full;
-live → actual vs baseline of the named products); verdicts KEEP / WATCH /
-NEEDS DECISION / LIVE HEALTHY / LIVE REVIEW; NEEDS DECISION and LIVE REVIEW
-create Decisions (kind `plan_conflict`) with evidence; human decision writes
-back to the initiative preserving original → decision → revised; market
-context only when a competitor engine decision touches the same products.
+**Rebuilt 2026-09-09 (owner: "the Plan must influence Today")** — the model
+is now cells → Commercial Initiatives → execution actions → decision hooks:
+
+- `groupIntoClusters`: rows sharing an anchor (event/holiday name, launch
+  name, coupon code, named product) over dates within 3 days of each other
+  are one initiative; rows without an anchor stay singletons with low
+  grouping confidence. `mergeExecutionSpans`: a merged month-long cell (one
+  row per day) is one execution. Take a Nap September: 286 cells → 28
+  initiatives · 41 execution actions.
+- `detectDecisionHooks`: "אופציונלי / בהתאם ל / במידה ו / optional /
+  depending on" → conditional hook, window 7 days before start → end;
+  "הערכת מצב / לבדוק סטטוס / לבחון המשך / משאירים או / להחליט אם / review
+  status / continue or stop" → review hook, window −1 → +2 days. One hook per
+  kind per initiative. Marketing copy that merely says "decide" or ends in
+  "?" is not a hook.
+- Engine `upsertPlanDecisions` (runs with the other engines on every Today
+  build and on the 05:00 cron): a hook whose window contains today becomes a
+  ledger row `plan_decision` keyed by hook id; `planDecision` builds the
+  Decision with measured evidence only (7d sales pace vs prior 7d, net sales,
+  contribution margin, named products' 14d units / cover / live campaigns);
+  status CHANGE PLAN when the plan's assumption conflicts (demand already
+  up ≥10% or cover <14d for a conditional discount), else TEST. Windows that
+  pass undecided auto-resolve.
+- Plan reads its decisions back (`payloadJson.sheetId`): NEEDS DECISION +
+  "Decision D-xxx is waiting in Today →"; resolved → "Updated by decision
+  D-xxx: original / decided". The Plan page never renders the receipt.
+- Page: month header (initiatives · execution actions · status chips),
+  "decisions affecting your plan", coming up, status-first calendar showing
+  initiatives, phone agenda, day panel grouped by initiative with ✓/○
+  executions (✓ only when observable). The general "Hiloomy insights" pane
+  was removed; brief + role PDFs live in a collapsed "Export & tools".
+
+**Still owed (phase 2b):** verdicts WATCH / LIVE REVIEW from live
+performance vs the named products' baseline (no hook needed), proximity-
+tiered evaluation depth, and manual correction of a wrong grouping (the
+confidence is shown; there is no override UI yet).
 
 **Phase 3:** "Prepare" for coupon creation (affiliate portal already
 creates codes), completed initiatives kept with decisions and outcomes for

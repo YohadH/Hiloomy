@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { DECISION_STATUS_LABEL, type DecisionStatus, type InboxStats } from "@/lib/domain/decision";
 import { cn } from "@/lib/utils";
 
@@ -77,6 +78,24 @@ export function TodaySummary({ locale, stats, updatedAt }: { locale: Locale; sta
               </span>
             </span>
           ))}
+        </p>
+      ) : null}
+      {stats.plan ? (
+        <p className="text-sm">
+          <span className="font-semibold">{t("בתוכנית", "In the plan")}: </span>
+          <span className="text-muted-foreground">
+            {t(`${stats.plan.today} יוזמות היום`, `${stats.plan.today} initiatives today`)}
+            {stats.plan.upcoming7 > 0 ? ` · ${t(`${stats.plan.upcoming7} מתחילות בשבוע הקרוב`, `${stats.plan.upcoming7} start this week`)}` : ""}
+            {stats.plan.blocked > 0 ? (
+              <>
+                {" · "}
+                <span className="font-semibold text-danger">{t(`${stats.plan.blocked} חסומות`, `${stats.plan.blocked} blocked`)}</span>
+              </>
+            ) : ""}
+          </span>{" "}
+          <Link href={"/marketing-planner" as never} className="font-semibold text-foreground underline-offset-4 hover:underline">
+            {t("לתוכנית", "Open Plan")}
+          </Link>
         </p>
       ) : null}
       <p className="text-xs text-muted-foreground" suppressHydrationWarning>

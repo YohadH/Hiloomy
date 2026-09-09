@@ -1,12 +1,13 @@
-// Plan view, phase 1: Gantt rows → initiatives. A month-long merged cell
-// (one row per day, same text) must become ONE initiative, not thirty; a gap
-// splits it; product matching is by catalogue title mentioned in the text.
+// Plan model: cells → Commercial Initiatives → executions + decision hooks.
+// The same campaign across six channels is ONE initiative; a month-long
+// merged cell is one execution spanning the month; sentences that say
+// "decide here" become hooks with a window.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { __testing } from "@/lib/services/plan-service";
 
-const { groupRows, matchProducts } = __testing;
+const { groupIntoClusters, extractAnchors, detectDecisionHooks, titleFor, confidenceFor } = __testing;
 const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 const row = (id: string, task: string, start: string, opts: { end?: string; role?: string; category?: string } = {}) => ({
   id,
@@ -19,46 +20,86 @@ const row = (id: string, task: string, start: string, opts: { end?: string; role
   executionJson: null
 });
 
-test("one row per day with the same text collapses into one initiative", () => {
-  const rows = ["01", "02", "03", "04"].map((dd, i) => row(`r${i}`, "מבצע ראש השנה 15%", `2026-09-${dd}`));
-  const out = groupRows(rows, "s1");
-  assert.equal(out.length, 1);
-  assert.equal(out[0].start, "2026-09-01");
-  assert.equal(out[0].end, "2026-09-04");
-  assert.equal(out[0].days, 4);
-  assert.deepEqual(out[0].rowIds, ["r0", "r1", "r2", "r3"]);
-});
-
-test("a gap of more than a day starts a second initiative", () => {
-  const rows = [row("a", "Story", "2026-09-01"), row("b", "Story", "2026-09-02"), row("c", "Story", "2026-09-10")];
-  const out = groupRows(rows, "s1");
-  assert.equal(out.length, 2);
-  assert.equal(out[0].end, "2026-09-02");
-  assert.equal(out[1].start, "2026-09-10");
-});
-
-test("different role or category means a different initiative", () => {
-  const rows = [row("a", "Launch", "2026-09-01", { role: "ads" }), row("b", "Launch", "2026-09-01", { role: "crm" })];
-  assert.equal(groupRows(rows, "s1").length, 2);
-});
-
-test("initiative ids are stable for the same key and start", () => {
-  const a = groupRows([row("x", "Launch", "2026-09-01")], "s1")[0].id;
-  const b = groupRows([row("y", "Launch", "2026-09-01")], "s1")[0].id;
-  assert.equal(a, b);
-});
-
-test("products are matched by catalogue title in the text, longest title wins", () => {
-  const catalogue = [
-    { id: "p1", title: "Second Skin", status: "ACTIVE", hasRealCost: true, inventory: 10 },
-    { id: "p2", title: "Second Skin Set", status: "ACTIVE", hasRealCost: false, inventory: 3 },
-    { id: "p3", title: "Musk Santal 09", status: "ACTIVE", hasRealCost: true, inventory: 0 }
+test("the same campaign across channels is one initiative with N executions", () => {
+  const rows = [
+    row("a", "מבצע ראש השנה 15% + 5% לחברי הקהילה", "2026-09-01", { end: "2026-09-13", category: "סיפור ראשי" }),
+    row("b", "באנר ראש השנה בדף הבית", "2026-09-01", { end: "2026-09-13", category: "אתר" }),
+    row("c", "ניוזלטר ראש השנה", "2026-09-02", { category: "ניוזלטר" }),
+    row("d", "SMS ראש השנה — קוד EXTRANAP", "2026-09-03", { category: "SMS" }),
+    row("e", "עגלות נטושות: מסר ראש השנה", "2026-09-04", { category: "עגלות נטושות" })
   ];
-  const hits = matchProducts("קידום SECOND SKIN SET + Musk Santal 09 בהנחה", catalogue);
-  assert.deepEqual(hits.map((h) => h.id).sort(), ["p2", "p3"]);
+  const clusters = groupIntoClusters(rows);
+  assert.equal(clusters.length, 1);
+  assert.equal(clusters[0].rows.length, 5);
+  assert.equal(clusters[0].anchor.kind, "event");
+  assert.equal(titleFor(clusters[0]), "ראש השנה");
+  assert.equal(confidenceFor(clusters[0]), "high");
+  assert.equal(clusters[0].start, "2026-09-01");
+  assert.equal(clusters[0].end, "2026-09-13");
 });
 
-test("very short titles never match", () => {
-  const catalogue = [{ id: "p1", title: "Set", status: "ACTIVE", hasRealCost: true, inventory: 1 }];
-  assert.equal(matchProducts("Holiday set promotion", catalogue).length, 0);
+test("different events are different initiatives, even on the same days", () => {
+  const rows = [row("a", "ראש השנה 15%", "2026-09-01"), row("b", "סוכות 15% אופציונלי", "2026-09-01")];
+  assert.equal(groupIntoClusters(rows).length, 2);
+});
+
+test("the same event far apart in time is two initiatives", () => {
+  const rows = [row("a", "Back in stock", "2026-09-10"), row("b", "Back in stock", "2026-09-25")];
+  const clusters = groupIntoClusters(rows);
+  assert.equal(clusters.length, 2);
+});
+
+test("a launch phrase is an anchor; rows without any anchor stay separate", () => {
+  const rows = [
+    row("a", "השקת סאטן קוטור — קמפיין", "2026-09-05", { category: "קידום ממומן" }),
+    row("b", "השקת סאטן קוטור: באנר", "2026-09-05", { category: "אתר" }),
+    row("c", "הפקת תוכן עבור אוקטובר", "2026-09-05", { category: "תוכן" })
+  ];
+  const clusters = groupIntoClusters(rows);
+  assert.equal(clusters.length, 2);
+  const launch = clusters.find((c) => c.anchor.kind === "launch")!;
+  assert.equal(launch.rows.length, 2);
+  assert.equal(titleFor(launch), "השקת סאטן קוטור");
+  const other = clusters.find((c) => c.anchor.kind === "text")!;
+  assert.equal(confidenceFor(other), "low");
+});
+
+test("a coupon code groups rows when no event is named", () => {
+  const rows = [row("a", "קופון KIDS15 באתר", "2026-09-08", { category: "אתר" }), row("b", "SMS עם KIDS15", "2026-09-09", { category: "SMS" })];
+  const clusters = groupIntoClusters(rows);
+  assert.equal(clusters.length, 1);
+  assert.equal(clusters[0].anchor.kind, "coupon");
+});
+
+test("anchors: event beats coupon beats product", () => {
+  const anchors = extractAnchors("ראש השנה — קוד EXTRANAP על Second Skin", ["Second Skin"]);
+  assert.deepEqual(anchors.map((a) => a.kind).sort(), ["coupon", "event", "product"]);
+});
+
+test("decision hooks: conditional launch gets a 7-day window before start", () => {
+  const hooks = detectDecisionHooks({ id: "r1", task: "הנחה לסוכות 15% אופציונלי בהתאם לקצב מכירות חודשי", start: "2026-09-25", end: "2026-09-30" }, "סוכות");
+  assert.equal(hooks.length, 1);
+  assert.equal(hooks[0].kind, "conditional");
+  assert.equal(hooks[0].windowStart, "2026-09-18");
+  assert.equal(hooks[0].windowEnd, "2026-09-30");
+  assert.match(hooks[0].question.he, /סוכות/);
+});
+
+test("decision hooks: a scheduled review gets a window around its date", () => {
+  const hooks = detectDecisionHooks({ id: "r2", task: "הערכת מצב קמפיין — משאירים ככה עד סוף ספט׳ או מעלים שוב 15% הנחה", start: "2026-09-22", end: "2026-09-22" }, "קמפיין");
+  assert.equal(hooks.length, 1);
+  assert.equal(hooks[0].kind, "review");
+  assert.equal(hooks[0].windowStart, "2026-09-21");
+  assert.equal(hooks[0].windowEnd, "2026-09-24");
+});
+
+test("decision hooks: 'check status and consider continuation' is a review; plain tasks are not hooks", () => {
+  assert.equal(detectDecisionHooks({ id: "r3", task: "השקת סאטן קוטור - לבדוק סטטוס קמפיין (כמה מכירות) ולבחון המשך", start: "2026-09-13", end: "2026-09-13" }, "השקת סאטן קוטור").length, 1);
+  assert.equal(detectDecisionHooks({ id: "r4", task: "ניוזלטר ראש השנה", start: "2026-09-02", end: "2026-09-02" }, "ראש השנה").length, 0);
+});
+
+test("hook ids are stable", () => {
+  const a = detectDecisionHooks({ id: "r1", task: "אופציונלי", start: "2026-09-25", end: "2026-09-25" }, "x")[0].id;
+  const b = detectDecisionHooks({ id: "r1", task: "אופציונלי", start: "2026-09-25", end: "2026-09-25" }, "y")[0].id;
+  assert.equal(a, b);
 });

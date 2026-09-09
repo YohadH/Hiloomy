@@ -2,26 +2,33 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, ExternalLink, Loader2, X } from "lucide-react";
+import { ArrowUpRight, ChevronLeft, ChevronRight, ExternalLink, Loader2, X } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { INITIATIVE_STATUS_LABEL, INITIATIVE_STATUS_ORDER, type Initiative, type InitiativeStatus, type PlanView as PlanViewData } from "@/lib/domain/plan";
+import { INITIATIVE_STATUS_LABEL, INITIATIVE_STATUS_ORDER, emptyStatusCounts, type Initiative, type InitiativeStatus, type PlanView as PlanViewData } from "@/lib/domain/plan";
+import { displayDecisionId } from "@/lib/domain/decision";
 
 type Locale = "he" | "en";
 
-// Status is the primary visual system. Category is a small label.
+// Status is the visual system. Category/channel is a small label.
 const STATUS_DOT: Record<InitiativeStatus, string> = {
   planned: "bg-muted-foreground/40",
   ready: "bg-success",
+  watch: "bg-warning",
+  needs_decision: "bg-warning",
   blocked: "bg-danger",
   live: "bg-primary",
+  review: "bg-warning",
   completed: "bg-border"
 };
 const STATUS_TEXT: Record<InitiativeStatus, string> = {
   planned: "text-muted-foreground",
   ready: "text-success",
+  watch: "text-warning",
+  needs_decision: "text-warning",
   blocked: "text-danger",
   live: "text-primary",
+  review: "text-warning",
   completed: "text-muted-foreground"
 };
 
@@ -37,6 +44,9 @@ function addDays(iso: string, n: number): string {
 function daysBetween(a: string, b: string): number {
   return Math.round((new Date(`${b}T00:00:00.000Z`).getTime() - new Date(`${a}T00:00:00.000Z`).getTime()) / 86_400_000);
 }
+function range(i: { start: string; end: string; days: number }, locale: Locale): string {
+  return i.days === 1 ? fmtDay(i.start, locale, { day: "numeric", month: "short" }) : `${fmtDay(i.start, locale, { day: "numeric", month: "short" })} – ${fmtDay(i.end, locale, { day: "numeric", month: "short" })}`;
+}
 
 export interface RowAction {
   label: string;
@@ -48,19 +58,13 @@ export function PlanView({
   sheetId,
   locale,
   refreshKey,
-  openDayRequest = null,
   rowActionFor,
   onExecuteRow,
   executingRowId
 }: {
   sheetId: string;
   locale: Locale;
-  // Bump to re-fetch (after a sync / reparse).
   refreshKey: number;
-  // A YYYY-MM-DD the host wants opened (insight chips).
-  openDayRequest?: string | null;
-  // The studio owns the per-row action wiring (open coupon tool, creative
-  // studio…). The plan view only asks for a label/href per row id.
   rowActionFor: (rowId: string) => RowAction | null;
   onExecuteRow: (rowId: string) => void;
   executingRowId: string | null;
@@ -69,7 +73,7 @@ export function PlanView({
   const t = (he: string, en: string) => (isHe ? he : en);
   const [plan, setPlan] = useState<PlanViewData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [month, setMonth] = useState<string | null>(null); // YYYY-MM
+  const [month, setMonth] = useState<string | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [mobileMode, setMobileMode] = useState<"agenda" | "month">("agenda");
 
@@ -91,31 +95,20 @@ export function PlanView({
     };
   }, [sheetId, refreshKey]);
 
-  useEffect(() => {
-    if (openDayRequest) {
-      setOpenDay(openDayRequest);
-      setMonth(openDayRequest.slice(0, 7));
-    }
-  }, [openDayRequest]);
-
   const byId = useMemo(() => new Map((plan?.initiatives ?? []).map((i) => [i.id, i])), [plan]);
   const dayMap = useMemo(() => new Map((plan?.days ?? []).map((d) => [d.date, d])), [plan]);
-
   const monthDays = useMemo(() => {
     if (!month) return [];
-    const first = `${month}-01`;
     const out: string[] = [];
-    for (let d = first; d.slice(0, 7) === month; d = addDays(d, 1)) out.push(d);
+    for (let d = `${month}-01`; d.slice(0, 7) === month; d = addDays(d, 1)) out.push(d);
     return out;
   }, [month]);
-
   const shiftMonth = (n: number) => {
     if (!month) return;
     const d = new Date(`${month}-01T00:00:00.000Z`);
     d.setUTCMonth(d.getUTCMonth() + n);
     setMonth(d.toISOString().slice(0, 7));
   };
-
   const close = useCallback(() => setOpenDay(null), []);
 
   if (error) return <p className="text-sm text-danger">{error}</p>;
@@ -130,14 +123,17 @@ export function PlanView({
 
   const monthLabel = fmtDay(`${month}-01`, locale, { month: "long", year: "numeric" });
   const inMonth = plan.initiatives.filter((i) => i.start.slice(0, 7) <= month && i.end.slice(0, 7) >= month);
-  const c = { planned: 0, ready: 0, blocked: 0, live: 0, completed: 0 } as Record<InitiativeStatus, number>;
+  const c = emptyStatusCounts();
   for (const i of inMonth) c[i.status] += 1;
-  const weekDays = (() => {
-    const start = plan.today;
-    const out: string[] = [];
-    for (let k = 0; k < 7; k++) out.push(addDays(start, k));
-    return out;
-  })();
+  const execInMonth = inMonth.reduce((n, i) => n + i.executions.filter((e) => e.start.slice(0, 7) <= month && e.end.slice(0, 7) >= month).length, 0);
+  const weekDays = Array.from({ length: 7 }, (_, k) => addDays(plan.today, k));
+  const chip = (s: InitiativeStatus, n: number) =>
+    n > 0 ? (
+      <span key={s} className={cn("inline-flex items-center gap-1.5 text-sm", STATUS_TEXT[s], (s === "needs_decision" || s === "blocked") && "font-semibold")}>
+        <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[s])} />
+        {n} {INITIATIVE_STATUS_LABEL[s][locale]}
+      </span>
+    ) : null;
 
   return (
     <div className="space-y-6">
@@ -146,11 +142,13 @@ export function PlanView({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => shiftMonth(-1)} className="rounded-md border border-border p-2 hover:bg-accent" aria-label={t("חודש קודם", "Previous month")}>
-              <ChevronRight className="h-4 w-4 rtl:rotate-0 ltr:rotate-180" aria-hidden />
+              <ChevronRight className="h-4 w-4 ltr:hidden" aria-hidden />
+              <ChevronLeft className="h-4 w-4 rtl:hidden" aria-hidden />
             </button>
             <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{monthLabel}</h2>
             <button type="button" onClick={() => shiftMonth(1)} className="rounded-md border border-border p-2 hover:bg-accent" aria-label={t("חודש הבא", "Next month")}>
-              <ChevronLeft className="h-4 w-4 rtl:rotate-0 ltr:rotate-180" aria-hidden />
+              <ChevronLeft className="h-4 w-4 ltr:hidden" aria-hidden />
+              <ChevronRight className="h-4 w-4 rtl:hidden" aria-hidden />
             </button>
             <button type="button" onClick={() => setMonth(plan.today.slice(0, 7))} className="ms-1 rounded-md border border-border px-3 py-1.5 text-sm font-semibold hover:bg-accent">
               {t("היום", "Today")}
@@ -165,31 +163,37 @@ export function PlanView({
             </button>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {t(`${inMonth.length} יוזמות מתוכננות`, `${inMonth.length} planned initiatives`)}
-          {c.live > 0 ? ` · ${c.live} ${t("באוויר", "live")}` : ""}
-          {c.ready > 0 ? ` · ${c.ready} ${t("מוכנות", "ready")}` : ""}
-          {c.blocked > 0 ? (
-            <>
-              {" · "}
-              <span className="font-semibold text-danger">
-                {c.blocked} {t("חסומות", "blocked")}
-              </span>
-            </>
-          ) : null}
+        <p className="text-base font-semibold">
+          {t(`${inMonth.length} מהלכים מסחריים · ${execInMonth} פעולות ביצוע`, `${inMonth.length} commercial initiatives · ${execInMonth} execution actions`)}
         </p>
-        {/* Plan health: one line, deterministic. */}
-        <p className="border-y border-border py-3 text-sm">
-          <span className={cn("font-semibold", plan.health.tone === "attention" ? "text-danger" : plan.health.tone === "good" ? "text-success" : "text-muted-foreground")}>
-            {plan.health.tone === "attention" ? t("דורש תשומת לב", "Needs attention") : plan.health.tone === "good" ? t("בעיקר במסלול", "Mostly on track") : t("שקט", "Quiet")}
-          </span>
-          <span className="text-muted-foreground"> · {plan.health.line[locale]}</span>
-          <span className="block text-xs text-muted-foreground sm:inline">
-            {" "}
-            {t("הילומי בדקה קופונים, מלאי, מכירות, קמפיינים ועלויות על המוצרים שמוזכרים בתוכנית.", "Hiloomy checked coupons, inventory, sales, campaigns and costs for the products the plan names.")}
-          </span>
-        </p>
+        <p className="flex flex-wrap items-center gap-x-4 gap-y-1">{INITIATIVE_STATUS_ORDER.map((s) => chip(s, c[s]))}</p>
       </header>
+
+      {/* ── Decisions affecting the plan (they live on Today) ────── */}
+      {plan.decisionsPending.length > 0 ? (
+        <section className="space-y-1">
+          <h3 className="text-base font-semibold">
+            {plan.decisionsPending.length === 1 ? t("החלטה אחת משפיעה על התוכנית", "1 decision affecting your plan") : t(`${plan.decisionsPending.length} החלטות משפיעות על התוכנית`, `${plan.decisionsPending.length} decisions affecting your plan`)}
+          </h3>
+          <ul className="divide-y divide-border border-y border-border">
+            {plan.decisionsPending.map((d) => (
+              <li key={d.decisionId} className="flex items-start justify-between gap-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{d.initiativeTitle}</p>
+                  <p className="text-sm text-muted-foreground">{d.question[locale]}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("לקבל החלטה עד", "Decision due")} {fmtDay(d.due, locale, { day: "numeric", month: "short" })}
+                  </p>
+                </div>
+                <Link href={`/today?open=${d.decisionId}` as never} className="inline-flex h-10 shrink-0 items-center gap-1 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 sm:h-9">
+                  {t("לפתוח בהיום", "Open in Today")}
+                  <ArrowUpRight className="h-4 w-4 rtl:-scale-x-100" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {/* ── Coming up ────────────────────────────────────────────── */}
       {plan.upcoming.length > 0 ? (
@@ -200,8 +204,11 @@ export function PlanView({
               <li key={i.id}>
                 <button type="button" onClick={() => setOpenDay(i.start)} className="flex w-full items-start justify-between gap-4 py-3 text-start">
                   <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">{relativeDay(plan.today, i.start, locale)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {relativeDay(plan.today, i.start, locale)} · {range(i, locale)}
+                    </p>
                     <p className="line-clamp-2 text-sm font-semibold">{i.title}</p>
+                    {i.channels.length > 0 ? <p className="text-xs text-muted-foreground">{i.channels.join(" · ")}</p> : null}
                   </div>
                   <StatusTag status={i.status} locale={locale} />
                 </button>
@@ -217,12 +224,24 @@ export function PlanView({
         <ul className="divide-y divide-border border-y border-border">
           {weekDays.map((d) => {
             const day = dayMap.get(d);
-            const n = day?.initiativeIds.length ?? 0;
+            const ids = day?.initiativeIds ?? [];
+            const items = ids.map((id) => byId.get(id)!).filter(Boolean).sort((a, b) => INITIATIVE_STATUS_ORDER.indexOf(a.status) - INITIATIVE_STATUS_ORDER.indexOf(b.status));
             return (
               <li key={d}>
-                <button type="button" onClick={() => n > 0 && setOpenDay(d)} className="flex min-h-11 w-full items-center justify-between gap-4 py-2 text-start" disabled={n === 0}>
-                  <span className={cn("text-sm", d === plan.today && "font-semibold")}>{fmtDay(d, locale, { weekday: "short", day: "numeric" })}</span>
-                  <DayCounts day={day} locale={locale} />
+                <button type="button" onClick={() => ids.length > 0 && setOpenDay(d)} className="flex min-h-11 w-full items-start justify-between gap-4 py-2 text-start" disabled={ids.length === 0}>
+                  <span className={cn("shrink-0 text-sm", d === plan.today && "font-semibold")}>{fmtDay(d, locale, { weekday: "short", day: "numeric" })}</span>
+                  <span className="min-w-0 flex-1 text-end">
+                    {items.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : (
+                      items.slice(0, 3).map((i) => (
+                        <span key={i.id} className="block truncate text-sm">
+                          {i.title} <span className={cn("text-xs font-semibold uppercase", STATUS_TEXT[i.status])}>{INITIATIVE_STATUS_LABEL[i.status][locale]}</span>
+                        </span>
+                      ))
+                    )}
+                    {items.length > 3 ? <span className="block text-xs text-muted-foreground">+{items.length - 3}</span> : null}
+                  </span>
                 </button>
               </li>
             );
@@ -230,7 +249,7 @@ export function PlanView({
         </ul>
       </section>
 
-      {/* ── Month grid (desktop always, phone on demand) ─────────── */}
+      {/* ── Month grid: initiatives, not every execution ─────────── */}
       <section className={cn("space-y-2", mobileMode !== "month" && "hidden lg:block")}>
         <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-muted-foreground">
           {(isHe ? DOW_HE : DOW_EN).map((d) => (
@@ -243,37 +262,37 @@ export function PlanView({
           ))}
           {monthDays.map((d) => {
             const day = dayMap.get(d);
-            const n = day?.initiativeIds.length ?? 0;
-            const attention = (day?.byStatus.blocked ?? 0) > 0;
+            const ids = day?.initiativeIds ?? [];
+            const items = ids.map((id) => byId.get(id)!).filter(Boolean).sort((a, b) => INITIATIVE_STATUS_ORDER.indexOf(a.status) - INITIATIVE_STATUS_ORDER.indexOf(b.status));
+            const decisions = day?.byStatus.needs_decision ?? 0;
+            const blocked = day?.byStatus.blocked ?? 0;
             const isToday = d === plan.today;
             const inRange = plan.rangeStart && plan.rangeEnd ? d >= plan.rangeStart && d <= plan.rangeEnd : false;
             return (
               <button
                 key={d}
                 type="button"
-                onClick={() => n > 0 && setOpenDay(d)}
-                disabled={n === 0}
+                onClick={() => ids.length > 0 && setOpenDay(d)}
+                disabled={ids.length === 0}
                 className={cn(
-                  "flex min-h-[4.5rem] flex-col rounded-md border p-1.5 text-start sm:min-h-20",
-                  attention ? "border-danger/50 bg-danger/5" : n > 0 ? "border-border bg-card hover:bg-accent" : inRange ? "border-border/60 bg-muted/20" : "border-transparent",
+                  "flex min-h-[5.5rem] flex-col rounded-md border p-1.5 text-start",
+                  decisions > 0 ? "border-warning/60 bg-warning/5" : blocked > 0 ? "border-danger/50 bg-danger/5" : ids.length > 0 ? "border-border bg-card hover:bg-accent" : inRange ? "border-border/60 bg-muted/20" : "border-transparent",
                   isToday && "ring-2 ring-primary/40"
                 )}
               >
                 <span className={cn("text-xs", isToday ? "font-bold" : "font-medium", !inRange && "text-muted-foreground/60")}>{Number(d.slice(8, 10))}</span>
-                {n > 0 ? (
-                  <>
-                    <span className="mt-1 text-xs font-semibold">
-                      {n} {t("יוזמות", "initiatives")}
-                    </span>
-                    <span className="mt-auto flex flex-wrap items-center gap-1">
-                      {INITIATIVE_STATUS_ORDER.filter((s) => (day?.byStatus[s] ?? 0) > 0).map((s) => (
-                        <span key={s} className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground" title={INITIATIVE_STATUS_LABEL[s][locale]}>
-                          <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[s])} />
-                          {day?.byStatus[s]}
-                        </span>
-                      ))}
-                    </span>
-                  </>
+                {items.slice(0, 2).map((i) => (
+                  <span key={i.id} className="mt-1 flex items-center gap-1 text-[11px] leading-4">
+                    <span aria-hidden className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[i.status])} />
+                    <span className="truncate">{i.title}</span>
+                  </span>
+                ))}
+                {items.length > 2 ? <span className="text-[11px] text-muted-foreground">+{items.length - 2}</span> : null}
+                {ids.length > 0 ? (
+                  <span className="mt-auto text-[11px] text-muted-foreground">
+                    {day?.executionCount ?? 0} {t("פעולות", "actions")}
+                    {decisions > 0 ? ` · ${decisions} ${t("החלטה", "decision")}` : ""}
+                  </span>
                 ) : null}
               </button>
             );
@@ -291,7 +310,7 @@ function relativeDay(today: string, iso: string, locale: Locale): string {
   const isHe = locale === "he";
   if (n === 0) return isHe ? "היום" : "Today";
   if (n === 1) return isHe ? "מחר" : "Tomorrow";
-  return isHe ? `בעוד ${n} ימים · ${fmtDay(iso, locale, { day: "numeric", month: "short" })}` : `In ${n} days · ${fmtDay(iso, locale, { day: "numeric", month: "short" })}`;
+  return isHe ? `בעוד ${n} ימים` : `In ${n} days`;
 }
 
 function StatusTag({ status, locale, className }: { status: InitiativeStatus; locale: Locale; className?: string }) {
@@ -303,18 +322,7 @@ function StatusTag({ status, locale, className }: { status: InitiativeStatus; lo
   );
 }
 
-function DayCounts({ day, locale }: { day: { initiativeIds: string[]; byStatus: Record<InitiativeStatus, number> } | undefined; locale: Locale }) {
-  const isHe = locale === "he";
-  if (!day || day.initiativeIds.length === 0) return <span className="text-xs text-muted-foreground">{isHe ? "—" : "—"}</span>;
-  const parts = INITIATIVE_STATUS_ORDER.filter((s) => day.byStatus[s] > 0).map((s) => `${day.byStatus[s]} ${INITIATIVE_STATUS_LABEL[s][locale]}`);
-  return (
-    <span className="text-end text-xs text-muted-foreground">
-      <span className="font-semibold text-foreground">{day.initiativeIds.length}</span> · {parts.join(" · ")}
-    </span>
-  );
-}
-
-// ── Day panel: initiatives grouped by status ────────────────────────
+// ── Day panel: initiatives on that day, grouped by status ────────────
 function DayPanel({
   day,
   plan,
@@ -354,35 +362,35 @@ function DayPanel({
   if (!mounted || !day) return null;
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
-  const ids = plan.days.find((d) => d.date === day)?.initiativeIds ?? [];
-  const items = ids.map((id) => byId.get(id)!).filter(Boolean).sort((a, b) => INITIATIVE_STATUS_ORDER.indexOf(a.status) - INITIATIVE_STATUS_ORDER.indexOf(b.status));
-  const counts = INITIATIVE_STATUS_ORDER.map((s) => [s, items.filter((i) => i.status === s).length] as const).filter(([, n]) => n > 0);
+  const info = plan.days.find((d) => d.date === day);
+  const items = (info?.initiativeIds ?? []).map((id) => byId.get(id)!).filter(Boolean).sort((a, b) => INITIATIVE_STATUS_ORDER.indexOf(a.status) - INITIATIVE_STATUS_ORDER.indexOf(b.status));
 
   return createPortal(
     <div dir={isHe ? "rtl" : "ltr"} className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="flex h-[100dvh] w-full flex-col bg-background shadow-dialog sm:w-[min(720px,94vw)] sm:border-s sm:border-border" onClick={(e) => e.stopPropagation()}>
+      <div className="flex h-[100dvh] w-full flex-col bg-background shadow-dialog sm:w-[min(760px,94vw)] sm:border-s sm:border-border" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b border-border px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:px-5 sm:pt-3">
           <button type="button" onClick={() => onShift(-1)} className="rounded-md border border-border p-2 hover:bg-accent" aria-label={t("יום קודם", "Previous day")}>
-            <ChevronRight className="h-4 w-4 ltr:rotate-180" aria-hidden />
+            <ChevronRight className="h-4 w-4 ltr:hidden" aria-hidden />
+            <ChevronLeft className="h-4 w-4 rtl:hidden" aria-hidden />
           </button>
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-base font-semibold">{fmtDay(day, locale, { weekday: "long", day: "numeric", month: "long" })}</h3>
             <p className="text-xs text-muted-foreground">
-              {items.length} {t("יוזמות", "initiatives")}
-              {counts.map(([s, n]) => ` · ${n} ${INITIATIVE_STATUS_LABEL[s][locale]}`).join("")}
+              {t(`${items.length} מהלכים · ${info?.executionCount ?? 0} פעולות ביצוע`, `${items.length} initiatives · ${info?.executionCount ?? 0} execution actions`)}
             </p>
           </div>
           <button type="button" onClick={() => onShift(1)} className="rounded-md border border-border p-2 hover:bg-accent" aria-label={t("יום הבא", "Next day")}>
-            <ChevronLeft className="h-4 w-4 ltr:rotate-180" aria-hidden />
+            <ChevronLeft className="h-4 w-4 ltr:hidden" aria-hidden />
+            <ChevronRight className="h-4 w-4 rtl:hidden" aria-hidden />
           </button>
           <button type="button" onClick={onClose} className="-me-1 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("סגירה", "Close")}>
             <X className="h-5 w-5" aria-hidden />
           </button>
         </div>
-        <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-5">
-          {items.length === 0 ? <p className="text-sm text-muted-foreground">{t("אין יוזמות ביום הזה.", "No initiatives on this day.")}</p> : null}
+        <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-5">
+          {items.length === 0 ? <p className="text-sm text-muted-foreground">{t("אין מהלכים ביום הזה.", "No initiatives on this day.")}</p> : null}
           {items.map((i) => (
-            <InitiativeCard key={i.id} initiative={i} locale={locale} today={plan.today} rowActionFor={rowActionFor} onExecuteRow={onExecuteRow} executingRowId={executingRowId} />
+            <InitiativeCard key={i.id} initiative={i} day={day} locale={locale} rowActionFor={rowActionFor} onExecuteRow={onExecuteRow} executingRowId={executingRowId} />
           ))}
         </div>
       </div>
@@ -391,45 +399,116 @@ function DayPanel({
   );
 }
 
-// ── Initiative card: title, planned move, dependencies, what Hiloomy
-//    checked, current reality (observable facts only), row action. ──
+// ── Initiative card: the move, its executions, what Hiloomy checked,
+//    current reality, verdict — and the link to Today when a decision is open.
 function InitiativeCard({
   initiative: i,
+  day,
   locale,
-  today,
   rowActionFor,
   onExecuteRow,
   executingRowId
 }: {
   initiative: Initiative;
+  day: string;
   locale: Locale;
-  today: string;
   rowActionFor: (rowId: string) => RowAction | null;
   onExecuteRow: (rowId: string) => void;
   executingRowId: string | null;
 }) {
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
-  const action = rowActionFor(i.rowIds[0]);
-  const executed = Boolean(i.executedAt);
-  const range = i.days === 1 ? fmtDay(i.start, locale, { day: "numeric", month: "short" }) : `${fmtDay(i.start, locale, { day: "numeric", month: "short" })} – ${fmtDay(i.end, locale, { day: "numeric", month: "short" })}`;
+  const openDecision = i.relatedDecisions.find((r) => r.state === "open");
+  const resolved = i.relatedDecisions.find((r) => r.state === "resolved" && r.choice !== "auto_closed");
   const missingCost = i.products.filter((p) => !p.hasRealCost);
+  const todayExecutions = i.executions.filter((e) => e.start <= day && e.end >= day);
+  const otherExecutions = i.executions.filter((e) => !(e.start <= day && e.end >= day));
+  const verdict =
+    i.status === "needs_decision"
+      ? { label: t("דורש החלטה", "NEEDS DECISION"), cls: "text-warning" }
+      : i.status === "blocked"
+        ? { label: t("חסום", "BLOCKED"), cls: "text-danger" }
+        : i.status === "live" || i.status === "ready"
+          ? { label: t("להמשיך כמתוכנן", "KEEP"), cls: "text-success" }
+          : i.status === "completed"
+            ? { label: t("הסתיים", "COMPLETED"), cls: "text-muted-foreground" }
+            : { label: t("מתוכנן", "PLANNED"), cls: "text-muted-foreground" };
+
   return (
-    <article className={cn("rounded-xl border bg-card p-4", i.status === "blocked" ? "border-danger/50" : i.status === "live" ? "border-primary/40" : "border-border")}>
+    <article className={cn("rounded-xl border bg-card p-4", i.status === "needs_decision" ? "border-warning/60" : i.status === "blocked" ? "border-danger/50" : i.status === "live" ? "border-primary/40" : "border-border")}>
       <div className="flex items-start justify-between gap-3">
         <StatusTag status={i.status} locale={locale} />
         <span className="text-xs text-muted-foreground">
-          {range}
+          {range(i, locale)}
           {i.days > 1 ? ` · ${i.days} ${t("ימים", "days")}` : ""}
         </span>
       </div>
-      <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6">{i.title}</p>
-      <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-        {i.category ? <span>{i.category}</span> : null}
-        {i.role ? <span>· {i.role}</span> : null}
-        {i.discountPct !== null ? <span>· {i.discountPct}%</span> : null}
-        {i.couponCode ? <span dir="ltr">· {i.couponCode}</span> : null}
+      <h4 className="mt-2 text-lg font-semibold leading-snug">{i.title}</h4>
+      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        {i.offer.discountPct !== null ? <span>{i.offer.discountPct}%</span> : null}
+        {i.offer.couponCode ? <span dir="ltr">· {i.offer.couponCode}</span> : null}
+        {i.channels.length > 0 ? <span>· {i.channels.join(" · ")}</span> : null}
+        {i.groupingConfidence !== "high" && i.executions.length > 1 ? <span title={t("קיבוץ לפי דמיון בטקסט", "Grouped by text similarity")}>· {t("קיבוץ משוער", "grouping approximate")}</span> : null}
       </p>
+
+      {/* Decision link — never the full receipt here. */}
+      {openDecision ? (
+        <div className="mt-3 rounded-md border border-warning/40 bg-warning/5 p-3">
+          <p className="text-sm font-semibold">{openDecision.question[locale]}</p>
+          <Link href={`/today?open=${openDecision.id}` as never} className="mt-1 inline-flex min-h-8 items-center gap-1 text-sm font-semibold text-foreground underline-offset-4 hover:underline">
+            {t(`החלטה ${displayDecisionId(openDecision.id)} מחכה בהיום`, `Decision ${displayDecisionId(openDecision.id)} is waiting in Today`)}
+            <ArrowUpRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
+          </Link>
+        </div>
+      ) : null}
+      {resolved ? (
+        <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
+          <p className="font-semibold">{t(`עודכן לפי החלטה ${displayDecisionId(resolved.id)}`, `Updated by decision ${displayDecisionId(resolved.id)}`)}</p>
+          <p className="text-muted-foreground">
+            {t("מקורי", "Original")}: {i.offer.discountPct !== null ? `${i.offer.discountPct}%` : i.title} · {t("הוחלט", "Decided")}:{" "}
+            {resolved.choice === "approved" ? t("כמתוכנן", "as planned") : resolved.choice === "ignored" ? t("להתעלם", "ignored") : (resolved.optionKey ?? t("חלופה", "alternative"))}
+            {resolved.decidedAt ? ` · ${new Date(resolved.decidedAt).toLocaleDateString(isHe ? "he-IL" : "en-US")}` : ""}
+          </p>
+          <Link href={`/today/${resolved.id}` as never} className="mt-1 inline-flex min-h-8 items-center gap-1 text-sm font-semibold text-foreground underline-offset-4 hover:underline">
+            {t("לקבלה", "Open receipt")}
+            <ArrowUpRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
+          </Link>
+        </div>
+      ) : null}
+
+      {/* Execution: what each channel does. ✓ only when observable. */}
+      <div className="mt-3 border-t border-border pt-3">
+        <p className="text-xs font-medium text-muted-foreground">{t("ביצוע", "Execution")}</p>
+        <ul className="mt-1 space-y-1.5">
+          {[...todayExecutions, ...otherExecutions].map((e) => {
+            const action = rowActionFor(e.rowId);
+            return (
+              <li key={e.rowId} className="flex items-start justify-between gap-3 text-sm">
+                <span className="flex min-w-0 items-start gap-2">
+                  <span aria-hidden className={cn("mt-0.5 shrink-0 text-xs", e.state === "done" ? "text-success" : "text-muted-foreground")}>
+                    {e.state === "done" ? "✓" : "○"}
+                  </span>
+                  <span className="min-w-0">
+                    {e.channel ? <span className="me-1 text-xs font-medium text-muted-foreground">{e.channel}</span> : null}
+                    <span className="line-clamp-2">{e.text}</span>
+                  </span>
+                </span>
+                {action ? (
+                  <button
+                    type="button"
+                    onClick={() => onExecuteRow(e.rowId)}
+                    disabled={executingRowId === e.rowId}
+                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+                  >
+                    {executingRowId === e.rowId ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <ExternalLink className="h-3 w-3" aria-hidden />}
+                    {e.state === "done" ? t("שוב", "Again") : action.ctaLabel}
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
       {i.dependencies.length > 0 ? (
         <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -441,7 +520,6 @@ function InitiativeCard({
           ))}
         </p>
       ) : null}
-      {i.statusReason ? <p className="mt-1 text-xs text-muted-foreground">{i.statusReason[locale]}</p> : null}
 
       {i.products.length > 0 ? (
         <div className="mt-3 space-y-1 border-t border-border pt-3">
@@ -455,7 +533,7 @@ function InitiativeCard({
                 <li key={p.productId} className="flex flex-wrap items-baseline justify-between gap-x-3">
                   <span className="min-w-0 truncate font-medium">{p.title}</span>
                   <span className="text-xs text-muted-foreground">
-                    {t(`${p.units14d} יח׳ ב־14 יום`, `${p.units14d} units / 14d`)}
+                    {t(`${p.units14d} יח׳ / 14 יום`, `${p.units14d} units / 14d`)}
                     {trend !== null ? ` (${trend >= 0 ? "+" : ""}${trend}%)` : ""}
                     {p.coverDays !== null ? ` · ${t(`${p.coverDays} ימי כיסוי`, `${p.coverDays} days cover`)}` : p.inventory !== null ? ` · ${t(`${p.inventory} במלאי`, `${p.inventory} in stock`)}` : ""}
                     {p.liveCampaigns > 0 ? ` · ${t(`${p.liveCampaigns} קמפיינים`, `${p.liveCampaigns} campaigns`)}` : ""}
@@ -475,23 +553,16 @@ function InitiativeCard({
         </div>
       ) : null}
 
-      {action ? (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-          <span className="text-xs text-muted-foreground">
-            {executed ? t(`סומן כבוצע ${new Date(i.executedAt!).toLocaleDateString(isHe ? "he-IL" : "en-US")}`, `Marked done ${new Date(i.executedAt!).toLocaleDateString("en-US")}`) : action.label}
-          </span>
-          <button
-            type="button"
-            onClick={() => onExecuteRow(i.rowIds[0])}
-            disabled={executingRowId === i.rowIds[0]}
-            className={cn("inline-flex h-10 items-center gap-1.5 rounded-md px-3 text-sm font-semibold sm:h-9", executed ? "border border-border bg-card hover:bg-accent" : "bg-primary text-primary-foreground hover:bg-primary/90", "disabled:opacity-50")}
-          >
-            {executingRowId === i.rowIds[0] ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <ExternalLink className="h-3.5 w-3.5" aria-hidden />}
-            {executed ? t("פתיחה מחדש", "Open again") : action.ctaLabel}
-          </button>
-        </div>
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground">{t("מסקנה", "Verdict")}</p>
+        <p className={cn("text-sm font-semibold", verdict.cls)}>{verdict.label}</p>
+      </div>
+      {i.statusReason && !openDecision ? <p className="mt-1 text-xs text-muted-foreground">{i.statusReason[locale]}</p> : null}
+      {i.decisionHooks.length > 0 && !openDecision ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("החלטה מתוכננת", "Decision scheduled")}: {fmtDay(i.decisionHooks[0].windowStart, locale, { day: "numeric", month: "short" })} → {t("תופיע בהיום כשהחלון מגיע", "appears on Today when the window arrives")}
+        </p>
       ) : null}
-      {i.status === "completed" && today > i.end ? null : null}
     </article>
   );
 }
