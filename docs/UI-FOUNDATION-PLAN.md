@@ -41,7 +41,7 @@ statuses; no decorative icon boxes; no `text-[10px]`.
 
 | File | Change |
 | --- | --- |
-| `components/layout/sidebar.tsx` | Desktop 248px, no brand hero card, mark + store name, primary nav (Today, Watchlist, Market, Plan, Memory, Data Health), Tools group, account footer. Mobile: 56px top bar (mark + store switcher) and a 5-slot bottom nav Today / Watch / Market / Plan / More. More = bottom sheet with the rest + account + sign out. |
+| `components/layout/sidebar.tsx` | Desktop 248px, no brand hero card, mark + store name, primary nav (Today, All brands, Command Center, Market · Competitors, Plan — owner's order, 9 Sep 2026; Watchlist, Memory, Data Health live under Tools), account footer. Mobile: 56px top bar (mark + store switcher) and a 5-slot bottom nav Today / Command Center / Market / Plan / More. More = bottom sheet with the rest + account + sign out. |
 | `components/layout/topbar.tsx` | One row: store switcher (desktop only, the mobile top bar has it) + demo/setup badges only when relevant, date range at the end. Domain, marketing copy, org/account chrome removed (account → sidebar footer / More sheet). |
 | `components/layout/app-shell.tsx` | Auth/org lookup moves here (shared by sidebar and topbar). Bottom padding on phones reserves the nav. |
 | `components/chat/chat-widget.tsx`, `components/sync/sync-status-dock.tsx` | Sit above the bottom nav on phones. Launcher loses the 56px glow bubble look (flat brand circle, no scale). |

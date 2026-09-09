@@ -85,25 +85,13 @@ function getNavigation(
     ...item,
     locked: Boolean(item.module && lockedModules.includes(item.module))
   });
-  // The primary group is the product: Today (the Decision Inbox), what is
-  // being watched, the market as decision input, the plan, decision memory,
-  // and the data the decisions rest on. Everything that used to be a
-  // top-level dashboard is still reachable under "Tools".
+  // Primary group (owner, 9 Sep 2026): Today (the Decision Inbox), the
+  // org rollup, the Command Center overview, the market as decision input,
+  // and the plan. Everything else — Watchlist, Memory, Data Health and the
+  // tool pages — sits under "Tools".
   const nav = {
     primary: [
       { href: "/today", label: isHe ? "היום" : "Today", icon: Inbox },
-      { href: "/watchlist", label: isHe ? "מעקב" : "Watchlist", short: isHe ? "מעקב" : "Watch", icon: Eye },
-      { href: "/market", label: isHe ? "שוק" : "Market", icon: Radar, module: "competitors" },
-      {
-        href: "/marketing-planner",
-        label: isHe ? "תוכנית" : "Plan",
-        icon: CalendarRange,
-        module: "marketing-planner"
-      },
-      { href: "/memory", label: isHe ? "זיכרון" : "Memory", icon: History },
-      { href: "/data-health", label: isHe ? "בריאות הנתונים" : "Data Health", icon: Activity }
-    ],
-    dashboards: [
       // Organization rollup — only for orgs with 2+ connected stores
       // (app-shell passes showPortfolio).
       ...(showPortfolio
@@ -119,8 +107,21 @@ function getNavigation(
       {
         href: "/dashboard",
         label: isHe ? "מרכז פיקוד" : "Command Center",
+        short: isHe ? "פיקוד" : "Overview",
         icon: LayoutDashboard
       },
+      { href: "/market", label: isHe ? "שוק - מתחרים" : "Market · Competitors", short: isHe ? "שוק" : "Market", icon: Radar, module: "competitors" },
+      {
+        href: "/marketing-planner",
+        label: isHe ? "תוכנית" : "Plan",
+        icon: CalendarRange,
+        module: "marketing-planner"
+      }
+    ],
+    dashboards: [
+      { href: "/watchlist", label: isHe ? "מעקב" : "Watchlist", icon: Eye },
+      { href: "/memory", label: isHe ? "זיכרון" : "Memory", icon: History },
+      { href: "/data-health", label: isHe ? "בריאות הנתונים" : "Data Health", icon: Activity },
       {
         href: "/my-dashboard",
         label: isHe ? "הדשבורד שלי" : "My dashboard",
@@ -331,7 +332,7 @@ function DesktopNav({
 }
 
 // ─── Mobile: bottom nav + More sheet ──────────────────────────────────────
-const BOTTOM_SLOTS = ["/today", "/watchlist", "/market", "/marketing-planner"] as const;
+const BOTTOM_SLOTS = ["/today", "/dashboard", "/market", "/marketing-planner"] as const;
 
 function MoreSheet({
   open,
