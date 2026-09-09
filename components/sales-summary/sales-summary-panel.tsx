@@ -6,7 +6,6 @@ import {
   Trash2,
   Upload,
   FileSpreadsheet,
-  Sparkles,
   Store,
   Globe,
   AlertTriangle,
@@ -693,22 +692,17 @@ function SummaryView({
         </a>
       </div>
 
-      <div className="rounded-2xl border border-emerald-200/60 bg-gradient-to-r from-emerald-50/80 via-white to-sky-50/60 p-5 shadow-soft sm:p-6">
-        <div className="flex flex-wrap items-start gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
-            <Sparkles className="h-5 w-5" aria-hidden />
-          </div>
-          <div className="flex-1 space-y-1.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-600">
-              {t.summary.agentEyebrow}
-            </p>
+      <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0 flex-1 basis-[14rem] space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">{t.summary.agentEyebrow}</p>
             <h3 className="text-lg font-semibold leading-snug sm:text-xl">{narrative.headline}</h3>
             {narrative.body ? <p className="text-sm leading-6 text-muted-foreground">{narrative.body}</p> : null}
           </div>
           {ToneIcon ? (
             <span
               className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${
-                narrative.tone === "up" ? "bg-emerald-500/10 text-emerald-700" : "bg-rose-500/10 text-rose-700"
+                narrative.tone === "up" ? "bg-success/10 text-success" : "bg-danger/10 text-danger"
               }`}
             >
               <ToneIcon className="h-3.5 w-3.5" />

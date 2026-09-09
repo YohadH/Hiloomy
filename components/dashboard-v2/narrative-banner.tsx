@@ -1,11 +1,16 @@
-import { Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { TrendingDown, TrendingUp } from "lucide-react";
 import type { OverviewPayload } from "@/lib/domain/types";
 import type { AppLocale } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /**
- * Generic narrative banner — pass headline + body text + optional trend tone.
- * Used at the top of every page to summarize the situation in plain English.
+ * Generic narrative banner — headline + optional context/body + trend pill.
+ * Flat surface, no decorative icon (docs/UI-FOUNDATION-PLAN.md).
+ *
+ * Layout: the text column claims at least 14rem before anything else may sit
+ * beside it, so on a phone the trend pill wraps UNDER the text instead of
+ * squeezing the headline into one word per line (portfolio, 9 Sep 2026).
  */
 export function NarrativeBanner({
   eyebrow,
@@ -29,49 +34,22 @@ export function NarrativeBanner({
   const lang = (he: string, en: string) => (isHe ? he : en);
   const resolvedEyebrow = eyebrow ?? lang("מה קרה בתקופה הזו", "What happened this period");
   const Icon = tone === "up" ? TrendingUp : tone === "down" ? TrendingDown : null;
-  const pillClass =
-    tone === "up"
-      ? "bg-emerald-500/10 text-emerald-700"
-      : tone === "down"
-        ? "bg-rose-500/10 text-rose-700"
-        : "bg-muted text-muted-foreground";
+  const pillClass = tone === "up" ? "bg-success/10 text-success" : tone === "down" ? "bg-danger/10 text-danger" : "bg-muted text-muted-foreground";
 
   return (
-    <div className="rounded-2xl border border-emerald-200/60 bg-gradient-to-r from-emerald-50/80 via-white to-sky-50/60 p-5 shadow-soft sm:p-6">
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
-          <Sparkles className="h-5 w-5" aria-hidden />
-        </div>
-        <div className="flex-1 space-y-1.5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-600">
-            {resolvedEyebrow}
-          </p>
-          <h2 className="text-lg font-semibold leading-snug text-foreground sm:text-xl">
-            {headline}
-          </h2>
-          {context ? (
-            <p className="text-xs font-medium text-muted-foreground">
-              {context}
-            </p>
-          ) : null}
+    <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0 flex-1 basis-[14rem] space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">{resolvedEyebrow}</p>
+          <h2 className="text-lg font-semibold leading-snug text-foreground sm:text-xl">{headline}</h2>
+          {context ? <p className="text-xs font-medium text-muted-foreground">{context}</p> : null}
           {body ? <p className="text-sm leading-6 text-muted-foreground">{body}</p> : null}
         </div>
         {tone !== "neutral" && Icon ? (
-          <div className="shrink-0">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${pillClass}`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {toneLabel ??
-                (tone === "up"
-                  ? locale === "he"
-                    ? "מגמת עלייה"
-                    : "Trending up"
-                  : locale === "he"
-                    ? "מגמת ירידה"
-                    : "Trending down")}
-            </span>
-          </div>
+          <span className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold", pillClass)}>
+            <Icon className="h-3.5 w-3.5" aria-hidden />
+            {toneLabel ?? (tone === "up" ? lang("מגמת עלייה", "Trending up") : lang("מגמת ירידה", "Trending down"))}
+          </span>
         ) : null}
       </div>
     </div>
@@ -127,13 +105,5 @@ export function OverviewNarrative({
 
   const body = [profitLine, productLine, refundLine].filter(Boolean).join(" ");
 
-  return (
-    <NarrativeBanner
-      headline={headline}
-      context={comparisonContext}
-      body={body}
-      tone={positive ? "up" : "down"}
-      locale={locale}
-    />
-  );
+  return <NarrativeBanner headline={headline} context={comparisonContext} body={body} tone={positive ? "up" : "down"} locale={locale} />;
 }

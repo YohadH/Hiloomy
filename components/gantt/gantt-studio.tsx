@@ -5,10 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   Upload,
   Loader2,
+  Trash2,
   AlertCircle,
   Sparkles,
-  ChevronLeft,
-  ChevronRight,
   Calendar,
   FileText,
   Tag,
@@ -16,11 +15,11 @@ import {
   Mail,
   MessageSquare,
   Globe,
-  CheckCircle2,
   Download
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GoogleSheetLink } from "@/components/gantt/google-sheet-link";
+import { PlanView } from "@/components/plan/plan-view";
 import { SheetSyncPanel } from "@/components/gantt/sheet-sync-panel";
 
 // Interactive Gantt studio. Three panes stacked:
@@ -164,88 +163,6 @@ function buildActionMeta(isHe: boolean): ActionMeta {
   };
 }
 
-function daysBetween(from: Date, to: Date): Date[] {
-  const days: Date[] = [];
-  const cur = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
-  const last = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()));
-  while (cur <= last) {
-    days.push(new Date(cur));
-    cur.setUTCDate(cur.getUTCDate() + 1);
-  }
-  return days;
-}
-
-function dayKey(date: Date | string | null): string | null {
-  if (!date) return null;
-  const d = typeof date === "string" ? new Date(date) : date;
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
-
-function fmtDayLabel(date: Date): string {
-  const d = String(date.getUTCDate()).padStart(2, "0");
-  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-  return `${d}/${m}`;
-}
-
-const DOW_HE = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
-const DOW_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-// ─── Category color palette ─────────────────────────────────────────────
-// Every distinct category (col A in the operator's calendar) gets a
-// stable color from this palette so the calendar becomes scannable —
-// green blocks = paid promo, red = website banners, purple = main story,
-// etc., matching how the source Excel already colors its rows.
-//
-// Rules:
-//   • Well-known Hebrew categories are pinned to specific colors so
-//     they always look the same across sheets (paid promo = green,
-//     website = red, etc.).
-//   • Unknown categories fall back to a stable hash so the same category
-//     always renders the same color within one calendar.
-const CATEGORY_PALETTE: Array<{ bg: string; border: string; text: string; dot: string }> = [
-  { bg: "bg-emerald-50", border: "border-emerald-300", text: "text-emerald-800", dot: "bg-emerald-500" },
-  { bg: "bg-rose-50", border: "border-rose-300", text: "text-rose-800", dot: "bg-rose-500" },
-  { bg: "bg-purple-50", border: "border-purple-300", text: "text-purple-800", dot: "bg-purple-500" },
-  { bg: "bg-amber-50", border: "border-amber-300", text: "text-amber-800", dot: "bg-amber-500" },
-  { bg: "bg-sky-50", border: "border-sky-300", text: "text-sky-800", dot: "bg-sky-500" },
-  { bg: "bg-fuchsia-50", border: "border-fuchsia-300", text: "text-fuchsia-800", dot: "bg-fuchsia-500" },
-  { bg: "bg-teal-50", border: "border-teal-300", text: "text-teal-800", dot: "bg-teal-500" },
-  { bg: "bg-orange-50", border: "border-orange-300", text: "text-orange-800", dot: "bg-orange-500" }
-];
-
-const CATEGORY_PINS: Array<{ patterns: RegExp[]; index: number }> = [
-  // Paid promo — bright green, matches the source Excel
-  { patterns: [/קידום ממומן/i, /קידום/i, /ממומן/i, /paid/i, /budget/i], index: 0 },
-  // Website / banners — red, matches the operator's Excel red rows
-  { patterns: [/^אתר$/i, /website/i, /landing/i, /דף נחיתה/i, /באנר/i, /banner/i], index: 1 },
-  // Main story / hero — purple
-  { patterns: [/סיפור/i, /story/i, /hero/i, /הירו/i, /ראשי/i], index: 2 },
-  // Special days / events — amber
-  { patterns: [/ימים מיוחדים/i, /special/i, /אירוע/i, /event/i], index: 3 },
-  // Samples / distribution — sky
-  { patterns: [/דוגמ/i, /sample/i, /גלוי/i, /חלוקת/i], index: 4 },
-  // Influencers — fuchsia
-  { patterns: [/משפיע/i, /affiliate/i, /influenc/i, /יוצר/i, /creator/i], index: 5 },
-  // Email / SMS — teal
-  { patterns: [/אימייל/i, /email/i, /ניוזלטר/i, /newsletter/i, /סמס/i, /sms/i], index: 6 },
-  // Social — orange
-  { patterns: [/פוסט/i, /post/i, /סטור/i, /story/i, /אינסט/i, /instagram/i, /סושיאל/i], index: 7 }
-];
-
-function categoryColor(category: string | null | undefined): (typeof CATEGORY_PALETTE)[number] {
-  if (!category) return CATEGORY_PALETTE[CATEGORY_PALETTE.length - 1];
-  for (const pin of CATEGORY_PINS) {
-    if (pin.patterns.some((re) => re.test(category))) return CATEGORY_PALETTE[pin.index];
-  }
-  // Stable hash fallback so identical labels always get the same color.
-  let hash = 0;
-  for (let i = 0; i < category.length; i++) {
-    hash = (hash * 31 + category.charCodeAt(i)) | 0;
-  }
-  return CATEGORY_PALETTE[Math.abs(hash) % CATEGORY_PALETTE.length];
-}
-
 export function GanttStudio({
   initialSheets,
   locale = "he",
@@ -277,16 +194,49 @@ export function GanttStudio({
   const [loadingSheet, setLoadingSheet] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsGeneratedAt, setInsightsGeneratedAt] = useState<string | null>(null);
   const [insightsError, setInsightsError] = useState<string | null>(null);
   const [executingRowId, setExecutingRowId] = useState<string | null>(null);
   const [downloadingRole, setDownloadingRole] = useState<string | null>(null);
-  const [dayModalOpen, setDayModalOpen] = useState(false);
+  // Bumped after any change to the rows (sync, reparse, execute) so the
+  // plan view re-evaluates.
+  const [planRefresh, setPlanRefresh] = useState(0);
+  // A date the insights pane asked the plan to open.
+  const [jumpDay, setJumpDay] = useState<string | null>(null);
   const [reparsing, setReparsing] = useState(false);
   const [reparseError, setReparseError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Remove the selected Gantt (rows cascade). Uploading again never replaces
+  // an existing Gantt — it adds one — so this is how a wrong file goes away.
+  const handleDelete = async () => {
+    if (!selectedSheetId || !sheet) return;
+    const ok = window.confirm(
+      isHe
+        ? `למחוק את הגאנט "${sheet.title}" (${sheet.rowCount} משימות)? אי אפשר לבטל.`
+        : `Delete the Gantt "${sheet.title}" (${sheet.rowCount} tasks)? This cannot be undone.`
+    );
+    if (!ok) return;
+    setDeleting(true);
+    setReparseError(null);
+    try {
+      const res = await fetch(`/api/gantt/${selectedSheetId}`, { method: "DELETE" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      const listRes = await fetch("/api/gantt").then((r) => r.json());
+      const next: GanttSheetSummary[] = listRes.ok ? listRes.sheets : sheets.filter((x) => x.id !== selectedSheetId);
+      setSheets(next);
+      setSheet(null);
+      setSelectedSheetId(next[0]?.id ?? null);
+      router.refresh();
+    } catch (err) {
+      setReparseError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleting(false);
+    }
+  };
   const [briefGenerating, setBriefGenerating] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [briefReady, setBriefReady] = useState(false);
@@ -296,7 +246,6 @@ export function GanttStudio({
   useEffect(() => {
     if (!selectedSheetId) {
       setSheet(null);
-      setSelectedDay(null);
       return;
     }
     let cancelled = false;
@@ -307,9 +256,6 @@ export function GanttStudio({
         if (cancelled) return;
         if (body.ok) {
           setSheet(body.sheet);
-          // Default-pick the earliest day with tasks.
-          const first = body.sheet.rows.find((r: GanttRow) => r.startDate)?.startDate;
-          setSelectedDay(first ? dayKey(first) : null);
         }
       })
       .catch(() => {})
@@ -503,8 +449,7 @@ export function GanttStudio({
       const refreshed = await fetch(`/api/gantt/${selectedSheetId}`).then((r) => r.json());
       if (refreshed.ok) {
         setSheet(refreshed.sheet);
-        const first = refreshed.sheet.rows.find((r: GanttRow) => r.startDate)?.startDate;
-        setSelectedDay(first ? dayKey(first) : null);
+        setPlanRefresh((n) => n + 1);
       }
       // Also refresh the sheet list summary (parsedSheetName may have changed).
       const listRes = await fetch("/api/gantt").then((r) => r.json());
@@ -532,6 +477,7 @@ export function GanttStudio({
       // Re-read row so the UI shows "Executed" without a full reload.
       const refreshed = await fetch(`/api/gantt/${selectedSheetId}`).then((r) => r.json());
       if (refreshed.ok) setSheet(refreshed.sheet);
+      setPlanRefresh((n) => n + 1);
       // Now open the destination in a new tab.
       window.open(meta.href(row), "_blank", "noopener,noreferrer");
     } catch (err) {
@@ -542,24 +488,6 @@ export function GanttStudio({
       setExecutingRowId(null);
     }
   };
-
-  const calendarDays = useMemo(() => {
-    if (!sheet?.rangeStart || !sheet?.rangeEnd) return [];
-    return daysBetween(new Date(sheet.rangeStart), new Date(sheet.rangeEnd));
-  }, [sheet]);
-
-  const tasksByDay = useMemo(() => {
-    const map = new Map<string, GanttRow[]>();
-    for (const r of sheet?.rows ?? []) {
-      const k = dayKey(r.startDate);
-      if (!k) continue;
-      if (!map.has(k)) map.set(k, []);
-      map.get(k)!.push(r);
-    }
-    return map;
-  }, [sheet]);
-
-  const tasksForSelectedDay = selectedDay ? tasksByDay.get(selectedDay) ?? [] : [];
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -665,6 +593,17 @@ export function GanttStudio({
                 ) : null}
               </>
             ) : null}
+            {sheet ? (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="ms-auto inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-danger disabled:opacity-50"
+              >
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Trash2 className="h-3.5 w-3.5" aria-hidden />}
+                {lang("מחיקת הגאנט", "Delete this Gantt")}
+              </button>
+            ) : null}
           </div>
         ) : null}
         {reparseError ? (
@@ -689,6 +628,7 @@ export function GanttStudio({
               onSynced={async () => {
                 const refreshed = await fetch(`/api/gantt/${sheet.id}`).then((r) => r.json());
                 if (refreshed.ok) setSheet(refreshed.sheet);
+                setPlanRefresh((n) => n + 1);
                 const listRes = await fetch("/api/gantt").then((r) => r.json());
                 if (listRes.ok) setSheets(listRes.sheets);
               }}
@@ -801,7 +741,7 @@ export function GanttStudio({
                               <button
                                 key={d}
                                 type="button"
-                                onClick={() => setSelectedDay(d)}
+                                onClick={() => setJumpDay(d)}
                                 className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-50"
                               >
                                 {d}
@@ -847,9 +787,9 @@ export function GanttStudio({
           {/* ── Marketing brief generator (BIG CTA) ──────────────────── */}
           <div className="rounded-2xl border border-warning/40 bg-card p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex-1">
+              <div className="min-w-0 flex-1 basis-[14rem]">
                 <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-orange-600" aria-hidden />
+                  <FileText className="h-4 w-4 text-warning" aria-hidden />
                   <h3 className="text-base font-semibold">
                     {lang("בריף שיווקי חודשי", "Monthly marketing brief")}
                   </h3>
@@ -979,237 +919,26 @@ export function GanttStudio({
             </div>
           ) : null}
 
-          {/* ── Calendar grid ────────────────────────────────────────── */}
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-emerald-600" aria-hidden />
-              <h3 className="text-base font-semibold">{lang("לוח שנה", "Calendar")}</h3>
-              <span className="text-xs text-muted-foreground">
-                {calendarDays.length} {lang("ימים,", "days,")} {sheet.rows.length}{" "}
-                {lang(
-                  "משימות. לחצו על יום כדי לראות את המשימות שלו.",
-                  "tasks. Click a day to see its tasks."
-                )}
-              </span>
-            </div>
-            <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold text-muted-foreground">
-              {(isHe ? DOW_HE : DOW_EN).map((d) => (
-                <div key={d}>{d}</div>
-              ))}
-            </div>
-            <div className="mt-2 grid grid-cols-7 gap-1.5">
-              {/* Pad the first row so day-of-week aligns. Israeli week
-                  starts Sunday (col 0). */}
-              {calendarDays.length > 0
-                ? Array.from({ length: calendarDays[0].getUTCDay() }).map((_, i) => (
-                    <div key={`pad-${i}`} />
-                  ))
-                : null}
-              {calendarDays.map((d) => {
-                const key = dayKey(d)!;
-                const tasks = tasksByDay.get(key) ?? [];
-                const selected = key === selectedDay;
-                // Distinct-category color dots for the day. Cap at 4 so
-                // the tile stays compact.
-                const uniqueCategories = Array.from(
-                  new Set(tasks.map((t) => t.category).filter(Boolean) as string[])
-                );
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => {
-                      setSelectedDay(key);
-                      if (tasks.length > 0) setDayModalOpen(true);
-                    }}
-                    className={cn(
-                      "flex h-20 flex-col rounded-lg border p-1.5 text-start transition-colors",
-                      selected
-                        ? "border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-200"
-                        : tasks.length > 0
-                          ? "border-border bg-white hover:border-emerald-300"
-                          : "border-dashed border-border bg-muted/20 hover:border-emerald-300"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className={cn("text-[11px] font-bold", selected ? "text-emerald-700" : "text-foreground")}>
-                        {fmtDayLabel(d)}
-                      </span>
-                      {uniqueCategories.length > 0 ? (
-                        <div className="flex items-center gap-0.5">
-                          {uniqueCategories.slice(0, 4).map((cat) => (
-                            <span
-                              key={cat}
-                              className={cn("h-2 w-2 rounded-full", categoryColor(cat).dot)}
-                              title={cat}
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                    {tasks.length > 0 ? (
-                      <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
-                        {tasks.length}
-                      </span>
-                    ) : null}
-                    <div className="mt-auto truncate text-[9px] text-muted-foreground">
-                      {tasks
-                        .slice(0, 2)
-                        .map((t) => t.category)
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ── Day-of-tasks MODAL (opens on calendar click) ─────────── */}
-          {dayModalOpen && selectedDay ? (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
-              onClick={() => setDayModalOpen(false)}
-            >
-              <div
-                dir="rtl"
-                className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center gap-3 border-b border-border px-5 py-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const d = new Date(selectedDay);
-                      d.setUTCDate(d.getUTCDate() - 1);
-                      setSelectedDay(dayKey(d));
-                    }}
-                    className="rounded-lg border border-border p-1.5 hover:border-emerald-300"
-                    title={lang("יום קודם", "Previous day")}
-                  >
-                    <ChevronRight className="h-4 w-4" aria-hidden />
-                  </button>
-                  <h3 className="flex-1 text-base font-semibold">
-                    {new Date(selectedDay).toLocaleDateString(dateLocale, {
-                      weekday: "long",
-                      day: "2-digit",
-                      month: "long",
-                      year: "numeric"
-                    })}
-                    <span className="ms-3 text-xs font-normal text-muted-foreground">
-                      {tasksForSelectedDay.length} {lang("משימות", "tasks")}
-                    </span>
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const d = new Date(selectedDay);
-                      d.setUTCDate(d.getUTCDate() + 1);
-                      setSelectedDay(dayKey(d));
-                    }}
-                    className="rounded-lg border border-border p-1.5 hover:border-emerald-300"
-                    title={lang("יום הבא", "Next day")}
-                  >
-                    <ChevronLeft className="h-4 w-4" aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDayModalOpen(false)}
-                    className="rounded-lg border border-border p-1.5 hover:border-rose-300 hover:bg-rose-50"
-                    title={lang("סגירה", "Close")}
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="max-h-[calc(85vh-60px)] overflow-y-auto p-5">
-                  {tasksForSelectedDay.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      {lang("אין משימות מתוכננות ליום זה.", "No tasks planned for this day.")}
-                    </p>
-                  ) : (
-                    <ul className="space-y-3">
-                      {tasksForSelectedDay.map((row) => {
-                        const meta = row.actionType ? ACTION_META[row.actionType] : null;
-                        const Icon = meta?.icon ?? FileText;
-                        const executed = Boolean(row.executionJson?.executedAt);
-                        // Per-category color — makes the day's task list
-                        // scannable at a glance (green stripe = paid promo,
-                        // red = website, etc., matching the source Excel).
-                        const catColor = categoryColor(row.category);
-                        return (
-                          <li
-                            key={row.id}
-                            className={cn(
-                              "rounded-xl border p-4 border-s-4",
-                              executed
-                                ? "border-emerald-200 bg-emerald-50/40"
-                                : `${catColor.border} ${catColor.bg}`
-                            )}
-                          >
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="flex-1 space-y-1">
-                                <div className="flex items-center gap-2 text-[11px]">
-                                  <Icon className={cn("h-3.5 w-3.5", catColor.text)} aria-hidden />
-                                  <span className={cn("font-semibold", catColor.text)}>
-                                    {row.category ?? "—"}
-                                  </span>
-                                  {row.role ? (
-                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
-                                      {row.role}
-                                    </span>
-                                  ) : null}
-                                  {meta ? (
-                                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", catColor.bg, catColor.text)}>
-                                      {meta.label}
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <p className="whitespace-pre-wrap text-sm leading-6">
-                                  {row.task}
-                                </p>
-                                {executed ? (
-                                  <p className="flex items-center gap-1 text-[11px] text-emerald-700">
-                                    <CheckCircle2 className="h-3 w-3" aria-hidden />
-                                    {lang("סומן כבוצע", "Marked as done")}{" "}
-                                    {row.executionJson?.executedAt
-                                      ? new Date(row.executionJson.executedAt).toLocaleString(dateLocale, {
-                                          dateStyle: "short",
-                                          timeStyle: "short"
-                                        })
-                                      : ""}
-                                  </p>
-                                ) : null}
-                              </div>
-                              {meta ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleExecuteRow(row)}
-                                  disabled={executingRowId === row.id}
-                                  className={cn(
-                                    "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-50",
-                                    executed
-                                      ? "border border-emerald-300 bg-white text-emerald-700"
-                                      : "bg-emerald-600 text-white hover:bg-emerald-700"
-                                  )}
-                                >
-                                  {executingRowId === row.id ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                                  ) : (
-                                    <Icon className="h-3.5 w-3.5" aria-hidden />
-                                  )}
-                                  {executed ? lang("פתיחה מחדש", "Open again") : meta.ctaLabel}
-                                </button>
-                              ) : null}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : null}
+          {/* ── Plan: initiatives, status, calendar, day panel ──────
+              (components/plan/plan-view.tsx — Plan = intent, Data =
+              reality, Today = decisions; docs/DECISION-INBOX-PLAN.md §0) */}
+          <PlanView
+            sheetId={sheet.id}
+            locale={locale}
+            refreshKey={planRefresh}
+            openDayRequest={jumpDay}
+            rowActionFor={(rowId) => {
+              const row = sheet.rows.find((r) => r.id === rowId);
+              if (!row?.actionType) return null;
+              const meta = ACTION_META[row.actionType];
+              return { label: meta.label, ctaLabel: meta.ctaLabel, href: meta.href(row) };
+            }}
+            onExecuteRow={(rowId) => {
+              const row = sheet.rows.find((r) => r.id === rowId);
+              if (row) void handleExecuteRow(row);
+            }}
+            executingRowId={executingRowId}
+          />
         </>
       ) : null}
 

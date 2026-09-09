@@ -51,6 +51,40 @@ model-generated decision list) and its alert cards (the same ledger rows
 re-rendered with "recommended action") were removed; the page now shows
 counts and links. The Meta insight card lost its "what to do now" list.
 
+## 0b. Plan = intent · Data = reality · Today = decisions (2026-09-09)
+
+The Marketing Planner is the brand's source of commercial intent. Each
+Gantt row-group is a **Commercial Initiative**; Hiloomy continuously checks
+it against live data and, when an assumption behind it stops holding, a
+Decision is created in the ledger and shown on Today. The Plan page then
+reflects the decision ("updated by D-184: original 15% → approved 10%").
+Plan never runs its own decision workflow.
+
+**Phase 1 — shipped 2026-09-09** (`lib/domain/plan.ts`,
+`lib/services/plan-service.ts`, `components/plan/plan-view.tsx`,
+`GET /api/gantt/[sheetId]/plan`): rows grouped into initiatives (same
+text/role/category over contiguous dates — a month-long merged cell is one
+initiative); status PLANNED / READY / BLOCKED / LIVE / COMPLETED from dates
+and OBSERVABLE dependencies only (coupon code seen in Shopify data, named
+products' inventory and 14-day sales, live campaigns on them, real cost on
+file); month header with counts, one-line plan health, "coming up",
+status-first calendar, phone agenda, day panel grouped by status, initiative
+cards with "Hiloomy checked" and current facts, "fix data" when cost is
+missing. Nothing invented: no intent, no revenue targets, no creative or
+approval state.
+
+**Phase 2 — after the wedge measurement (the "Plan × performance engine"):**
+proximity-based evaluation (>14d minimal; 7–14d dependencies; ≤7d full;
+live → actual vs baseline of the named products); verdicts KEEP / WATCH /
+NEEDS DECISION / LIVE HEALTHY / LIVE REVIEW; NEEDS DECISION and LIVE REVIEW
+create Decisions (kind `plan_conflict`) with evidence; human decision writes
+back to the initiative preserving original → decision → revised; market
+context only when a competitor engine decision touches the same products.
+
+**Phase 3:** "Prepare" for coupon creation (affiliate portal already
+creates codes), completed initiatives kept with decisions and outcomes for
+Memory.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

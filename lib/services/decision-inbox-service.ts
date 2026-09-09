@@ -49,6 +49,7 @@ import { getMetaCampaignsOverview, type MetaCampaignsOverview } from "@/lib/serv
 import { getBundleOverview } from "@/lib/services/bundle-profitability-service";
 import { getLlmUsageToday, llmDailyBudgetUsd, LLM_GLOBAL_BUCKET } from "@/lib/services/llm-usage-service";
 import { writeDecisionInboxSummary } from "@/lib/services/command-center-summary-service";
+import { getSalesByChannel } from "@/lib/services/sales-channel-service";
 import type {
   Decision,
   DecisionInbox,
@@ -1613,7 +1614,7 @@ export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth
   const now = new Date();
   const d30 = new Date(now.getTime() - 30 * DAY_MS);
   const db = getDb() as any;
-  const [health, cost, crawl, competitors, ganttSheets, leakage, llm, llmGlobal, googleAdsConn] = await Promise.all([
+  const [health, cost, crawl, competitors, ganttSheets, leakage, llm, llmGlobal, googleAdsConn, channels] = await Promise.all([
     buildSetupHealth({ storeId }).catch(() => null),
     computeCostCoverage(storeId, d30, now),
     getCompetitorCrawlSummary(storeId).catch(() => null),
@@ -1624,7 +1625,8 @@ export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth
     getLlmUsageToday(LLM_GLOBAL_BUCKET),
     db.platformConnection
       .findUnique({ where: { storeId_platform: { storeId, platform: "googleAds" } }, select: { status: true, lastSyncAt: true } })
-      .catch(() => null) as Promise<{ status: string; lastSyncAt: Date | null } | null>
+      .catch(() => null) as Promise<{ status: string; lastSyncAt: Date | null } | null>,
+    getSalesByChannel(storeId, { start: d30, end: now }).catch(() => null)
   ]);
   const check = (id: string) => health?.checks.find((c) => c.id === id) ?? null;
   const stateOf = (status: "pass" | "fail" | "warning" | undefined | null): HealthState =>
@@ -1657,6 +1659,19 @@ export const buildDataHealth = cache(async (storeId: string): Promise<DataHealth
             : L("מחובר — עדיין לא סונכרן; בחרו חשבון מודעות ולחצו סנכרון", "Connected — not synced yet; pick an ad account and press sync")
           : L("לא מחובר — הוצאות Google לא נכללות ברווח ובהחלטות", "Not connected — Google spend is missing from profit and decisions"),
       fixHref: "/settings"
+    },
+    {
+      key: "sales_channels",
+      label: L("מקורות מכירה", "Sales channels"),
+      state: !channels || channels.totalOrders === 0 ? "missing" : (channels.channels.find((c) => c.channel === "unknown")?.share ?? 0) > 0.1 ? "partial" : "healthy",
+      detail: (() => {
+        if (!channels || channels.totalOrders === 0) return L("אין הזמנות ב־30 יום", "No orders in 30 days");
+        const part = (k: "online" | "pos" | "manual" | "unknown") => Math.round((channels.channels.find((c) => c.channel === k)?.share ?? 0) * 100);
+        const he = `אונליין ${part("online")}% · קופה ${part("pos")}% · ידני ${part("manual")}%${part("unknown") > 0 ? ` · לא ידוע ${part("unknown")}%` : ""} (30 יום)`;
+        const en = `Online ${part("online")}% · POS ${part("pos")}% · manual ${part("manual")}%${part("unknown") > 0 ? ` · unknown ${part("unknown")}%` : ""} (30 days)`;
+        return L(he, en);
+      })(),
+      fixHref: "/sales-summary"
     },
     {
       key: "inventory",

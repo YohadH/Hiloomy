@@ -362,6 +362,11 @@ export async function getOfflineSalesSummary(
   // "Online sales" number on this page can be 30-40% higher than reality.
   // We also sum `lineDiscountAmount` per variant so the per-product revenue
   // can be netted out (matches Shopify's "Net sales" walk per line).
+  // "Online" here means Shopify orders that are NOT from Shopify POS
+  // (9 Sep 2026). POS orders are physical-store sales that Shopify already
+  // syncs; counting them as online AND accepting a POS report as the
+  // offline upload double-counted the shop. They are shown separately on
+  // the page (sales-channel-service) instead.
   const onlineByVariant = await db.orderLineItem.groupBy({
     by: ["variantId"],
     where: {
@@ -369,7 +374,8 @@ export async function getOfflineSalesSummary(
       order: {
         createdAt: { gte: start, lt: end },
         cancelledAt: null,
-        test: false
+        test: false,
+        NOT: { sourceName: { in: ["pos", "shopify_pos"] } }
       },
       variantId: { not: null }
     },
