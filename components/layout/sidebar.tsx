@@ -122,6 +122,7 @@ function getNavigation(
       { href: "/watchlist", label: isHe ? "מעקב" : "Watchlist", icon: Eye },
       { href: "/memory", label: isHe ? "זיכרון" : "Memory", icon: History },
       { href: "/data-health", label: isHe ? "בריאות הנתונים" : "Data Health", icon: Activity },
+      { href: "/decision-audit", label: isHe ? "ביקורת תעדוף" : "Decision audit", icon: Activity },
       {
         href: "/my-dashboard",
         label: isHe ? "הדשבורד שלי" : "My dashboard",

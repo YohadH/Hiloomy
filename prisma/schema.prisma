@@ -280,6 +280,8 @@ model Store {
   gaTrafficDaily             GaTrafficDaily[]
   gaTrafficBreakdowns        GaTrafficBreakdown[]
   googleAdsCampaignInsights  GoogleAdsCampaignInsight[]
+  decisionCandidateRuns      DecisionCandidateRun[]
+  decisionCandidates         DecisionCandidate[]
   ganttSheets                GanttSheet[]
   ganttRows                  GanttRow[]
   competitors                Competitor[]
@@ -2043,4 +2045,75 @@ model GoogleAdsCampaignInsight {
   @@unique([storeId, customerId, campaignId, date])
   @@index([storeId, date(sort: Desc)])
   @@index([storeId, customerId])
+}
+
+// ─── Decision Candidate Audit (10 Sep 2026) ───────────────────────────
+// Shadow instrumentation for Today's prioritisation. One run per engine
+// pass (Today load / cron), one candidate row per domain per run — the
+// strongest signal each domain could put forward, scored on the same seven
+// dimensions and ranked globally, with the reason Today did or did not
+// show it. Never read by Today; read by the audit report only.
+// See lib/domain/decision-candidate.ts.
+model DecisionCandidateRun {
+  id             String   @id @default(cuid())
+  storeId        String
+  runAt          DateTime @default(now())
+  // today | cron | audit
+  trigger        String
+  rankingVersion String
+  priorsVersion  String
+  weightsJson    Json
+  candidates     Int      @default(0)
+  surfaced       Int      @default(0)
+  // Would the global ranking have put a different decision first / in the
+  // top three than Today did? (Disagreement between model and reality.)
+  topDiffers     Boolean  @default(false)
+  top3Overlap    Int      @default(0)
+  summaryJson    Json?
+  store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  rows           DecisionCandidate[]
+
+  @@index([storeId, runAt(sort: Desc)])
+}
+
+model DecisionCandidate {
+  id                    String   @id @default(cuid())
+  runId                 String
+  storeId               String
+  runAt                 DateTime
+  domain                String
+  kind                  String
+  eligible              Boolean  @default(true)
+  entityType            String?
+  entityId              String?
+  entityLabel           String?
+  titleJson             Json
+  detailJson            Json
+  financialExposure     Decimal? @db.Decimal(14, 2)
+  financialExposureType String?
+  financialConfidence   String
+  materiality           Int
+  urgency               Int
+  confidence            Int
+  actionability         Int
+  managementJudgment    Int
+  novelty               Int
+  crossDomainScore      Int
+  globalScore           Decimal  @db.Decimal(6, 1)
+  observableScore       Decimal  @db.Decimal(6, 1)
+  rank                  Int?
+  observableRank        Int?
+  todayRank             Int?
+  crossDomain           Boolean  @default(false)
+  proposedStatus        String?
+  surfaced              Boolean  @default(false)
+  suppressionReason     String?
+  relatedDecisionId     String?
+  run                   DecisionCandidateRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  store                 Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([storeId, runAt(sort: Desc)])
+  @@index([storeId, domain])
+  @@index([relatedDecisionId])
 }

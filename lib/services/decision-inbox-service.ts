@@ -49,6 +49,7 @@ import { getMetaCampaignsOverview, type MetaCampaignsOverview } from "@/lib/serv
 import { getBundleOverview } from "@/lib/services/bundle-profitability-service";
 import { getLlmUsageToday, llmDailyBudgetUsd, LLM_GLOBAL_BUCKET } from "@/lib/services/llm-usage-service";
 import { writeDecisionInboxSummary } from "@/lib/services/command-center-summary-service";
+import { recordCandidateRun } from "@/lib/services/decision-candidate-audit-service";
 import { getSalesByChannel } from "@/lib/services/sales-channel-service";
 import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
 import type { PlanView } from "@/lib/domain/plan";
@@ -1263,6 +1264,46 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
       if (changed) await persistLedger(alert, next);
     })
   );
+
+  // Decision Candidate Audit (shadow, 10 Sep 2026): record what every domain
+  // could have put forward, how the global ranking orders it, and why Today
+  // did or did not show it. Never changes the cards above. Throttled to one
+  // run per hour on page loads; the cron marks its own pass.
+  {
+    const pendingIds = new Set(pending.map((p) => p.decision.id));
+    const allProtected = await (getDb() as any).affiliateProgram
+      ?.findMany({ where: { storeId, status: "active" }, select: { returningCustomerPolicy: true } })
+      .then((rows: Array<{ returningCustomerPolicy: string | null }>) => rows.length > 0 && rows.every((r) => (r.returningCustomerPolicy ?? "full") !== "full"))
+      .catch(() => false);
+    await recordCandidateRun({
+      storeId,
+      now,
+      ledger: built.map(({ alert, decision }) => ({
+        decision,
+        payload: payloadOf(alert),
+        pending: decision.human.choice === "pending",
+        duplicate: decision.human.choice === "pending" && !pendingIds.has(decision.id)
+      })),
+      cardIds: cards.map((c) => c.id),
+      todayOrder: pending.map((p) => p.decision.id),
+      productEcon: [...ctx.productEcon.entries()].map(([productId, e]) => ({
+        productId,
+        title: e.title,
+        units14: e.units14,
+        net14: e.net14,
+        realCost: e.realCost,
+        inventory: e.inventory,
+        liveCampaigns: ctx.campaignsByProduct.get(productId)?.length ?? 0
+      })),
+      leakage: ctx.leakage,
+      leakageAllProtected: !!allProtected,
+      meta,
+      plan,
+      silentAlerts: otherAlerts
+        .filter((a) => a.type === "product_gone_silent")
+        .map((a) => ({ id: a.id, title: a.title, payload: payloadOf(a), createdAt: a.createdAt.toISOString() }))
+    }).catch((e) => console.error("[decision-inbox] candidate audit failed:", e));
+  }
 
   const watchlist: WatchItem[] = [
     ...overflow.map(watchItemFromDecision),

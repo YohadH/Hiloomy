@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/db";
 import { buildDecisionInbox } from "@/lib/services/decision-inbox-service";
+import { markNextAuditTrigger } from "@/lib/services/decision-candidate-audit-service";
 
 // Daily Decision Inbox pass. For every store that has completed a Shopify
 // sync, runs the same evaluation Today runs on load: refreshes the engines,
@@ -26,6 +27,7 @@ export async function POST() {
   const errors: Array<{ storeId: string; error: string }> = [];
   for (const { storeId } of connections) {
     try {
+      markNextAuditTrigger("cron");
       const inbox = await buildDecisionInbox(storeId);
       results.push({ storeId, decisions: inbox.stats.decisions, watching: inbox.stats.watching, reviewed: inbox.stats.reviewed });
     } catch (e) {

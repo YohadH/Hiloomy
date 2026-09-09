@@ -161,6 +161,59 @@ proximity-tiered evaluation depth.
 creates codes), completed initiatives kept with decisions and outcomes for
 Memory.
 
+## 0c. Decision Candidate Audit — is Today's prioritisation auditable? (2026-09-10)
+
+Product question: when Hiloomy surfaces an inventory decision, is that the
+best use of management attention, or is the system structurally better at
+finding inventory problems? Answered by SHADOW instrumentation — Today is
+unchanged, no forced domain diversity.
+
+    DOMAIN ENGINES → CANDIDATES → GLOBAL RANKING → SUPPRESSION → TODAY
+
+- Every engine pass (`buildDecisionInbox`, Today load or 05:00 cron) calls
+  `recordCandidateRun` (`lib/services/decision-candidate-audit-service.ts`)
+  after the cards are chosen. Page loads are throttled to one run per hour;
+  the cron marks its pass (`markNextAuditTrigger("cron")`).
+- Candidates = every ledger decision the inbox built (with what Today did:
+  surfaced · `DOMAIN_DISPLAY_CAP` · `LOWER_GLOBAL_PRIORITY` · `ALREADY_DECIDED`
+  · `DUPLICATE`) PLUS, for every domain with no ledger row, one PROBE: the
+  strongest signal the engine rejected, with the gate it applied
+  (`ENGINE_THRESHOLD` + text such as "leakage 10% < 15%"), or a NONE row
+  with `NOT_ELIGIBLE` (data not connected — this is absence, not bias),
+  `NO_CANDIDATE`, `NO_ENGINE` (Returns), `NOT_IN_DECISION_WINDOW` (plan
+  hooks), `NO_MANAGEMENT_JUDGMENT` (silent product with no campaign lever).
+  Probes reuse what the inbox already loaded (product economics, leakage,
+  Meta overview, plan) plus two ungated SQL reads for discount × profit and
+  the competitor week section.
+- Scoring (`lib/domain/decision-candidate.ts`): seven 0–100 dimensions.
+  Measured: materiality (₪ exposure as a share of the store's 14-day net
+  sales, kind default when no ₪ so a missing number never kills a domain),
+  urgency (days of cover / decision window), confidence (evidence quality),
+  actionability. Declared V0 priors per kind (`KIND_PRIORS`, version
+  `kind-priors-v0`): management judgment (+25 for a stockout when paid
+  media buys the demand), novelty, cross-domain (from domains joined +
+  campaign materiality). Weights `decision-ranking-v1` (25/15/10/15/15/10/10),
+  stored per run. `observableScore` = the four measured dimensions only, so
+  the report can show rankings with and without the priors. No model call;
+  same inputs → same ranking.
+- Persistence: `DecisionCandidateRun` + `DecisionCandidate`
+  (migration `20260910_decision_candidate_audit`, apply by hand on prod).
+  Each run stores Today's top and the global top, `topDiffers`, `top3Overlap`.
+- Report `buildCandidateAuditReport(storeId, days, exclude[])`: per domain —
+  eligible runs, candidates, distinct decisions, surfaced, conversion, avg
+  score / observable score / rank / novelty, top-3 share, cross-domain rate,
+  top suppression reasons, feedback join (useful / obvious / wrong / changed
+  / high-value = useful ∧ ¬obvious, one judgment per decision); disagreement
+  (Today #1 ≠ global #1 rate, avg top-3 overlap); latest run with "why this
+  outranked the others" from the scores; ablation = re-rank the stored run
+  without a domain (analysis only). Inventory bias diagnostic classifies
+  NO_EVIDENCE_OF_BIAS / GENERATION_BIAS / RANKING_BIAS /
+  REAL_BUSINESS_CONDITION / INCONCLUSIVE and needs ≥5 judged inventory AND
+  ≥5 judged other decisions before it will call bias.
+- Surfaces: `/decision-audit` (Tools, read-only, active store) and
+  `scripts/decision-inbox-report.mjs <storeId> [--days 14] [--exclude inventory]`
+  (prints the decision report, then the candidate audit).
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape
