@@ -269,19 +269,35 @@ export function GanttStudio({
         );
       }
 
-      // Send the bytes AS the body — no multipart. The multipart part was
-      // dropped in production on a larger workbook (incense sept.xlsx, 868 KB,
-      // 9 Sep 2026) although the same bytes parsed locally; a raw body has
-      // no parts to lose. Name and title travel percent-encoded in headers
-      // so Hebrew survives HTTP's ASCII-only header rule.
+      // Send the file as TEXT (base64 inside JSON) with its size and SHA-256.
+      // 9 Sep 2026: multipart lost the file part, then a raw binary body
+      // arrived altered (the workbook was read as text: "tabular, 0 tasks")
+      // — both on an 868 KB file that parses fine locally. A text body
+      // survives whatever rewrites binary bodies, and the hash lets the
+      // server say plainly whether the bytes it got are the bytes we read.
+      const dataBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.readAsDataURL(new Blob([bytes]));
+      });
+      let sha256: string | null = null;
+      try {
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        sha256 = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+      } catch {
+        sha256 = null;
+      }
       const res = await fetch("/api/gantt/upload", {
         method: "POST",
-        body: bytes,
-        headers: {
-          "Content-Type": original.type || "application/octet-stream",
-          "x-file-name": encodeURIComponent(original.name || "gantt.xlsx"),
-          "x-title": encodeURIComponent(original.name.replace(/\.[^.]+$/, ""))
-        }
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: original.name || "gantt.xlsx",
+          title: original.name.replace(/\.[^.]+$/, ""),
+          size: bytes.byteLength,
+          sha256,
+          dataBase64
+        })
       });
       const body = await res.json();
       if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);

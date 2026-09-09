@@ -8,6 +8,7 @@
 // without asking the operator to re-upload.
 
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { AppError, toErrorMessage } from "@/lib/server/errors";
 import { friendlyDbError } from "@/lib/server/db-error-friendly";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
@@ -66,6 +67,38 @@ async function readUpload(request: Request): Promise<{ file: File; title: string
     }
   };
 
+  // 1. JSON envelope: { name, title, sheetName?, size, sha256, dataBase64 }.
+  //    Text survives every proxy and body handler unchanged, and the size +
+  //    hash prove the bytes are the ones the browser read. Used by the
+  //    studio since 9 Sep 2026 after a raw binary body arrived altered in
+  //    production (SheetJS then read the workbook as text: "tabular, 0 tasks").
+  if (contentType.toLowerCase().startsWith("application/json")) {
+    const body = (await request.json().catch(() => null)) as { name?: string; title?: string; sheetName?: string; size?: number; sha256?: string; dataBase64?: string } | null;
+    if (!body || typeof body.dataBase64 !== "string" || !body.dataBase64) {
+      throw new AppError("Upload envelope had no file data.", 400);
+    }
+    const buf = Buffer.from(body.dataBase64, "base64");
+    const sha = createHash("sha256").update(buf).digest("hex");
+    const sizeOk = typeof body.size !== "number" || body.size === buf.length;
+    const hashOk = typeof body.sha256 !== "string" || body.sha256.toLowerCase() === sha;
+    if (!sizeOk || !hashOk) {
+      throw new AppError(
+        `The file was altered in transit: browser sent ${body.size ?? "?"} bytes (sha256 ${String(body.sha256 ?? "?").slice(0, 12)}…), ` +
+          `server received ${buf.length} bytes (sha256 ${sha.slice(0, 12)}…). Try again; if it repeats, something between the browser and the server rewrites request bodies.`,
+        400
+      );
+    }
+    const name = (body.name ?? "").trim() || "gantt.xlsx";
+    const ext = name.toLowerCase().split(".").pop() ?? "";
+    const type = ext === "csv" ? "text/csv" : ext === "xls" ? "application/vnd.ms-excel" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    return {
+      file: new File([buf], name, { type }),
+      title: (body.title ?? "").trim() || name.replace(/\.[^.]+$/, ""),
+      preferredSheetName: (body.sheetName ?? "").trim() || null
+    };
+  }
+
+  // 2. Raw binary body with the name in headers.
   if (!contentType.toLowerCase().startsWith("multipart/form-data")) {
     const bytes = await request.arrayBuffer();
     if (bytes.byteLength === 0) {
@@ -157,20 +190,26 @@ export async function POST(request: Request) {
       );
     }
     const buffer = Buffer.from(await file.arrayBuffer());
+    // What arrived, for the error text: an .xlsx is a zip and starts with
+    // "PK". Anything else means the bytes were changed on the way here —
+    // SheetJS then quietly reads the content as text and finds no dates.
+    const magic = buffer.subarray(0, 2).toString("latin1");
+    const received = `${buffer.length} bytes, starts with ${magic === "PK" ? '"PK" (zip, as expected)' : JSON.stringify(magic) + " (NOT a zip)"}`;
 
     let parsed;
     try {
       parsed = parseGanttWorkbook(buffer, { sheetName: preferredSheetName });
     } catch (err) {
       throw new AppError(
-        `Could not parse the workbook. ${err instanceof Error ? err.message : String(err)}`,
+        `Could not parse the workbook (${received}). ${err instanceof Error ? err.message : String(err)}`,
         400
       );
     }
     if (parsed.rows.length === 0) {
+      const tabs = parsed.sheetNamesInWorkbook.length ? parsed.sheetNamesInWorkbook.join(", ") : "(none)";
       throw new AppError(
-        `Parsed 0 tasks. Detected layout: ${parsed.layoutDetected}. ` +
-          `Make sure row 1 has dates (matrix layout) OR the header row contains Task + Role + Category + Start/End columns.`,
+        `Parsed 0 tasks from tab "${parsed.parsedSheetName ?? "?"}" (layout: ${parsed.layoutDetected}). Received ${received}. Tabs seen: ${tabs}. ` +
+          `A matrix tab needs dates in row 1; a table needs Task + Role + Category + Start/End columns.`,
         422
       );
     }
