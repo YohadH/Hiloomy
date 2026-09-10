@@ -1291,6 +1291,7 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
         title: e.title,
         units14: e.units14,
         net14: e.net14,
+        cogs14: e.cogs14,
         realCost: e.realCost,
         inventory: e.inventory,
         liveCampaigns: ctx.campaignsByProduct.get(productId)?.length ?? 0

@@ -69,9 +69,18 @@ for (const row of r.rows) {
 const excludeIdx = args.indexOf("--exclude");
 const exclude = excludeIdx >= 0 ? String(args[excludeIdx + 1] ?? "").split(",").filter(Boolean) : [];
 const a = await buildCandidateAuditReport(storeId, days, exclude);
-console.log(`\nCandidate audit — ${a.runs} runs · ranking ${a.rankingVersions.join(", ") || "-"}`);
-line("Today #1 ≠ global #1", a.disagreement.topDiffersRate === null ? "-" : `${a.disagreement.topDiffersRate}% of runs`);
-line("avg top-3 overlap", a.disagreement.avgTop3Overlap ?? "-");
+console.log(`\nCandidate audit — ${a.runs} runs (${a.runsWithClustering} clustered) · ranking ${a.rankingVersions.join(", ") || "-"} · clustering ${a.clusteringVersions.join(", ") || "-"}`);
+line("Today #1 ≠ unclustered #1", a.disagreement.topDiffersRate === null ? "-" : `${a.disagreement.topDiffersRate}% of runs`);
+line("Today #1 ≠ clustered #1", a.disagreement.clusteredTopDiffersRate === null ? "-" : `${a.disagreement.clusteredTopDiffersRate}% of runs`);
+line("clustering changed #1 / top-3", `${a.clusteringDisagreement.changedTopRate ?? "-"}% / ${a.clusteringDisagreement.changedTop3Rate ?? "-"}%`);
+line("inventory replaced in top-3", a.clusteringDisagreement.avgInventoryReplacedInTop3 ?? "-");
+line("attention compression", `${a.compression.rawSignals} raw signals → ${a.compression.managementCandidates} management candidates${a.compression.ratio !== null ? ` (×${a.compression.ratio})` : ""}`);
+line("decision density", a.decisionDensity === null ? "-" : `${a.decisionDensity} candidates per eligible domain`);
+console.log("");
+console.log("domain               raw  cand  compress  top3%(clustered)  shadow  today  useful obvious");
+for (const d of a.domains) {
+  console.log(`${d.domain.padEnd(20)} ${String(d.rawSignals).padStart(4)} ${String(d.managementCandidates).padStart(5)}  ${String(d.compression !== null ? `×${d.compression}` : "-").padStart(8)}  ${String(d.clusteredTop3Share).padStart(16)}  ${String(d.shadowSurfaced).padStart(6)}  ${String(d.distinctSurfaced).padStart(5)}  ${String(d.feedback.judged ? d.feedback.useful : "-").padStart(6)} ${String(d.feedback.judged ? d.feedback.obvious : "-").padStart(7)}`);
+}
 console.log("");
 console.log("domain               cand  surf  conv%  avgScore  obsScore  avgRank  novelty  top3%  xdom%  judged useful obvious wrong changed highValue  top suppression");
 for (const d of a.domains) {
@@ -84,15 +93,32 @@ console.log("");
 line("top suppression reasons", a.topSuppression.map((t) => `${t.reason}×${t.n}`).join(", ") || "-");
 const inv = a.inventory;
 console.log("\nInventory bias diagnostic");
-line("  % of candidates", `${inv.candidateShare}%`);
-line("  % of top-3 ranks", `${inv.top3Share}%`);
+line("  % of raw signals", `${inv.signalShare}%`);
+line("  % of management candidates", `${inv.candidateShare}%`);
+line("  % of clustered top-3", `${inv.top3Share}%`);
 line("  % of surfaced", `${inv.surfacedShare}%`);
 line("  obvious rate", inv.obviousRate === null ? "-" : `${inv.obviousRate}%`);
 line("  useful rate", inv.usefulRate === null ? "-" : `${inv.usefulRate}%`);
 line("  others eligible→none", `${inv.otherDomainsEligibleButNone} / ${inv.otherDomainsEligibleRuns}`);
-line("  classification", `${inv.classification} — ${inv.because}`);
+line("  classification", `${inv.classification}${inv.findings.length > 1 ? ` [${inv.findings.join(", ")}]` : ""} — ${inv.because}`);
 if (a.latest) {
-  console.log(`\nlatest run ${a.latest.runAt.slice(0, 16)} (${a.latest.trigger}):`);
+  console.log(`\nlatest run ${a.latest.runAt.slice(0, 16)} (${a.latest.trigger})${a.latest.clustered ? "" : " — recorded before clustering existed"}:`);
+  if (a.latest.narrative) console.log(`\n  ${a.latest.narrative.en}`);
+  if (a.latest.clustered) {
+    console.log("\n  management candidates (clustered ranking):");
+    console.log("  rank  domain               kind                              members  score  mat urg conf act mgmt nov xdom  shadow  title");
+    for (const c of a.latest.candidates) {
+      const s = c.scores;
+      console.log(`  ${String(c.rank ?? "-").padStart(4)}  ${c.domain.padEnd(20)} ${c.kind.padEnd(33)} ${String(c.memberCount).padStart(7)}  ${String(c.globalScore).padStart(5)}  ${String(s.materiality).padStart(3)} ${String(s.urgency).padStart(3)} ${String(s.confidence).padStart(4)} ${String(s.actionability).padStart(3)} ${String(s.managementJudgment).padStart(4)} ${String(s.novelty).padStart(3)} ${String(s.crossDomain).padStart(4)}  ${c.surfaced ? "YES   " : "no    "}  ${c.title.en}`);
+      if (c.cluster && c.memberCount > 1) {
+        console.log(`        lead: ${c.cluster.lead.title}${c.cluster.lead.daysCover !== null ? ` · ${c.cluster.lead.daysCover.toFixed(1)}d` : ""}${c.cluster.lead.revenue14 !== null ? ` · ₪${Math.round(c.cluster.lead.revenue14)}` : ""}`);
+        for (const m of c.cluster.members.filter((m) => m.signalId !== c.cluster.lead.signalId)) console.log(`        also: ${m.title}${m.daysCover !== null ? ` · ${m.daysCover.toFixed(1)}d` : ""}${m.revenue14 !== null ? ` · ₪${Math.round(m.revenue14)}` : ""}${m.surfacedOnToday ? " · shown on Today" : ""}`);
+        console.log(`        why grouped: ${c.cluster.reasons.en.join("; ")}`);
+        console.log(`        ${c.evidenceSummary.join(" · ")}`);
+      }
+    }
+    console.log("\n  raw signals (unclustered ranking):");
+  }
   console.log("rank  domain               kind                        score  mat urg conf act mgmt nov xdom  today  shown  reason");
   for (const c of a.latest.rows) {
     const s = c.scores;

@@ -8,6 +8,7 @@
 // reason, and persists the run. `composeRun` is pure and unit-tested; the
 // recorder only gathers inputs and writes rows. Nothing here changes Today.
 
+import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/server/db";
 import type { Decision, JudgmentTag, Localized } from "@/lib/domain/decision";
 import type { PlanView } from "@/lib/domain/plan";
@@ -16,13 +17,22 @@ import type { LeakageSummary } from "@/lib/services/affiliate-leakage-service";
 import { buildCompetitorWeekSection, type CompetitorWeekSection } from "@/lib/services/competitor-intel-service";
 import {
   CANDIDATE_DOMAINS,
+  CLUSTERING_VERSION,
   DOMAIN_OF_KIND,
+  FAMILY_KIND,
+  KIND_PRIORS,
   KIND_PRIORS_VERSION,
   RANKING_WEIGHTS_V1,
+  aggregateCluster,
+  clusterReasons,
+  combineScores,
   explainRank,
+  inventoryActionFamily,
   rankCandidates,
   scoreCandidate,
+  type ActionFamily,
   type CandidateDomain,
+  type CandidateScores,
   type CandidateRunSummary,
   type DecisionCandidateInput,
   type RankingWeights,
@@ -56,7 +66,7 @@ export interface LedgerCandidateSource {
 
 export interface ProbeData {
   // Store economics the inbox already loaded.
-  productEcon: Array<{ productId: string; title: string; units14: number; net14: number; realCost: boolean; inventory: number; liveCampaigns: number }>;
+  productEcon: Array<{ productId: string; title: string; units14: number; net14: number; cogs14: number; realCost: boolean; inventory: number; liveCampaigns: number }>;
   leakage: LeakageSummary | null;
   leakageAllProtected: boolean;
   meta: MetaCampaignsOverview | null;
@@ -88,11 +98,6 @@ export interface ComposeInput {
   todayOrder: string[]; // every pending decision in Today's order (cards then overflow)
   probes: ProbeData;
   weights?: RankingWeights;
-}
-
-export interface ComposedRun {
-  candidates: ScoredCandidate[];
-  summary: Omit<CandidateRunSummary, "id" | "storeId" | "runAt" | "trigger">;
 }
 
 // ─── Ledger decisions → candidates ────────────────────────────────────
@@ -350,7 +355,213 @@ function probe(domain: CandidateDomain, p: ProbeData, now: Date, revenue14: numb
   }
 }
 
-// ─── Compose (pure) ───────────────────────────────────────────────────
+// ─── Compose (pure): signals → clusters → candidates ──────────────────
+//
+//   RAW SIGNAL → MANAGEMENT SITUATION → DECISION CANDIDATE → GLOBAL RANKING
+//
+// Signals keep the unclustered ranking (`rank`) so the two shadow rankings
+// can be compared; candidates carry the clustered ranking. Only candidates
+// take part in the clustered global ranking — a SKU alert is never ranked
+// against the plan or an affiliate policy on its own.
+
+export type SignalAuditStatus = "LEAD" | "CLUSTERED_INTO_CANDIDATE" | "STANDALONE" | "NOT_CLUSTERED";
+
+export type SignalRow = ScoredCandidate & { id: string; clusterId: string | null; auditStatus: SignalAuditStatus | null };
+
+export interface ClusterDetail {
+  clusteringVersion: string;
+  family: ActionFamily | null;
+  memberIds: string[];
+  memberDecisionIds: string[];
+  lead: { signalId: string; title: string; daysCover: number | null; revenue14: number | null };
+  members: Array<{ signalId: string; title: string; daysCover: number | null; revenue14: number | null; decisionId: string | null; surfacedOnToday: boolean }>;
+  reasons: { he: string[]; en: string[] };
+  aggregate: {
+    combinedRevenue14: number | null; // "recent revenue associated with affected SKUs" — never "at risk"
+    effectiveExposure: number | null; // what materiality used (geometric decay)
+    minCover: number | null;
+    medianCover: number | null;
+    materialMembers: number;
+    criticalMembers: number;
+    campaignsAffected: number;
+    profitExposure: number | null;
+    profitUnavailableReason: string | null;
+  };
+  surfacedShadow: boolean;
+}
+
+export type CandidateRow = ScoredCandidate & { id: string; level: "candidate"; memberCount: number; leadSignalId: string; actionFamily: ActionFamily | null; cluster: ClusterDetail };
+
+export interface ComposedRun {
+  signals: SignalRow[];
+  candidates: CandidateRow[];
+  summary: Omit<CandidateRunSummary, "id" | "storeId" | "runAt" | "trigger"> & {
+    clusteringVersion: string;
+    clusteredTopDiffers: boolean;
+    clusteredTop3Overlap: number;
+    clusteringChangedTop: boolean;
+    clusteringChangedTop3: boolean;
+    inventoryReplacedInTop3: number;
+    rawSignals: number;
+    managementCandidates: number;
+  };
+}
+
+const MAX_SHADOW_CARDS = 5; // mirrors MAX_INBOX_CARDS; no per-domain cap in the shadow ranking (spec §21)
+
+function median(xs: number[]): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function clusterCopy(family: ActionFamily, n: number, lead: SignalRow, agg: ClusterDetail["aggregate"]): { title: Localized; question: Localized; status: string } {
+  const leadTitle = lead.entity?.label ?? lead.title.en;
+  const cover = lead.inputs.daysCover !== null && lead.inputs.daysCover !== undefined ? `${lead.inputs.daysCover.toFixed(1)}` : "?";
+  if (n === 1) {
+    switch (family) {
+      case "REPLENISH_NOW":
+        return { title: L(`${leadTitle} — ${cover} ימי כיסוי: לחדש מלאי עכשיו?`, `${leadTitle} — ${cover} days of cover: replenish now?`), question: L("להזמין מלאי עכשיו, לפני שהזמינות פוגעת במכירות?", "Replenish now, before availability starts affecting sales?"), status: "act" };
+      case "REPLENISH_SOON":
+        return { title: L(`${leadTitle} — ${cover} ימי כיסוי: לתכנן חידוש`, `${leadTitle} — ${cover} days of cover: plan replenishment`), question: L("מתי להזמין כדי לא להגיע לחוסר?", "When to order so cover does not run out?"), status: "act" };
+      case "REROUTE_ACQUISITION":
+        return { title: L(`${leadTitle} — מלאי מוגבל עם ביקוש ממומן`, `${leadTitle} — constrained stock with paid demand`), question: L("להפחית רכישה ממומנת למוצר בזמן שהמלאי מוגבל?", "Reduce paid acquisition to this product while inventory is constrained?"), status: "test" };
+      case "MONITOR":
+        return { title: L(`${leadTitle} — ${cover} ימי כיסוי: מעקב`, `${leadTitle} — ${cover} days of cover: monitor`), question: L("יש מה להקדים?", "Anything to pull forward?"), status: "watch" };
+    }
+  }
+  switch (family) {
+    case "REPLENISH_NOW":
+      return { title: L(`${n} מוצרים קריטיים דורשים תעדוף חידוש מלאי השבוע`, `${n} critical products need replenishment prioritization this week`), question: L("אילו מוצרים מקבלים עדיפות בחידוש לפני שהזמינות פוגעת במכירות?", "Which products get replenishment priority before availability starts affecting sales?"), status: "act" };
+    case "REPLENISH_SOON":
+      return { title: L(`${n} מוצרים מגיעים לכיסוי נמוך תוך שבועיים — לתכנן חידוש`, `${n} products reach low cover within two weeks — plan replenishment`), question: L("איזה סדר הזמנות מונע חוסרים בשבועיים הקרובים?", "Which order sequence prevents stockouts in the next two weeks?"), status: "act" };
+    case "REROUTE_ACQUISITION":
+      return { title: L(`${n} מוצרים מוגבלי מלאי עם ביקוש ממומן — להפחית רכישה?`, `${n} constrained products with paid demand — reduce acquisition while stock is short?`), question: L("להגן על המלאי או למקסם ביקוש ממומן למוצרים האלה?", "Protect inventory or maximize paid demand on these products?"), status: "test" };
+    case "MONITOR":
+      return { title: L(`${n} מוצרים מתחת ל-30 ימי כיסוי — מעקב בלבד`, `${n} products under 30 days of cover — monitor only`), question: L("יש משהו להקדים לפני החלון הבא?", "Anything to pull forward before the next window?"), status: "watch" };
+  }
+  void agg;
+}
+
+function buildInventoryCluster(id: string, family: ActionFamily, members: SignalRow[], probes: ProbeData, revenue14: number | null, cardIds: string[], weights: RankingWeights): CandidateRow {
+  const kind = FAMILY_KIND[family];
+  const prior = KIND_PRIORS[kind];
+  const agg = aggregateCluster(
+    members.map((m) => ({ scores: m.scores, observableScore: m.observableScore, financialExposure: m.financialExposure, daysCover: m.inputs.daysCover ?? null })),
+    revenue14,
+    prior.materialityDefault
+  );
+  const lead = members[agg.leadIndex];
+  const econById = new Map(probes.productEcon.map((e) => [e.productId, e]));
+  const memberEcon = members.map((m) => (m.entity?.id ? econById.get(m.entity.id) : undefined));
+  const allRealCost = memberEcon.every((e) => e?.realCost === true);
+  const profitExposure = allRealCost ? memberEcon.reduce((n, e) => n + ((e?.net14 ?? 0) - (e?.cogs14 ?? 0)), 0) : null;
+  const covers = members.map((m) => m.inputs.daysCover).filter((d): d is number => typeof d === "number");
+  const revenues = members.map((m) => m.financialExposure ?? 0);
+  const aggregate: ClusterDetail["aggregate"] = {
+    combinedRevenue14: revenues.some((r) => r > 0) ? revenues.reduce((a, b) => a + b, 0) : null,
+    effectiveExposure: agg.effectiveExposure,
+    minCover: covers.length ? Math.min(...covers) : null,
+    medianCover: median(covers),
+    materialMembers: agg.materialMembers,
+    criticalMembers: agg.criticalMembers,
+    campaignsAffected: members.filter((m) => m.inputs.campaignMatters).length,
+    profitExposure,
+    profitUnavailableReason: allRealCost ? null : "incomplete COGS on at least one affected product"
+  };
+  const scores: CandidateScores = {
+    materiality: agg.materiality,
+    urgency: agg.urgency,
+    confidence: agg.confidence,
+    actionability: prior.actionability,
+    managementJudgment: prior.managementJudgment,
+    novelty: prior.novelty,
+    crossDomain: lead.scores.crossDomain
+  };
+  const combined = combineScores(scores, weights);
+  const copy = clusterCopy(family, members.length, lead, aggregate);
+  const evidence = [
+    `${members.length} affected SKU${members.length === 1 ? "" : "s"}`,
+    aggregate.combinedRevenue14 !== null ? `${ils(aggregate.combinedRevenue14)} recent revenue associated with affected SKUs (14d)` : "recent revenue: n/a",
+    aggregate.minCover !== null ? `min cover ${aggregate.minCover.toFixed(1)}d · median ${aggregate.medianCover?.toFixed(1)}d` : "cover: n/a",
+    `${aggregate.campaignsAffected} with material paid demand`,
+    profitExposure !== null ? `verified contribution exposure ${ils(profitExposure)} (14d)` : `profit exposure: unavailable — ${aggregate.profitUnavailableReason}`
+  ];
+  const detail: ClusterDetail = {
+    clusteringVersion: CLUSTERING_VERSION,
+    family,
+    memberIds: members.map((m) => m.id),
+    memberDecisionIds: members.map((m) => m.relatedDecisionId).filter(Boolean) as string[],
+    lead: { signalId: lead.id, title: lead.entity?.label ?? lead.title.en, daysCover: lead.inputs.daysCover ?? null, revenue14: lead.financialExposure },
+    members: members.map((m) => ({ signalId: m.id, title: m.entity?.label ?? m.title.en, daysCover: m.inputs.daysCover ?? null, revenue14: m.financialExposure, decisionId: m.relatedDecisionId, surfacedOnToday: m.surfaced })),
+    reasons: { he: clusterReasons(family, members.length, "he"), en: clusterReasons(family, members.length, "en") },
+    aggregate,
+    surfacedShadow: false
+  };
+  return {
+    id,
+    level: "candidate",
+    domain: "inventory",
+    kind,
+    title: copy.title,
+    managementQuestion: copy.question,
+    trigger: lead.trigger,
+    evidenceSummary: evidence,
+    connectedDomains: [...new Set(members.flatMap((m) => m.connectedDomains))],
+    financialExposure: agg.effectiveExposure,
+    financialExposureType: agg.effectiveExposure !== null ? "revenue_14d_effective" : null,
+    financialConfidence: lead.financialConfidence,
+    proposedStatus: copy.status,
+    proposedRecommendation: null,
+    missingEvidence: [...new Set(members.flatMap((m) => m.missingEvidence))].slice(0, 5),
+    entity: members.length === 1 ? lead.entity : null,
+    inputs: { ...lead.inputs, revenue14dStore: revenue14 },
+    relatedDecisionId: null,
+    surfaced: false,
+    todayRank: null,
+    suppressionReason: null,
+    eligible: true,
+    scores,
+    globalScore: combined.globalScore,
+    observableScore: combined.observableScore,
+    rank: null,
+    observableRank: null,
+    crossDomain: lead.crossDomain,
+    memberCount: members.length,
+    leadSignalId: lead.id,
+    actionFamily: family,
+    cluster: detail
+  };
+}
+
+function singletonCandidate(id: string, s: SignalRow): CandidateRow {
+  return {
+    ...s,
+    id,
+    level: "candidate",
+    relatedDecisionId: null,
+    surfaced: false,
+    todayRank: null,
+    suppressionReason: null,
+    rank: null,
+    observableRank: null,
+    memberCount: 1,
+    leadSignalId: s.id,
+    actionFamily: null,
+    cluster: {
+      clusteringVersion: CLUSTERING_VERSION,
+      family: null,
+      memberIds: [s.id],
+      memberDecisionIds: s.relatedDecisionId ? [s.relatedDecisionId] : [],
+      lead: { signalId: s.id, title: s.entity?.label ?? s.title.en, daysCover: s.inputs.daysCover ?? null, revenue14: s.financialExposure },
+      members: [{ signalId: s.id, title: s.entity?.label ?? s.title.en, daysCover: s.inputs.daysCover ?? null, revenue14: s.financialExposure, decisionId: s.relatedDecisionId, surfacedOnToday: s.surfaced }],
+      reasons: { he: ["אות יחיד בתחום שלו — עומד בפני עצמו"], en: ["single signal in its domain — stands on its own"] },
+      aggregate: { combinedRevenue14: s.financialExposure, effectiveExposure: s.financialExposure, minCover: s.inputs.daysCover ?? null, medianCover: s.inputs.daysCover ?? null, materialMembers: s.scores.materiality >= 50 ? 1 : 0, criticalMembers: s.scores.urgency >= 75 ? 1 : 0, campaignsAffected: s.inputs.campaignMatters ? 1 : 0, profitExposure: null, profitUnavailableReason: null },
+      surfacedShadow: false
+    }
+  };
+}
 
 export function composeRun(input: ComposeInput): ComposedRun {
   const weights = input.weights ?? RANKING_WEIGHTS_V1;
@@ -362,28 +573,81 @@ export function composeRun(input: ComposeInput): ComposedRun {
   const covered = new Set(raw.map((c) => c.domain));
   for (const domain of CANDIDATE_DOMAINS) if (!covered.has(domain)) raw.push(probe(domain, input.probes, input.now, revenue14));
 
+  // Level 1 — raw signals, unclustered shadow ranking (as before).
   const scored = raw.map((c) => {
     const s = scoreCandidate(c, weights);
     return { ...c, ...s, rank: null as number | null, observableRank: null as number | null, crossDomain: (c.inputs.domainsJoined ?? c.connectedDomains.length) >= 2 };
   });
-  const candidates: ScoredCandidate[] = rankCandidates(scored);
+  const signals: SignalRow[] = rankCandidates(scored).map((c) => ({ ...c, id: randomUUID(), clusterId: null, auditStatus: null }));
 
-  const globalTop = candidates.filter((c) => c.rank !== null).sort((a, b) => a.rank! - b.rank!);
+  // Level 2 — management situations. A signal that is already decided or a
+  // duplicate is resolved; it stays a signal and joins no candidate.
+  const clusterable = signals.filter((s) => s.kind !== "none" && s.suppressionReason !== "ALREADY_DECIDED" && s.suppressionReason !== "DUPLICATE");
+  const candidates: CandidateRow[] = [];
+  const byFamily = new Map<ActionFamily, SignalRow[]>();
+  for (const s of clusterable) {
+    if (s.domain === "inventory" && s.kind === "stockout_imminent") {
+      const family = inventoryActionFamily(s.inputs.daysCover ?? null, !!s.inputs.campaignMatters);
+      byFamily.set(family, [...(byFamily.get(family) ?? []), s]);
+    } else {
+      candidates.push(singletonCandidate(randomUUID(), s));
+    }
+  }
+  for (const [family, members] of byFamily) candidates.push(buildInventoryCluster(randomUUID(), family, members, input.probes, revenue14, input.cardIds, weights));
+
+  // Level 3 — clustered global ranking; shadow surfacing = top cards, no domain cap.
+  const ranked = rankCandidates(candidates);
+  for (const c of ranked) {
+    c.surfaced = c.rank !== null && c.rank <= MAX_SHADOW_CARDS;
+    c.cluster.surfacedShadow = c.surfaced;
+    c.suppressionReason = c.surfaced ? null : "LOWER_GLOBAL_PRIORITY";
+    for (const memberId of c.cluster.memberIds) {
+      const s = signals.find((x) => x.id === memberId)!;
+      s.clusterId = c.id;
+      s.auditStatus = c.memberCount === 1 ? "STANDALONE" : memberId === c.leadSignalId ? "LEAD" : "CLUSTERED_INTO_CANDIDATE";
+    }
+  }
+  for (const s of signals) if (s.kind !== "none" && !s.clusterId) s.auditStatus = "NOT_CLUSTERED";
+
+  // Disagreement: Today vs unclustered shadow (as before) …
   const todayTop = input.cardIds.slice(0, 3);
+  const globalTop = signals.filter((c) => c.rank !== null).sort((a, b) => a.rank! - b.rank!);
   const globalTop3 = globalTop.slice(0, 3).map((c) => c.relatedDecisionId ?? `${c.domain}:${c.kind}`);
   const top3Overlap = globalTop3.filter((id) => todayTop.includes(id)).length;
   const topDiffers = todayTop.length > 0 && globalTop3[0] !== todayTop[0];
+  // … Today vs clustered shadow …
+  const clusteredTop = ranked.filter((c) => c.rank !== null).sort((a, b) => a.rank! - b.rank!);
+  const clusteredTop3 = clusteredTop.slice(0, 3);
+  const clusteredTopDiffers = todayTop.length > 0 && !(clusteredTop3[0]?.cluster.memberDecisionIds.includes(todayTop[0]) ?? false);
+  const clusteredTop3Overlap = todayTop.filter((id) => clusteredTop3.some((c) => c.cluster.memberDecisionIds.includes(id))).length;
+  // … and unclustered vs clustered shadow (diagnostic only — replacement is not "good").
+  const unclusteredTop3 = globalTop.slice(0, 3);
+  const clusterOf = (s: SignalRow) => s.clusterId;
+  const clusteringChangedTop = unclusteredTop3.length > 0 && clusteredTop3.length > 0 && clusterOf(unclusteredTop3[0]) !== clusteredTop3[0].id;
+  const uSet = new Set(unclusteredTop3.map(clusterOf).filter((x): x is string => !!x));
+  const cSet = new Set(clusteredTop3.map((c) => c.id));
+  const clusteringChangedTop3 = uSet.size !== cSet.size || [...uSet].some((id) => !cSet.has(id));
+  const inventoryReplacedInTop3 = unclusteredTop3.filter((s) => s.domain === "inventory").length - clusteredTop3.filter((c) => c.domain === "inventory").length;
 
   return {
-    candidates,
+    signals,
+    candidates: ranked,
     summary: {
       rankingVersion: weights.version,
       priorsVersion: KIND_PRIORS_VERSION,
       weights: weights.weights,
-      candidates: candidates.filter((c) => c.kind !== "none").length,
-      surfaced: candidates.filter((c) => c.surfaced).length,
+      candidates: signals.filter((c) => c.kind !== "none").length,
+      surfaced: signals.filter((c) => c.surfaced).length,
       topDiffers,
-      top3Overlap
+      top3Overlap,
+      clusteringVersion: CLUSTERING_VERSION,
+      clusteredTopDiffers,
+      clusteredTop3Overlap,
+      clusteringChangedTop,
+      clusteringChangedTop3,
+      inventoryReplacedInTop3,
+      rawSignals: signals.filter((c) => c.kind !== "none").length,
+      managementCandidates: ranked.length
     }
   };
 }
@@ -451,6 +715,52 @@ export interface RecordRunInput {
   silentAlerts: ProbeData["silentAlerts"];
 }
 
+function rowData(c: ScoredCandidate & { id: string }, runId: string, storeId: string, runAt: Date, extra: Record<string, unknown>) {
+  return {
+    id: c.id,
+    runId,
+    storeId,
+    runAt,
+    domain: c.domain,
+    kind: c.kind,
+    eligible: c.eligible,
+    entityType: c.entity?.type ?? null,
+    entityId: c.entity?.id ?? null,
+    entityLabel: c.entity?.label ?? null,
+    titleJson: c.title,
+    detailJson: {
+      managementQuestion: c.managementQuestion,
+      trigger: c.trigger,
+      evidenceSummary: c.evidenceSummary,
+      connectedDomains: c.connectedDomains,
+      proposedRecommendation: c.proposedRecommendation,
+      missingEvidence: c.missingEvidence,
+      inputs: c.inputs
+    },
+    financialExposure: c.financialExposure,
+    financialExposureType: c.financialExposureType,
+    financialConfidence: c.financialConfidence,
+    materiality: c.scores.materiality,
+    urgency: c.scores.urgency,
+    confidence: c.scores.confidence,
+    actionability: c.scores.actionability,
+    managementJudgment: c.scores.managementJudgment,
+    novelty: c.scores.novelty,
+    crossDomainScore: c.scores.crossDomain,
+    globalScore: c.globalScore,
+    observableScore: c.observableScore,
+    rank: c.rank,
+    observableRank: c.observableRank,
+    todayRank: c.todayRank,
+    crossDomain: c.crossDomain,
+    proposedStatus: c.proposedStatus,
+    surfaced: c.surfaced,
+    suppressionReason: c.suppressionReason,
+    relatedDecisionId: c.relatedDecisionId,
+    ...extra
+  };
+}
+
 export async function recordCandidateRun(input: RecordRunInput): Promise<string | null> {
   const db = getDb() as any;
   const trigger = nextTrigger;
@@ -472,67 +782,40 @@ export async function recordCandidateRun(input: RecordRunInput): Promise<string 
     todayOrder: input.todayOrder,
     probes: { productEcon: input.productEcon, leakage: input.leakage, leakageAllProtected: input.leakageAllProtected, meta: input.meta, plan: input.plan, silentAlerts: input.silentAlerts, discount, competitors }
   });
+  const s = composed.summary;
   const run = await db.decisionCandidateRun.create({
     data: {
       storeId: input.storeId,
       runAt: input.now,
       trigger,
-      rankingVersion: composed.summary.rankingVersion,
-      priorsVersion: composed.summary.priorsVersion,
-      weightsJson: composed.summary.weights,
-      candidates: composed.summary.candidates,
-      surfaced: composed.summary.surfaced,
-      topDiffers: composed.summary.topDiffers,
-      top3Overlap: composed.summary.top3Overlap,
+      rankingVersion: s.rankingVersion,
+      priorsVersion: s.priorsVersion,
+      weightsJson: s.weights,
+      candidates: s.rawSignals,
+      surfaced: s.surfaced,
+      topDiffers: s.topDiffers,
+      top3Overlap: s.top3Overlap,
+      clusteringVersion: s.clusteringVersion,
+      clusteredTopDiffers: s.clusteredTopDiffers,
+      clusteredTop3Overlap: s.clusteredTop3Overlap,
+      clusteringChangedTop: s.clusteringChangedTop,
+      clusteringChangedTop3: s.clusteringChangedTop3,
       summaryJson: {
         todayTop: input.cardIds,
-        globalTop: composed.candidates.filter((c) => c.rank !== null).sort((a, b) => a.rank! - b.rank!).slice(0, 5).map((c) => ({ domain: c.domain, kind: c.kind, title: c.title.en, score: c.globalScore, decisionId: c.relatedDecisionId }))
+        rawSignals: s.rawSignals,
+        managementCandidates: s.managementCandidates,
+        inventoryReplacedInTop3: s.inventoryReplacedInTop3,
+        globalTop: composed.signals.filter((c) => c.rank !== null).sort((a, b) => a.rank! - b.rank!).slice(0, 5).map((c) => ({ domain: c.domain, kind: c.kind, title: c.title.en, score: c.globalScore, decisionId: c.relatedDecisionId })),
+        clusteredTop: composed.candidates.filter((c) => c.rank !== null).sort((a, b) => a.rank! - b.rank!).slice(0, 5).map((c) => ({ domain: c.domain, kind: c.kind, title: c.title.en, score: c.globalScore, members: c.memberCount }))
       }
     },
     select: { id: true }
   });
   await db.decisionCandidate.createMany({
-    data: composed.candidates.map((c) => ({
-      runId: run.id,
-      storeId: input.storeId,
-      runAt: input.now,
-      domain: c.domain,
-      kind: c.kind,
-      eligible: c.eligible,
-      entityType: c.entity?.type ?? null,
-      entityId: c.entity?.id ?? null,
-      entityLabel: c.entity?.label ?? null,
-      titleJson: c.title,
-      detailJson: {
-        managementQuestion: c.managementQuestion,
-        trigger: c.trigger,
-        evidenceSummary: c.evidenceSummary,
-        connectedDomains: c.connectedDomains,
-        proposedRecommendation: c.proposedRecommendation,
-        missingEvidence: c.missingEvidence,
-        inputs: c.inputs
-      },
-      financialExposure: c.financialExposure,
-      financialExposureType: c.financialExposureType,
-      financialConfidence: c.financialConfidence,
-      materiality: c.scores.materiality,
-      urgency: c.scores.urgency,
-      confidence: c.scores.confidence,
-      actionability: c.scores.actionability,
-      managementJudgment: c.scores.managementJudgment,
-      novelty: c.scores.novelty,
-      crossDomainScore: c.scores.crossDomain,
-      globalScore: c.globalScore,
-      observableScore: c.observableScore,
-      rank: c.rank,
-      observableRank: c.observableRank,
-      todayRank: c.todayRank,
-      crossDomain: c.crossDomain,
-      proposedStatus: c.proposedStatus,
-      surfaced: c.surfaced,
-      suppressionReason: c.suppressionReason,
-      relatedDecisionId: c.relatedDecisionId
-    }))
+    data: composed.signals.map((c) => rowData(c, run.id, input.storeId, input.now, { level: "signal", clusterId: c.clusterId, memberCount: 1, leadSignalId: null, actionFamily: null, auditStatus: c.auditStatus, clusterJson: null }))
+  });
+  await db.decisionCandidate.createMany({
+    data: composed.candidates.map((c) => rowData(c, run.id, input.storeId, input.now, { level: "candidate", clusterId: null, memberCount: c.memberCount, leadSignalId: c.leadSignalId, actionFamily: c.actionFamily, auditStatus: null, clusterJson: c.cluster }))
   });
   return run.id as string;
 }
@@ -543,34 +826,41 @@ export interface DomainAuditStats {
   domain: CandidateDomain;
   runs: number;
   eligibleRuns: number;
-  candidates: number; // non-none rows
+  candidates: number; // raw signal rows (non-none) — kept under its old name for the page
+  rawSignals: number;
+  managementCandidates: number; // clustered candidate rows
+  compression: number | null; // rawSignals / managementCandidates
   surfacedRows: number;
   distinctDecisions: number;
   distinctSurfaced: number;
-  conversion: number | null; // distinctSurfaced / distinctDecisions
+  conversion: number | null;
   avgScore: number | null;
   avgObservableScore: number | null;
   avgRank: number | null;
   avgNovelty: number | null;
-  top3Share: number; // share of this domain among rank ≤ 3 rows
+  top3Share: number; // unclustered shadow ranking
+  clusteredTop3Share: number; // clustered shadow ranking
+  shadowSurfaced: number; // candidate rows in the clustered top cards
   crossDomainRate: number | null;
   topSuppression: Array<{ reason: string; n: number }>;
   feedback: { judged: number; useful: number; obvious: number; wrong: number; missingContext: number; changed: number; highValue: number };
 }
 
-export type BiasClass = "NO_EVIDENCE_OF_BIAS" | "GENERATION_BIAS" | "RANKING_BIAS" | "REAL_BUSINESS_CONDITION" | "INCONCLUSIVE";
+export type BiasClass = "NO_EVIDENCE_OF_BIAS" | "SIGNAL_VOLUME_IMBALANCE" | "CANDIDATE_GENERATION_BIAS" | "RANKING_BIAS" | "REAL_BUSINESS_CONDITION" | "MIXED" | "INCONCLUSIVE";
 
 export interface InventoryBiasDiagnostic {
-  candidateShare: number; // % of all candidates generated by Inventory
-  top3Share: number; // % of top-3 ranked rows that were Inventory
-  surfacedShare: number; // % of surfaced rows that were Inventory
-  obviousRate: number | null; // % of judged Inventory decisions marked obvious
+  signalShare: number; // % of raw signals from Inventory
+  candidateShare: number; // % of management candidates from Inventory (clustered; falls back to signals on old runs)
+  top3Share: number; // % of clustered top-3 ranks from Inventory
+  surfacedShare: number; // % of production-surfaced signals from Inventory
+  obviousRate: number | null;
   usefulRate: number | null;
-  otherDomainsEligibleButNone: number; // eligible runs where a non-inventory domain produced no candidate
+  otherDomainsEligibleButNone: number;
   otherDomainsEligibleRuns: number;
   judgedInventory: number;
   judgedOther: number;
   classification: BiasClass;
+  findings: BiasClass[];
   because: string;
 }
 
@@ -579,17 +869,25 @@ export interface CandidateAuditReport {
   since: string;
   until: string;
   runs: number;
+  runsWithClustering: number;
   rankingVersions: string[];
-  disagreement: { topDiffersRate: number | null; avgTop3Overlap: number | null };
+  clusteringVersions: string[];
+  disagreement: { topDiffersRate: number | null; avgTop3Overlap: number | null; clusteredTopDiffersRate: number | null; avgClusteredTop3Overlap: number | null };
+  clusteringDisagreement: { changedTopRate: number | null; changedTop3Rate: number | null; avgInventoryReplacedInTop3: number | null };
+  compression: { rawSignals: number; managementCandidates: number; ratio: number | null };
+  decisionDensity: number | null; // management candidates per eligible domain, averaged over clustered runs
   domains: DomainAuditStats[];
   topSuppression: Array<{ reason: string; n: number }>;
   inventory: InventoryBiasDiagnostic;
   latest: {
     runAt: string;
     trigger: string;
-    rows: Array<ScoredCandidate & { id: string }>;
+    clustered: boolean;
+    rows: Array<ScoredCandidate & { id: string }>; // raw signals, unclustered ranking
+    candidates: Array<ScoredCandidate & { id: string; memberCount: number; actionFamily: ActionFamily | null; cluster: ClusterDetail | null }>;
     explanations: Array<{ title: string; domain: CandidateDomain; strengths: string[]; outranked: ReturnType<typeof explainRank>["outranked"] }>;
     ablation: { exclude: CandidateDomain[]; rows: Array<{ rank: number; domain: CandidateDomain; title: string; score: number }> } | null;
+    narrative: Localized | null;
   } | null;
 }
 
@@ -625,6 +923,13 @@ type StoredRow = {
   surfaced: boolean;
   suppressionReason: string | null;
   relatedDecisionId: string | null;
+  level: string | null;
+  clusterId: string | null;
+  memberCount: number | null;
+  leadSignalId: string | null;
+  actionFamily: string | null;
+  auditStatus: string | null;
+  clusterJson: unknown;
 };
 
 function toScored(r: StoredRow): ScoredCandidate & { id: string } {
@@ -662,37 +967,122 @@ function toScored(r: StoredRow): ScoredCandidate & { id: string } {
 
 const MIN_JUDGED_FOR_CLASSIFICATION = 5;
 
-export function classifyInventoryBias(d: Omit<InventoryBiasDiagnostic, "classification" | "because">): { classification: BiasClass; because: string } {
+// Several findings can be true at once (spec §28/§39). `classification` is
+// the headline: MIXED when more than one finding holds.
+export function classifyInventoryBias(d: Omit<InventoryBiasDiagnostic, "classification" | "findings" | "because">): { classification: BiasClass; findings: BiasClass[]; because: string } {
+  const findings: BiasClass[] = [];
+  const why: string[] = [];
   const enoughFeedback = d.judgedInventory >= MIN_JUDGED_FOR_CLASSIFICATION && d.judgedOther >= MIN_JUDGED_FOR_CLASSIFICATION;
   const othersSilent = d.otherDomainsEligibleRuns > 0 ? d.otherDomainsEligibleButNone / d.otherDomainsEligibleRuns : 0;
-  if (d.top3Share <= 40) return { classification: "NO_EVIDENCE_OF_BIAS", because: `Inventory holds ${d.top3Share.toFixed(0)}% of top-3 ranks.` };
-  if (othersSilent >= 0.6 && d.candidateShare >= 50) {
-    return { classification: "GENERATION_BIAS", because: `Other domains were eligible but produced no candidate in ${(othersSilent * 100).toFixed(0)}% of runs; Inventory supplied ${d.candidateShare.toFixed(0)}% of candidates.` };
+
+  if (d.signalShare >= 50 && d.candidateShare <= 40) {
+    findings.push("SIGNAL_VOLUME_IMBALANCE");
+    why.push(`Inventory produces ${d.signalShare}% of raw signals but only ${d.candidateShare}% of management candidates — many SKU alerts, few distinct decisions.`);
   }
-  if (!enoughFeedback) return { classification: "INCONCLUSIVE", because: `Inventory dominates the ranking (${d.top3Share.toFixed(0)}% of top-3) but feedback is thin: ${d.judgedInventory} judged inventory, ${d.judgedOther} judged other (need ${MIN_JUDGED_FOR_CLASSIFICATION} each).` };
-  if ((d.obviousRate ?? 0) >= 50 && (d.usefulRate ?? 0) < 40) {
-    return { classification: "RANKING_BIAS", because: `Inventory wins ${d.top3Share.toFixed(0)}% of top-3 ranks while managers mark ${d.obviousRate?.toFixed(0)}% obvious and ${d.usefulRate?.toFixed(0)}% useful.` };
+  if (d.candidateShare >= 50 && othersSilent >= 0.6) {
+    findings.push("CANDIDATE_GENERATION_BIAS");
+    why.push(`Other domains were eligible but produced no candidate in ${(othersSilent * 100).toFixed(0)}% of runs while Inventory supplied ${d.candidateShare}% of candidates.`);
   }
-  if ((d.usefulRate ?? 0) >= 50) return { classification: "REAL_BUSINESS_CONDITION", because: `Inventory wins ${d.top3Share.toFixed(0)}% of top-3 ranks and ${d.usefulRate?.toFixed(0)}% of judged inventory decisions were useful.` };
-  return { classification: "INCONCLUSIVE", because: "Ranking share is high but feedback does not point one way." };
+  let rankingCall: BiasClass | null = null;
+  if (d.top3Share >= 60) {
+    if (!enoughFeedback) {
+      rankingCall = "INCONCLUSIVE";
+      why.push(`Inventory holds ${d.top3Share}% of clustered top-3 ranks, but feedback is thin (${d.judgedInventory} judged inventory, ${d.judgedOther} judged other; need ${MIN_JUDGED_FOR_CLASSIFICATION} each).`);
+    } else if ((d.obviousRate ?? 0) >= 50 && (d.usefulRate ?? 0) < 40) {
+      rankingCall = "RANKING_BIAS";
+      why.push(`Inventory wins ${d.top3Share}% of clustered top-3 ranks while managers mark ${d.obviousRate}% obvious and ${d.usefulRate}% useful.`);
+    } else if ((d.usefulRate ?? 0) >= 50) {
+      rankingCall = "REAL_BUSINESS_CONDITION";
+      why.push(`Inventory wins ${d.top3Share}% of clustered top-3 ranks and ${d.usefulRate}% of judged inventory decisions were useful.`);
+    } else {
+      rankingCall = "INCONCLUSIVE";
+      why.push(`Inventory holds ${d.top3Share}% of clustered top-3 ranks; feedback does not point one way.`);
+    }
+    if (rankingCall !== "INCONCLUSIVE") findings.push(rankingCall);
+  } else if (findings.length === 0) {
+    why.push(`Inventory holds ${d.top3Share}% of clustered top-3 ranks.`);
+  }
+
+  const classification: BiasClass = findings.length >= 2 ? "MIXED" : findings.length === 1 ? findings[0] : rankingCall === "INCONCLUSIVE" ? "INCONCLUSIVE" : "NO_EVIDENCE_OF_BIAS";
+  return { classification, findings, because: why.join(" ") };
+}
+
+// Spec §40 — "Why one inventory decision instead of fourteen stock alerts?",
+// entirely from structured data.
+function inventoryNarrative(signals: Array<ScoredCandidate & { id: string }>, candidates: CandidateAuditReport["latest"] extends infer T ? (T extends { candidates: infer C } ? C : never) : never): Localized | null {
+  const invSignals = signals.filter((s) => s.domain === "inventory" && s.kind === "stockout_imminent");
+  if (invSignals.length === 0) return null;
+  const clusters = candidates.filter((c) => c.domain === "inventory" && c.cluster);
+  const byFamily = (f: ActionFamily) => clusters.filter((c) => c.actionFamily === f);
+  const count = (f: ActionFamily) => byFamily(f).reduce((n, c) => n + c.memberCount, 0);
+  const grouped = byFamily("REPLENISH_NOW").concat(byFamily("REPLENISH_SOON"));
+  const replenish = grouped.sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))[0];
+  const ranked = candidates.filter((c) => c.rank !== null).sort((a, b) => a.rank! - b.rank!);
+  const first = ranked[0];
+  const en: string[] = [`Hiloomy detected ${invSignals.length} low-stock signal${invSignals.length === 1 ? "" : "s"}.`];
+  const he: string[] = [`הילומי זיהתה ${invSignals.length} אותות מלאי נמוך.`];
+  if (count("REPLENISH_NOW")) {
+    en.push(`${count("REPLENISH_NOW")} represented the same replenishment decision and were grouped into one management situation.`);
+    he.push(`${count("REPLENISH_NOW")} מהם הם אותה החלטת חידוש מלאי וקובצו למצב ניהולי אחד.`);
+  }
+  if (count("REPLENISH_SOON")) {
+    en.push(`${count("REPLENISH_SOON")} need replenishment planning within two weeks.`);
+    he.push(`${count("REPLENISH_SOON")} דורשים תכנון חידוש בתוך שבועיים.`);
+  }
+  if (count("MONITOR")) {
+    en.push(`${count("MONITOR")} were monitoring-only.`);
+    he.push(`${count("MONITOR")} למעקב בלבד.`);
+  }
+  if (count("REROUTE_ACQUISITION")) {
+    en.push(`${count("REROUTE_ACQUISITION")} had a distinct commercial context (material paid demand) and remained a separate acquisition trade-off.`);
+    he.push(`${count("REROUTE_ACQUISITION")} עם הקשר מסחרי שונה (ביקוש ממומן מהותי) ונשארו טרייד-אוף נפרד על רכישה.`);
+  }
+  const notClustered = invSignals.filter((s) => s.suppressionReason === "ALREADY_DECIDED" || s.suppressionReason === "DUPLICATE").length;
+  if (notClustered) {
+    en.push(`${notClustered} were already decided and joined no candidate.`);
+    he.push(`${notClustered} כבר הוכרעו ולא הצטרפו למועמד.`);
+  }
+  if (replenish && replenish.rank !== null) {
+    if (replenish.rank === 1) {
+      en.push(`The resulting replenishment candidate ranked #1 globally.`);
+      he.push(`מועמד חידוש המלאי דורג ראשון גלובלית.`);
+    } else if (first) {
+      en.push(`The resulting replenishment candidate ranked #${replenish.rank} globally behind ${first.title.en}.`);
+      he.push(`מועמד חידוש המלאי דורג #${replenish.rank} גלובלית, אחרי ${first.title.he}.`);
+    }
+  }
+  return { he: he.join(" "), en: en.join(" ") };
 }
 
 export async function buildCandidateAuditReport(storeId: string, days = 14, exclude: CandidateDomain[] = []): Promise<CandidateAuditReport> {
   const db = getDb() as any;
   const now = new Date();
   const since = new Date(now.getTime() - days * DAY_MS);
-  const runs = (await db.decisionCandidateRun.findMany({ where: { storeId, runAt: { gte: since } }, orderBy: { runAt: "desc" }, select: { id: true, runAt: true, trigger: true, rankingVersion: true, topDiffers: true, top3Overlap: true } })) as Array<{
+  const runs = (await db.decisionCandidateRun.findMany({
+    where: { storeId, runAt: { gte: since } },
+    orderBy: { runAt: "desc" },
+    select: { id: true, runAt: true, trigger: true, rankingVersion: true, topDiffers: true, top3Overlap: true, clusteringVersion: true, clusteredTopDiffers: true, clusteredTop3Overlap: true, clusteringChangedTop: true, clusteringChangedTop3: true, summaryJson: true }
+  })) as Array<{
     id: string;
     runAt: Date;
     trigger: string;
     rankingVersion: string;
     topDiffers: boolean;
     top3Overlap: number;
+    clusteringVersion: string | null;
+    clusteredTopDiffers: boolean;
+    clusteredTop3Overlap: number;
+    clusteringChangedTop: boolean;
+    clusteringChangedTop3: boolean;
+    summaryJson: Record<string, unknown> | null;
   }>;
   const rows = (await db.decisionCandidate.findMany({ where: { storeId, runAt: { gte: since } } })) as StoredRow[];
+  const signalRows = rows.filter((r) => (r.level ?? "signal") !== "candidate");
+  const candidateRows = rows.filter((r) => r.level === "candidate");
+  const clusteredRuns = runs.filter((r) => r.clusteringVersion);
 
   // Feedback join: one judgment per decision, regardless of how many runs saw it.
-  const decisionIds = [...new Set(rows.map((r) => r.relatedDecisionId).filter(Boolean) as string[])];
+  const decisionIds = [...new Set(signalRows.map((r) => r.relatedDecisionId).filter(Boolean) as string[])];
   const alerts = decisionIds.length ? ((await db.alert.findMany({ where: { id: { in: decisionIds } }, select: { id: true, payloadJson: true } })) as Array<{ id: string; payloadJson: Record<string, unknown> | null }>) : [];
   const judgmentOf = new Map<string, { tags: JudgmentTag[]; changed: boolean | null }>();
   for (const a of alerts) {
@@ -700,13 +1090,15 @@ export async function buildCandidateAuditReport(storeId: string, days = 14, excl
     if (j && Array.isArray(j.tags)) judgmentOf.set(a.id, { tags: j.tags, changed: j.changedDecision ?? null });
   }
 
-  const nonNone = rows.filter((r) => r.kind !== "none");
+  const nonNone = signalRows.filter((r) => r.kind !== "none");
   const top3Rows = nonNone.filter((r) => r.rank !== null && r.rank <= 3);
+  const clusteredTop3Rows = candidateRows.filter((r) => r.rank !== null && r.rank <= 3);
   const avg = (xs: number[]) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
 
   const domains: DomainAuditStats[] = CANDIDATE_DOMAINS.map((domain) => {
-    const all = rows.filter((r) => r.domain === domain);
+    const all = signalRows.filter((r) => r.domain === domain);
     const cands = all.filter((r) => r.kind !== "none");
+    const clustered = candidateRows.filter((r) => r.domain === domain);
     const distinct = new Map<string, { surfaced: boolean }>();
     for (const r of cands) {
       const key = r.relatedDecisionId ?? `${r.kind}:${r.entityId ?? r.titleJson.en}`;
@@ -732,6 +1124,9 @@ export async function buildCandidateAuditReport(storeId: string, days = 14, excl
       runs: new Set(all.map((r) => r.runId)).size,
       eligibleRuns: new Set(all.filter((r) => r.eligible).map((r) => r.runId)).size,
       candidates: cands.length,
+      rawSignals: cands.length,
+      managementCandidates: clustered.length,
+      compression: clustered.length ? Math.round((cands.length / clustered.length) * 100) / 100 : null,
       surfacedRows: cands.filter((r) => r.surfaced).length,
       distinctDecisions: distinct.size,
       distinctSurfaced,
@@ -741,6 +1136,8 @@ export async function buildCandidateAuditReport(storeId: string, days = 14, excl
       avgRank: avg(cands.filter((r) => r.rank !== null).map((r) => r.rank as number)),
       avgNovelty: avg(cands.map((r) => r.novelty)),
       top3Share: top3Rows.length ? Math.round((top3Rows.filter((r) => r.domain === domain).length / top3Rows.length) * 100) : 0,
+      clusteredTop3Share: clusteredTop3Rows.length ? Math.round((clusteredTop3Rows.filter((r) => r.domain === domain).length / clusteredTop3Rows.length) * 100) : 0,
+      shadowSurfaced: clustered.filter((r) => r.surfaced).length,
       crossDomainRate: cands.length ? Math.round((cands.filter((r) => r.crossDomain).length / cands.length) * 100) : null,
       topSuppression: [...suppression.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([reason, n]) => ({ reason, n })),
       feedback: fb
@@ -748,11 +1145,17 @@ export async function buildCandidateAuditReport(storeId: string, days = 14, excl
   });
 
   const inv = domains.find((d) => d.domain === "inventory")!;
-  const otherEligible = rows.filter((r) => r.domain !== "inventory" && r.domain !== "returns" && r.eligible);
+  const otherEligible = signalRows.filter((r) => r.domain !== "inventory" && r.domain !== "returns" && r.eligible);
+  const surfacedSignals = nonNone.filter((r) => r.surfaced);
   const diagBase = {
-    candidateShare: nonNone.length ? Math.round((nonNone.filter((r) => r.domain === "inventory").length / nonNone.length) * 100) : 0,
-    top3Share: inv.top3Share,
-    surfacedShare: nonNone.filter((r) => r.surfaced).length ? Math.round((nonNone.filter((r) => r.surfaced && r.domain === "inventory").length / nonNone.filter((r) => r.surfaced).length) * 100) : 0,
+    signalShare: nonNone.length ? Math.round((nonNone.filter((r) => r.domain === "inventory").length / nonNone.length) * 100) : 0,
+    candidateShare: candidateRows.length
+      ? Math.round((candidateRows.filter((r) => r.domain === "inventory").length / candidateRows.length) * 100)
+      : nonNone.length
+        ? Math.round((nonNone.filter((r) => r.domain === "inventory").length / nonNone.length) * 100)
+        : 0,
+    top3Share: clusteredTop3Rows.length ? inv.clusteredTop3Share : inv.top3Share,
+    surfacedShare: surfacedSignals.length ? Math.round((surfacedSignals.filter((r) => r.domain === "inventory").length / surfacedSignals.length) * 100) : 0,
     obviousRate: inv.feedback.judged ? Math.round((inv.feedback.obvious / inv.feedback.judged) * 100) : null,
     usefulRate: inv.feedback.judged ? Math.round((inv.feedback.useful / inv.feedback.judged) * 100) : null,
     otherDomainsEligibleButNone: otherEligible.filter((r) => r.kind === "none").length,
@@ -761,40 +1164,76 @@ export async function buildCandidateAuditReport(storeId: string, days = 14, excl
     judgedOther: domains.filter((d) => d.domain !== "inventory").reduce((n, d) => n + d.feedback.judged, 0)
   };
   const suppressionAll = new Map<string, number>();
-  for (const r of rows) if (!r.surfaced && r.suppressionReason) suppressionAll.set(r.suppressionReason, (suppressionAll.get(r.suppressionReason) ?? 0) + 1);
+  for (const r of signalRows) if (!r.surfaced && r.suppressionReason) suppressionAll.set(r.suppressionReason, (suppressionAll.get(r.suppressionReason) ?? 0) + 1);
+
+  // Decision density: management candidates per eligible domain, per clustered run.
+  const densities = clusteredRuns.map((run) => {
+    const runSignals = signalRows.filter((r) => r.runId === run.id);
+    const eligibleDomains = new Set(runSignals.filter((r) => r.eligible).map((r) => r.domain)).size;
+    const cands = candidateRows.filter((r) => r.runId === run.id).length;
+    return eligibleDomains ? cands / eligibleDomains : null;
+  }).filter((x): x is number => x !== null);
 
   let latest: CandidateAuditReport["latest"] = null;
   if (runs[0]) {
-    const latestRows = rows.filter((r) => r.runId === runs[0].id).map(toScored).sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
-    const ranked = latestRows.filter((r) => r.rank !== null);
-    const explanations = latestRows
+    const latestSignals = signalRows.filter((r) => r.runId === runs[0].id).map(toScored).sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
+    const latestCandidates = candidateRows
+      .filter((r) => r.runId === runs[0].id)
+      .map((r) => ({ ...toScored(r), memberCount: r.memberCount ?? 1, actionFamily: (r.actionFamily as ActionFamily | null) ?? null, cluster: (r.clusterJson as ClusterDetail | null) ?? null }))
+      .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
+    const clustered = latestCandidates.length > 0;
+    const pool = clustered ? latestCandidates : latestSignals;
+    const rankedPool = pool.filter((r) => r.rank !== null);
+    const explanations = pool
       .filter((r) => r.surfaced)
       .map((r) => {
-        const x = explainRank(r, ranked.filter((o) => o.id !== r.id && (o.rank ?? 0) > (r.rank ?? 0)).slice(0, 4), "en");
+        const x = explainRank(r, rankedPool.filter((o) => o.id !== r.id && (o.rank ?? 0) > (r.rank ?? 0)).slice(0, 4), "en");
         return { title: r.title.en, domain: r.domain, strengths: x.strengths, outranked: x.outranked };
       });
     const ablation = exclude.length
       ? {
           exclude,
-          rows: rankCandidates(latestRows, exclude)
+          rows: rankCandidates(pool, exclude)
             .filter((r) => r.rank !== null)
             .sort((a, b) => a.rank! - b.rank!)
             .map((r) => ({ rank: r.rank!, domain: r.domain, title: r.title.en, score: r.globalScore }))
         }
       : null;
-    latest = { runAt: runs[0].runAt.toISOString(), trigger: runs[0].trigger, rows: latestRows, explanations, ablation };
+    latest = {
+      runAt: runs[0].runAt.toISOString(),
+      trigger: runs[0].trigger,
+      clustered,
+      rows: latestSignals,
+      candidates: latestCandidates,
+      explanations,
+      ablation,
+      narrative: clustered ? inventoryNarrative(latestSignals, latestCandidates) : null
+    };
   }
 
+  const rawTotal = nonNone.length;
+  const candTotal = candidateRows.length;
   return {
     storeId,
     since: since.toISOString(),
     until: now.toISOString(),
     runs: runs.length,
+    runsWithClustering: clusteredRuns.length,
     rankingVersions: [...new Set(runs.map((r) => r.rankingVersion))],
+    clusteringVersions: [...new Set(clusteredRuns.map((r) => r.clusteringVersion as string))],
     disagreement: {
       topDiffersRate: runs.length ? Math.round((runs.filter((r) => r.topDiffers).length / runs.length) * 100) : null,
-      avgTop3Overlap: avg(runs.map((r) => r.top3Overlap))
+      avgTop3Overlap: avg(runs.map((r) => r.top3Overlap)),
+      clusteredTopDiffersRate: clusteredRuns.length ? Math.round((clusteredRuns.filter((r) => r.clusteredTopDiffers).length / clusteredRuns.length) * 100) : null,
+      avgClusteredTop3Overlap: avg(clusteredRuns.map((r) => r.clusteredTop3Overlap))
     },
+    clusteringDisagreement: {
+      changedTopRate: clusteredRuns.length ? Math.round((clusteredRuns.filter((r) => r.clusteringChangedTop).length / clusteredRuns.length) * 100) : null,
+      changedTop3Rate: clusteredRuns.length ? Math.round((clusteredRuns.filter((r) => r.clusteringChangedTop3).length / clusteredRuns.length) * 100) : null,
+      avgInventoryReplacedInTop3: avg(clusteredRuns.map((r) => Number((r.summaryJson as { inventoryReplacedInTop3?: number } | null)?.inventoryReplacedInTop3 ?? 0)))
+    },
+    compression: { rawSignals: rawTotal, managementCandidates: candTotal, ratio: candTotal ? Math.round((rawTotal / candTotal) * 100) / 100 : null },
+    decisionDensity: avg(densities),
     domains,
     topSuppression: [...suppressionAll.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([reason, n]) => ({ reason, n })),
     inventory: { ...diagBase, ...classifyInventoryBias(diagBase) },
@@ -802,5 +1241,5 @@ export async function buildCandidateAuditReport(storeId: string, days = 14, excl
   };
 }
 
-export const __testing = { probe, ledgerCandidate };
+export const __testing = { probe, ledgerCandidate, buildInventoryCluster, inventoryNarrative };
 export type { ScoreDimension };

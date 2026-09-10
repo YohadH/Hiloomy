@@ -2069,6 +2069,13 @@ model DecisionCandidateRun {
   // top three than Today did? (Disagreement between model and reality.)
   topDiffers     Boolean  @default(false)
   top3Overlap    Int      @default(0)
+  // Clustering (10 Sep 2026): raw signals → management candidates. null on
+  // runs recorded before clustering existed (they are never recomputed).
+  clusteringVersion     String?
+  clusteredTopDiffers   Boolean  @default(false)
+  clusteredTop3Overlap  Int      @default(0)
+  clusteringChangedTop  Boolean  @default(false)
+  clusteringChangedTop3 Boolean  @default(false)
   summaryJson    Json?
   store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   rows           DecisionCandidate[]
@@ -2109,6 +2116,17 @@ model DecisionCandidate {
   surfaced              Boolean  @default(false)
   suppressionReason     String?
   relatedDecisionId     String?
+  // signal = a raw detected condition (one row per ledger decision / probe);
+  // candidate = the management situation that participates in the clustered
+  // shadow ranking. A signal points at its candidate through clusterId and
+  // carries auditStatus CLUSTERED_INTO_CANDIDATE (not a suppression).
+  level                 String   @default("signal")
+  clusterId             String?
+  memberCount           Int      @default(1)
+  leadSignalId          String?
+  actionFamily          String?
+  auditStatus           String?
+  clusterJson           Json?
   run                   DecisionCandidateRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   store                 Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
@@ -2116,4 +2134,5 @@ model DecisionCandidate {
   @@index([storeId, runAt(sort: Desc)])
   @@index([storeId, domain])
   @@index([relatedDecisionId])
+  @@index([clusterId])
 }

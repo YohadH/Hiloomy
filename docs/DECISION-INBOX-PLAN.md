@@ -214,6 +214,58 @@ unchanged, no forced domain diversity.
   `scripts/decision-inbox-report.mjs <storeId> [--days 14] [--exclude inventory]`
   (prints the decision report, then the candidate audit).
 
+### 0c.1 Clustering — raw signals → management situations (2026-09-10)
+
+The first audit compared 20–30 SKU alerts with one plan decision as if they
+were equivalent. Fixed at the abstraction level, not with weights:
+
+    RAW SIGNAL → MANAGEMENT SITUATION → DECISION CANDIDATE → GLOBAL RANKING → TODAY
+
+- Rule: signals a manager resolves through the same judgment form one
+  candidate. Inventory signals get an ACTION FAMILY from the engine's own
+  tiers and the existing campaign materiality (`inventoryActionFamily`):
+  `REPLENISH_NOW` (≤7d), `REPLENISH_SOON` (≤14d), `MONITOR` (≤30d),
+  `REROUTE_ACQUISITION` (≤14d with a material/driving campaign — a different
+  trade-off, kept separate). Same family → one candidate; never grouped by
+  category, brand or equal days. Other domains are singleton candidates
+  (the abstraction is generic; only inventory clusters today).
+- Both levels persist in `DecisionCandidate`: `level = signal` rows keep the
+  unclustered ranking and get `clusterId` + `auditStatus`
+  (LEAD / CLUSTERED_INTO_CANDIDATE / STANDALONE / NOT_CLUSTERED — not a
+  suppression); `level = candidate` rows carry the clustered ranking,
+  `memberCount`, `leadSignalId`, `actionFamily` and `clusterJson` (lead,
+  members with days/revenue/decision id, deterministic "why grouped"
+  reasons, aggregates, `surfacedShadow`). Migration
+  `20260910_decision_candidate_clusters`. Old runs are untouched
+  (`clusteringVersion` null) — never recomputed.
+- Bounded aggregation, `inventory-cluster-v1` (`aggregateCluster`): lead =
+  highest observable score (ties → fewer days); materiality from an
+  EFFECTIVE exposure (lead + others with ½, ¼ … decay, +≤10 for extra
+  material members, saturates at 95); urgency = max over MEANINGFUL members
+  (materiality ≥ 30) +≤10 for extra critical members — a 1-day tiny SKU
+  cannot set it; confidence = 0.6·lead + 0.4·weakest. Cluster kinds have
+  their own V0 priors (`kind-priors-v0.1`): `inventory_replenishment_review`,
+  `inventory_replenishment_plan`, `inventory_acquisition_tradeoff`,
+  `inventory_watch`. Combined revenue is "recent revenue associated with
+  affected SKUs", never "at risk"; profit exposure is unavailable with a
+  reason when any member lacks a real cost. Ranking weights unchanged
+  (`decision-ranking-v1`) — by the owner's instruction, no tuning before
+  the Take a Nap before/after is inspected.
+- Shadow surfacing = clustered top 5, no domain cap (spec §21). Run stores
+  Today-vs-clustered (`clusteredTopDiffers`, `clusteredTop3Overlap`) and
+  unclustered-vs-clustered (`clusteringChangedTop`, `clusteringChangedTop3`,
+  `inventoryReplacedInTop3`) — diagnostic, replacement is not "good".
+- Report adds: raw signals / management candidates / clustered top-3 /
+  shadow surfaced per domain; attention compression (raw ÷ candidates);
+  decision density (candidates ÷ eligible domains); bias findings
+  SIGNAL_VOLUME_IMBALANCE / CANDIDATE_GENERATION_BIAS / RANKING_BIAS /
+  REAL_BUSINESS_CONDITION / MIXED / INCONCLUSIVE / NO_EVIDENCE_OF_BIAS
+  (several may hold; ranking calls still need ≥5 judged per side); the
+  §40 narrative ("Hiloomy detected N low-stock signals. K were the same
+  replenishment decision…") from structured data; cluster detail with lead,
+  members and why each signal is not its own decision. Page
+  `/decision-audit`, script `decision-inbox-report.mjs`.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

@@ -107,7 +107,9 @@ export const RANKING_WEIGHTS_V1: RankingWeights = {
 // V0 priors per decision kind. These are opinions written on 10 Sep 2026
 // and are the part of the model the two-week feedback must confirm or
 // overturn. The report shows rankings with AND without them.
-export const KIND_PRIORS_VERSION = "kind-priors-v0";
+// v0.1 = v0 + the clustered inventory kinds (10 Sep 2026). Existing kinds
+// are unchanged; old runs keep the version they stored.
+export const KIND_PRIORS_VERSION = "kind-priors-v0.1";
 
 export interface KindPrior {
   actionability: number;
@@ -131,7 +133,15 @@ export const KIND_PRIORS: Record<string, KindPrior> = {
   roas_collapse: { actionability: 75, managementJudgment: 60, novelty: 45, urgencyDefault: 55, materialityDefault: 40 },
   product_gone_silent: { actionability: 55, managementJudgment: 50, novelty: 55, urgencyDefault: 35, materialityDefault: 35 },
   plan_decision: { actionability: 90, managementJudgment: 90, novelty: 50, urgencyDefault: 60, materialityDefault: 45 },
-  competitor_promo: { actionability: 45, managementJudgment: 55, novelty: 60, urgencyDefault: 65, materialityDefault: 35 }
+  competitor_promo: { actionability: 45, managementJudgment: 55, novelty: 60, urgencyDefault: 65, materialityDefault: 35 },
+  // ── Clustered inventory kinds (management situations, not SKU alerts) ──
+  // A single low-stock alert is operational; deciding replenishment
+  // priorities across a portfolio, or trading acquisition against
+  // constrained stock, is management judgment. V0 opinions, labelled.
+  inventory_replenishment_review: { actionability: 80, managementJudgment: 65, novelty: 35, urgencyDefault: 70, materialityDefault: 45 },
+  inventory_replenishment_plan: { actionability: 75, managementJudgment: 55, novelty: 30, urgencyDefault: 50, materialityDefault: 40 },
+  inventory_acquisition_tradeoff: { actionability: 75, managementJudgment: 80, novelty: 60, urgencyDefault: 70, materialityDefault: 45 },
+  inventory_watch: { actionability: 50, managementJudgment: 25, novelty: 15, urgencyDefault: 30, materialityDefault: 35 }
 };
 
 export interface DecisionCandidateInput {
@@ -270,6 +280,17 @@ export function scoreCandidate(c: DecisionCandidateInput, weights: RankingWeight
   return { scores, globalScore: Math.round(globalScore * 10) / 10, observableScore: Math.round(observableScore * 10) / 10 };
 }
 
+// Global / observable score from an already-aggregated score vector (used
+// for clustered candidates; scoreCandidate does the same for raw inputs).
+export function combineScores(scores: CandidateScores, weights: RankingWeights = RANKING_WEIGHTS_V1): { globalScore: number; observableScore: number } {
+  const w = weights.weights;
+  const globalScore = SCORE_DIMENSIONS.reduce((acc, k) => acc + scores[k] * w[k], 0);
+  const observableKeys: ScoreDimension[] = ["materiality", "urgency", "confidence", "actionability"];
+  const observableWeight = observableKeys.reduce((acc, k) => acc + w[k], 0);
+  const observableScore = observableKeys.reduce((acc, k) => acc + scores[k] * w[k], 0) / observableWeight;
+  return { globalScore: Math.round(globalScore * 10) / 10, observableScore: Math.round(observableScore * 10) / 10 };
+}
+
 // Rank a run's candidates. `exclude` supports the ablation view ("what
 // would Hiloomy have considered important without Inventory?") without
 // touching stored rows. Rows of kind "none" never rank.
@@ -318,4 +339,99 @@ export function explainRank(
       };
     });
   return { strengths, outranked };
+}
+
+// ─── Clustering: raw signal → management situation → candidate ──────────
+//
+//   RAW SIGNAL → MANAGEMENT SITUATION → DECISION CANDIDATE → GLOBAL RANKING
+//
+// Rule: signals a manager would resolve through the same judgment or action
+// form one candidate. Signals are grouped by the management ACTION FAMILY
+// they imply (which already encodes decision window and cross-domain
+// context), never by category, brand or an equal number of days. The raw
+// signals are kept, with their unclustered ranking, so the audit can say
+// "29 inventory signals became 4 management candidates".
+
+export const CLUSTERING_VERSION = "inventory-cluster-v1";
+
+export type ActionFamily = "REPLENISH_NOW" | "REPLENISH_SOON" | "MONITOR" | "REROUTE_ACQUISITION";
+
+export const ACTION_FAMILY_LABEL: Record<ActionFamily, Localized> = {
+  REPLENISH_NOW: { he: "חידוש מלאי עכשיו", en: "Replenish now" },
+  REPLENISH_SOON: { he: "תכנון חידוש מלאי", en: "Plan replenishment" },
+  MONITOR: { he: "מעקב בלבד", en: "Monitor only" },
+  REROUTE_ACQUISITION: { he: "ביקוש ממומן מול מלאי מוגבל", en: "Paid demand vs constrained stock" }
+};
+
+// The candidate kind a family produces (priors above).
+export const FAMILY_KIND: Record<ActionFamily, string> = {
+  REPLENISH_NOW: "inventory_replenishment_review",
+  REPLENISH_SOON: "inventory_replenishment_plan",
+  MONITOR: "inventory_watch",
+  REROUTE_ACQUISITION: "inventory_acquisition_tradeoff"
+};
+
+// Reuses the stockout engine's own tiers (≤7 critical, ≤14 high, ≤30
+// medium) and the existing campaign materiality: a material or driving
+// campaign turns "replenish" into a trade-off between acquisition and stock.
+export function inventoryActionFamily(daysCover: number | null, campaignMatters: boolean): ActionFamily {
+  const d = daysCover ?? 999;
+  if (campaignMatters && d <= 14) return "REROUTE_ACQUISITION";
+  if (d <= 7) return "REPLENISH_NOW";
+  if (d <= 14) return "REPLENISH_SOON";
+  return "MONITOR";
+}
+
+export interface ClusterMemberScores {
+  scores: CandidateScores;
+  observableScore: number;
+  financialExposure: number | null;
+  daysCover: number | null;
+}
+
+// Bounded aggregation — documented and versioned with CLUSTERING_VERSION.
+//   lead        = member with the highest observable score (measured
+//                 dimensions only; ties → fewer days of cover)
+//   materiality = from an EFFECTIVE exposure: lead exposure + the other
+//                 members' exposure with geometric decay (½, ¼, …), plus at
+//                 most +10 for additional commercially material members
+//                 (materiality ≥ 50). Saturates at 95 like every candidate.
+//   urgency     = highest urgency among MEANINGFUL members (materiality ≥ 30;
+//                 else the lead), plus at most +10 for additional meaningful
+//                 members inside the critical window (urgency ≥ 75). A tiny
+//                 SKU with 1 day of cover cannot make the cluster maximally
+//                 urgent on its own.
+//   confidence  = 0.6 × lead + 0.4 × the weakest member — a data gap in any
+//                 member pulls the cluster down; a strong lead does not hide it.
+export function aggregateCluster(
+  members: ClusterMemberScores[],
+  revenue14dStore: number | null,
+  fallbackMateriality: number
+): { leadIndex: number; materiality: number; urgency: number; confidence: number; effectiveExposure: number | null; materialMembers: number; criticalMembers: number } {
+  if (members.length === 0) throw new Error("aggregateCluster needs at least one member");
+  const order = members.map((_, i) => i).sort((a, b) => members[b].observableScore - members[a].observableScore || (members[a].daysCover ?? 999) - (members[b].daysCover ?? 999));
+  const leadIndex = order[0];
+  const lead = members[leadIndex];
+  const exposures = order.map((i) => members[i].financialExposure ?? 0);
+  const effectiveExposure = exposures.some((e) => e > 0) ? exposures.reduce((acc, e, k) => acc + e * Math.pow(0.5, k), 0) : null;
+  const materialMembers = members.filter((m) => m.scores.materiality >= 50).length;
+  const base = materialityFrom(effectiveExposure, revenue14dStore, fallbackMateriality);
+  const materiality = Math.min(95, base + Math.min(10, Math.max(0, materialMembers - 1) * 2));
+  const meaningful = members.filter((m) => m.scores.materiality >= 30);
+  const pool = meaningful.length ? meaningful : [lead];
+  const criticalMembers = meaningful.filter((m) => m.scores.urgency >= 75).length;
+  const urgency = Math.min(100, Math.max(...pool.map((m) => m.scores.urgency)) + Math.min(10, Math.max(0, criticalMembers - 1) * 2));
+  const weakest = Math.min(...members.map((m) => m.scores.confidence));
+  const confidence = Math.round(0.6 * lead.scores.confidence + 0.4 * weakest);
+  return { leadIndex, materiality: Math.round(materiality), urgency: Math.round(urgency), confidence, effectiveExposure, materialMembers, criticalMembers };
+}
+
+// Deterministic "why grouped / why separate" lines for the audit (spec §25).
+export function clusterReasons(family: ActionFamily, memberCount: number, locale: "he" | "en"): string[] {
+  const he = locale === "he";
+  const same = he ? `אותה פעולה ניהולית: ${ACTION_FAMILY_LABEL[family].he}` : `same management action: ${ACTION_FAMILY_LABEL[family].en.toLowerCase()}`;
+  const window = he ? "אותו חלון החלטה" : "same decision window";
+  const cross = family === "REROUTE_ACQUISITION" ? (he ? "כולם עם ביקוש ממומן מהותי — הטרייד-אוף זהה" : "all carry material paid demand — the trade-off is the same") : he ? "ללא תלות בין-תחומית ייחודית" : "no unique cross-domain dependency";
+  const rec = he ? "ללא המלצה שונה מהותית" : "no materially different recommendation";
+  return memberCount > 1 ? [same, window, cross, rec] : [he ? "אין אות נוסף באותה משפחת פעולה בריצה הזו" : "no other signal in this action family on this run"];
 }
