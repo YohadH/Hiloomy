@@ -266,6 +266,41 @@ were equivalent. Fixed at the abstraction level, not with weights:
   members and why each signal is not its own decision. Page
   `/decision-audit`, script `decision-inbox-report.mjs`.
 
+## 0d. Decision Impact — the scoreboard for the decision product (2026-09-10)
+
+`/decision-impact` (Tools) measures Hiloomy, not the store: did it surface
+decisions, were they useful and not obvious, did they change what the
+manager planned to do, how fast were they answered, what happened after,
+and is history accumulating. `lib/services/decision-impact-service.ts`
+(`computeDecisionImpact` pure + tested; `buildDecisionImpactReport` loads
+`listDecisionEpisodes` + Memory learnings). Filters are query params
+(`?days=7|30|90|all`, `?domain=`). No single score, no money, no "faster
+than before" (no baseline), no comparable episodes (no reliable definition
+yet), no LLM-generated learnings.
+
+Metric definitions (all over decision EPISODES = ledger rows that build
+into a Decision; a decision is in the period when `ledger.surfacedAt` is
+in it):
+- Surfaced = episodes with `surfacedAt` in the period.
+- Judged = surfaced with a judgment; useful / obvious / wrong / missing
+  context = tag counts (tags overlap); high-value = useful ∧ ¬obvious.
+- Changed = `judgment.changedDecision === true`; confirmed = `=== false`;
+  denominator = answered (true or false). Unanswered is never negative.
+- Time to decision = `human.decidedAt − ledger.surfacedAt` for
+  approved / alternative / ignored only; expired, auto-closed and pending
+  excluded; decided-before-surfaced rows excluded and reported as a note.
+- Outcomes: eligible = surfaced ∧ answered by a human; measured = with an
+  outcome; win rate = win ÷ (win + neutral + miss); no_data is neither.
+- Plan: `plan_decision` rows; continued-as-planned = chosen option key in
+  {activate, keep}; changed plan = {shallower, hold, change, stop};
+  unknown otherwise; CHANGE PLAN verdict counted separately.
+- Domains from `DOMAIN_OF_KIND`; stories ranked judged > outcome >
+  high-value > cross-domain > changed > answered, link to `/today/<id>`.
+- Memory readiness = episodes detected or surfaced in the period, with
+  judgment, with outcome; comparable episodes = not measured.
+- Rates are shown with their denominator and flagged "too early" under 10
+  judged / 5 timed / 5 measured.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

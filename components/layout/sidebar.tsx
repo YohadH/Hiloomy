@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Activity,
+  ChartNoAxesCombined,
   BadgePercent,
   Bell,
   Building2,
@@ -121,8 +122,9 @@ function getNavigation(
     dashboards: [
       { href: "/watchlist", label: isHe ? "מעקב" : "Watchlist", icon: Eye },
       { href: "/memory", label: isHe ? "זיכרון" : "Memory", icon: History },
-      { href: "/data-health", label: isHe ? "בריאות הנתונים" : "Data Health", icon: Activity },
+      { href: "/decision-impact", label: isHe ? "השפעת החלטות" : "Decision Impact", icon: ChartNoAxesCombined },
       { href: "/decision-audit", label: isHe ? "ביקורת תעדוף" : "Decision audit", icon: Activity },
+      { href: "/data-health", label: isHe ? "בריאות הנתונים" : "Data Health", icon: Activity },
       {
         href: "/my-dashboard",
         label: isHe ? "הדשבורד שלי" : "My dashboard",

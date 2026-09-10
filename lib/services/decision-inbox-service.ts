@@ -1693,6 +1693,20 @@ async function loadDecisionRows(storeId: string, since: Date, take: number): Pro
     .catch(() => [])) as AlertRow[];
 }
 
+// Every decision EPISODE the ledger holds (one per decision-typed alert that
+// builds into a Decision), newest first. `since` = null means all time.
+// Used by the Decision Impact report; read-only.
+export async function listDecisionEpisodes(storeId: string, since: Date | null, take = 2000): Promise<Decision[]> {
+  const rows = await loadDecisionRows(storeId, since ?? new Date(0), take);
+  const ctx = await getContext(storeId);
+  const out: Decision[] = [];
+  for (const a of rows) {
+    const d = decisionFromAlert(a, ctx);
+    if (d) out.push(d);
+  }
+  return out;
+}
+
 export const listDecisionMemory = cache(async (storeId: string): Promise<DecisionMemory> => {
   const rows = await loadDecisionRows(storeId, new Date(Date.now() - 90 * DAY_MS), 60);
   const ctx = await getContext(storeId);
