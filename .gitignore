@@ -60,3 +60,5 @@ incense-report.html
 # Playwright output (traces, screenshots, error-context) — never commit
 test-results/
 playwright-report/
+docs/CAPABILITY-SPEC.md
+docs/PRODUCT-VISION.md

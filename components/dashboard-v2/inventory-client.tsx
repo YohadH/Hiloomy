@@ -435,8 +435,22 @@ export function InventoryClient({
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("critical");
   const [filterFlag, setFilterFlag] = useState<StockFlag | null>(null);
+  // Collection ("category") filter — the same Shopify collections the
+  // קטגוריות column shows. One at a time; "all" clears it.
+  const [collectionFilter, setCollectionFilter] = useState<string>("");
 
   const lastSyncedAt = lastSyncedAtIso ? new Date(lastSyncedAtIso) : null;
+
+  // Every collection any product belongs to, with how many products carry
+  // it, so the picker shows real choices only.
+  const collectionOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of stock) {
+      const names = r.collections?.length ? r.collections : r.collection ? [r.collection] : [];
+      for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], locale === "he" ? "he" : "en")).map(([name, n]) => ({ name, n }));
+  }, [stock, locale]);
 
   // ── Derived counts for the KPI cards ──────────────────────────────────────
   const critical = useMemo(() => stock.filter((r) => r.flag === "critical"), [stock]);
@@ -469,6 +483,10 @@ export function InventoryClient({
       rows = rows.filter((r) => r.flag === filterFlag);
     }
 
+    if (collectionFilter) {
+      rows = rows.filter((r) => (r.collections?.length ? r.collections : r.collection ? [r.collection] : []).includes(collectionFilter));
+    }
+
     // Sort
     rows = [...rows].sort((a, b) => {
       if (sortKey === "critical") {
@@ -496,10 +514,12 @@ export function InventoryClient({
     });
 
     return rows;
-  }, [stock, query, sortKey, filterFlag]);
+  }, [stock, query, sortKey, filterFlag, collectionFilter]);
 
   // ── Split filtered rows into sections ─────────────────────────────────────
-  const showSections = !query.trim() && !filterFlag;
+  // A collection filter shows one flat list with its result count, like a
+  // search does, so a collection with no urgent rows is not a blank page.
+  const showSections = !query.trim() && !filterFlag && !collectionFilter;
 
   const criticalFiltered = useMemo(
     () => filteredRows.filter((r) => r.flag === "critical"),
@@ -626,6 +646,31 @@ export function InventoryClient({
             dir={locale === "he" ? "rtl" : "ltr"}
           />
         </div>
+
+        {/* Collection filter */}
+        {collectionOptions.length > 0 ? (
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">{locale === "he" ? "קטגוריה" : "Collection"}</span>
+            <select
+              value={collectionFilter}
+              onChange={(e) => setCollectionFilter(e.target.value)}
+              className="h-9 max-w-[16rem] rounded-lg border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              aria-label={locale === "he" ? "סינון לפי קטגוריה" : "Filter by collection"}
+            >
+              <option value="">{locale === "he" ? "כל הקטגוריות" : "All collections"}</option>
+              {collectionOptions.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name} ({c.n})
+                </option>
+              ))}
+            </select>
+            {collectionFilter ? (
+              <button type="button" onClick={() => setCollectionFilter("")} className="text-xs text-muted-foreground underline-offset-4 hover:underline">
+                {locale === "he" ? "נקה" : "Clear"}
+              </button>
+            ) : null}
+          </label>
+        ) : null}
 
         {/* Sort buttons */}
         <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 p-1">
@@ -802,7 +847,13 @@ export function InventoryClient({
             rows={filteredRows}
             locale={locale}
             emptyMessage={
-              locale === "he" ? "לא נמצאו מוצרים התואמים לחיפוש." : "No products match your search."
+              collectionFilter
+                ? locale === "he"
+                  ? `אין מוצרים בקטגוריה „${collectionFilter}” שתואמים לסינון.`
+                  : `No products in "${collectionFilter}" match the filter.`
+                : locale === "he"
+                  ? "לא נמצאו מוצרים התואמים לחיפוש."
+                  : "No products match your search."
             }
           />
         </section>
