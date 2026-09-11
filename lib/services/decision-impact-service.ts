@@ -391,7 +391,7 @@ export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[]
   const parts: { he: string[]; en: string[] } = { he: [], en: [] };
   const w0 = windows[0];
   if (w0) {
-    const when = w0.state === "active" || w0.state === "starts_today" ? { he: `${w0.title} בעיצומו`, en: `${w0.title} is under way` } : { he: `${w0.title} מתקרב (בעוד ${w0.daysUntil} ימים)`, en: `${w0.title} is approaching (in ${w0.daysUntil} days)` };
+    const when = w0.state === "active" || w0.state === "starts_today" ? { he: `${w0.campaignTitle.he} בעיצומו`, en: `${w0.campaignTitle.en} is under way` } : { he: `${w0.campaignTitle.he} מתחיל בעוד ${w0.daysUntil} ימים`, en: `${w0.campaignTitle.en} starts in ${w0.daysUntil} days` };
     parts.he.push(when.he);
     parts.en.push(when.en);
   }

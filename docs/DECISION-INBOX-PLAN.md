@@ -412,6 +412,14 @@ ledger over a date range (individual decisions). Fix and rules:
 - **Page flow**: Context → Checked → Compression → Validation → Action
   needed → Plan × Reality → Quality → Behaviour → Outcomes → Stories (only
   with follow-through) → Domains → Timing → Memory (all time).
+- **Three dates, never one** (owner caught "ראש השנה — ends in 19 days"
+  on Sep 11, when the holiday ends Sep 13: the card showed the CAMPAIGN
+  end as if it were the holiday). `CommercialWindow` now carries
+  `campaignTitle` ("ראש השנה campaign" / "Launch: X"), `start`/`end` =
+  the campaign, `holiday` = null (no source exists; the card says
+  "holiday dates are not connected", nothing is inferred) and
+  `decisionWindow` = the soonest hook window still open. A window is
+  never headed with the bare event name.
 - Still open in the data model: no holiday calendar (plan only), no
   timing in ranking, thin-stock uses `coverDays < 14` from the plan view,
   paid-media freshness needs `MetaAdsConnection.lastSyncAt` populated by the

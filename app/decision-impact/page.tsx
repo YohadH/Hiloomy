@@ -229,17 +229,26 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
                 return (
                   <Card key={w.id} className="space-y-3 p-5">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <h3 className="text-base font-semibold">{w.title}</h3>
+                      <h3 className="text-base font-semibold">{w.campaignTitle[locale]}</h3>
                       <span className={cn("rounded px-2 py-0.5 text-xs font-medium", live ? "bg-success/15 text-success" : w.state === "starts_soon" ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground")}>
                         {live ? t("פעיל", "Active") : t("קרוב", "Upcoming")}
                       </span>
                     </div>
-                    <p className="text-sm">
-                      {live ? t(`מסתיים בעוד ${w.daysLeft} ימים`, `Ends in ${w.daysLeft} days`) : t(`מתחיל בעוד ${w.daysUntil} ימים · מסתיים בעוד ${w.daysLeft} ימים`, `Starts in ${w.daysUntil} days · ends in ${w.daysLeft} days`)}
-                      <span className="text-muted-foreground">
-                        {" "}· {fmtDate(w.start)} – {fmtDate(w.end)}
-                      </span>
-                    </p>
+                    {/* Three dates, kept apart: holiday (no source → said plainly), campaign (the plan), decision window (the hook). */}
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                      {w.kind === "event" ? (
+                        <>
+                          <dt className="text-muted-foreground">{t("החג עצמו", "The holiday itself")}</dt>
+                          <dd>{w.holiday ? `${fmtDate(w.holiday.start)} – ${fmtDate(w.holiday.end)} · ${w.holiday.source}` : t("תאריכי החג לא מחוברים למערכת — מוצגים רק תאריכי הקמפיין מהתוכנית.", "Holiday dates are not connected — only the plan's campaign dates are shown.")}</dd>
+                        </>
+                      ) : null}
+                      <dt className="text-muted-foreground">{w.kind === "event" ? t("הקמפיין המסחרי", "Commercial campaign") : t("ההשקה", "The launch")}</dt>
+                      <dd>
+                        {fmtDate(w.start)} – {fmtDate(w.end)} · {live ? t(`מסתיים בעוד ${w.daysLeft} ימים`, `ends in ${w.daysLeft} days`) : t(`מתחיל בעוד ${w.daysUntil} ימים`, `starts in ${w.daysUntil} days`)}
+                      </dd>
+                      <dt className="text-muted-foreground">{t("חלון ההחלטה", "Decision window")}</dt>
+                      <dd>{w.decisionWindow ? `${fmtDate(w.decisionWindow.start)} – ${fmtDate(w.decisionWindow.end)}` : t("אין נקודת החלטה פתוחה בתוכנית לתקופה הזו", "No open decision point in the plan for this window")}</dd>
+                    </dl>
                     <ul className="text-sm">
                       <li>{t(`${w.initiativeCount} מהלכים קשורים`, `${w.initiativeCount} initiatives tied to this window`)}{w.startingToday ? t(` · ${w.startingToday} מתחילים היום`, ` · ${w.startingToday} starting today`) : ""}</li>
                       <li>{t(`${w.relatedDecisions} החלטות קשורות · ${w.openDecisions} פתוחות`, `${w.relatedDecisions} related decisions · ${w.openDecisions} open`)}</li>
@@ -278,7 +287,7 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
               </Link>
             </div>
           ) : null}
-          <p className="text-xs text-muted-foreground">{t("תזמון מסחרי מוצג כאן, אבל עדיין לא משפיע על דירוג ההחלטות בהיום.", "Commercial timing is visible here but not yet used in decision ranking.")}</p>
+          <p className="text-xs text-muted-foreground">{t("תזמון מסחרי מוצג כאן, אבל עדיין לא משפיע על דירוג ההחלטות בהיום. תאריכי הקמפיין הם מהתוכנית; תאריכי חגים אינם מחוברים ולא מוסקים מהקמפיין.", "Commercial timing is visible here but not yet used in decision ranking. Campaign dates come from the plan; holiday dates are not connected and are never inferred from the campaign.")}</p>
         </Section>
 
         {/* 2 — What Hiloomy checked */}

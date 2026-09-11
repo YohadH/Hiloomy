@@ -16,12 +16,25 @@
 import type { Localized } from "@/lib/domain/decision";
 import type { Initiative, PlanView } from "@/lib/domain/plan";
 
+// THREE different dates live around one holiday, and they must never be
+// shown as one:
+//   holiday window   — the holiday itself (Rosh Hashanah: 2 days). Hiloomy
+//                      has NO source for it today → `holiday` is null and the
+//                      card says so; nothing is inferred from the campaign.
+//   campaign window  — the plan's initiative dates (e.g. Sep 1–30). This is
+//                      what `start`/`end` are. The title therefore says
+//                      "<label> campaign", not "<label>".
+//   decision window  — when the decision must be on Today (the hook's
+//                      windowStart..windowEnd), shown separately.
 export interface CommercialWindow {
   id: string;
-  title: string;
+  title: string; // the plan's anchor label, verbatim (e.g. "ראש השנה")
+  campaignTitle: Localized; // "ראש השנה campaign" / "Launch: X" — what the card is headed with
   kind: "event" | "launch";
-  start: string; // YYYY-MM-DD
-  end: string;
+  start: string; // CAMPAIGN start, YYYY-MM-DD
+  end: string; // CAMPAIGN end
+  holiday: { start: string; end: string; source: string } | null; // always null today — no holiday source exists
+  decisionWindow: { start: string; end: string; question: Localized } | null; // soonest hook window still open
   source: "plan"; // the only source that exists today
   // Initiatives in the plan that belong to this window.
   initiativeIds: string[];
@@ -61,12 +74,20 @@ export function planCalendarSource(plan: PlanView | null, horizonDays = 14): Com
         .map(([label, items]) => {
           const start = items.map((i) => i.start).sort()[0];
           const end = items.map((i) => i.end).sort().slice(-1)[0];
+          const kind = items[0].anchor.kind as "event" | "launch";
+          const hook = items
+            .flatMap((i) => i.decisionHooks ?? [])
+            .filter((h) => h.windowEnd >= today)
+            .sort((a, b) => a.windowStart.localeCompare(b.windowStart))[0];
           return {
             id: `plan:${label}:${start}`,
             title: label,
-            kind: items[0].anchor.kind as "event" | "launch",
+            campaignTitle: kind === "event" ? { he: `קמפיין ${label}`, en: `${label} campaign` } : { he: `השקה: ${label}`, en: `Launch: ${label}` },
+            kind,
             start,
             end,
+            holiday: null,
+            decisionWindow: hook ? { start: hook.windowStart, end: hook.windowEnd, question: hook.question } : null,
             source: "plan" as const,
             initiativeIds: items.map((i) => i.id),
             initiativeCount: items.length,
@@ -95,11 +116,11 @@ export function windowState(w: CommercialWindow, now: Date): { state: WindowStat
 export function windowUrgencyLabel(state: WindowState, daysUntil: number): Localized {
   switch (state) {
     case "active":
-      return { he: "חלון מסחרי פעיל", en: "Commercial window active" };
+      return { he: "הקמפיין פעיל", en: "Campaign active" };
     case "starts_today":
-      return { he: "מתחיל היום — לפעול עכשיו", en: "Starts today — act now" };
+      return { he: "הקמפיין מתחיל היום", en: "Campaign starts today" };
     case "starts_soon":
-      return { he: `מתחיל בעוד ${daysUntil} ימים — חלון ההחלטה נסגר`, en: `Starts in ${daysUntil} days — decision window closing` };
+      return { he: `הקמפיין מתחיל בעוד ${daysUntil} ימים`, en: `Campaign starts in ${daysUntil} days` };
     default:
       return { he: `בעוד ${daysUntil} ימים — לבדיקה`, en: `In ${daysUntil} days — review` };
   }
