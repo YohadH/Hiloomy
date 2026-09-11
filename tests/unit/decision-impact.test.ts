@@ -174,7 +174,8 @@ test("stories prefer judged, measured, high-value, cross-domain decisions and li
   const r = computeDecisionImpact(rows, { now: NOW, days: 30, domain: null });
   assert.equal(r.stories[0].id, "best");
   assert.equal(r.stories[0].href, "/today/best");
-  assert.equal(r.stories.length, 3);
+  // "plain" has no judgment and no outcome → not a story.
+  assert.equal(r.stories.length, 2);
 });
 
 test("helpers: period parsing and duration formatting", () => {
@@ -184,4 +185,50 @@ test("helpers: period parsing and duration formatting", () => {
   assert.equal(formatDuration(45 * 60_000, "en"), "45m");
   assert.equal(formatDuration(3 * 3_600_000 + 42 * 60_000, "en"), "3h 42m");
   assert.equal(formatDuration(3 * 86_400_000 + 5 * 3_600_000, "en"), "3d 5h");
+});
+
+test("funnel and awaiting-feedback: acted-but-unjudged decisions are the next feedback to ask for", () => {
+  const rows = [
+    decision("a", "stockout_imminent", { choice: "approved", decidedHoursAgo: 10 }),
+    decision("b", "stockout_imminent", { choice: "ignored", decidedHoursAgo: 5, tags: ["obvious"] }),
+    decision("c", "stockout_imminent"),
+    decision("d", "plan_decision", { choice: "expired" })
+  ];
+  const r = computeDecisionImpact(rows, { now: NOW, days: 30, domain: null });
+  assert.deepEqual(r.funnel, { surfaced: 4, acted: 2, judged: 1, measured: 0, pending: 1 });
+  assert.equal(r.awaitingFeedback.length, 1);
+  assert.equal(r.awaitingFeedback[0].id, "a");
+  assert.equal(r.awaitingFeedback[0].href, "/today/a");
+});
+
+test("a plan decision re-created by a Gantt re-upload is one situation, counted once, keeping the answered row", () => {
+  const first = decision("p-old", "plan_decision", { surfacedHoursAgo: 60, choice: "expired" });
+  const again = decision("p-new", "plan_decision", { surfacedHoursAgo: 20, choice: "approved", decidedHoursAgo: 2, optionKey: "activate" });
+  first.entity = { type: "plan_initiative", id: "init-1", label: "סוכות" };
+  again.entity = { type: "plan_initiative", id: "init-1", label: "סוכות" };
+  first.question = again.question = { he: "להפעיל 15% לסוכות?", en: "Activate 15% for Sukkot?" };
+  const other = decision("p-other", "plan_decision", { surfacedHoursAgo: 20 });
+  other.entity = { type: "plan_initiative", id: "init-2", label: "ראש השנה" };
+  const r = computeDecisionImpact([first, again, other], { now: NOW, days: 30, domain: null });
+  assert.equal(r.plan.surfaced, 2);
+  assert.equal(r.plan.acted, 1);
+  assert.ok(r.notes.some((n) => /re-created by a Gantt re-upload/.test(n.en)));
+});
+
+test("stories require follow-through: no judgment, no answer, no outcome → no story", () => {
+  const r = computeDecisionImpact([decision("plain", "stockout_imminent"), decision("acted", "stockout_imminent", { choice: "approved", decidedHoursAgo: 1 })], { now: NOW, days: 30, domain: null });
+  assert.equal(r.stories.length, 0);
+  const r2 = computeDecisionImpact([decision("j", "stockout_imminent", { tags: ["useful"] })], { now: NOW, days: 30, domain: null });
+  assert.equal(r2.stories.length, 1);
+});
+
+test("memory reports the period and all time separately", () => {
+  const old = decision("old", "stockout_imminent", { surfacedHoursAgo: 24 * 100, tags: ["useful"], choice: "approved", decidedHoursAgo: 24 * 99, outcome: "win" });
+  old.detectedAt = old.createdAt = iso(24 * 101);
+  const rows = [old, decision("new", "stockout_imminent", { surfacedHoursAgo: 24 })];
+  const r = computeDecisionImpact(rows, { now: NOW, days: 30, domain: null });
+  assert.equal(r.memory.recorded, 1);
+  assert.equal(r.memory.allTime.recorded, 2);
+  assert.equal(r.memory.allTime.withOutcome, 1);
+  assert.equal(r.memory.withOutcome, 0);
 });

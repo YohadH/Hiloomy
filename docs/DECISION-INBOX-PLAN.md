@@ -300,6 +300,24 @@ in it):
   judgment, with outcome; comparable episodes = not measured.
 - Rates are shown with their denominator and flagged "too early" under 10
   judged / 5 timed / 5 measured.
+- Redesign (2026-09-11, owner review on real data — 12 surfaced, 2 acted,
+  0 judged): three states are kept apart — NOT MEASURED YET (no feedback),
+  MEASURED ZERO, MISSING DATA — and analysis is revealed progressively.
+  Level 1 always: a one-line verdict + the validation funnel (surfaced →
+  manager acted → got feedback → outcomes measured) + the CTA "N decisions
+  are waiting for feedback" (acted, unjudged; links to the receipt where the
+  judgment UI lives). Quality, behaviour change, outcomes, time and the
+  domain table appear only when at least one judgment / answer / outcome /
+  timed pair exists; otherwise a quiet "not yet" line, never `0 / 0` or `—`.
+  Stories require follow-through (judgment or outcome). Plan × Reality is
+  framed "did reality change the plan?" and shows pending vs changed vs
+  continued only when answered. Memory shows all-time counts with the
+  period beside them. Duplicate plan decisions: `plan_decision` rows are
+  keyed by Gantt SHEET id, so a re-upload re-creates the same hook as a new
+  row and expires the old one — the report collapses rows with the same
+  initiative id + question into one situation (keeps the answered/judged
+  row) and says how many were collapsed. Root-cause fix (a sheet-independent
+  fingerprint) is post-freeze.
 
 ## 1. Principles that shape the build
 

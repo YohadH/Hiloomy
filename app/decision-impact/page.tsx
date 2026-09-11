@@ -1,8 +1,10 @@
-// Decision Impact — the scoreboard for Hiloomy's decision product.
-// Measures Hiloomy, not the store: what was surfaced, what changed how
-// decisions were made, and what happened afterwards. Every number shows its
-// denominator; small samples are said to be small; nothing financial is
-// estimated. ?days=7|30|90|all · ?domain=<candidate domain>.
+// Decision Impact — is Hiloomy actually helping this brand decide better?
+//
+// Measures Hiloomy, not the store, and reveals analysis only when the data
+// exists. Three states are kept apart on purpose: NOT MEASURED YET (no
+// feedback), a MEASURED ZERO (we looked and it is zero), and MISSING DATA
+// (the field does not exist). Nothing financial, no causality, no single
+// score. ?days=7|30|90|all · ?domain=<candidate domain>.
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -16,7 +18,6 @@ import {
   formatDuration,
   parseImpactDays,
   MIN_JUDGED_FOR_RATE,
-  MIN_OUTCOMES_FOR_RATE,
   MIN_TIMING_SAMPLE,
   type DecisionImpactReport,
   type ImpactPeriodDays
@@ -32,8 +33,8 @@ type Locale = "he" | "en";
 
 const CHOICE_LABEL: Record<HumanChoice, { he: string; en: string }> = {
   pending: { he: "ממתין", en: "Pending" },
-  approved: { he: "ההמלצה אושרה", en: "Approved recommendation" },
-  alternative: { he: "נבחרה אפשרות אחרת", en: "Chose another option" },
+  approved: { he: "אישר את ההמלצה", en: "Approved the recommendation" },
+  alternative: { he: "בחר אפשרות אחרת", en: "Chose another option" },
   ignored: { he: "ללא שינוי", en: "No change" },
   auto_closed: { he: "נסגר אוטומטית", en: "Closed automatically" },
   expired: { he: "פג תוקף", en: "Expired" }
@@ -46,24 +47,39 @@ const OUTCOME_LABEL = {
   no_data: { he: "אין נתונים", en: "No data", cls: "text-muted-foreground" }
 } as const;
 
-function pct(n: number, d: number): string {
-  return d > 0 ? `${Math.round((n / d) * 100)}%` : "—";
-}
-
-function Stat({ value, label, sub, tone }: { value: string; label: string; sub?: string; tone?: "danger" | "warning" | "muted" }) {
+// "X / Y" with the denominator always present — never a bare percentage.
+function Ratio({ n, d, label, tone }: { n: number; d: number; label: string; tone?: "danger" | "warning" }) {
   return (
     <div className="min-w-0">
-      <p className={cn("text-3xl font-semibold tabular-nums tracking-tight", tone === "danger" && "text-danger", tone === "warning" && "text-warning", tone === "muted" && "text-muted-foreground")}>{value}</p>
-      <p className="mt-1 text-sm font-medium">{label}</p>
+      <p className={cn("text-2xl font-semibold tabular-nums tracking-tight", tone === "danger" && "text-danger", tone === "warning" && "text-warning")}>
+        {n} <span className="text-base font-normal text-muted-foreground">/ {d}</span>
+      </p>
+      <p className="mt-0.5 text-sm">{label}</p>
+    </div>
+  );
+}
+
+function Count({ n, label, sub, muted }: { n: number | string; label: string; sub?: string; muted?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <p className={cn("text-2xl font-semibold tabular-nums tracking-tight", muted && "text-muted-foreground")}>{n}</p>
+      <p className="mt-0.5 text-sm">{label}</p>
       {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
     </div>
   );
 }
 
-// A segmented bar: counts over a shared denominator. No decoration, no
-// colour unless the meaning is semantic (wrong/miss = danger, win = success).
-function Segments({ parts, total, locale }: { parts: Array<{ label: string; n: number; cls: string }>; total: number; locale: Locale }) {
-  if (total === 0) return <p className="text-sm text-muted-foreground">{locale === "he" ? "אין נתונים" : "No data"}</p>;
+// A quiet line for the "not measured yet" state — text, not an empty card.
+function NotYet({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="border-s-2 border-border ps-4">
+      <p className="text-sm font-medium">{title}</p>
+      <p className="text-sm text-muted-foreground">{body}</p>
+    </div>
+  );
+}
+
+function Segments({ parts, total }: { parts: Array<{ label: string; n: number; cls: string }>; total: number }) {
   return (
     <div className="space-y-2">
       <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted">
@@ -73,11 +89,23 @@ function Segments({ parts, total, locale }: { parts: Array<{ label: string; n: n
         {parts.map((p) => (
           <li key={p.label} className="inline-flex items-center gap-1.5">
             <span aria-hidden className={cn("h-2 w-2 rounded-full", p.cls)} />
-            {p.label} <b>{p.n}</b> <span className="text-muted-foreground">({pct(p.n, total)})</span>
+            {p.label} <b>{p.n}</b>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+function Section({ title, intro, children }: { title: string; intro?: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        {intro ? <p className="max-w-2xl text-sm text-muted-foreground">{intro}</p> : null}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -98,135 +126,175 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
     if (dom) q.set("domain", dom);
     return `/decision-impact?${q.toString()}`;
   };
-  const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(isHe ? "he-IL" : "en-US", { month: "short", day: "numeric" }) : "—");
+  const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(isHe ? "he-IL" : "en-US", { month: "short", day: "numeric" }) : "");
+  const periodLabel = days === null ? t("מאז ההחלטה הראשונה", "since the first decision") : t(`ב-${days} הימים האחרונים`, `in the last ${days} days`);
+  const f = r.funnel;
   const j = r.judgments;
-  const rateReady = j.total >= MIN_JUDGED_FOR_RATE;
-  const changedReady = j.changedAnswered >= MIN_JUDGED_FOR_RATE;
-  const timingReady = r.timing.sample >= MIN_TIMING_SAMPLE;
-  const outcomesReady = r.outcomes.win + r.outcomes.neutral + r.outcomes.miss >= MIN_OUTCOMES_FOR_RATE;
-  const tooEarly = (needed: number, have: number) => t(`עדיין מוקדם — ${have} מתוך ${needed} הדרושים לפני שהמדד שימושי.`, `Too early — ${have} of the ${needed} needed before this rate is meaningful.`);
-  const wrongShare = j.total ? j.wrong / j.total : 0;
+  const enoughJudged = j.total >= MIN_JUDGED_FOR_RATE;
+  const measurable = r.outcomes.win + r.outcomes.neutral + r.outcomes.miss;
+  const hasJudgment = j.total > 0;
+  const hasBehaviourAnswer = j.changedAnswered > 0;
+  const hasOutcomes = r.outcomes.measured > 0;
+  const hasTiming = r.timing.sample > 0;
   const obviousShare = j.total ? j.obvious / j.total : 0;
+  const wrongShare = j.total ? j.wrong / j.total : 0;
+  const planPending = r.plan.surfaced - r.plan.acted;
+
+  // The one-line verdict on the validation state.
+  const verdict =
+    f.surfaced === 0
+      ? t("עדיין לא הוצגו החלטות בתקופה הזו", "No decisions were surfaced in this period")
+      : !hasJudgment
+        ? t("עדיין מוקדם למדוד את ההשפעה של הילומי", "Too early to measure Hiloomy's impact")
+        : !enoughJudged
+          ? t("סימן מוקדם — עדיין אין מספיק משוב כדי להסיק", "Early signal — not enough feedback to conclude yet")
+          : hasOutcomes
+            ? t("יש מספיק משוב ותוצאות כדי לשפוט את הילומי", "Enough feedback and outcomes to judge Hiloomy")
+            : t("יש מספיק משוב; התוצאות עדיין נמדדות", "Enough feedback; outcomes are still being measured");
+
+  const funnelSteps = [
+    { n: f.surfaced, label: t("הוצגו", "Surfaced") },
+    { n: f.acted, label: t("המנהל פעל", "Manager acted") },
+    { n: f.judged, label: t("קיבלו משוב", "Got feedback") },
+    { n: f.measured, label: t("תוצאות נמדדו", "Outcomes measured") }
+  ];
 
   return (
     <AppShell store={chrome.store}>
-      <div className="space-y-8">
+      <div className="space-y-10">
         <PageHead
           eyebrow={t("כלים", "Tools")}
           title={t("השפעת החלטות", "Decision Impact")}
-          description={t("מה הילומי העלתה, מה באמת שינה את הדרך שבה קיבלתם החלטות, ומה קרה אחר כך.", "What Hiloomy surfaced, what actually changed the way decisions were made, and what happened afterwards.")}
+          description={t("האם הילומי באמת עוזרת לכם לקבל החלטות טובות יותר? אנחנו מודדים שלושה דברים: האם ההחלטות היו מועילות, האם הן שינו פעולה, ומה קרה אחר כך.", "Is Hiloomy actually helping you make better decisions? We measure three things: were the decisions useful, did they change an action, and what happened afterwards.")}
         />
 
-        {/* Filters — shareable query params, no client state */}
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-xs">
+        {/* Filters — quiet, below the heading */}
+        <div className="-mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          <span className="inline-flex gap-1">
             {([7, 30, 90, null] as ImpactPeriodDays[]).map((d) => (
-              <Link key={String(d)} href={href(d, domain) as never} aria-current={d === days ? "true" : undefined} className={cn("rounded px-2.5 py-1 font-medium", d === days ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}>
+              <Link key={String(d)} href={href(d, domain) as never} aria-current={d === days ? "true" : undefined} className={cn("rounded px-2 py-0.5", d === days ? "bg-foreground font-semibold text-background" : "hover:text-foreground")}>
                 {d === null ? t("כל הזמן", "All time") : t(`${d} ימים`, `${d} days`)}
               </Link>
             ))}
-          </div>
-          {r.domainsAvailable.length > 0 ? (
-            <div className="inline-flex flex-wrap rounded-md border border-border bg-card p-0.5 text-xs">
-              <Link href={href(days, null) as never} aria-current={domain === null ? "true" : undefined} className={cn("rounded px-2.5 py-1 font-medium", domain === null ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}>
+          </span>
+          {r.domainsAvailable.length > 1 ? (
+            <span className="inline-flex flex-wrap gap-1">
+              <Link href={href(days, null) as never} className={cn("rounded px-2 py-0.5", domain === null ? "bg-foreground font-semibold text-background" : "hover:text-foreground")}>
                 {t("כל התחומים", "All domains")}
               </Link>
               {CANDIDATE_DOMAINS.filter((d) => r.domainsAvailable.includes(d)).map((d) => (
-                <Link key={d} href={href(days, d) as never} aria-current={domain === d ? "true" : undefined} className={cn("rounded px-2.5 py-1 font-medium", domain === d ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}>
+                <Link key={d} href={href(days, d) as never} className={cn("rounded px-2 py-0.5", domain === d ? "bg-foreground font-semibold text-background" : "hover:text-foreground")}>
                   {CANDIDATE_DOMAIN_LABEL[d][locale]}
                 </Link>
               ))}
-            </div>
+            </span>
           ) : null}
-          <span className="text-xs text-muted-foreground">
-            {r.period.start ? `${fmtDate(r.period.start)} – ${fmtDate(r.period.end)}` : t("מאז ההחלטה הראשונה", "Since the first decision")}
-          </span>
         </div>
 
-        {r.surfaced === 0 ? (
-          <Card className="p-6 text-sm text-muted-foreground">
-            {r.memory.recorded > 0
-              ? t(`נרשמו ${r.memory.recorded} החלטות בתקופה, אבל אף אחת עדיין לא הוצגה כהחלטה בהיום. אין מה למדוד עד שהחלטה מוצגת.`, `${r.memory.recorded} decisions were recorded in the period, but none was surfaced on Today yet. There is nothing to measure until a decision is shown.`)
-              : t("לא הוצגו החלטות בתקופה הזו. נסו טווח רחב יותר או פתחו את היום כדי שהמנועים ירוצו.", "No decisions were surfaced in this period. Try a wider range, or open Today so the engines run.")}
-          </Card>
+        {/* 1 — Validation status + funnel */}
+        <Card className="space-y-6 p-6">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">{verdict}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {f.surfaced === 0
+                ? r.memory.recorded > 0
+                  ? t(`נרשמו ${r.memory.recorded} החלטות ${periodLabel}, אבל אף אחת עדיין לא הוצגה בהיום.`, `${r.memory.recorded} decisions were recorded ${periodLabel}, but none was surfaced on Today yet.`)
+                  : t("נסו טווח רחב יותר, או פתחו את היום כדי שהמנועים ירוצו.", "Try a wider range, or open Today so the engines run.")
+                : t(`הילומי הציפה ${f.surfaced} החלטות ${periodLabel}.`, `Hiloomy surfaced ${f.surfaced} decisions ${periodLabel}.`)}
+            </p>
+          </div>
+
+          {f.surfaced > 0 ? (
+            <ol className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-0">
+              {funnelSteps.map((step, i) => (
+                <li key={step.label} className="flex items-center gap-2 sm:flex-1 sm:flex-col sm:items-start sm:gap-0">
+                  <div className="flex items-baseline gap-2 sm:block">
+                    <span className={cn("text-3xl font-semibold tabular-nums tracking-tight", i > 0 && step.n === 0 && "text-muted-foreground")}>{step.n}</span>
+                    <span className="text-sm">{step.label}</span>
+                  </div>
+                  {i < funnelSteps.length - 1 ? <span aria-hidden className="text-muted-foreground sm:hidden">↓</span> : null}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+
+          {f.surfaced > 0 && !hasJudgment ? (
+            <p className="text-sm text-muted-foreground">{t("כדי לדעת אם הילומי באמת עוזרת, צריך קודם משוב על ההחלטות שהוצגו.", "To know whether Hiloomy is actually helping, the surfaced decisions need feedback first.")}</p>
+          ) : null}
+
+          {r.awaitingFeedback.length > 0 ? (
+            <Link href="#awaiting" className="inline-flex items-center gap-1 text-sm font-semibold underline-offset-4 hover:underline">
+              {t(`${r.awaitingFeedback.length} החלטות מחכות למשוב`, `${r.awaitingFeedback.length} decisions are waiting for feedback`)} →
+            </Link>
+          ) : f.pending > 0 && f.acted === 0 ? (
+            <Link href="/today" className="inline-flex items-center gap-1 text-sm font-semibold underline-offset-4 hover:underline">
+              {t(`${f.pending} החלטות מחכות לתשובת המנהל בהיום`, `${f.pending} decisions are waiting for the manager on Today`)} →
+            </Link>
+          ) : null}
+        </Card>
+
+        {/* 2 — Awaiting feedback (the action in low-data mode) */}
+        {r.awaitingFeedback.length > 0 ? (
+          <Section title={t("החלטות שמחכות למשוב", "Decisions waiting for feedback")} intro={t("המנהל פעל, אבל עדיין לא אמר איך ההחלטה הייתה. המשוב ניתן בקבלה.", "The manager acted but has not yet said how the decision was. Feedback is given on the receipt.")}>
+            <div id="awaiting" className="grid gap-3 lg:grid-cols-2">
+              {r.awaitingFeedback.slice(0, 6).map((d) => (
+                <Card key={d.id} className="space-y-2 p-4 text-sm">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="font-semibold">{d.question[locale]}</p>
+                    <span className="text-xs text-muted-foreground">
+                      {CANDIDATE_DOMAIN_LABEL[d.domain][locale]} · {fmtDate(d.decidedAt ?? d.surfacedAt)}
+                    </span>
+                  </div>
+                  {d.recommendation[locale] ? <p className="text-muted-foreground">{t("ההמלצה", "Recommended")}: {d.recommendation[locale]}</p> : null}
+                  <p>
+                    {t("המנהל", "Manager")}: {CHOICE_LABEL[d.choice][locale]}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{t("איך הייתה ההחלטה הזו? מועילה · מובנת מאליה · שגויה · חסר הקשר, והאם היא שינתה את מה שעשיתם.", "How was this decision? Useful · obvious · wrong · missing context, and whether it changed what you did.")}</p>
+                  <Link href={d.href as never} className="inline-flex text-sm font-semibold underline-offset-4 hover:underline">
+                    {t("תנו משוב", "Give feedback")} {displayDecisionId(d.id)} →
+                  </Link>
+                </Card>
+              ))}
+            </div>
+            {r.awaitingFeedback.length > 6 ? <p className="text-xs text-muted-foreground">{t(`ועוד ${r.awaitingFeedback.length - 6} בזיכרון.`, `And ${r.awaitingFeedback.length - 6} more in Memory.`)}</p> : null}
+          </Section>
         ) : null}
 
-        {/* 1 — Impact scorecard */}
-        <Card className="p-6">
-          <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
-            <Stat value={String(r.surfaced)} label={t("החלטות שהוצגו", "Decisions surfaced")} sub={t("החלטות ייחודיות שהוצגו למנהל בתקופה", "Unique decisions shown to the manager in the period")} />
-            <Stat
-              value={j.total ? pct(j.useful, j.total) : "—"}
-              label={t("סומנו כמועילות", "Marked useful")}
-              sub={j.total ? t(`${j.useful} מתוך ${j.total} החלטות שנשפטו`, `${j.useful} / ${j.total} judged decisions`) + (rateReady ? "" : ` · ${tooEarly(MIN_JUDGED_FOR_RATE, j.total)}`) : t("אף החלטה עדיין לא נשפטה", "No decision has been judged yet")}
-              tone={rateReady ? undefined : "muted"}
-            />
-            <Stat
-              value={j.changedAnswered ? pct(j.changed, j.changedAnswered) : "—"}
-              label={t("שינו את מה שהמנהל התכוון לעשות", "Changed what the manager planned to do")}
-              sub={j.changedAnswered ? t(`${j.changed} מתוך ${j.changedAnswered} שענו על השאלה`, `${j.changed} / ${j.changedAnswered} that answered`) + (changedReady ? "" : ` · ${tooEarly(MIN_JUDGED_FOR_RATE, j.changedAnswered)}`) : t("אין עדיין תשובות", "No answers yet")}
-              tone={changedReady ? undefined : "muted"}
-            />
-            <Stat
-              value={r.timing.medianMs !== null && timingReady ? formatDuration(r.timing.medianMs, locale) : "—"}
-              label={t("זמן חציוני להחלטה", "Median time to decision")}
-              sub={r.timing.sample ? (timingReady ? t(`מהצגה בהיום ועד תשובת המנהל · ${r.timing.sample} החלטות`, `From surfacing on Today to the manager's answer · ${r.timing.sample} decisions`) : t(`אין עדיין מספיק נתונים — ${r.timing.sample} מתוך ${MIN_TIMING_SAMPLE}`, `Not enough data yet — ${r.timing.sample} of ${MIN_TIMING_SAMPLE}`)) : t("אין עדיין החלטות שנענו", "No answered decisions yet")}
-              tone={timingReady ? undefined : "muted"}
-            />
-          </div>
-        </Card>
-
-        {/* 2 — High-value decisions + judgment distribution */}
-        <section className="grid gap-4 lg:grid-cols-2">
-          <Card className="p-6">
-            <h2 className="text-base font-semibold">{t("החלטות בעלות ערך גבוה", "High-value decisions")}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{t("החלטות שהמנהל סימן כמועילות ולא מובנות מאליהן.", "Decisions the manager marked useful and not obvious.")}</p>
-            <p className="mt-4 text-3xl font-semibold tabular-nums">
-              {j.highValue} / {j.total} <span className="text-lg text-muted-foreground">{j.total ? pct(j.highValue, j.total) : ""}</span>
-            </p>
-            {!rateReady && j.total > 0 ? <p className="mt-1 text-xs text-muted-foreground">{tooEarly(MIN_JUDGED_FOR_RATE, j.total)}</p> : null}
-            {j.total > 0 && obviousShare >= 0.5 ? <p className="mt-2 text-sm text-warning">{t(`${Math.round(obviousShare * 100)}% מההחלטות שנשפטו סומנו כמובנות מאליהן — תוצאה חלשה גם כשהן מועילות.`, `${Math.round(obviousShare * 100)}% of judged decisions were marked obvious — a weak result even when they are useful.`)}</p> : null}
-            {j.total > 0 && wrongShare >= 0.2 ? <p className="mt-2 text-sm text-danger">{t(`${Math.round(wrongShare * 100)}% סומנו כשגויות.`, `${Math.round(wrongShare * 100)}% were marked wrong.`)}</p> : null}
-          </Card>
-          <Card className="p-6">
-            <h2 className="text-base font-semibold">{t("שיפוט המנהל", "Manager judgment")}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{t("תגיות יכולות לחפוף; המכנה הוא החלטות שנשפטו.", "Tags can overlap; the denominator is judged decisions.")}</p>
-            <div className="mt-4">
-              <Segments
-                locale={locale}
-                total={j.total}
-                parts={[
-                  { label: JUDGMENT_LABEL.useful[locale], n: j.useful, cls: "bg-success" },
-                  { label: JUDGMENT_LABEL.obvious[locale], n: j.obvious, cls: "bg-muted-foreground/50" },
-                  { label: JUDGMENT_LABEL.wrong[locale], n: j.wrong, cls: "bg-danger" },
-                  { label: JUDGMENT_LABEL.missing_context[locale], n: j.missingContext, cls: "bg-warning" }
-                ]}
-              />
+        {/* 3 — Decision quality (only with at least one judgment) */}
+        {hasJudgment ? (
+          <Section title={t("האם ההחלטות באמת מועילות?", "Are the decisions actually useful?")} intro={enoughJudged ? t(`על בסיס ${j.total} החלטות שקיבלו משוב.`, `Based on ${j.total} decisions with feedback.`) : t(`סימן מוקדם: ${j.total} מתוך ${MIN_JUDGED_FOR_RATE} החלטות עם משוב שנצטרך לפני שהמדד יהיה שימושי.`, `Early signal: ${j.total} of the ${MIN_JUDGED_FOR_RATE} judged decisions needed before this is meaningful.`)}>
+            <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
+              <Ratio n={j.useful} d={j.total} label={t("סומנו כמועילות", "Marked useful")} />
+              <Ratio n={j.highValue} d={j.total} label={t("בעלות ערך גבוה", "High value")} />
+              <Ratio n={j.obvious} d={j.total} label={t("מובנות מאליהן", "Obvious")} tone={obviousShare >= 0.5 ? "warning" : undefined} />
+              <Ratio n={j.wrong} d={j.total} label={t("שגויות", "Wrong")} tone={wrongShare >= 0.2 ? "danger" : undefined} />
+              <Ratio n={j.missingContext} d={j.total} label={t("חסר הקשר", "Missing context")} />
             </div>
-          </Card>
-        </section>
+            <p className="text-xs text-muted-foreground">{t("החלטה בעלת ערך גבוה = החלטה שהמנהל סימן כמועילה ולא מובנת מאליה. תגיות יכולות לחפוף.", "High value = marked useful and not obvious. Tags can overlap.")}</p>
+            {obviousShare >= 0.5 ? <p className="text-sm text-warning">{t(`${j.obvious} מתוך ${j.total} סומנו כמובנות מאליהן — תוצאה חלשה גם כשהן מועילות.`, `${j.obvious} of ${j.total} were marked obvious — a weak result even when they are useful.`)}</p> : null}
+            {wrongShare >= 0.2 ? <p className="text-sm text-danger">{t(`${j.wrong} מתוך ${j.total} סומנו כשגויות.`, `${j.wrong} of ${j.total} were marked wrong.`)}</p> : null}
+          </Section>
+        ) : f.surfaced > 0 ? (
+          <NotYet title={t("עדיין אין מספיק משוב", "Not enough feedback yet")} body={t("ברגע שהמנהלים ישפטו החלטות, נוכל למדוד אילו החלטות היו מועילות, מובנות מאליהן, שגויות או חסרות הקשר.", "Once managers judge decisions, we can measure which were useful, obvious, wrong or missing context.")} />
+        ) : null}
 
-        {/* 3 — Behaviour change */}
-        <Card className="p-6">
-          <h2 className="text-base font-semibold">{t("האם הילומי שינתה את ההחלטה?", "Did Hiloomy change behavior?")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t("אישור כיוון קיים אינו כישלון — אבל הוא נבדל משינוי התנהגות בפועל.", "Confirming an existing direction is not a failure — but it is distinct from an actual change in behaviour.")}</p>
-          <div className="mt-4 grid grid-cols-3 gap-4">
-            <Stat value={String(j.changed)} label={t("שינו החלטה", "Changed")} sub={t("changedDecision = כן", "changedDecision = yes")} />
-            <Stat value={String(j.confirmed)} label={t("אישרו כיוון קיים", "Confirmed existing direction")} sub={t("changedDecision = לא", "changedDecision = no")} />
-            <Stat value={String(r.surfaced - j.changedAnswered)} label={t("לא נענה", "Not answered")} sub={t("ללא תשובה לשאלה", "No answer available")} tone="muted" />
-          </div>
-        </Card>
+        {/* 4 — Behaviour change (only with at least one explicit answer) */}
+        {hasBehaviourAnswer ? (
+          <Section title={t("האם הילומי שינתה את מה שהמנהל עשה?", "Did Hiloomy change what the manager did?")} intro={t("אישור כיוון קיים אינו כישלון — אבל הוא נבדל משינוי פעולה בפועל.", "Confirming an existing direction is not a failure — but it is distinct from an actual change in action.")}>
+            <div className="grid grid-cols-3 gap-6">
+              <Count n={j.changed} label={t("שינו פעולה", "Changed an action")} />
+              <Count n={j.confirmed} label={t("אישרו כיוון קיים", "Confirmed the existing direction")} />
+              <Count n={f.surfaced - j.changedAnswered} label={t("עדיין לא נענו", "Not answered yet")} muted />
+            </div>
+          </Section>
+        ) : null}
 
-        {/* 4 — Outcomes */}
-        <Card className="p-6">
-          <h2 className="text-base font-semibold">{t("מה קרה אחרי ההחלטה?", "What happened after the decision?")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t("נמדד ימים אחרי החלטה שהמנהל ענה עליה. תוצאה חיובית אינה הוכחה לסיבתיות ואינה מתורגמת לכסף.", "Measured days after a decision the manager answered. A positive outcome is not proof of causality and is not translated into money.")}</p>
-          <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat value={`${r.outcomes.measured} / ${r.outcomes.eligible}`} label={t("תוצאות שנמדדו", "Measured outcomes")} sub={t("מתוך החלטות שנענו", "of decisions answered by a human")} />
-            <Stat value={outcomesReady && r.outcomes.winRate !== null ? `${r.outcomes.winRate}%` : "—"} label={t("שיעור שיפור", "Win rate")} sub={r.outcomes.winRate !== null ? (outcomesReady ? t(`${r.outcomes.win} מתוך ${r.outcomes.win + r.outcomes.neutral + r.outcomes.miss} עם תוצאה מדידה`, `${r.outcomes.win} / ${r.outcomes.win + r.outcomes.neutral + r.outcomes.miss} with a measurable outcome`) : tooEarly(MIN_OUTCOMES_FOR_RATE, r.outcomes.win + r.outcomes.neutral + r.outcomes.miss)) : t("אין עדיין תוצאה מדידה", "No measurable outcome yet")} tone={outcomesReady ? undefined : "muted"} />
-            <div className="col-span-2">
+        {/* 5 — Outcomes (only when measured) */}
+        {hasOutcomes ? (
+          <Section title={t("מה קרה אחרי ההחלטה?", "What happened after the decision?")} intro={t("נמדד ימים אחרי החלטה שהמנהל ענה עליה. זו התוצאה אחרי ההחלטה — לא הוכחה שהילומי גרמה לה, ולא כסף.", "Measured days after a decision the manager answered. It is what happened after the decision — not proof Hiloomy caused it, and not money.")}>
+            <div className="grid gap-6 sm:grid-cols-[auto_1fr] sm:items-start">
+              <Ratio n={r.outcomes.measured} d={r.outcomes.eligible} label={t("נמדדו מתוך החלטות שנענו", "Measured of answered decisions")} />
               <Segments
-                locale={locale}
                 total={r.outcomes.measured}
                 parts={[
                   { label: OUTCOME_LABEL.win[locale], n: r.outcomes.win, cls: "bg-success" },
@@ -236,30 +304,16 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
                 ]}
               />
             </div>
-          </div>
-        </Card>
+            {measurable > 0 ? <p className="text-sm">{t(`${r.outcomes.win} מתוך ${measurable} עם תוצאה מדידה הסתיימו בשיפור.`, `${r.outcomes.win} of ${measurable} with a measurable outcome ended in an improvement.`)}</p> : null}
+          </Section>
+        ) : f.acted > 0 ? (
+          <NotYet title={t("עדיין אין תוצאות מדודות", "No measured outcomes yet")} body={t("אחרי החלטה הילומי מחכה לחלון המדידה שלה. כשהתוצאה תהיה זמינה היא תופיע כאן.", "After a decision Hiloomy waits for its measurement window. When the outcome is available it appears here.")} />
+        ) : null}
 
-        {/* 5 — Plan impact */}
-        <Card className="p-6">
-          <h2 className="text-base font-semibold">{t("השפעה על התוכנית", "Plan Impact")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t("החלטות שנוצרו מנקודות החלטה בתוכנית השיווקית (Plan × Reality).", "Decisions created from decision hooks in the marketing plan (Plan × Reality).")}</p>
-          {r.plan.surfaced === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">{t("לא הוצגו החלטות תוכנית בתקופה. הן נוצרות כשחלון של נקודת החלטה בגאנט מגיע.", "No plan decisions were surfaced in the period. They appear when a decision hook's window in the Gantt arrives.")}</p>
-          ) : (
-            <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <Stat value={String(r.plan.surfaced)} label={t("החלטות תוכנית שהוצגו", "Plan decisions surfaced")} sub={t(`${r.plan.changePlanStatus} עם פסק "לשנות תוכנית"`, `${r.plan.changePlanStatus} with a CHANGE PLAN verdict`)} />
-              <Stat value={String(r.plan.acted)} label={t("נענו", "Acted upon")} sub={t("תשובת מנהל", "Answered by the manager")} />
-              <Stat value={`${r.plan.continuedAsPlanned} / ${r.plan.changedPlan}`} label={t("המשיכו כמתוכנן / שינו", "Continued as planned / changed")} sub={r.plan.optionUnknown ? t(`מהאפשרות שנבחרה · ${r.plan.optionUnknown} ללא אפשרות רשומה`, `From the chosen option · ${r.plan.optionUnknown} with no recorded option`) : t("מהאפשרות שנבחרה", "From the chosen option")} />
-              <Stat value={`${r.plan.useful} / ${r.plan.judged}`} label={t("מועילות / נשפטו", "Useful / judged")} sub={t(`${r.plan.changed} שינו את התנהגות המנהל`, `${r.plan.changed} changed the manager's behaviour`)} />
-            </div>
-          )}
-        </Card>
-
-        {/* 6 — Stories */}
-        <section className="space-y-3">
-          <h2 className="text-base font-semibold">{t("החלטות ששווה ללמוד מהן", "Decisions worth learning from")}</h2>
+        {/* 6 — Stories (only with follow-through) */}
+        <Section title={t("החלטות ששווה ללמוד מהן", "Decisions worth learning from")}>
           {r.stories.length === 0 ? (
-            <Card className="p-6 text-sm text-muted-foreground">{t("אין עדיין החלטות להצגה בתקופה.", "No decisions to show for the period yet.")}</Card>
+            <NotYet title={t("עדיין אין החלטות עם מספיק המשך כדי ללמוד מהן.", "No decisions with enough follow-through to learn from yet.")} body={t("ברגע שנדע מה הוחלט ומה קרה אחר כך, החלטות משמעותיות יופיעו כאן.", "Once we know what was decided and what happened next, meaningful decisions appear here.")} />
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {r.stories.map((s) => (
@@ -272,83 +326,110 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
                     </span>
                   </div>
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                    <dt className="text-muted-foreground">{t("למה הופיעה", "Why it appeared")}</dt>
-                    <dd>{s.whyNow[locale] || "—"}</dd>
-                    <dt className="text-muted-foreground">{t("ההמלצה", "Recommended")}</dt>
-                    <dd>{s.recommendation[locale] || "—"}</dd>
+                    {s.whyNow[locale] ? (
+                      <>
+                        <dt className="text-muted-foreground">{t("למה הופיעה", "Why it appeared")}</dt>
+                        <dd>{s.whyNow[locale]}</dd>
+                      </>
+                    ) : null}
+                    <dt className="text-muted-foreground">{t("הילומי המליצה", "Hiloomy recommended")}</dt>
+                    <dd>{s.recommendation[locale] || t("ללא המלצה", "No recommendation")}</dd>
                     <dt className="text-muted-foreground">{t("המנהל בחר", "Manager chose")}</dt>
                     <dd>{CHOICE_LABEL[s.choice][locale]}</dd>
-                    <dt className="text-muted-foreground">{t("שיפוט", "Judgment")}</dt>
-                    <dd>{s.judgment.length ? s.judgment.map((tag) => JUDGMENT_LABEL[tag][locale]).join(" · ") : t("טרם נשפט", "Not judged")}</dd>
-                    <dt className="text-muted-foreground">{t("שינה החלטה?", "Changed the decision?")}</dt>
-                    <dd>{s.changedDecision === null ? t("לא נענה", "Not answered") : s.changedDecision ? t("כן", "Yes") : t("לא", "No")}</dd>
+                    <dt className="text-muted-foreground">{t("משוב", "Feedback")}</dt>
+                    <dd>{s.judgment.length ? s.judgment.map((tag) => JUDGMENT_LABEL[tag][locale]).join(" · ") : t("טרם נענה", "Not answered")}</dd>
+                    <dt className="text-muted-foreground">{t("שינה פעולה?", "Changed an action?")}</dt>
+                    <dd>{s.changedDecision === null ? t("טרם נענה", "Not answered") : s.changedDecision ? t("כן", "Yes") : t("לא", "No")}</dd>
                     <dt className="text-muted-foreground">{t("תוצאה", "Outcome")}</dt>
                     <dd className={s.outcome ? OUTCOME_LABEL[s.outcome].cls : "text-muted-foreground"}>
-                      {s.outcome ? OUTCOME_LABEL[s.outcome][locale] : t("טרם נמדד", "Not measured yet")}
+                      {s.outcome ? OUTCOME_LABEL[s.outcome][locale] : t("עדיין לא נמדד", "Not measured yet")}
                       {s.outcomeSummary?.[locale] ? <span className="text-muted-foreground"> — {s.outcomeSummary[locale]}</span> : null}
                     </dd>
                   </dl>
                   <Link href={s.href as never} className="inline-flex text-sm font-semibold underline-offset-4 hover:underline">
-                    {t("לקבלה", "Open the receipt")} {displayDecisionId(s.id)} →
+                    {t("לקבלה", "Receipt")} {displayDecisionId(s.id)} →
                   </Link>
                 </Card>
               ))}
             </div>
           )}
-        </section>
+        </Section>
 
-        {/* 7 — By domain */}
-        <section className="space-y-3">
-          <h2 className="text-base font-semibold">{t("לפי תחום החלטה", "Performance by decision domain")}</h2>
-          <p className="text-sm text-muted-foreground">{t("איפה הילומי באמת מועילה, ואילו מנועים מייצרים החלטות מובנות מאליהן או שגויות.", "Where Hiloomy is actually useful, and which engines produce obvious or wrong decisions.")}</p>
-          {r.domains.length === 0 ? (
-            <Card className="p-6 text-sm text-muted-foreground">{t("אין נתונים בתקופה.", "No data in the period.")}</Card>
+        {/* 7 — Plan × Reality */}
+        <Section title={t("האם המציאות שינתה את התוכנית?", "Did reality change the plan?")} intro={t("הילומי משווה את התוכנית המסחרית למה שקורה בפועל ומציפה נקודות שבהן כדאי לעצור ולבחון מחדש.", "Hiloomy compares the commercial plan with what is actually happening and surfaces the points where it is worth stopping to re-examine.")}>
+          {r.plan.surfaced === 0 ? (
+            <NotYet title={t("לא הוצגו החלטות תוכנית בתקופה", "No plan decisions were surfaced in the period")} body={t("הן נוצרות כשחלון של נקודת החלטה בגאנט מגיע.", "They appear when a decision hook's window in the Gantt arrives.")} />
           ) : (
-            <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full text-sm tabular-nums">
-                <thead className="bg-muted/40 text-xs text-muted-foreground">
-                  <tr>
-                    {[t("תחום", "Domain"), t("הוצגו", "Surfaced"), t("נשפטו", "Judged"), t("מועיל", "Useful"), t("ערך גבוה", "High value"), t("שינו החלטה", "Changed"), t("מובן מאליו", "Obvious"), t("שגוי", "Wrong"), t("שיפור / נמדד", "Win / measured")].map((h) => (
-                      <th key={h} className="px-3 py-2 text-start font-medium">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {r.domains.map((d) => (
-                    <tr key={d.key} className="border-t border-border">
-                      <td className="px-3 py-2 font-medium">{d.label[locale]}</td>
-                      <td className="px-3 py-2">{d.surfaced}</td>
-                      <td className="px-3 py-2">{d.judged}</td>
-                      <td className="px-3 py-2">{d.judged ? `${d.useful} (${pct(d.useful, d.judged)})` : "—"}</td>
-                      <td className="px-3 py-2">{d.judged ? d.highValue : "—"}</td>
-                      <td className="px-3 py-2">{d.judged ? d.changed : "—"}</td>
-                      <td className={cn("px-3 py-2", d.judged && d.obvious / d.judged >= 0.5 && "text-warning")}>{d.judged ? `${d.obvious} (${pct(d.obvious, d.judged)})` : "—"}</td>
-                      <td className={cn("px-3 py-2", d.judged && d.wrong / d.judged >= 0.2 && "text-danger")}>{d.judged ? `${d.wrong} (${pct(d.wrong, d.judged)})` : "—"}</td>
-                      <td className="px-3 py-2">{d.measured ? `${d.win} / ${d.measured}` : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
+                <Count n={r.plan.surfaced} label={t("החלטות תוכנית שהוצגו", "Plan decisions surfaced")} sub={r.plan.changePlanStatus ? t(`${r.plan.changePlanStatus} עם המלצה לשנות את התוכנית`, `${r.plan.changePlanStatus} recommended changing the plan`) : undefined} />
+                {planPending > 0 ? <Count n={planPending} label={t("מחכות לתשובת המנהל", "Awaiting the manager's answer")} muted /> : null}
+                {r.plan.acted > 0 ? <Count n={r.plan.changedPlan} label={t("שינו את התוכנית", "Changed the plan")} sub={r.plan.optionUnknown ? t(`${r.plan.optionUnknown} ללא אפשרות רשומה`, `${r.plan.optionUnknown} with no recorded option`) : undefined} /> : null}
+                {r.plan.acted > 0 ? <Count n={r.plan.continuedAsPlanned} label={t("המשיכו כמתוכנן", "Continued as planned")} /> : null}
+              </div>
+              {r.plan.acted === 0 ? <p className="text-sm text-muted-foreground">{t(`${r.plan.surfaced} החלטות תוכנית עדיין ממתינות לתשובה.`, `${r.plan.surfaced} plan decisions are still awaiting an answer.`)}</p> : null}
+              {r.plan.judged > 0 ? <p className="text-sm">{t(`${r.plan.useful} מתוך ${r.plan.judged} עם משוב סומנו כמועילות · ${r.plan.changed} שינו את מה שהמנהל עשה.`, `${r.plan.useful} of ${r.plan.judged} with feedback were marked useful · ${r.plan.changed} changed what the manager did.`)}</p> : null}
             </div>
           )}
-        </section>
+        </Section>
 
-        {/* 8 — Time to decision */}
-        <Card className="p-6">
-          <h2 className="text-base font-semibold">{t("כמה מהר מתקבלות החלטות?", "Time to decision")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t("הזמן מהרגע שהילומי הציגה את ההחלטה ועד תשובת המנהל. אין נקודת ייחוס מלפני הילומי, ולכן זה לא 'מהר יותר' — זה פשוט הזמן.", "Time from Hiloomy surfacing a decision to the manager's answer. There is no pre-Hiloomy baseline, so this is not 'faster' — it is simply the time.")}</p>
-          <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat value={r.timing.medianMs !== null ? formatDuration(r.timing.medianMs, locale) : "—"} label={t("חציון", "Median")} sub={t(`${r.timing.sample} החלטות`, `${r.timing.sample} decisions`)} tone={timingReady ? undefined : "muted"} />
-            <Stat value={r.timing.fastestMs !== null ? formatDuration(r.timing.fastestMs, locale) : "—"} label={t("המהירה ביותר", "Fastest")} />
-            <Stat value={r.timing.slowestMs !== null ? formatDuration(r.timing.slowestMs, locale) : "—"} label={t("האיטית ביותר", "Slowest")} />
-            <Stat value={String(r.timing.pending)} label={t("עדיין ממתינות", "Still pending")} tone="muted" />
-          </div>
-          {timingReady ? (
-            <div className="mt-4">
+        {/* 8 — Domains: origin only until judgments exist */}
+        {r.domains.length > 0 ? (
+          <Section title={hasJudgment ? t("לפי תחום החלטה", "By decision domain") : t("מאיפה מגיעות ההחלטות?", "Where do the decisions come from?")} intro={hasJudgment ? t("איפה הילומי מועילה, ואילו מנועים מייצרים החלטות מובנות מאליהן או שגויות.", "Where Hiloomy is useful, and which engines produce obvious or wrong decisions.") : undefined}>
+            {!hasJudgment ? (
+              <ul className="max-w-md space-y-2">
+                {r.domains.map((d) => (
+                  <li key={d.key} className="flex items-center gap-3 text-sm">
+                    <span className="w-44 shrink-0">{d.label[locale]}</span>
+                    <span className="h-2 rounded-full bg-foreground/70" style={{ width: `${Math.max(4, (d.surfaced / f.surfaced) * 100)}%` }} aria-hidden />
+                    <span className="tabular-nums">{d.surfaced}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="overflow-x-auto rounded-md border border-border">
+                <table className="w-full text-sm tabular-nums">
+                  <thead className="bg-muted/40 text-xs text-muted-foreground">
+                    <tr>
+                      {[t("תחום", "Domain"), t("הוצגו", "Surfaced"), t("קיבלו משוב", "Feedback"), t("מועיל", "Useful"), t("ערך גבוה", "High value"), ...(hasBehaviourAnswer ? [t("שינו פעולה", "Changed")] : []), t("מובן מאליו", "Obvious"), t("שגוי", "Wrong"), ...(hasOutcomes ? [t("שיפור / נמדד", "Win / measured")] : [])].map((h) => (
+                        <th key={h} className="px-3 py-2 text-start font-medium">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.domains.map((d) => (
+                      <tr key={d.key} className="border-t border-border">
+                        <td className="px-3 py-2 font-medium">{d.label[locale]}</td>
+                        <td className="px-3 py-2">{d.surfaced}</td>
+                        <td className="px-3 py-2">{d.judged}</td>
+                        <td className="px-3 py-2">{d.judged ? `${d.useful} / ${d.judged}` : t("טרם", "none yet")}</td>
+                        <td className="px-3 py-2">{d.judged ? `${d.highValue} / ${d.judged}` : t("טרם", "none yet")}</td>
+                        {hasBehaviourAnswer ? <td className="px-3 py-2">{d.judged ? d.changed : t("טרם", "none yet")}</td> : null}
+                        <td className={cn("px-3 py-2", d.judged && d.obvious / d.judged >= 0.5 && "text-warning")}>{d.judged ? `${d.obvious} / ${d.judged}` : t("טרם", "none yet")}</td>
+                        <td className={cn("px-3 py-2", d.judged && d.wrong / d.judged >= 0.2 && "text-danger")}>{d.judged ? `${d.wrong} / ${d.judged}` : t("טרם", "none yet")}</td>
+                        {hasOutcomes ? <td className="px-3 py-2">{d.measured ? `${d.win} / ${d.measured}` : t("טרם", "none yet")}</td> : null}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Section>
+        ) : null}
+
+        {/* 9 — Time to decision (only with at least one measured pair) */}
+        {hasTiming ? (
+          <Section title={t("כמה מהר מתקבלות החלטות?", "How fast are decisions made?")} intro={t("זמן מרגע שהחלטה הוצגה ועד שהמנהל פעל. אין נקודת ייחוס מלפני הילומי, ולכן זה לא 'מהר יותר' — זה פשוט הזמן.", "Time from a decision being surfaced to the manager acting. There is no pre-Hiloomy baseline, so this is not 'faster' — it is simply the time.")}>
+            <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
+              <Count n={formatDuration(r.timing.medianMs!, locale)} label={t("חציון", "Median")} sub={t(`${r.timing.sample} החלטות`, `${r.timing.sample} decisions`) + (r.timing.sample < MIN_TIMING_SAMPLE ? ` · ${t("מדגם קטן", "small sample")}` : "")} />
+              <Count n={formatDuration(r.timing.fastestMs!, locale)} label={t("המהירה ביותר", "Fastest")} />
+              <Count n={formatDuration(r.timing.slowestMs!, locale)} label={t("האיטית ביותר", "Slowest")} />
+              <Count n={r.timing.pending} label={t("עדיין ממתינות", "Still pending")} muted />
+            </div>
+            {r.timing.sample >= MIN_TIMING_SAMPLE ? (
               <Segments
-                locale={locale}
                 total={r.timing.sample}
                 parts={[
                   { label: t("פחות משעה", "< 1h"), n: r.timing.buckets.under1h, cls: "bg-foreground" },
@@ -358,48 +439,41 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
                   { label: t("מעל 3 ימים", "> 3d"), n: r.timing.buckets.over3d, cls: "bg-foreground/15" }
                 ]}
               />
-            </div>
-          ) : r.timing.sample > 0 ? (
-            <p className="mt-3 text-xs text-muted-foreground">{t(`ההתפלגות תוצג מ-${MIN_TIMING_SAMPLE} החלטות שנענו.`, `The distribution appears from ${MIN_TIMING_SAMPLE} answered decisions.`)}</p>
-          ) : null}
-        </Card>
+            ) : null}
+          </Section>
+        ) : f.surfaced > 0 ? (
+          <NotYet title={t("עדיין אין מספיק החלטות סגורות למדוד זמן החלטה.", "Not enough closed decisions to measure time to decision yet.")} body={f.pending > 0 ? t(`${f.pending} החלטות עדיין ממתינות לתשובה בהיום.`, `${f.pending} decisions are still awaiting an answer on Today.`) : t("הזמן נמדד מהצגת ההחלטה ועד שהמנהל פועל.", "Time is measured from surfacing to the manager acting.")} />
+        ) : null}
 
-        {/* 9 — Memory readiness */}
-        <Card className="p-6">
-          <h2 className="text-base font-semibold">{t("זיכרון החלטות", "Decision Memory")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t("נאספת היסטוריה שממנה הילומי תוכל לזהות דפוסים חוזרים.", "Decision history is accumulating so repeated patterns can be identified over time.")}</p>
-          <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat value={String(r.memory.recorded)} label={t("החלטות שנרשמו", "Decisions recorded")} sub={t("כולל כאלה שלא הוצגו", "Including ones never surfaced")} />
-            <Stat value={String(r.memory.withJudgment)} label={t("עם שיפוט", "With judgments")} />
-            <Stat value={String(r.memory.withOutcome)} label={t("עם תוצאה מדודה", "With measured outcomes")} />
-            <Stat value="—" label={t("פרקים ברי-השוואה", "Comparable episodes")} sub={t("עדיין לא נמדד — אין הגדרה אמינה למצב דומה", "Not measured yet — no reliable definition of a similar situation exists")} tone="muted" />
+        {/* 10 — Memory */}
+        <Section title={t("זיכרון החלטות", "Decision Memory")} intro={t("נאספת היסטוריה שממנה הילומי תוכל לזהות דפוסים חוזרים.", "Decision history is accumulating so repeated patterns can be identified over time.")}>
+          <div className="grid grid-cols-3 gap-6 sm:max-w-xl">
+            <Count n={r.memory.allTime.recorded} label={t("החלטות שנרשמו", "Decisions recorded")} sub={days !== null && r.memory.recorded !== r.memory.allTime.recorded ? t(`${r.memory.recorded} בתקופה שנבחרה`, `${r.memory.recorded} in the selected period`) : undefined} />
+            <Count n={r.memory.allTime.withJudgment} label={t("עם משוב", "With feedback")} sub={days !== null && r.memory.withJudgment !== r.memory.allTime.withJudgment ? t(`${r.memory.withJudgment} בתקופה`, `${r.memory.withJudgment} in the period`) : undefined} />
+            <Count n={r.memory.allTime.withOutcome} label={t("עם תוצאה מדודה", "With a measured outcome")} sub={days !== null && r.memory.withOutcome !== r.memory.allTime.withOutcome ? t(`${r.memory.withOutcome} בתקופה`, `${r.memory.withOutcome} in the period`) : undefined} />
           </div>
+          <p className="text-sm text-muted-foreground">{t("פרקים ברי-השוואה: עדיין אין מספיק פרקים דומים להשוואה, ואין עדיין הגדרה אמינה למצב דומה.", "Comparable episodes: not enough similar episodes yet, and no reliable definition of a similar situation exists yet.")}</p>
           {r.memory.learnings.length ? (
-            <div className="mt-5">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("תובנות מגובות בראיות (90 יום, מהזיכרון)", "Evidence-backed learnings (90 days, from Memory)")}</p>
-              <ul className="mt-2 space-y-1 text-sm">
-                {r.memory.learnings.map((l, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground" />
-                    <span>{l[locale]}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-muted-foreground">{t("עדיין אין תובנות מגובות בראיות. הילומי לא ממציאה לקחים.", "No evidence-backed learnings yet. Hiloomy does not invent lessons.")}</p>
-          )}
-        </Card>
+            <ul className="space-y-1 text-sm">
+              {r.memory.learnings.map((l, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground" />
+                  <span>{l[locale]}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </Section>
 
         {r.notes.length ? (
-          <Card className="p-5 text-sm">
-            <p className="font-semibold">{t("הערות על הפנקס", "Ledger notes")}</p>
-            <ul className="mt-2 list-disc space-y-1 ps-5 text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
+            <p className="font-medium">{t("הערות על הנתונים", "Notes on the data")}</p>
+            <ul className="mt-1 list-disc space-y-0.5 ps-5">
               {r.notes.map((n, i) => (
                 <li key={i}>{n[locale]}</li>
               ))}
             </ul>
-          </Card>
+          </div>
         ) : null}
       </div>
     </AppShell>

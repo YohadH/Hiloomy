@@ -137,14 +137,13 @@ export function GoogleAdsConnectionManager({
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        {!developerTokenConfigured ? (
-          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            {lang(
-              "חסר GOOGLE_ADS_DEVELOPER_TOKEN בסביבה. יש להעתיק את טוקן המפתח הקיים של אפליקציית Hiloomy ב־Google Ads למשתני הסביבה ב־Render. אפשר לחבר כבר עכשיו; הסנכרון יעבוד ברגע שהטוקן יוגדר.",
-              "GOOGLE_ADS_DEVELOPER_TOKEN is missing from the environment. Copy the Hiloomy app's existing Google Ads developer token into the Render environment. You can connect now; sync works once the token is set."
-            )}
-          </p>
-        ) : null}
+        <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          {lang(
+            "רמת הגישה ל-Google Ads API נקבעת מאז 9.9.2026 בפרויקט Google Cloud שמחזיק את לקוח ה-OAuth של Hiloomy, לא בטוקן המפתח. חשבונות אמיתיים דורשים Basic Access לפרויקט: Google Cloud → Google Ads API → Upgrade access level.",
+            "Since Sep 9, 2026 the Google Ads API access level is granted to the Google Cloud project that owns Hiloomy's OAuth client, not to the developer token. Real accounts need Basic Access on the project: Google Cloud → Google Ads API → Upgrade access level."
+          )}
+          {!developerTokenConfigured ? lang(" טוקן המפתח לא מוגדר בסביבה — זה בסדר; הקריאות נשענות על רמת הגישה של הפרויקט.", " The developer token is not set in the environment — that is fine; calls rely on the project's access level.") : null}
+        </p>
         {successMsg ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-emerald-200">{successMsg}</p> : null}
         {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">{error}</p> : null}
 

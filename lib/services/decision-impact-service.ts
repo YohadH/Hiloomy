@@ -114,11 +114,27 @@ export interface ImpactStory {
 }
 
 export interface ImpactMemory {
-  recorded: number; // episodes detected in the period, surfaced or not
+  // In the selected period (detected or surfaced inside it).
+  recorded: number;
   withJudgment: number;
   withOutcome: number;
+  // Since the first decision ever — the history the moat would be built on.
+  allTime: { recorded: number; withJudgment: number; withOutcome: number };
   comparableEpisodes: null; // no reliable definition exists yet — not measured
   learnings: Localized[]; // the existing Memory learnings (90-day, evidence-backed)
+}
+
+// A decision the manager answered but never judged — the next feedback to ask for.
+export interface AwaitingFeedback {
+  id: string;
+  kind: string;
+  domain: CandidateDomain;
+  question: Localized;
+  recommendation: Localized;
+  choice: HumanChoice;
+  decidedAt: string | null;
+  surfacedAt: string | null;
+  href: string;
 }
 
 export interface DecisionImpactReport {
@@ -126,6 +142,9 @@ export interface DecisionImpactReport {
   domain: CandidateDomain | null;
   domainsAvailable: CandidateDomain[]; // domains that have at least one episode in the period
   surfaced: number;
+  // The validation funnel: surfaced → manager acted → judged → outcome measured.
+  funnel: { surfaced: number; acted: number; judged: number; measured: number; pending: number };
+  awaitingFeedback: AwaitingFeedback[];
   judgments: ImpactCounts;
   timing: ImpactTiming;
   outcomes: ImpactOutcomes;
@@ -154,6 +173,31 @@ export function domainOf(kind: string): CandidateDomain {
   return DOMAIN_OF_KIND[kind] ?? "product_performance";
 }
 
+function collapsePlanReuploads(episodes: Decision[]): { episodes: Decision[]; collapsed: number } {
+  const groups = new Map<string, Decision[]>();
+  const rest: Decision[] = [];
+  for (const d of episodes) {
+    if (d.kind !== "plan_decision" || !d.entity?.id) {
+      rest.push(d);
+      continue;
+    }
+    const key = `${d.entity.id}|${d.question.en}`;
+    groups.set(key, [...(groups.get(key) ?? []), d]);
+  }
+  let collapsed = 0;
+  for (const rows of groups.values()) {
+    if (rows.length === 1) {
+      rest.push(rows[0]);
+      continue;
+    }
+    const weight = (d: Decision) => (d.judgment ? 4 : 0) + (isHumanChoice(d.human.choice) ? 2 : 0) + (d.outcome ? 1 : 0) + (d.human.choice === "pending" ? 0.5 : 0);
+    const keep = [...rows].sort((a, b) => weight(b) - weight(a) || (ms(b.ledger.surfacedAt) ?? ms(b.detectedAt) ?? 0) - (ms(a.ledger.surfacedAt) ?? ms(a.detectedAt) ?? 0))[0];
+    rest.push(keep);
+    collapsed += rows.length - 1;
+  }
+  return { episodes: rest, collapsed };
+}
+
 export interface ComputeOptions {
   now: Date;
   days: ImpactPeriodDays;
@@ -172,8 +216,14 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
 
   // Episodes are unique ledger rows; guard against the same id twice anyway.
   const seen = new Set<string>();
-  const episodes = all.filter((d) => (seen.has(d.id) ? false : (seen.add(d.id), true)));
-  if (episodes.length !== all.length) notes.push({ he: `${all.length - episodes.length} פרקים כפולים באותו מזהה סוננו.`, en: `${all.length - episodes.length} duplicate episodes with the same id were dropped.` });
+  const unique = all.filter((d) => (seen.has(d.id) ? false : (seen.add(d.id), true)));
+  if (unique.length !== all.length) notes.push({ he: `${all.length - unique.length} פרקים כפולים באותו מזהה סוננו.`, en: `${all.length - unique.length} duplicate episodes with the same id were dropped.` });
+  // A plan decision is keyed by the Gantt SHEET, so re-uploading the same
+  // file re-creates the same hook as a new row and expires the old one. That
+  // is one situation, not two decisions: keep the row that carries the
+  // manager's answer or judgment, else the newest, and count it once.
+  const { episodes, collapsed } = collapsePlanReuploads(unique);
+  if (collapsed) notes.push({ he: `${collapsed} החלטות תוכנית נוצרו מחדש אחרי העלאה חוזרת של הגאנט ונספרו פעם אחת.`, en: `${collapsed} plan decisions were re-created by a Gantt re-upload and are counted once.` });
 
   const domainsAvailable = [...new Set(episodes.filter((d) => inPeriod(d.ledger.surfacedAt) || inPeriod(d.detectedAt)).map((d) => domainOf(d.kind)))];
   const scoped = o.domain ? episodes.filter((d) => domainOf(d.kind) === o.domain) : episodes;
@@ -244,6 +294,13 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
     winRate: win + neutral + miss > 0 ? Math.round((win / (win + neutral + miss)) * 100) : null
   };
 
+  const acted = surfaced.filter((d) => isHumanChoice(d.human.choice));
+  const funnel = { surfaced: surfaced.length, acted: acted.length, judged: judged.length, measured: measured.length, pending: surfaced.filter((d) => d.human.choice === "pending").length };
+  const awaitingFeedback: AwaitingFeedback[] = acted
+    .filter((d) => d.judgment === null)
+    .sort((a, b) => (ms(b.human.decidedAt) ?? 0) - (ms(a.human.decidedAt) ?? 0))
+    .map((d) => ({ id: d.id, kind: d.kind, domain: domainOf(d.kind), question: d.question, recommendation: d.recommendation, choice: d.human.choice, decidedAt: d.human.decidedAt ?? null, surfacedAt: d.ledger.surfacedAt, href: `/today/${d.id}` }));
+
   // Plan × Reality.
   const planRows = surfaced.filter((d) => d.kind === "plan_decision");
   const planActed = planRows.filter((d) => isHumanChoice(d.human.choice));
@@ -282,10 +339,14 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
     })
     .sort((a, b) => b.surfaced - a.surfaced);
 
-  // Stories: judged first, then with an outcome, high-value, cross-domain.
+  // Stories: only decisions with some follow-through (a judgment, which also
+  // carries the "did it change what you did" answer, or a measured outcome).
+  // Ranked outcome > high-value judgment > behaviour change > cross-domain.
+  const storyEligible = (d: Decision) => d.judgment !== null || d.outcome !== null;
   const storyScore = (d: Decision) =>
-    (d.judgment ? 2 : 0) + (d.outcome ? 2 : 0) + (has(d, "useful") && !has(d, "obvious") ? 3 : 0) + (d.domains.length >= 2 ? 1 : 0) + (d.judgment?.changedDecision === true ? 1 : 0) + (isHumanChoice(d.human.choice) ? 1 : 0);
-  const stories: ImpactStory[] = [...surfaced]
+    (d.outcome ? 4 : 0) + (has(d, "useful") && !has(d, "obvious") ? 3 : 0) + (d.judgment?.changedDecision === true ? 2 : 0) + (d.domains.length >= 2 ? 1 : 0) + (d.judgment ? 1 : 0);
+  const stories: ImpactStory[] = surfaced
+    .filter(storyEligible)
     .sort((a, b) => storyScore(b) - storyScore(a) || (ms(b.ledger.surfacedAt) ?? 0) - (ms(a.ledger.surfacedAt) ?? 0))
     .slice(0, 5)
     .map((d) => ({
@@ -313,6 +374,7 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
     recorded: recorded.length,
     withJudgment: recorded.filter((d) => d.judgment !== null).length,
     withOutcome: recorded.filter((d) => d.outcome !== null).length,
+    allTime: { recorded: scoped.length, withJudgment: scoped.filter((d) => d.judgment !== null).length, withOutcome: scoped.filter((d) => d.outcome !== null).length },
     comparableEpisodes: null,
     learnings: o.learnings ?? []
   };
@@ -327,6 +389,8 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
     domain: o.domain,
     domainsAvailable,
     surfaced: surfaced.length,
+    funnel,
+    awaitingFeedback,
     judgments,
     timing,
     outcomes,
@@ -340,10 +404,10 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
 
 export async function buildDecisionImpactReport(storeId: string, days: ImpactPeriodDays, domain: CandidateDomain | null): Promise<DecisionImpactReport> {
   const now = new Date();
-  // Load a wider window than the period: a decision can surface after the
-  // row was created (the ledger loader filters on createdAt).
-  const since = days === null ? null : new Date(now.getTime() - (days + 60) * DAY_MS);
-  const [episodes, memory] = await Promise.all([listDecisionEpisodes(storeId, since), listDecisionMemory(storeId).catch(() => ({ entries: [], learnings: [] as Localized[] }))]);
+  // Always load the whole history: the memory section reports all-time
+  // counts next to the period, and a decision can surface long after the
+  // row was created. The period is applied inside computeDecisionImpact.
+  const [episodes, memory] = await Promise.all([listDecisionEpisodes(storeId, null), listDecisionMemory(storeId).catch(() => ({ entries: [], learnings: [] as Localized[] }))]);
   return computeDecisionImpact(episodes, { now, days, domain, learnings: memory.learnings });
 }
 

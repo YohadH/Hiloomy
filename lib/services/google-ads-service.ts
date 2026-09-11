@@ -12,9 +12,13 @@ import { encryptSecret, decryptSecret } from "@/lib/security/encryption";
  * config.currency). Uses the same GOOGLE_OAUTH_CLIENT_ID / SECRET app as
  * GSC and GA4 — one Google Cloud project, one more consent (adwords scope).
  *
- * Google Ads additionally needs a DEVELOPER TOKEN (GOOGLE_ADS_DEVELOPER_TOKEN,
- * from the Google Ads API Center of a manager account). Without it every
- * call is refused, so the connection card says so instead of failing late.
+ * Developer token (GOOGLE_ADS_DEVELOPER_TOKEN): OPTIONAL since 9 Sep 2026.
+ * Google now grants API access levels to the Google Cloud PROJECT that owns
+ * the OAuth client (console.cloud.google.com/google/ads-apis/overview), not
+ * to the token, and will reject the header in a future major version. When
+ * the env var is set we still send it (accepted today); when it is not, the
+ * call relies on the project's access level. The production/test split is
+ * therefore decided in Google Cloud, not by this token.
  *
  * Entry points:
  *   - getGoogleAdsOAuthUrl(storeId) / decodeGoogleAdsOAuthState / handleGoogleAdsOAuthCallback
@@ -52,15 +56,8 @@ export function isGoogleAdsDeveloperTokenConfigured(): boolean {
   return Boolean(process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim());
 }
 
-function developerToken(): string {
-  const token = process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim();
-  if (!token) {
-    throw new AppError(
-      "GOOGLE_ADS_DEVELOPER_TOKEN is not set. Add the Hiloomy app's existing Google Ads developer token to the environment.",
-      503
-    );
-  }
-  return token;
+function developerToken(): string | null {
+  return process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim() || null;
 }
 
 function createOAuthClient(): OAuthClient {
@@ -166,7 +163,7 @@ async function apiFetch(
       method: init.method ?? "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "developer-token": developerToken(),
+        ...(developerToken() ? { "developer-token": developerToken() as string } : {}),
         "Content-Type": "application/json",
         ...(init.loginCustomerId ? { "login-customer-id": init.loginCustomerId.replace(/-/g, "") } : {})
       },
