@@ -1,7 +1,11 @@
-// Decision Impact — is Hiloomy actually helping this brand decide better?
+// Decision Impact — does Hiloomy understand the business well enough to
+// surface the right decisions, and is it helping the brand decide better?
 //
-// Measures Hiloomy, not the store, and reveals analysis only when the data
-// exists. Three states are kept apart on purpose: NOT MEASURED YET (no
+// Order: what is happening now → what Hiloomy CHECKED (every domain, with
+// its state) → how many signals were compressed into decisions → what
+// happened after (validation funnel) → feedback queue → quality → outcomes
+// → stories → plan → domains → time → memory. Analysis is revealed only
+// when the data exists. Three states are kept apart on purpose: NOT MEASURED YET (no
 // feedback), a MEASURED ZERO (we looked and it is zero), and MISSING DATA
 // (the field does not exist). Nothing financial, no causality, no single
 // score. ?days=7|30|90|all · ?domain=<candidate domain>.
@@ -23,6 +27,7 @@ import {
   type ImpactPeriodDays
 } from "@/lib/services/decision-impact-service";
 import { CANDIDATE_DOMAINS, CANDIDATE_DOMAIN_LABEL, type CandidateDomain } from "@/lib/domain/decision-candidate";
+import type { CoverageEligibility } from "@/lib/services/decision-impact-service";
 import { JUDGMENT_LABEL, displayDecisionId, type HumanChoice } from "@/lib/domain/decision";
 import { getAppLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -46,6 +51,17 @@ const OUTCOME_LABEL = {
   miss: { he: "החמרה", en: "Miss", cls: "text-danger" },
   no_data: { he: "אין נתונים", en: "No data", cls: "text-muted-foreground" }
 } as const;
+
+// Coverage states: green = checked, neutral = checked with nothing to surface,
+// amber = partial data, muted = not eligible / not measured. Never red for
+// "no decision surfaced" — that is the product working.
+const ELIGIBILITY: Record<CoverageEligibility, { he: string; en: string; cls: string }> = {
+  checked: { he: "נבדק", en: "Checked", cls: "bg-success/15 text-success" },
+  partial: { he: "נבדק חלקית", en: "Partially checked", cls: "bg-warning/15 text-warning" },
+  not_eligible: { he: "לא נבדק", en: "Not checked", cls: "bg-muted text-muted-foreground" },
+  missing_data: { he: "חסר מידע", en: "Missing data", cls: "bg-danger/10 text-danger" },
+  not_measured: { he: "טרם נמדד", en: "Not measured yet", cls: "bg-muted text-muted-foreground" }
+};
 
 // "X / Y" with the denominator always present — never a bare percentage.
 function Ratio({ n, d, label, tone }: { n: number; d: number; label: string; tone?: "danger" | "warning" }) {
@@ -191,7 +207,110 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
           ) : null}
         </div>
 
-        {/* 1 — Validation status + funnel */}
+        {/* 1 — Business context now */}
+        <Section title={t("מה קורה בעסק עכשיו?", "What's happening in the business right now?")} intro={t("ההקשר שהילומי שוקלת מולו. אירוע מסחרי יכול להעלות דחיפות — הוא לעולם לא מצדיק המלצה לבדו.", "The context Hiloomy reasons against. A commercial event can raise urgency — it never justifies a recommendation on its own.")}>
+          {r.context.windows.length > 0 ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {r.context.windows.slice(0, 2).map((w) => (
+                <Card key={w.id} className="space-y-2 p-5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="text-base font-semibold">{w.title}</h3>
+                    <span className={cn("text-xs font-medium", w.state === "starts_today" || w.state === "starts_soon" ? "text-warning" : "text-muted-foreground")}>{w.urgency[locale]}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {fmtDate(w.start)} – {fmtDate(w.end)} · {t("מהתוכנית השיווקית", "from the marketing plan")}
+                  </p>
+                  <ul className="text-sm">
+                    <li>{t(`${w.initiativeCount} מהלכים קשורים לתקופה`, `${w.initiativeCount} initiatives tied to this window`)}</li>
+                    {w.startingToday ? <li>{t(`${w.startingToday} מתחילים היום`, `${w.startingToday} starting today`)}</li> : null}
+                    <li>{w.openDecisions ? t(`${w.openDecisions} החלטות עדיין פתוחות`, `${w.openDecisions} decisions still open`) : t("אין החלטה פתוחה על החלון הזה", "No open decision on this window")}</li>
+                  </ul>
+                </Card>
+              ))}
+            </div>
+          ) : null}
+          <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            {r.context.summary.activeInitiatives !== null ? <li>{t(`${r.context.summary.activeInitiatives} מהלכים פעילים בתוכנית`, `${r.context.summary.activeInitiatives} initiatives active in the plan`)}</li> : <li className="text-muted-foreground">{t("אין תוכנית שיווקית מחוברת", "No marketing plan connected")}</li>}
+            {r.context.summary.campaignsChecked !== null ? <li>{t(`${r.context.summary.campaignsChecked} קמפיינים נבדקו`, `${r.context.summary.campaignsChecked} campaigns checked`)}</li> : null}
+            <li>{t(`${r.context.summary.inventoryRisks} סיכוני מלאי פתוחים`, `${r.context.summary.inventoryRisks} open inventory risks`)}</li>
+            {r.context.summary.competitorChanges !== null ? <li>{t(`${r.context.summary.competitorChanges} מהלכי מתחרים פתוחים`, `${r.context.summary.competitorChanges} open competitor moves`)}</li> : null}
+            <li>{t(`${r.context.summary.decisionsSurfaced} החלטות הוצגו · ${r.context.summary.pendingDecisions} ממתינות`, `${r.context.summary.decisionsSurfaced} decisions surfaced · ${r.context.summary.pendingDecisions} pending`)}</li>
+          </ul>
+          {r.context.mostUrgent ? (
+            <div className="border-s-2 border-foreground ps-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ההחלטה הדחופה ביותר", "The most urgent decision")}</p>
+              <p className="text-sm font-semibold">{r.context.mostUrgent.question[locale]}</p>
+              <p className="text-xs text-muted-foreground">{r.context.mostUrgent.why[locale]}</p>
+              <Link href={r.context.mostUrgent.href as never} className="text-sm font-semibold underline-offset-4 hover:underline">
+                {t("לקבלה", "Open the receipt")} →
+              </Link>
+            </div>
+          ) : null}
+          {r.context.calendarSource === null ? <p className="text-xs text-muted-foreground">{t("אירועים מסחריים מגיעים מהתוכנית בלבד; אין לוח חגים כללי, ולא ממציאים אחד.", "Commercial events come from the plan only; there is no general holiday calendar, and none is invented.")}</p> : null}
+        </Section>
+
+        {/* 2 — What Hiloomy checked */}
+        <Section title={t("מה הילומי בדקה?", "What Hiloomy checked")} intro={r.compression.asOf ? t(`לפי הבדיקה האחרונה (${new Date(r.compression.asOf).toLocaleString(isHe ? "he-IL" : "en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}). 'נבדק' בלי החלטה = הילומי הסתכלה ובחרה לא להפריע.`, `As of the last check (${new Date(r.compression.asOf).toLocaleString("en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}). 'Checked' with no decision = Hiloomy looked and chose not to interrupt.`) : t("עדיין לא נרשמה בדיקה בתקופה — המצב לפי בריאות הנתונים בלבד.", "No check recorded in the period yet — states come from Data Health only.")}>
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full text-sm tabular-nums">
+              <thead className="bg-muted/40 text-xs text-muted-foreground">
+                <tr>
+                  {[t("תחום", "Domain"), t("מצב", "State"), t("נבדקו", "Checked"), t("מועמדים", "Candidates"), t("הוצגו", "Surfaced"), ""].map((h, i) => (
+                    <th key={i} className="px-3 py-2 text-start font-medium">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {r.coverage.map((c) => {
+                  const e = ELIGIBILITY[c.eligibility];
+                  const evaluated = c.eligibility === "checked" || c.eligibility === "partial";
+                  return (
+                    <tr key={c.domain} className="border-t border-border">
+                      <td className="px-3 py-2 font-medium">{c.label[locale]}</td>
+                      <td className="px-3 py-2">
+                        <span className={cn("rounded px-2 py-0.5 text-xs font-medium", e.cls)}>{isHe ? e.he : e.en}</span>
+                      </td>
+                      <td className="px-3 py-2">{c.checkedCount !== null ? `${c.checkedCount} ${c.checkedUnit ?? ""}` : evaluated ? t("טרם נספר", "not counted yet") : ""}</td>
+                      <td className="px-3 py-2">{evaluated ? (c.candidates ?? t("טרם נספר", "not counted yet")) : ""}</td>
+                      <td className="px-3 py-2">{evaluated || c.surfaced > 0 ? c.surfaced : ""}</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        {c.reason ? c.reason[locale] : evaluated && c.surfaced === 0 ? t("נבדק — אין כרגע החלטה שמצדיקה תשומת לב.", "Checked — nothing currently deserves attention.") : ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+
+        {/* 3 — Attention compression */}
+        <Section title={t("דחיסת תשומת לב", "Attention compression")} intro={t("הילומי לא מציגה כל שינוי. היא מסננת אותות עסקיים לכמה החלטות שמצדיקות תשומת לב ניהולית.", "Hiloomy does not surface every change. It compresses business signals into the few decisions that deserve management attention.")}>
+          {r.compression.rawSignals !== null && r.compression.candidates !== null ? (
+            <ol className="flex flex-col gap-2 sm:flex-row sm:gap-0">
+              {[
+                { n: r.compression.rawSignals, label: t("אותות גולמיים", "Raw signals") },
+                { n: r.compression.candidates, label: t("מועמדים ניהוליים", "Management candidates") },
+                { n: r.compression.surfaced, label: t("החלטות שהוצגו", "Decisions surfaced") }
+              ].map((step, i, arr) => (
+                <li key={step.label} className="flex items-center gap-2 sm:flex-1 sm:flex-col sm:items-start sm:gap-0">
+                  <div className="flex items-baseline gap-2 sm:block">
+                    <span className="text-3xl font-semibold tabular-nums tracking-tight">{step.n}</span>
+                    <span className="text-sm">{step.label}</span>
+                  </div>
+                  {i < arr.length - 1 ? <span aria-hidden className="text-muted-foreground sm:hidden">↓</span> : null}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <NotYet title={t(`${r.compression.surfaced} החלטות הוצגו בתקופה`, `${r.compression.surfaced} decisions surfaced in the period`)} body={t("ספירת האותות והמועמדים נרשמת בבדיקת התעדוף; היא תופיע אחרי הריצה הבאה.", "Signal and candidate counts are recorded by the prioritisation audit; they appear after the next pass.")} />
+          )}
+          {r.compression.asOf && r.compression.rawSignals !== null ? <p className="text-xs text-muted-foreground">{t("האותות והמועמדים — מהבדיקה האחרונה; ההחלטות — מכל התקופה.", "Signals and candidates are from the last check; decisions are for the whole period.")}</p> : null}
+        </Section>
+
+        {/* 4 — Validation status + funnel */}
         <Card className="space-y-6 p-6">
           <div>
             <h2 className="text-xl font-semibold tracking-tight">{verdict}</h2>
@@ -362,6 +481,7 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
           ) : (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
+                {r.plan.initiativesEvaluated !== null ? <Count n={r.plan.initiativesEvaluated} label={t("מהלכים שנבדקו", "Initiatives evaluated")} /> : null}
                 <Count n={r.plan.surfaced} label={t("החלטות תוכנית שהוצגו", "Plan decisions surfaced")} sub={r.plan.changePlanStatus ? t(`${r.plan.changePlanStatus} עם המלצה לשנות את התוכנית`, `${r.plan.changePlanStatus} recommended changing the plan`) : undefined} />
                 {planPending > 0 ? <Count n={planPending} label={t("מחכות לתשובת המנהל", "Awaiting the manager's answer")} muted /> : null}
                 {r.plan.acted > 0 ? <Count n={r.plan.changedPlan} label={t("שינו את התוכנית", "Changed the plan")} sub={r.plan.optionUnknown ? t(`${r.plan.optionUnknown} ללא אפשרות רשומה`, `${r.plan.optionUnknown} with no recorded option`) : undefined} /> : null}
@@ -373,20 +493,10 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
           )}
         </Section>
 
-        {/* 8 — Domains: origin only until judgments exist */}
-        {r.domains.length > 0 ? (
-          <Section title={hasJudgment ? t("לפי תחום החלטה", "By decision domain") : t("מאיפה מגיעות ההחלטות?", "Where do the decisions come from?")} intro={hasJudgment ? t("איפה הילומי מועילה, ואילו מנועים מייצרים החלטות מובנות מאליהן או שגויות.", "Where Hiloomy is useful, and which engines produce obvious or wrong decisions.") : undefined}>
-            {!hasJudgment ? (
-              <ul className="max-w-md space-y-2">
-                {r.domains.map((d) => (
-                  <li key={d.key} className="flex items-center gap-3 text-sm">
-                    <span className="w-44 shrink-0">{d.label[locale]}</span>
-                    <span className="h-2 rounded-full bg-foreground/70" style={{ width: `${Math.max(4, (d.surfaced / f.surfaced) * 100)}%` }} aria-hidden />
-                    <span className="tabular-nums">{d.surfaced}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
+        {/* 8 — Domains: quality by domain, only once judgments exist (coverage above shows origin) */}
+        {r.domains.length > 0 && hasJudgment ? (
+          <Section title={t("לפי תחום החלטה", "By decision domain")} intro={t("איפה הילומי מועילה, ואילו מנועים מייצרים החלטות מובנות מאליהן או שגויות.", "Where Hiloomy is useful, and which engines produce obvious or wrong decisions.")}>
+            {(
               <div className="overflow-x-auto rounded-md border border-border">
                 <table className="w-full text-sm tabular-nums">
                   <thead className="bg-muted/40 text-xs text-muted-foreground">

@@ -319,6 +319,45 @@ in it):
   row) and says how many were collapsed. Root-cause fix (a sheet-independent
   fingerprint) is post-freeze.
 
+### 0d.1 Coverage, compression, business context (2026-09-11)
+
+The page must prove breadth before selectivity: "Inventory 10, Plan 1"
+made Meta look unchecked. Three sections now open the page.
+
+- **What's happening in the business right now** — built from the plan
+  only: initiatives whose anchor is a named event or launch, active now or
+  starting within 14 days, grouped by label into COMMERCIAL WINDOWS with a
+  state (active / starts today / starts in ≤3 days / upcoming), the number
+  of tied initiatives and open decisions, plus a summary line (active
+  initiatives, campaigns checked, open inventory risks, open competitor
+  moves, surfaced/pending) and the most urgent open decision (the one
+  inside the soonest window, else ACT status, else newest pending).
+  Rule: an event raises urgency or changes interpretation; it never
+  justifies a recommendation alone. There is NO general holiday calendar;
+  `lib/domain/commercial-calendar.ts` defines `CommercialCalendarSource`
+  with the plan as the only implementation. The urgency label is
+  page-only; the decision engine's status is not changed (documented gap).
+- **What Hiloomy checked** — one row per domain from the LAST audit pass
+  in the period (`readAuditCoverage`): state (checked / partially checked /
+  not checked / missing data / not measured yet), the entities checked
+  (`summaryJson.coverage`, stored on every audit run since today: products,
+  products with a real cost, campaigns, attributed orders, initiatives,
+  competitors), management candidates on that pass, decisions surfaced in
+  the period (ledger), and the reason for a non-checked state (the audit's
+  NOT_ELIGIBLE/NO_ENGINE title, or Data Health's detail; cost coverage <
+  90% marks Discount × Profit partial). "Checked, 0 surfaced" reads as
+  "checked — nothing currently deserves attention". Without an audit pass
+  the state comes from Data Health and counts say "not counted yet".
+- **Attention compression** — raw signals → management candidates (last
+  audit pass) → decisions surfaced (period). Levels without a recorded pass
+  are not shown.
+- Definitions: CHECKED = the domain had its data source and the engines
+  evaluated it on the pass (audit eligible ∧ not NONE-with-NOT_ELIGIBLE);
+  CANDIDATE = a management situation row (`level = candidate`) on that
+  pass; SURFACED = a ledger decision with `surfacedAt` in the period.
+- The domain-origin list was removed (the coverage table replaces it);
+  the judged-by-domain table remains once judgments exist.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

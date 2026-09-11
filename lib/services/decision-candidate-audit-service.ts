@@ -701,6 +701,70 @@ async function discountProbe(storeId: string, now: Date): Promise<ProbeData["dis
   return { worstLoss: loss[0] ? rowOf(loss[0]) : null, thinnest: thin[0] ? rowOf(thin[0]) : null, anyRealCost: true };
 }
 
+export type CoverageCounts = Partial<Record<CandidateDomain, { checked: number; unit: string }>>;
+
+function coverageOf(p: Pick<ProbeData, "productEcon" | "leakage" | "meta" | "plan" | "competitors" | "discount">): CoverageCounts {
+  const out: CoverageCounts = {};
+  if (p.productEcon.length) {
+    out.inventory = { checked: p.productEcon.length, unit: "products" };
+    out.product_performance = { checked: p.productEcon.length, unit: "products" };
+  }
+  const withCost = p.productEcon.filter((e) => e.realCost).length;
+  if (p.discount?.anyRealCost || withCost) out.discount_profit = { checked: withCost, unit: "products with a real cost" };
+  if (p.meta) out.paid_media = { checked: p.meta.campaigns.length, unit: "campaigns" };
+  if (p.leakage) out.affiliate = { checked: p.leakage.newCustomer.conversions + p.leakage.returningCustomer.conversions + p.leakage.unclassified.conversions, unit: "attributed orders" };
+  if (p.plan) out.plan = { checked: p.plan.initiatives.filter((i) => i.kind === "move").length, unit: "initiatives" };
+  if (p.competitors) out.market = { checked: p.competitors.competitors.length, unit: "competitors" };
+  return out;
+}
+
+// The latest audit pass inside a window, read for the Impact page's
+// coverage and compression sections. null when no run exists yet.
+export interface AuditCoverageSnapshot {
+  runAt: string;
+  rawSignals: number;
+  managementCandidates: number;
+  coverage: CoverageCounts;
+  domains: Partial<Record<CandidateDomain, { eligible: boolean; signals: number; candidates: number; noneReason: SuppressionReason | null; noneTitle: Localized | null }>>;
+}
+
+export async function readAuditCoverage(storeId: string, since: Date | null): Promise<AuditCoverageSnapshot | null> {
+  const db = getDb() as any;
+  const run = (await db.decisionCandidateRun
+    .findFirst({ where: { storeId, ...(since ? { runAt: { gte: since } } : {}) }, orderBy: { runAt: "desc" }, select: { id: true, runAt: true, summaryJson: true } })
+    .catch(() => null)) as { id: string; runAt: Date; summaryJson: Record<string, unknown> | null } | null;
+  if (!run) return null;
+  const rows = (await db.decisionCandidate.findMany({ where: { runId: run.id }, select: { domain: true, kind: true, eligible: true, level: true, suppressionReason: true, titleJson: true } }).catch(() => [])) as Array<{
+    domain: string;
+    kind: string;
+    eligible: boolean;
+    level: string | null;
+    suppressionReason: string | null;
+    titleJson: Localized;
+  }>;
+  const domains: AuditCoverageSnapshot["domains"] = {};
+  for (const d of CANDIDATE_DOMAINS) {
+    const mine = rows.filter((r) => r.domain === d);
+    if (!mine.length) continue;
+    const none = mine.find((r) => r.kind === "none");
+    domains[d] = {
+      eligible: mine.some((r) => r.eligible),
+      signals: mine.filter((r) => r.kind !== "none" && (r.level ?? "signal") !== "candidate").length,
+      candidates: mine.filter((r) => r.level === "candidate").length,
+      noneReason: (none?.suppressionReason as SuppressionReason | null) ?? null,
+      noneTitle: none?.titleJson ?? null
+    };
+  }
+  const sj = run.summaryJson ?? {};
+  return {
+    runAt: run.runAt.toISOString(),
+    rawSignals: Number(sj.rawSignals ?? rows.filter((r) => r.kind !== "none" && (r.level ?? "signal") !== "candidate").length),
+    managementCandidates: Number(sj.managementCandidates ?? rows.filter((r) => r.level === "candidate").length),
+    coverage: (sj.coverage as CoverageCounts | undefined) ?? {},
+    domains
+  };
+}
+
 export interface RecordRunInput {
   storeId: string;
   now: Date;
@@ -805,6 +869,9 @@ export async function recordCandidateRun(input: RecordRunInput): Promise<string 
         rawSignals: s.rawSignals,
         managementCandidates: s.managementCandidates,
         inventoryReplacedInTop3: s.inventoryReplacedInTop3,
+        // What Hiloomy looked at on this pass, per domain — the "checked"
+        // column of the coverage table. null = the domain had no data source.
+        coverage: coverageOf({ productEcon: input.productEcon, leakage: input.leakage, meta: input.meta, plan: input.plan, competitors, discount }),
         globalTop: composed.signals.filter((c) => c.rank !== null).sort((a, b) => a.rank! - b.rank!).slice(0, 5).map((c) => ({ domain: c.domain, kind: c.kind, title: c.title.en, score: c.globalScore, decisionId: c.relatedDecisionId })),
         clusteredTop: composed.candidates.filter((c) => c.rank !== null).sort((a, b) => a.rank! - b.rank!).slice(0, 5).map((c) => ({ domain: c.domain, kind: c.kind, title: c.title.en, score: c.globalScore, members: c.memberCount }))
       }

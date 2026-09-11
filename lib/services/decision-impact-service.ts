@@ -12,8 +12,12 @@
 // loads episodes and the memory learnings.
 
 import type { Decision, DecisionStatus, HumanChoice, JudgmentTag, Localized } from "@/lib/domain/decision";
-import { CANDIDATE_DOMAIN_LABEL, DOMAIN_OF_KIND, type CandidateDomain } from "@/lib/domain/decision-candidate";
-import { listDecisionEpisodes, listDecisionMemory } from "@/lib/services/decision-inbox-service";
+import { CANDIDATE_DOMAINS, CANDIDATE_DOMAIN_LABEL, DOMAIN_OF_KIND, type CandidateDomain } from "@/lib/domain/decision-candidate";
+import { buildDataHealth, listDecisionEpisodes, listDecisionMemory, type DataHealth } from "@/lib/services/decision-inbox-service";
+import { readAuditCoverage, type AuditCoverageSnapshot } from "@/lib/services/decision-candidate-audit-service";
+import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
+import type { PlanView } from "@/lib/domain/plan";
+import { planCalendarSource, windowState, windowUrgencyLabel, type CommercialWindow, type WindowState } from "@/lib/domain/commercial-calendar";
 
 const DAY_MS = 86_400_000;
 
@@ -68,6 +72,7 @@ export interface ImpactOutcomes {
 }
 
 export interface ImpactPlan {
+  initiativesEvaluated: number | null; // from the last audit pass
   surfaced: number;
   acted: number; // answered by a human
   judged: number;
@@ -137,8 +142,59 @@ export interface AwaitingFeedback {
   href: string;
 }
 
+// ── Coverage: what Hiloomy CHECKED, per domain, distinct from what it surfaced.
+//   checked      — the domain had its data and the engines evaluated it
+//   partial      — evaluated, but on incomplete data (e.g. cost coverage)
+//   not_eligible — the data source is not connected / present; nothing to check
+//   missing_data — the engine ran but a needed field is absent
+//   not_measured — no audit pass in the window, so counts are unknown
+export type CoverageEligibility = "checked" | "partial" | "not_eligible" | "missing_data" | "not_measured";
+
+export interface CoverageRow {
+  domain: CandidateDomain;
+  label: Localized;
+  eligibility: CoverageEligibility;
+  checkedCount: number | null;
+  checkedUnit: string | null;
+  candidates: number | null; // management candidates on the last audit pass
+  surfaced: number; // decisions surfaced in the period (ledger)
+  reason: Localized | null;
+}
+
+export interface AttentionCompression {
+  asOf: string | null; // the audit pass the raw/candidate counts come from
+  rawSignals: number | null;
+  candidates: number | null;
+  surfaced: number; // ledger, in the period
+}
+
+export interface ContextWindow extends CommercialWindow {
+  state: WindowState;
+  daysUntil: number;
+  daysLeft: number;
+  urgency: Localized;
+  openDecisions: number;
+}
+
+export interface BusinessContext {
+  calendarSource: "plan" | null; // the only commercial-calendar source that exists
+  windows: ContextWindow[];
+  summary: {
+    activeInitiatives: number | null;
+    campaignsChecked: number | null;
+    inventoryRisks: number; // surfaced stockout decisions still pending
+    competitorChanges: number | null; // surfaced competitor decisions still pending; null when market is not checked
+    decisionsSurfaced: number;
+    pendingDecisions: number;
+  };
+  mostUrgent: { id: string; question: Localized; href: string; why: Localized } | null;
+}
+
 export interface DecisionImpactReport {
   period: { start: string | null; end: string; days: ImpactPeriodDays };
+  context: BusinessContext;
+  coverage: CoverageRow[];
+  compression: AttentionCompression;
   domain: CandidateDomain | null;
   domainsAvailable: CandidateDomain[]; // domains that have at least one episode in the period
   surfaced: number;
@@ -203,6 +259,79 @@ export interface ComputeOptions {
   days: ImpactPeriodDays;
   domain: CandidateDomain | null;
   learnings?: Localized[];
+  audit?: AuditCoverageSnapshot | null;
+  health?: DataHealth | null;
+  plan?: PlanView | null;
+}
+
+// Data Health row that speaks for each domain's data source.
+const HEALTH_KEY: Partial<Record<CandidateDomain, string>> = {
+  inventory: "inventory",
+  product_performance: "shopify",
+  discount_profit: "cogs",
+  paid_media: "meta",
+  affiliate: "affiliate",
+  plan: "plan",
+  market: "competitors"
+};
+
+export function buildCoverage(audit: AuditCoverageSnapshot | null, health: DataHealth | null, surfacedByDomain: Partial<Record<CandidateDomain, number>>): CoverageRow[] {
+  return CANDIDATE_DOMAINS.map((domain) => {
+    const label = CANDIDATE_DOMAIN_LABEL[domain];
+    const h = health?.rows.find((r) => r.key === HEALTH_KEY[domain]) ?? null;
+    const a = audit?.domains[domain] ?? null;
+    const counts = audit?.coverage[domain] ?? null;
+    const surfaced = surfacedByDomain[domain] ?? 0;
+    const base = { domain, label, checkedCount: counts?.checked ?? null, checkedUnit: counts?.unit ?? null, candidates: a ? a.candidates : null, surfaced };
+    if (domain === "returns") return { ...base, eligibility: "not_eligible", reason: { he: "אין עדיין מנוע החלטות להחזרות — יש דוח בלבד", en: "No returns decision engine yet — report only" } };
+    if (a) {
+      if (a.noneReason === "NOT_ELIGIBLE") return { ...base, eligibility: "not_eligible", reason: a.noneTitle ?? h?.detail ?? null };
+      if (a.noneReason === "NO_ENGINE") return { ...base, eligibility: "not_eligible", reason: a.noneTitle };
+      // Evaluated. Partial data (e.g. costs) is a health matter, not an absence.
+      if (h?.state === "partial" && (domain === "discount_profit" || domain === "market" || domain === "plan" || domain === "affiliate")) return { ...base, eligibility: "partial", reason: h.detail };
+      return { ...base, eligibility: "checked", reason: null };
+    }
+    // No audit pass in the window: eligibility from Data Health, counts unknown.
+    if (!h) return { ...base, eligibility: "not_measured", reason: { he: "עדיין לא נרשמה בדיקה בתקופה", en: "No check recorded in the period yet" } };
+    if (h.state === "missing") return { ...base, eligibility: "not_eligible", reason: h.detail };
+    if (h.state === "partial") return { ...base, eligibility: "partial", reason: h.detail };
+    return { ...base, eligibility: "not_measured", reason: { he: "מחובר; ספירת הבדיקה תופיע אחרי הריצה הבאה", en: "Connected; the checked count appears after the next pass" } };
+  });
+}
+
+export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[], audit: AuditCoverageSnapshot | null, coverage: CoverageRow[], now: Date): BusinessContext {
+  const today = now.toISOString().slice(0, 10);
+  const windows: ContextWindow[] = planCalendarSource(plan)
+    .windows(now)
+    .map((w) => {
+      const st = windowState(w, now);
+      return { ...w, ...st, urgency: windowUrgencyLabel(st.state, st.daysUntil), openDecisions: w.openDecisionIds.length };
+    });
+  const pending = surfaced.filter((d) => d.human.choice === "pending");
+  const marketChecked = coverage.find((c) => c.domain === "market")?.eligibility === "checked" || coverage.find((c) => c.domain === "market")?.eligibility === "partial";
+  const summary: BusinessContext["summary"] = {
+    activeInitiatives: plan ? plan.initiatives.filter((i) => i.kind === "move" && i.start <= today && i.end >= today).length : null,
+    campaignsChecked: audit?.coverage.paid_media?.checked ?? null,
+    inventoryRisks: pending.filter((d) => d.kind === "stockout_imminent").length,
+    competitorChanges: marketChecked ? pending.filter((d) => d.kind === "competitor_promo").length : null,
+    decisionsSurfaced: surfaced.length,
+    pendingDecisions: pending.length
+  };
+  // The most urgent open decision: one tied to the soonest commercial
+  // window first, then an ACT-status decision, then the newest pending.
+  const windowInitiatives = new Set(windows.flatMap((w) => w.initiativeIds));
+  const inWindow = pending.find((d) => d.kind === "plan_decision" && d.entity?.id && windowInitiatives.has(d.entity.id));
+  const act = pending.find((d) => d.status === "act");
+  const pick = inWindow ?? act ?? pending[0] ?? null;
+  const mostUrgent = pick
+    ? {
+        id: pick.id,
+        question: pick.question,
+        href: `/today/${pick.id}`,
+        why: inWindow && pick === inWindow ? (windows.find((w) => w.initiativeIds.includes(pick.entity!.id!))?.urgency ?? { he: "בחלון מסחרי", en: "Inside a commercial window" }) : pick.status === "act" ? { he: "הילומי ממליצה לפעול", en: "Hiloomy recommends acting" } : { he: "ממתינה לתשובה", en: "Awaiting an answer" }
+      }
+    : null;
+  return { calendarSource: plan ? "plan" : null, windows, summary, mostUrgent };
 }
 
 export function computeDecisionImpact(all: Decision[], o: ComputeOptions): DecisionImpactReport {
@@ -301,10 +430,18 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
     .sort((a, b) => (ms(b.human.decidedAt) ?? 0) - (ms(a.human.decidedAt) ?? 0))
     .map((d) => ({ id: d.id, kind: d.kind, domain: domainOf(d.kind), question: d.question, recommendation: d.recommendation, choice: d.human.choice, decidedAt: d.human.decidedAt ?? null, surfacedAt: d.ledger.surfacedAt, href: `/today/${d.id}` }));
 
+  // Coverage, compression, context.
+  const surfacedByDomain: Partial<Record<CandidateDomain, number>> = {};
+  for (const d of surfaced) surfacedByDomain[domainOf(d.kind)] = (surfacedByDomain[domainOf(d.kind)] ?? 0) + 1;
+  const coverage = buildCoverage(o.audit ?? null, o.health ?? null, surfacedByDomain);
+  const compression: AttentionCompression = { asOf: o.audit?.runAt ?? null, rawSignals: o.audit?.rawSignals ?? null, candidates: o.audit?.managementCandidates ?? null, surfaced: surfaced.length };
+  const context = buildBusinessContext(o.plan ?? null, surfaced, o.audit ?? null, coverage, o.now);
+
   // Plan × Reality.
   const planRows = surfaced.filter((d) => d.kind === "plan_decision");
   const planActed = planRows.filter((d) => isHumanChoice(d.human.choice));
   const plan: ImpactPlan = {
+    initiativesEvaluated: o.audit?.coverage.plan?.checked ?? (o.plan ? o.plan.initiatives.filter((i) => i.kind === "move").length : null),
     surfaced: planRows.length,
     acted: planActed.length,
     judged: planRows.filter((d) => d.judgment !== null).length,
@@ -386,6 +523,9 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
 
   return {
     period: { start: start ? start.toISOString() : null, end: end.toISOString(), days: o.days },
+    context,
+    coverage,
+    compression,
     domain: o.domain,
     domainsAvailable,
     surfaced: surfaced.length,
@@ -407,8 +547,17 @@ export async function buildDecisionImpactReport(storeId: string, days: ImpactPer
   // Always load the whole history: the memory section reports all-time
   // counts next to the period, and a decision can surface long after the
   // row was created. The period is applied inside computeDecisionImpact.
-  const [episodes, memory] = await Promise.all([listDecisionEpisodes(storeId, null), listDecisionMemory(storeId).catch(() => ({ entries: [], learnings: [] as Localized[] }))]);
-  return computeDecisionImpact(episodes, { now, days, domain, learnings: memory.learnings });
+  const periodStart = days === null ? null : new Date(now.getTime() - days * DAY_MS);
+  const [episodes, memory, audit, health, plan] = await Promise.all([
+    listDecisionEpisodes(storeId, null),
+    listDecisionMemory(storeId).catch(() => ({ entries: [], learnings: [] as Localized[] })),
+    readAuditCoverage(storeId, periodStart).catch(() => null),
+    buildDataHealth(storeId).catch(() => null),
+    currentPlanSheetId(storeId, now)
+      .then((id) => (id ? buildPlanView(storeId, id, now) : null))
+      .catch(() => null)
+  ]);
+  return computeDecisionImpact(episodes, { now, days, domain, learnings: memory.learnings, audit, health, plan });
 }
 
 export function parseImpactDays(v: string | undefined): ImpactPeriodDays {
