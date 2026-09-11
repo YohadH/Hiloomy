@@ -16,6 +16,8 @@ import { CANDIDATE_DOMAINS, CANDIDATE_DOMAIN_LABEL, DOMAIN_OF_KIND, type Candida
 import { buildDataHealth, listDecisionEpisodes, listDecisionMemory, type DataHealth } from "@/lib/services/decision-inbox-service";
 import { readAuditCoverage, type AuditCoverageSnapshot } from "@/lib/services/decision-candidate-audit-service";
 import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
+import { getCompetitorCrawlSummary } from "@/lib/services/competitor-intel-service";
+import { getDb } from "@/lib/server/db";
 import type { PlanView } from "@/lib/domain/plan";
 import { planCalendarSource, windowState, windowUrgencyLabel, type CommercialWindow, type WindowState } from "@/lib/domain/commercial-calendar";
 
@@ -157,16 +159,29 @@ export interface CoverageRow {
   checkedCount: number | null;
   checkedUnit: string | null;
   candidates: number | null; // management candidates on the last audit pass
-  surfaced: number; // decisions surfaced in the period (ledger)
+  candidatesOnToday: number | null; // of those, how many had a member shown on Today at that pass
+  surfaced: number; // decisions surfaced in the PERIOD (ledger) — a different scope, labelled as such
   reason: Localized | null;
+  lastCheckedAt: string | null; // the audit pass
+  sourceSyncedAt: string | null; // when the underlying data was last synced
+  sourceSyncLabel: Localized | null;
 }
 
+// ONE universe (the last audit pass): raw signals → management candidates →
+// candidates with a member shown on Today at that pass. Monotone by
+// construction. `surfacedInPeriod` is the ledger's count over the selected
+// date range — individual decisions, not situations — and is shown as a
+// separate line, never as the funnel's third stage.
 export interface AttentionCompression {
-  asOf: string | null; // the audit pass the raw/candidate counts come from
+  asOf: string | null;
   rawSignals: number | null;
   candidates: number | null;
-  surfaced: number; // ledger, in the period
+  candidatesOnToday: number | null;
+  signalsOnToday: number | null;
+  surfacedInPeriod: number;
 }
+
+export type Freshness = Partial<Record<CandidateDomain, { at: string; label: Localized }>>;
 
 export interface ContextWindow extends CommercialWindow {
   state: WindowState;
@@ -174,10 +189,17 @@ export interface ContextWindow extends CommercialWindow {
   daysLeft: number;
   urgency: Localized;
   openDecisions: number;
+  relatedDecisions: number; // open + resolved, from the tied initiatives
+  thinStockProducts: number; // named products under 14 days of cover
+  // The open decision this window is waiting on, if any.
+  openQuestion: Localized | null;
+  openDecisionHref: string | null;
 }
 
 export interface BusinessContext {
   calendarSource: "plan" | null; // the only commercial-calendar source that exists
+  // One deterministic sentence from the facts below — no model involved.
+  summaryLine: Localized;
   windows: ContextWindow[];
   summary: {
     activeInitiatives: number | null;
@@ -191,10 +213,16 @@ export interface BusinessContext {
 }
 
 export interface DecisionImpactReport {
+  generatedAt: string; // ISO — relative timestamps on the page are computed against this
+
   period: { start: string | null; end: string; days: ImpactPeriodDays };
   context: BusinessContext;
   coverage: CoverageRow[];
+  // "Hiloomy checked N domains; M produced a surfaced decision."
+  coverageSummary: { checkedDomains: number; domainsWithSurfaced: number };
   compression: AttentionCompression;
+  // One domain holding most surfaced decisions — a pointer to the audit, not a verdict.
+  dominance: { domain: CandidateDomain; label: Localized; surfaced: number; total: number } | null;
   domain: CandidateDomain | null;
   domainsAvailable: CandidateDomain[]; // domains that have at least one episode in the period
   surfaced: number;
@@ -262,6 +290,7 @@ export interface ComputeOptions {
   audit?: AuditCoverageSnapshot | null;
   health?: DataHealth | null;
   plan?: PlanView | null;
+  freshness?: Freshness | null;
 }
 
 // Data Health row that speaks for each domain's data source.
@@ -275,17 +304,32 @@ const HEALTH_KEY: Partial<Record<CandidateDomain, string>> = {
   market: "competitors"
 };
 
-export function buildCoverage(audit: AuditCoverageSnapshot | null, health: DataHealth | null, surfacedByDomain: Partial<Record<CandidateDomain, number>>): CoverageRow[] {
+export function buildCoverage(audit: AuditCoverageSnapshot | null, health: DataHealth | null, surfacedByDomain: Partial<Record<CandidateDomain, number>>, freshness: Freshness | null = null): CoverageRow[] {
   return CANDIDATE_DOMAINS.map((domain) => {
     const label = CANDIDATE_DOMAIN_LABEL[domain];
     const h = health?.rows.find((r) => r.key === HEALTH_KEY[domain]) ?? null;
     const a = audit?.domains[domain] ?? null;
     const counts = audit?.coverage[domain] ?? null;
     const surfaced = surfacedByDomain[domain] ?? 0;
-    const base = { domain, label, checkedCount: counts?.checked ?? null, checkedUnit: counts?.unit ?? null, candidates: a ? a.candidates : null, surfaced };
+    const fr = freshness?.[domain] ?? null;
+    const base = {
+      domain,
+      label,
+      checkedCount: counts?.checked ?? null,
+      checkedUnit: counts?.unit ?? null,
+      candidates: a ? a.candidates : null,
+      candidatesOnToday: a ? a.candidatesOnToday : null,
+      surfaced,
+      lastCheckedAt: a ? (audit?.runAt ?? null) : null,
+      sourceSyncedAt: fr?.at ?? null,
+      sourceSyncLabel: fr?.label ?? null
+    };
     if (domain === "returns") return { ...base, eligibility: "not_eligible", reason: { he: "אין עדיין מנוע החלטות להחזרות — יש דוח בלבד", en: "No returns decision engine yet — report only" } };
     if (a) {
-      if (a.noneReason === "NOT_ELIGIBLE") return { ...base, eligibility: "not_eligible", reason: a.noneTitle ?? h?.detail ?? null };
+      if (a.noneReason === "NOT_ELIGIBLE") {
+        const reason = domain === "paid_media" ? { he: "Meta לא מחובר — ייתכן שהחלטות מדיה ממומנת חסרות.", en: "Meta not connected — paid-media decisions may be incomplete." } : (a.noneTitle ?? h?.detail ?? null);
+        return { ...base, eligibility: "not_eligible", reason };
+      }
       if (a.noneReason === "NO_ENGINE") return { ...base, eligibility: "not_eligible", reason: a.noneTitle };
       // Evaluated. Partial data (e.g. costs) is a health matter, not an absence.
       if (h?.state === "partial" && (domain === "discount_profit" || domain === "market" || domain === "plan" || domain === "affiliate")) return { ...base, eligibility: "partial", reason: h.detail };
@@ -293,7 +337,7 @@ export function buildCoverage(audit: AuditCoverageSnapshot | null, health: DataH
     }
     // No audit pass in the window: eligibility from Data Health, counts unknown.
     if (!h) return { ...base, eligibility: "not_measured", reason: { he: "עדיין לא נרשמה בדיקה בתקופה", en: "No check recorded in the period yet" } };
-    if (h.state === "missing") return { ...base, eligibility: "not_eligible", reason: h.detail };
+    if (h.state === "missing") return { ...base, eligibility: "not_eligible", reason: domain === "paid_media" ? { he: "Meta לא מחובר — ייתכן שהחלטות מדיה ממומנת חסרות.", en: "Meta not connected — paid-media decisions may be incomplete." } : h.detail };
     if (h.state === "partial") return { ...base, eligibility: "partial", reason: h.detail };
     return { ...base, eligibility: "not_measured", reason: { he: "מחובר; ספירת הבדיקה תופיע אחרי הריצה הבאה", en: "Connected; the checked count appears after the next pass" } };
   });
@@ -305,7 +349,19 @@ export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[]
     .windows(now)
     .map((w) => {
       const st = windowState(w, now);
-      return { ...w, ...st, urgency: windowUrgencyLabel(st.state, st.daysUntil), openDecisions: w.openDecisionIds.length };
+      const inits = (plan?.initiatives ?? []).filter((i) => w.initiativeIds.includes(i.id));
+      const open = inits.flatMap((i) => (i.relatedDecisions ?? []).filter((r) => r.state === "open"));
+      const thin = new Set(inits.flatMap((i) => (i.products ?? []).filter((p) => p.coverDays !== null && p.coverDays < 14).map((p) => p.productId)));
+      return {
+        ...w,
+        ...st,
+        urgency: windowUrgencyLabel(st.state, st.daysUntil),
+        openDecisions: w.openDecisionIds.length,
+        relatedDecisions: inits.reduce((n, i) => n + (i.relatedDecisions ?? []).length, 0),
+        thinStockProducts: thin.size,
+        openQuestion: open[0]?.question ?? null,
+        openDecisionHref: open[0] ? `/today/${open[0].id}` : null
+      };
     });
   const pending = surfaced.filter((d) => d.human.choice === "pending");
   const marketChecked = coverage.find((c) => c.domain === "market")?.eligibility === "checked" || coverage.find((c) => c.domain === "market")?.eligibility === "partial";
@@ -331,7 +387,31 @@ export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[]
         why: inWindow && pick === inWindow ? (windows.find((w) => w.initiativeIds.includes(pick.entity!.id!))?.urgency ?? { he: "בחלון מסחרי", en: "Inside a commercial window" }) : pick.status === "act" ? { he: "הילומי ממליצה לפעול", en: "Hiloomy recommends acting" } : { he: "ממתינה לתשובה", en: "Awaiting an answer" }
       }
     : null;
-  return { calendarSource: plan ? "plan" : null, windows, summary, mostUrgent };
+  // One sentence, only from facts present.
+  const parts: { he: string[]; en: string[] } = { he: [], en: [] };
+  const w0 = windows[0];
+  if (w0) {
+    const when = w0.state === "active" || w0.state === "starts_today" ? { he: `${w0.title} בעיצומו`, en: `${w0.title} is under way` } : { he: `${w0.title} מתקרב (בעוד ${w0.daysUntil} ימים)`, en: `${w0.title} is approaching (in ${w0.daysUntil} days)` };
+    parts.he.push(when.he);
+    parts.en.push(when.en);
+  }
+  if (summary.activeInitiatives !== null) {
+    parts.he.push(`${summary.activeInitiatives} מהלכים פעילים`);
+    parts.en.push(`${summary.activeInitiatives} initiatives are active`);
+  }
+  if (summary.campaignsChecked !== null) {
+    parts.he.push(summary.campaignsChecked > 0 ? `Meta פעיל (${summary.campaignsChecked} קמפיינים)` : "אין קמפיינים פעילים ב-Meta");
+    parts.en.push(summary.campaignsChecked > 0 ? `Meta is live (${summary.campaignsChecked} campaigns)` : "no Meta campaigns are live");
+  }
+  parts.he.push(`${summary.inventoryRisks} סיכוני מלאי פתוחים`);
+  parts.en.push(`${summary.inventoryRisks} inventory risks are open`);
+  const planPending = pending.filter((d) => d.kind === "plan_decision").length;
+  if (planPending) {
+    parts.he.push(`${planPending} החלטות תוכנית דורשות תשומת לב`);
+    parts.en.push(`${planPending} plan decision${planPending === 1 ? "" : "s"} require${planPending === 1 ? "s" : ""} attention`);
+  }
+  const summaryLine: Localized = parts.en.length ? { he: `${parts.he.join(", ")}.`, en: `${parts.en.join(", ")}.` } : { he: "אין עדיין הקשר מסחרי לתקופה.", en: "No commercial context for the period yet." };
+  return { calendarSource: plan ? "plan" : null, summaryLine, windows, summary, mostUrgent };
 }
 
 export function computeDecisionImpact(all: Decision[], o: ComputeOptions): DecisionImpactReport {
@@ -433,9 +513,22 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
   // Coverage, compression, context.
   const surfacedByDomain: Partial<Record<CandidateDomain, number>> = {};
   for (const d of surfaced) surfacedByDomain[domainOf(d.kind)] = (surfacedByDomain[domainOf(d.kind)] ?? 0) + 1;
-  const coverage = buildCoverage(o.audit ?? null, o.health ?? null, surfacedByDomain);
-  const compression: AttentionCompression = { asOf: o.audit?.runAt ?? null, rawSignals: o.audit?.rawSignals ?? null, candidates: o.audit?.managementCandidates ?? null, surfaced: surfaced.length };
+  const coverage = buildCoverage(o.audit ?? null, o.health ?? null, surfacedByDomain, o.freshness ?? null);
+  const coverageSummary = {
+    checkedDomains: coverage.filter((c) => c.eligibility === "checked" || c.eligibility === "partial").length,
+    domainsWithSurfaced: coverage.filter((c) => (c.eligibility === "checked" || c.eligibility === "partial") && c.surfaced > 0).length
+  };
+  const compression: AttentionCompression = {
+    asOf: o.audit?.runAt ?? null,
+    rawSignals: o.audit?.rawSignals ?? null,
+    candidates: o.audit?.managementCandidates ?? null,
+    candidatesOnToday: o.audit?.candidatesOnToday ?? null,
+    signalsOnToday: o.audit?.signalsOnToday ?? null,
+    surfacedInPeriod: surfaced.length
+  };
   const context = buildBusinessContext(o.plan ?? null, surfaced, o.audit ?? null, coverage, o.now);
+  const topDomain = (Object.entries(surfacedByDomain) as Array<[CandidateDomain, number]>).sort((a, b) => b[1] - a[1])[0];
+  const dominance = topDomain && surfaced.length >= 5 && topDomain[1] / surfaced.length >= 0.7 ? { domain: topDomain[0], label: CANDIDATE_DOMAIN_LABEL[topDomain[0]], surfaced: topDomain[1], total: surfaced.length } : null;
 
   // Plan × Reality.
   const planRows = surfaced.filter((d) => d.kind === "plan_decision");
@@ -523,9 +616,12 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
 
   return {
     period: { start: start ? start.toISOString() : null, end: end.toISOString(), days: o.days },
+    generatedAt: o.now.toISOString(),
     context,
     coverage,
+    coverageSummary,
     compression,
+    dominance,
     domain: o.domain,
     domainsAvailable,
     surfaced: surfaced.length,
@@ -548,16 +644,40 @@ export async function buildDecisionImpactReport(storeId: string, days: ImpactPer
   // counts next to the period, and a decision can surface long after the
   // row was created. The period is applied inside computeDecisionImpact.
   const periodStart = days === null ? null : new Date(now.getTime() - days * DAY_MS);
-  const [episodes, memory, audit, health, plan] = await Promise.all([
+  const [episodes, memory, audit, health, plan, freshness] = await Promise.all([
     listDecisionEpisodes(storeId, null),
     listDecisionMemory(storeId).catch(() => ({ entries: [], learnings: [] as Localized[] })),
     readAuditCoverage(storeId, periodStart).catch(() => null),
     buildDataHealth(storeId).catch(() => null),
     currentPlanSheetId(storeId, now)
       .then((id) => (id ? buildPlanView(storeId, id, now) : null))
-      .catch(() => null)
+      .catch(() => null),
+    readFreshness(storeId, now).catch(() => null)
   ]);
-  return computeDecisionImpact(episodes, { now, days, domain, learnings: memory.learnings, audit, health, plan });
+  return computeDecisionImpact(episodes, { now, days, domain, learnings: memory.learnings, audit, health, plan, freshness });
+}
+
+// Real sync timestamps only — when a source has none, the row shows nothing.
+async function readFreshness(storeId: string, now: Date): Promise<Freshness> {
+  const db = getDb() as any;
+  const [shopify, meta, sheetId, crawl] = await Promise.all([
+    db.shopifyConnection.findFirst({ where: { storeId }, select: { lastSyncAt: true, lastProductsSyncAt: true } }).catch(() => null) as Promise<{ lastSyncAt: Date | null; lastProductsSyncAt: Date | null } | null>,
+    (db.metaAdsConnection ? db.metaAdsConnection.findFirst({ where: { storeId }, select: { lastSyncAt: true } }) : Promise.resolve(null)).catch(() => null) as Promise<{ lastSyncAt: Date | null } | null>,
+    currentPlanSheetId(storeId, now).catch(() => null),
+    getCompetitorCrawlSummary(storeId).catch(() => null)
+  ]);
+  const sheet = sheetId ? ((await db.ganttSheet.findUnique({ where: { id: sheetId }, select: { updatedAt: true, sourceLastSyncedAt: true } }).catch(() => null)) as { updatedAt: Date; sourceLastSyncedAt: Date | null } | null) : null;
+  const out: Freshness = {};
+  if (shopify?.lastProductsSyncAt) out.inventory = { at: shopify.lastProductsSyncAt.toISOString(), label: { he: "סנכרון מלאי", en: "Inventory sync" } };
+  if (shopify?.lastSyncAt) {
+    out.product_performance = { at: shopify.lastSyncAt.toISOString(), label: { he: "סנכרון Shopify", en: "Shopify sync" } };
+    out.discount_profit = { at: shopify.lastSyncAt.toISOString(), label: { he: "סנכרון Shopify", en: "Shopify sync" } };
+    out.affiliate = { at: shopify.lastSyncAt.toISOString(), label: { he: "סנכרון הזמנות", en: "Orders sync" } };
+  }
+  if (meta?.lastSyncAt) out.paid_media = { at: meta.lastSyncAt.toISOString(), label: { he: "סנכרון Meta", en: "Meta sync" } };
+  if (crawl?.at) out.market = { at: crawl.at, label: { he: "סריקת מתחרים", en: "Competitor crawl" } };
+  if (sheet) out.plan = { at: (sheet.sourceLastSyncedAt ?? sheet.updatedAt).toISOString(), label: sheet.sourceLastSyncedAt ? { he: "סנכרון התוכנית", en: "Plan sync" } : { he: "עדכון התוכנית", en: "Plan updated" } };
+  return out;
 }
 
 export function parseImpactDays(v: string | undefined): ImpactPeriodDays {

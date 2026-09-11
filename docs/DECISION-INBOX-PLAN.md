@@ -358,6 +358,66 @@ made Meta look unchecked. Three sections now open the page.
 - The domain-origin list was removed (the coverage table replaces it);
   the judged-by-domain table remains once judgments exist.
 
+### 0d.2 Scope discipline: one universe per number (2026-09-11, second pass)
+
+The compression funnel read 29 → 6 → 10 because the first two numbers were
+a snapshot of one audit pass (clustered situations) and the third was the
+ledger over a date range (individual decisions). Fix and rules:
+
+- **Attention compression = ONE audit pass.** `readAuditCoverage` now also
+  returns `candidatesOnToday` (candidates with ≥1 member signal that Today
+  showed on that pass — `surfaced` on the signal row + `clusterId`) and
+  `signalsOnToday` (individual cards), per run and per domain. The funnel
+  is raw signals → management candidates → reached Today, monotone by
+  construction. The ledger count is shown as a separate line, "decisions
+  surfaced in the selected period", and never as the funnel's third stage.
+  The semantics are documented on `AuditCoverageSnapshot` and
+  `AttentionCompression`.
+- **Scope on every number.** Column headers say "(last check)" or
+  "(period)"; section intros carry the period label; Memory is titled
+  "all time" with the period as a sub-line. `generatedAt` is on the report
+  so relative times are computed against the same clock.
+- **Coverage summary line**: "Hiloomy checked X domains. Only Y produced
+  decisions worth surfacing." X = checked + partial; Y = those with
+  surfaced > 0 in the period.
+- **Zero-surfaced explanation** uses only recorded facts: "K candidates
+  were evaluated but did not pass the global priority threshold" is shown
+  only when the pass recorded K > 0 candidates and 0 reached Today; 0
+  candidates → "no situation reached candidate level".
+- **Data freshness per domain** from real timestamps only:
+  `ShopifyConnection.lastProductsSyncAt` (inventory), `.lastSyncAt`
+  (product performance, discount × profit, affiliate orders),
+  `MetaAdsConnection.lastSyncAt`, `CompetitorCrawlSummary.at`,
+  `GanttSheet.sourceLastSyncedAt` else `updatedAt`. A source without a
+  timestamp shows "no sync timestamp". The audit pass time is the row's
+  `lastCheckedAt`.
+- **Business context is actionable**: each window shows status
+  (active/upcoming), starts-in / ends-in, related decisions (total + open),
+  tied products with < 14 days of cover, and the open decision's question
+  under "Requires attention" — or "No decision currently required." Source
+  is labelled "from the commercial plan" on every card. A deterministic
+  summary sentence is composed from the facts present (no model).
+- **Commercial timing is visible but not yet used in decision ranking**
+  (stated on the page). Production Today orders by status then ₪ rank; the
+  shadow audit's urgency uses only the hook's `windowOpensInDays`.
+- **Meta is always visible**: the paid-media row reads "Meta not connected
+  — paid-media decisions may be incomplete." whenever the source is
+  missing, with or without an audit pass.
+- **Inventory dominance**: when one domain holds ≥ 70% of ≥ 5 surfaced
+  decisions, a note says this page cannot tell real condition from ranking
+  bias and links to the Decision Audit's bias diagnostic.
+- **Feedback is the primary CTA**: a button "N decisions are waiting for
+  your feedback → Give feedback" in the validation card (direct to the
+  receipt when N = 1), and an "Action needed: feedback" section right after.
+- **Page flow**: Context → Checked → Compression → Validation → Action
+  needed → Plan × Reality → Quality → Behaviour → Outcomes → Stories (only
+  with follow-through) → Domains → Timing → Memory (all time).
+- Still open in the data model: no holiday calendar (plan only), no
+  timing in ranking, thin-stock uses `coverDays < 14` from the plan view,
+  paid-media freshness needs `MetaAdsConnection.lastSyncAt` populated by the
+  sync job, and `candidatesOnToday` exists only for passes recorded after
+  this change.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

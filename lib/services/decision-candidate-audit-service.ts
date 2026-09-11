@@ -720,12 +720,22 @@ function coverageOf(p: Pick<ProbeData, "productEcon" | "leakage" | "meta" | "pla
 
 // The latest audit pass inside a window, read for the Impact page's
 // coverage and compression sections. null when no run exists yet.
+// One audit pass = ONE universe: the raw signals it saw, the management
+// candidates it grouped them into, and which of those candidates had at
+// least one member shown as a card on Today at that moment. All three are
+// counted on the same pass, so the compression funnel is monotone. The
+// ledger's "decisions surfaced in the period" is a different scope (a date
+// range of individual decisions) and is never placed in the same funnel.
 export interface AuditCoverageSnapshot {
   runAt: string;
   rawSignals: number;
   managementCandidates: number;
+  // Candidates with ≥1 member signal that Today showed on that pass.
+  candidatesOnToday: number;
+  // Raw signals that Today showed on that pass (individual cards).
+  signalsOnToday: number;
   coverage: CoverageCounts;
-  domains: Partial<Record<CandidateDomain, { eligible: boolean; signals: number; candidates: number; noneReason: SuppressionReason | null; noneTitle: Localized | null }>>;
+  domains: Partial<Record<CandidateDomain, { eligible: boolean; signals: number; candidates: number; candidatesOnToday: number; signalsOnToday: number; noneReason: SuppressionReason | null; noneTitle: Localized | null }>>;
 }
 
 export async function readAuditCoverage(storeId: string, since: Date | null): Promise<AuditCoverageSnapshot | null> {
@@ -734,23 +744,35 @@ export async function readAuditCoverage(storeId: string, since: Date | null): Pr
     .findFirst({ where: { storeId, ...(since ? { runAt: { gte: since } } : {}) }, orderBy: { runAt: "desc" }, select: { id: true, runAt: true, summaryJson: true } })
     .catch(() => null)) as { id: string; runAt: Date; summaryJson: Record<string, unknown> | null } | null;
   if (!run) return null;
-  const rows = (await db.decisionCandidate.findMany({ where: { runId: run.id }, select: { domain: true, kind: true, eligible: true, level: true, suppressionReason: true, titleJson: true } }).catch(() => [])) as Array<{
+  const rows = (await db.decisionCandidate.findMany({ where: { runId: run.id }, select: { id: true, domain: true, kind: true, eligible: true, level: true, suppressionReason: true, titleJson: true, surfaced: true, clusterId: true } }).catch(() => [])) as Array<{
+    id: string;
     domain: string;
     kind: string;
     eligible: boolean;
     level: string | null;
     suppressionReason: string | null;
     titleJson: Localized;
+    surfaced: boolean;
+    clusterId: string | null;
   }>;
+  const isSignal = (r: { kind: string; level: string | null }) => r.kind !== "none" && (r.level ?? "signal") !== "candidate";
+  const signals = rows.filter(isSignal);
+  const candidates = rows.filter((r) => r.level === "candidate");
+  // `surfaced` on a SIGNAL row is what production Today showed on that pass;
+  // a candidate "reached Today" when one of its members did.
+  const shownClusters = new Set(signals.filter((r) => r.surfaced && r.clusterId).map((r) => r.clusterId as string));
   const domains: AuditCoverageSnapshot["domains"] = {};
   for (const d of CANDIDATE_DOMAINS) {
     const mine = rows.filter((r) => r.domain === d);
     if (!mine.length) continue;
     const none = mine.find((r) => r.kind === "none");
+    const myCandidates = mine.filter((r) => r.level === "candidate");
     domains[d] = {
       eligible: mine.some((r) => r.eligible),
-      signals: mine.filter((r) => r.kind !== "none" && (r.level ?? "signal") !== "candidate").length,
-      candidates: mine.filter((r) => r.level === "candidate").length,
+      signals: mine.filter(isSignal).length,
+      candidates: myCandidates.length,
+      candidatesOnToday: myCandidates.filter((c) => shownClusters.has(c.id)).length,
+      signalsOnToday: mine.filter((r) => isSignal(r) && r.surfaced).length,
       noneReason: (none?.suppressionReason as SuppressionReason | null) ?? null,
       noneTitle: none?.titleJson ?? null
     };
@@ -758,8 +780,10 @@ export async function readAuditCoverage(storeId: string, since: Date | null): Pr
   const sj = run.summaryJson ?? {};
   return {
     runAt: run.runAt.toISOString(),
-    rawSignals: Number(sj.rawSignals ?? rows.filter((r) => r.kind !== "none" && (r.level ?? "signal") !== "candidate").length),
-    managementCandidates: Number(sj.managementCandidates ?? rows.filter((r) => r.level === "candidate").length),
+    rawSignals: Number(sj.rawSignals ?? signals.length),
+    managementCandidates: Number(sj.managementCandidates ?? candidates.length),
+    candidatesOnToday: candidates.filter((c) => shownClusters.has(c.id)).length,
+    signalsOnToday: signals.filter((r) => r.surfaced).length,
     coverage: (sj.coverage as CoverageCounts | undefined) ?? {},
     domains
   };
