@@ -106,7 +106,7 @@ test("hook ids are stable", () => {
 
 // ─── Operator overrides: split / move / merge ─────────────────────────────
 const { applyOverrides, executionKey, effectiveActionType, mergeExecutionSpans } = __testing;
-const noOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [] };
+const noOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [] };
 
 test("split pulls one execution span into its own initiative; the source keeps the rest", () => {
   const rows = [

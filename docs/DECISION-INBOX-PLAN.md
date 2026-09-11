@@ -426,6 +426,54 @@ ledger over a date range (individual decisions). Fix and rules:
   sync job, and `candidatesOnToday` exists only for passes recorded after
   this change.
 
+### 0d.3 Commercial Calendar source — calendar truth ≠ brand intent ≠ decision (2026-09-11)
+
+The card "ראש השנה — ends in 19 days" was the campaign's end date wearing
+the holiday's name. Three concepts are now modelled and rendered apart:
+
+- **Calendar event** (`lib/domain/calendar-events.ts`, `CalendarEvent`):
+  id `rosh_hashanah_2026`, key, localized name, `startDate` (the eve — the
+  holiday begins at sunset on that date), `firstDay`, `endDate`, `source`
+  + `sourceLabel`, `hebrewDate` ("1–2 Tishrei 5787") as the audit trail,
+  `precision: "date"`. Sources implement `CalendarEventSource` and are
+  registered in `lib/services/commercial-calendar-service.ts`
+  (`CALENDAR_SOURCES`); a retail / national / custom calendar plugs in there.
+- **Hebrew-calendar source** (`lib/domain/hebrew-calendar-source.ts` over
+  `lib/domain/hebrew-calendar.ts`): the fixed Hebrew calendar arithmetic
+  (Reingold–Dershowitz), pure and dependency-free. `@hebcal/core` (already a
+  dependency, used by the marketing planner) is ESM-only and cannot load in
+  the CommonJS unit test runner on Node 20, so the calendar is computed
+  in-repo and CROSS-CHECKED in tests against a hebcal-generated table for
+  5784–5795 (all seven holidays) and against Node's ICU Hebrew calendar for
+  1 Tishrei 5760–5820. Israel observance. V1 holidays: Rosh Hashanah, Yom
+  Kippur, Sukkot (15–21 Tishrei), Simchat Torah, Hanukkah (8 days), Purim
+  (Adar II in leap years), Passover (7 days), Shavuot (1 day). No sunset /
+  location precision (future enhancement).
+- **Linking** (`buildCommercialContext`): an initiative is `confirmed` when
+  the operator stored `calendarLinks[{initiativeId, eventId}]` in the plan
+  overrides (`POST …/plan/overrides` with `link_event` / `unlink_event`;
+  "Yes, link it" button on the Impact page), or `suggested` by a
+  deterministic rule: holiday alias in the title/anchor (strong = the
+  holiday's name → high; weak phrase like "שנה טובה" → medium; generic
+  "חג / holiday" → low, nearest event only) AND date proximity (the
+  initiative overlaps 45 days before the eve … 7 days after the end). Every
+  suggestion carries its rule as `linkReason`. Text matching is never
+  ground truth; only confirmed links drive `decisionUrgency`.
+- **Page**: each event card shows the event's own dates + "Calendar event ·
+  Source: Hebrew calendar · 1–2 Tishrei 5787", then "Commercial initiatives
+  linked to this event" with the initiative's OWN dates, "Source:
+  commercial plan", a confirmed/suggested badge (suggested = "It looks like
+  … relates to …. Link it?" + the reason + the confirm button), then the
+  decision (open question, receipt link, hook window). Initiatives with no
+  event stay in "Commercial initiatives without a linked event" headed
+  "<label> campaign" — the mandatory fallback. Event language: "starts
+  tomorrow / ends on Sep 13"; campaign language: "the campaign is active
+  until Sep 30".
+- **Urgency**: `decisionUrgency` only when the event is active or ≤3 days
+  away AND a confirmed initiative has an open decision — it changes the
+  "why" of the most-urgent line, never the decision's status or rank
+  (documented gap: calendar timing is not in the engine or the audit).
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

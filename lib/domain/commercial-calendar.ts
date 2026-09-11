@@ -56,7 +56,7 @@ export const daysBetween = (fromIso: string, toIso: string) => Math.round((new D
 // Windows from the plan: named events and launches, active now or starting
 // within `horizonDays`, grouped by the anchor label so five channels of one
 // holiday are one window.
-export function planCalendarSource(plan: PlanView | null, horizonDays = 14): CommercialCalendarSource {
+export function planCalendarSource(plan: PlanView | null, horizonDays = 14, excludeInitiativeIds: ReadonlySet<string> = new Set()): CommercialCalendarSource {
   return {
     name: "plan",
     windows(now: Date): CommercialWindow[] {
@@ -66,6 +66,7 @@ export function planCalendarSource(plan: PlanView | null, horizonDays = 14): Com
       const groups = new Map<string, Initiative[]>();
       for (const i of plan.initiatives) {
         if (i.kind !== "move") continue;
+        if (excludeInitiativeIds.has(i.id)) continue; // already shown under its calendar event
         if (i.anchor.kind !== "event" && i.anchor.kind !== "launch") continue;
         if (i.end < today || i.start > horizon) continue;
         groups.set(i.anchor.label, [...(groups.get(i.anchor.label) ?? []), i]);

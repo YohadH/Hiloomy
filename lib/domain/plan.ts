@@ -146,6 +146,10 @@ export interface PlanOverrides {
   merges: Array<{ initiativeId: string; intoInitiativeId: string }>;
   // initiative ids whose hooks never reach Today
   excludedFromEngine: string[];
+  // Operator-confirmed links initiative → calendar event id
+  // (e.g. rosh_hashanah_2026). A link the operator did not confirm is only
+  // ever a suggestion — see lib/domain/calendar-events.ts.
+  calendarLinks: Array<{ initiativeId: string; eventId: string }>;
 }
 
 export interface PlanView {

@@ -31,6 +31,7 @@ import { CANDIDATE_DOMAINS, CANDIDATE_DOMAIN_LABEL, type CandidateDomain } from 
 import type { CoverageEligibility } from "@/lib/services/decision-impact-service";
 import { JUDGMENT_LABEL, displayDecisionId, type HumanChoice } from "@/lib/domain/decision";
 import { getAppLocale } from "@/lib/i18n";
+import { ConfirmLinkButton } from "@/components/decision-impact/confirm-link-button";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -219,64 +220,133 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
           ) : null}
         </div>
 
-        {/* 1 — Business context now */}
-        <Section title={t("מה קורה בעסק עכשיו?", "What's happening in the business right now?")} intro={t("ההקשר שהילומי שוקלת מולו. אירוע מסחרי מעלה דחיפות — הוא לעולם לא מצדיק המלצה לבדו.", "The context Hiloomy reasons against. A commercial event raises urgency — it never justifies a recommendation on its own.")}>
+        {/* 1 — Business context now: calendar truth → brand intent → decision */}
+        <Section title={t("מה קורה בעסק עכשיו?", "What's happening in the business right now?")} intro={t("ההקשר שהילומי שוקלת מולו. אירוע בלוח השנה מעלה דחיפות או משנה פרשנות — הוא לעולם לא מצדיק המלצה לבדו.", "The context Hiloomy reasons against. A calendar event raises urgency or changes interpretation — it never justifies a recommendation on its own.")}>
           <p className="text-base font-medium">{r.context.summaryLine[locale]}</p>
-          {r.context.windows.length > 0 ? (
+
+          {r.context.events.length > 0 ? (
             <div className="grid gap-3 lg:grid-cols-2">
-              {r.context.windows.slice(0, 2).map((w) => {
-                const live = w.state === "active" || w.state === "starts_today";
+              {r.context.events.slice(0, 2).map((ev) => {
+                const e = ev.calendarEvent;
+                const live = ev.state === "active" || ev.state === "starts_today";
                 return (
-                  <Card key={w.id} className="space-y-3 p-5">
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <h3 className="text-base font-semibold">{w.campaignTitle[locale]}</h3>
-                      <span className={cn("rounded px-2 py-0.5 text-xs font-medium", live ? "bg-success/15 text-success" : w.state === "starts_soon" ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground")}>
-                        {live ? t("פעיל", "Active") : t("קרוב", "Upcoming")}
-                      </span>
+                  <Card key={e.id} className="space-y-4 p-5">
+                    {/* Calendar event — system fact */}
+                    <div>
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 className="text-lg font-semibold">{e.name[locale]}</h3>
+                        <span className={cn("rounded px-2 py-0.5 text-xs font-medium", live ? "bg-success/15 text-success" : ev.daysUntil <= 3 ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground")}>{ev.timeLabel[locale]}</span>
+                      </div>
+                      <p className="text-sm">{ev.dateRange[locale]}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t("אירוע בלוח השנה", "Calendar event")} · {t("מקור", "Source")}: {e.sourceLabel[locale]} · {e.hebrewDate}
+                      </p>
                     </div>
-                    {/* Three dates, kept apart: holiday (no source → said plainly), campaign (the plan), decision window (the hook). */}
-                    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-                      {w.kind === "event" ? (
-                        <>
-                          <dt className="text-muted-foreground">{t("החג עצמו", "The holiday itself")}</dt>
-                          <dd>{w.holiday ? `${fmtDate(w.holiday.start)} – ${fmtDate(w.holiday.end)} · ${w.holiday.source}` : t("תאריכי החג לא מחוברים למערכת — מוצגים רק תאריכי הקמפיין מהתוכנית.", "Holiday dates are not connected — only the plan's campaign dates are shown.")}</dd>
-                        </>
-                      ) : null}
-                      <dt className="text-muted-foreground">{w.kind === "event" ? t("הקמפיין המסחרי", "Commercial campaign") : t("ההשקה", "The launch")}</dt>
-                      <dd>
-                        {fmtDate(w.start)} – {fmtDate(w.end)} · {live ? t(`מסתיים בעוד ${w.daysLeft} ימים`, `ends in ${w.daysLeft} days`) : t(`מתחיל בעוד ${w.daysUntil} ימים`, `starts in ${w.daysUntil} days`)}
-                      </dd>
-                      <dt className="text-muted-foreground">{t("חלון ההחלטה", "Decision window")}</dt>
-                      <dd>{w.decisionWindow ? `${fmtDate(w.decisionWindow.start)} – ${fmtDate(w.decisionWindow.end)}` : t("אין נקודת החלטה פתוחה בתוכנית לתקופה הזו", "No open decision point in the plan for this window")}</dd>
-                    </dl>
-                    <ul className="text-sm">
-                      <li>{t(`${w.initiativeCount} מהלכים קשורים`, `${w.initiativeCount} initiatives tied to this window`)}{w.startingToday ? t(` · ${w.startingToday} מתחילים היום`, ` · ${w.startingToday} starting today`) : ""}</li>
-                      <li>{t(`${w.relatedDecisions} החלטות קשורות · ${w.openDecisions} פתוחות`, `${w.relatedDecisions} related decisions · ${w.openDecisions} open`)}</li>
-                      <li className={w.thinStockProducts ? "text-warning" : undefined}>{w.thinStockProducts ? t(`${w.thinStockProducts} מוצרי המהלך עם פחות מ-14 ימי מלאי`, `${w.thinStockProducts} of the window's products have under 14 days of stock`) : t("אין מוצר קשור עם מלאי דק", "No tied product is thin on stock")}</li>
-                    </ul>
-                    <div className="border-t border-border pt-3 text-sm">
-                      {w.openQuestion ? (
-                        <>
-                          <p className="text-xs font-medium uppercase tracking-wide text-warning">{t("דורש תשומת לב", "Requires attention")}</p>
-                          <p className="font-medium">{w.openQuestion[locale]}</p>
-                          {w.openDecisionHref ? (
-                            <Link href={w.openDecisionHref as never} className="font-semibold underline-offset-4 hover:underline">
-                              {t("לקבלה", "Open the receipt")} →
-                            </Link>
-                          ) : null}
-                        </>
+
+                    {/* Linked initiatives — brand intent, with their OWN dates */}
+                    <div className="space-y-3 border-t border-border pt-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("יוזמות מסחריות שקשורות לאירוע", "Commercial initiatives linked to this event")}</p>
+                      {ev.linkedInitiatives.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">{t("אין בתוכנית יוזמה שמקושרת לאירוע הזה.", "No initiative in the plan is linked to this event.")}</p>
                       ) : (
-                        <p className="text-muted-foreground">{t("אין כרגע החלטה נדרשת.", "No decision currently required.")}</p>
+                        ev.linkedInitiatives.slice(0, 3).map((li) => (
+                          <div key={li.id} className="space-y-1 text-sm">
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                              <p className="font-semibold">{li.title}</p>
+                              <span className={cn("rounded px-2 py-0.5 text-xs font-medium", li.linkState === "confirmed" ? "bg-muted text-foreground" : "bg-warning/15 text-warning")}>{li.linkState === "confirmed" ? t("קישור מאושר", "Confirmed link") : t("קישור משוער — לא אושר", "Suggested link — unconfirmed")}</span>
+                            </div>
+                            <p>
+                              {fmtDate(li.startDate)} – {fmtDate(li.endDate)} · {li.timeLabel[locale]}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {t("יוזמה מסחרית", "Commercial initiative")} · {t("מקור: התוכנית המסחרית", "Source: commercial plan")}
+                            </p>
+                            {li.linkState === "suggested" ? (
+                              <div className="rounded-md border border-warning/40 bg-warning/5 p-2 text-xs">
+                                <p>{t(`נראה שהיוזמה "${li.title}" קשורה ל${e.name.he}. לקשר?`, `It looks like "${li.title}" relates to ${e.name.en}. Link it?`)}</p>
+                                <p className="text-muted-foreground">{li.linkReason[locale]}</p>
+                                {r.context.sheetId ? <ConfirmLinkButton sheetId={r.context.sheetId} initiativeId={li.id} eventId={e.id} label={t("כן, לקשר", "Yes, link it")} /> : null}
+                              </div>
+                            ) : null}
+                            {/* Decision — what the manager must decide */}
+                            <div className="pt-1">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("החלטה", "Decision")}</p>
+                              {li.openQuestion ? (
+                                <>
+                                  <p className="font-medium">{li.openQuestion[locale]}</p>
+                                  {li.openDecisionHref ? (
+                                    <Link href={li.openDecisionHref as never} className="font-semibold underline-offset-4 hover:underline">
+                                      {t("לקבלה", "Open the receipt")} →
+                                    </Link>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <p className="text-muted-foreground">{t("אין כרגע החלטה פתוחה על היוזמה.", "No open decision on this initiative.")}</p>
+                              )}
+                              <p className="text-xs text-muted-foreground">
+                                {t("חלון ההחלטה", "Decision window")}: {li.decisionWindow ? `${fmtDate(li.decisionWindow.start)} – ${fmtDate(li.decisionWindow.end)}` : t("אין נקודת החלטה פתוחה בתוכנית", "no open decision point in the plan")} · {t(`${li.relatedDecisionCount} החלטות קשורות · ${li.openDecisionCount} פתוחות`, `${li.relatedDecisionCount} related · ${li.openDecisionCount} open`)}
+                              </p>
+                            </div>
+                          </div>
+                        ))
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground">{t("מקור: התוכנית המסחרית", "Source: from the commercial plan")} · {w.urgency[locale]}</p>
+                    {ev.decisionUrgency ? <p className="text-sm font-medium text-warning">{ev.decisionUrgency[locale]}</p> : null}
                   </Card>
                 );
               })}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">{r.context.calendarSource === null ? t("אין תוכנית מסחרית מחוברת. אירועים מסחריים מגיעים מהתוכנית בלבד; אין לוח חגים כללי, ולא ממציאים אחד.", "No commercial plan connected. Commercial events come from the plan only; there is no general holiday calendar, and none is invented.") : t("אין אירוע מסחרי בתוכנית ב-14 הימים הקרובים.", "No commercial event in the plan within the next 14 days.")}</p>
+            <p className="text-sm text-muted-foreground">{t("אין אירוע בלוח השנה ב-30 הימים הקרובים.", "No calendar event within the next 30 days.")}</p>
           )}
+
+          {/* Campaign windows with NO calendar event — the mandatory fallback: never headed with the event name */}
+          {r.context.windows.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("יוזמות מסחריות ללא אירוע מקושר", "Commercial initiatives without a linked event")}</p>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {r.context.windows.slice(0, 2).map((w) => {
+                  const live = w.state === "active" || w.state === "starts_today";
+                  return (
+                    <Card key={w.id} className="space-y-3 p-5">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 className="text-base font-semibold">{w.campaignTitle[locale]}</h3>
+                        <span className={cn("rounded px-2 py-0.5 text-xs font-medium", live ? "bg-success/15 text-success" : w.state === "starts_soon" ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground")}>{w.urgency[locale]}</span>
+                      </div>
+                      <p className="text-sm">
+                        {fmtDate(w.start)} – {fmtDate(w.end)} · {live ? t(`הקמפיין פעיל עד ${fmtDate(w.end)}`, `the campaign is active until ${fmtDate(w.end)}`) : t(`הקמפיין מתחיל בעוד ${w.daysUntil} ימים`, `the campaign starts in ${w.daysUntil} days`)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{t("יוזמה מסחרית · מקור: התוכנית המסחרית · לא מקושרת לאירוע בלוח השנה", "Commercial initiative · Source: commercial plan · not linked to a calendar event")}</p>
+                      <ul className="text-sm">
+                        <li>{t(`${w.initiativeCount} מהלכים קשורים`, `${w.initiativeCount} initiatives tied to this window`)}{w.startingToday ? t(` · ${w.startingToday} מתחילים היום`, ` · ${w.startingToday} starting today`) : ""}</li>
+                        <li>{t(`${w.relatedDecisions} החלטות קשורות · ${w.openDecisions} פתוחות`, `${w.relatedDecisions} related decisions · ${w.openDecisions} open`)}</li>
+                        <li className={w.thinStockProducts ? "text-warning" : undefined}>{w.thinStockProducts ? t(`${w.thinStockProducts} מוצרי המהלך עם פחות מ-14 ימי מלאי`, `${w.thinStockProducts} of the window's products have under 14 days of stock`) : t("אין מוצר קשור עם מלאי דק", "No tied product is thin on stock")}</li>
+                        <li className="text-muted-foreground">{t("חלון ההחלטה", "Decision window")}: {w.decisionWindow ? `${fmtDate(w.decisionWindow.start)} – ${fmtDate(w.decisionWindow.end)}` : t("אין נקודת החלטה פתוחה", "no open decision point")}</li>
+                      </ul>
+                      <div className="border-t border-border pt-3 text-sm">
+                        {w.openQuestion ? (
+                          <>
+                            <p className="text-xs font-medium uppercase tracking-wide text-warning">{t("דורש תשומת לב", "Requires attention")}</p>
+                            <p className="font-medium">{w.openQuestion[locale]}</p>
+                            {w.openDecisionHref ? (
+                              <Link href={w.openDecisionHref as never} className="font-semibold underline-offset-4 hover:underline">
+                                {t("לקבלה", "Open the receipt")} →
+                              </Link>
+                            ) : null}
+                          </>
+                        ) : (
+                          <p className="text-muted-foreground">{t("אין כרגע החלטה נדרשת.", "No decision currently required.")}</p>
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          ) : r.context.calendarSource === null ? (
+            <p className="text-sm text-muted-foreground">{t("אין תוכנית מסחרית מחוברת — אין יוזמות להציג מול לוח השנה.", "No commercial plan connected — there are no initiatives to show against the calendar.")}</p>
+          ) : null}
+
           {r.context.mostUrgent ? (
             <div className="border-s-2 border-foreground ps-4">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ההחלטה הדחופה ביותר", "The most urgent decision")}</p>
@@ -287,7 +357,9 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
               </Link>
             </div>
           ) : null}
-          <p className="text-xs text-muted-foreground">{t("תזמון מסחרי מוצג כאן, אבל עדיין לא משפיע על דירוג ההחלטות בהיום. תאריכי הקמפיין הם מהתוכנית; תאריכי חגים אינם מחוברים ולא מוסקים מהקמפיין.", "Commercial timing is visible here but not yet used in decision ranking. Campaign dates come from the plan; holiday dates are not connected and are never inferred from the campaign.")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t(`תאריכי אירועים: ${r.context.calendarSources.map((s) => s.he).join(", ")} (דיוק ברמת יום; החג מתחיל בשקיעה בתאריך ההתחלה). תאריכי קמפיינים: התוכנית המסחרית. קישור משוער הוא הצעה לפי מילים ותאריכים — לא עובדה — עד שהמנהל מאשר. תזמון לוח השנה מוצג כאן ועדיין לא משפיע על דירוג ההחלטות בהיום.`, `Event dates: ${r.context.calendarSources.map((s) => s.en).join(", ")} (date-level precision; a holiday begins at sunset on its start date). Campaign dates: the commercial plan. A suggested link is a word-and-date rule, not a fact, until the manager confirms it. Calendar timing is shown here and is not yet used in decision ranking.`)}
+          </p>
         </Section>
 
         {/* 2 — What Hiloomy checked */}

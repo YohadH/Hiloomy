@@ -186,7 +186,7 @@ export function executionKey(r: { task: string; category: string | null; s: stri
   return `${norm(r.task)}|${norm(r.category)}|${r.s}`;
 }
 
-const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [] };
+const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [] };
 
 export async function readPlanOverrides(sheetId: string): Promise<PlanOverrides> {
   try {
@@ -197,7 +197,8 @@ export async function readPlanOverrides(sheetId: string): Promise<PlanOverrides>
       moves: Array.isArray(parsed.moves) ? parsed.moves : [],
       splits: Array.isArray(parsed.splits) ? parsed.splits : [],
       merges: Array.isArray(parsed.merges) ? parsed.merges : [],
-      excludedFromEngine: Array.isArray(parsed.excludedFromEngine) ? parsed.excludedFromEngine : []
+      excludedFromEngine: Array.isArray(parsed.excludedFromEngine) ? parsed.excludedFromEngine : [],
+      calendarLinks: Array.isArray(parsed.calendarLinks) ? parsed.calendarLinks.filter((l) => l && typeof l.initiativeId === "string" && typeof l.eventId === "string") : []
     };
   } catch {
     return EMPTY_OVERRIDES;
@@ -210,11 +211,13 @@ export type PlanOverrideOp =
   | { op: "merge"; initiativeId: string; intoInitiativeId: string }
   | { op: "exclude"; initiativeId: string }
   | { op: "include"; initiativeId: string }
+  | { op: "link_event"; initiativeId: string; eventId: string }
+  | { op: "unlink_event"; initiativeId: string }
   | { op: "reset" };
 
 export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Promise<PlanOverrides> {
   const cur = await readPlanOverrides(sheetId);
-  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine] };
+  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine], calendarLinks: [...cur.calendarLinks] };
   switch (op.op) {
     case "move":
       next.moves = [...next.moves.filter((m) => m.executionKey !== op.executionKey), { executionKey: op.executionKey, toInitiativeId: op.toInitiativeId }];
@@ -232,6 +235,13 @@ export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Pro
       break;
     case "include":
       next.excludedFromEngine = next.excludedFromEngine.filter((id) => id !== op.initiativeId);
+      break;
+    case "link_event":
+      if (!/^[a-z_]+_\d{4}$/.test(op.eventId)) break; // only canonical event ids
+      next.calendarLinks = [...next.calendarLinks.filter((l) => l.initiativeId !== op.initiativeId), { initiativeId: op.initiativeId, eventId: op.eventId }];
+      break;
+    case "unlink_event":
+      next.calendarLinks = next.calendarLinks.filter((l) => l.initiativeId !== op.initiativeId);
       break;
     case "reset":
       next = { ...EMPTY_OVERRIDES };

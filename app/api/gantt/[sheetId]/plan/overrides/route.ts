@@ -1,6 +1,7 @@
 // POST /api/gantt/[sheetId]/plan/overrides — operator corrections to the
 // automatic grouping: move an execution to another initiative, split one
-// out, merge two initiatives, exclude an initiative from the decision engine.
+// out, merge two initiatives, exclude an initiative from the decision engine,
+// confirm / remove a link between an initiative and a calendar event.
 // Stored per sheet, applied on every read. Body: PlanOverrideOp.
 
 import { NextResponse } from "next/server";
@@ -12,7 +13,7 @@ import { savePlanOverride, type PlanOverrideOp } from "@/lib/services/plan-servi
 
 export const dynamic = "force-dynamic";
 
-const OPS = new Set(["move", "split", "merge", "exclude", "include", "reset"]);
+const OPS = new Set(["move", "split", "merge", "exclude", "include", "link_event", "unlink_event", "reset"]);
 
 export async function POST(request: Request, context: { params: Promise<{ sheetId: string }> }) {
   try {

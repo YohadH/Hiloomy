@@ -20,6 +20,8 @@ import { getCompetitorCrawlSummary } from "@/lib/services/competitor-intel-servi
 import { getDb } from "@/lib/server/db";
 import type { PlanView } from "@/lib/domain/plan";
 import { planCalendarSource, windowState, windowUrgencyLabel, type CommercialWindow, type WindowState } from "@/lib/domain/commercial-calendar";
+import type { CommercialContextEvent } from "@/lib/domain/calendar-events";
+import { composeCommercialContext, loadConfirmedLinks } from "@/lib/services/commercial-calendar-service";
 
 const DAY_MS = 86_400_000;
 
@@ -197,9 +199,16 @@ export interface ContextWindow extends CommercialWindow {
 }
 
 export interface BusinessContext {
-  calendarSource: "plan" | null; // the only commercial-calendar source that exists
+  calendarSource: "plan" | null; // whether a commercial plan is connected
+  sheetId: string | null; // the plan sheet — link confirmations are stored against it
+  // Calendar events (system fact) with the initiatives linked to them
+  // (brand intent) and their open decisions. Source is on every event.
+  calendarSources: Localized[];
+  events: CommercialContextEvent[];
   // One deterministic sentence from the facts below — no model involved.
   summaryLine: Localized;
+  // Campaign windows NOT linked to a calendar event — shown as
+  // "<label> campaign", never as the event itself (mandatory fallback).
   windows: ContextWindow[];
   summary: {
     activeInitiatives: number | null;
@@ -291,6 +300,7 @@ export interface ComputeOptions {
   health?: DataHealth | null;
   plan?: PlanView | null;
   freshness?: Freshness | null;
+  confirmedLinks?: ReadonlyMap<string, string> | null; // initiative id → calendar event id
 }
 
 // Data Health row that speaks for each domain's data source.
@@ -343,9 +353,10 @@ export function buildCoverage(audit: AuditCoverageSnapshot | null, health: DataH
   });
 }
 
-export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[], audit: AuditCoverageSnapshot | null, coverage: CoverageRow[], now: Date): BusinessContext {
+export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[], audit: AuditCoverageSnapshot | null, coverage: CoverageRow[], now: Date, confirmedLinks: ReadonlyMap<string, string> = new Map()): BusinessContext {
   const today = now.toISOString().slice(0, 10);
-  const windows: ContextWindow[] = planCalendarSource(plan)
+  const calendar = composeCommercialContext(plan, confirmedLinks, now);
+  const windows: ContextWindow[] = planCalendarSource(plan, 14, calendar.linkedInitiativeIds)
     .windows(now)
     .map((w) => {
       const st = windowState(w, now);
@@ -375,7 +386,7 @@ export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[]
   };
   // The most urgent open decision: one tied to the soonest commercial
   // window first, then an ACT-status decision, then the newest pending.
-  const windowInitiatives = new Set(windows.flatMap((w) => w.initiativeIds));
+  const windowInitiatives = new Set([...windows.flatMap((w) => w.initiativeIds), ...calendar.events.flatMap((e) => e.linkedInitiatives.filter((l) => l.linkState === "confirmed").map((l) => l.id))]);
   const inWindow = pending.find((d) => d.kind === "plan_decision" && d.entity?.id && windowInitiatives.has(d.entity.id));
   const act = pending.find((d) => d.status === "act");
   const pick = inWindow ?? act ?? pending[0] ?? null;
@@ -384,11 +395,27 @@ export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[]
         id: pick.id,
         question: pick.question,
         href: `/today/${pick.id}`,
-        why: inWindow && pick === inWindow ? (windows.find((w) => w.initiativeIds.includes(pick.entity!.id!))?.urgency ?? { he: "בחלון מסחרי", en: "Inside a commercial window" }) : pick.status === "act" ? { he: "הילומי ממליצה לפעול", en: "Hiloomy recommends acting" } : { he: "ממתינה לתשובה", en: "Awaiting an answer" }
+        why:
+          inWindow && pick === inWindow
+            ? (calendar.events.find((e) => e.decisionUrgency && e.linkedInitiatives.some((l) => l.id === pick.entity!.id!))?.decisionUrgency ??
+              windows.find((w) => w.initiativeIds.includes(pick.entity!.id!))?.urgency ?? { he: "בחלון מסחרי", en: "Inside a commercial window" })
+            : pick.status === "act"
+              ? { he: "הילומי ממליצה לפעול", en: "Hiloomy recommends acting" }
+              : { he: "ממתינה לתשובה", en: "Awaiting an answer" }
       }
     : null;
   // One sentence, only from facts present.
   const parts: { he: string[]; en: string[] } = { he: [], en: [] };
+  const e0 = calendar.events[0];
+  if (e0) {
+    parts.he.push(`${e0.calendarEvent.name.he} ${e0.timeLabel.he}`);
+    parts.en.push(`${e0.calendarEvent.name.en} ${e0.timeLabel.en.toLowerCase()}`);
+    const c0 = e0.linkedInitiatives.find((l) => l.linkState === "confirmed");
+    if (c0) {
+      parts.he.push(`"${c0.title}" — ${c0.timeLabel.he}`);
+      parts.en.push(`"${c0.title}" — ${c0.timeLabel.en.toLowerCase()}`);
+    }
+  }
   const w0 = windows[0];
   if (w0) {
     const when = w0.state === "active" || w0.state === "starts_today" ? { he: `${w0.campaignTitle.he} בעיצומו`, en: `${w0.campaignTitle.en} is under way` } : { he: `${w0.campaignTitle.he} מתחיל בעוד ${w0.daysUntil} ימים`, en: `${w0.campaignTitle.en} starts in ${w0.daysUntil} days` };
@@ -411,7 +438,7 @@ export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[]
     parts.en.push(`${planPending} plan decision${planPending === 1 ? "" : "s"} require${planPending === 1 ? "s" : ""} attention`);
   }
   const summaryLine: Localized = parts.en.length ? { he: `${parts.he.join(", ")}.`, en: `${parts.en.join(", ")}.` } : { he: "אין עדיין הקשר מסחרי לתקופה.", en: "No commercial context for the period yet." };
-  return { calendarSource: plan ? "plan" : null, summaryLine, windows, summary, mostUrgent };
+  return { calendarSource: plan ? "plan" : null, sheetId: plan?.sheetId ?? null, calendarSources: calendar.sources.map((s) => s.label), events: calendar.events, summaryLine, windows, summary, mostUrgent };
 }
 
 export function computeDecisionImpact(all: Decision[], o: ComputeOptions): DecisionImpactReport {
@@ -526,7 +553,7 @@ export function computeDecisionImpact(all: Decision[], o: ComputeOptions): Decis
     signalsOnToday: o.audit?.signalsOnToday ?? null,
     surfacedInPeriod: surfaced.length
   };
-  const context = buildBusinessContext(o.plan ?? null, surfaced, o.audit ?? null, coverage, o.now);
+  const context = buildBusinessContext(o.plan ?? null, surfaced, o.audit ?? null, coverage, o.now, o.confirmedLinks ?? new Map());
   const topDomain = (Object.entries(surfacedByDomain) as Array<[CandidateDomain, number]>).sort((a, b) => b[1] - a[1])[0];
   const dominance = topDomain && surfaced.length >= 5 && topDomain[1] / surfaced.length >= 0.7 ? { domain: topDomain[0], label: CANDIDATE_DOMAIN_LABEL[topDomain[0]], surfaced: topDomain[1], total: surfaced.length } : null;
 
@@ -644,17 +671,17 @@ export async function buildDecisionImpactReport(storeId: string, days: ImpactPer
   // counts next to the period, and a decision can surface long after the
   // row was created. The period is applied inside computeDecisionImpact.
   const periodStart = days === null ? null : new Date(now.getTime() - days * DAY_MS);
-  const [episodes, memory, audit, health, plan, freshness] = await Promise.all([
+  const [episodes, memory, audit, health, planAndLinks, freshness] = await Promise.all([
     listDecisionEpisodes(storeId, null),
     listDecisionMemory(storeId).catch(() => ({ entries: [], learnings: [] as Localized[] })),
     readAuditCoverage(storeId, periodStart).catch(() => null),
     buildDataHealth(storeId).catch(() => null),
     currentPlanSheetId(storeId, now)
-      .then((id) => (id ? buildPlanView(storeId, id, now) : null))
+      .then(async (id) => (id ? { plan: await buildPlanView(storeId, id, now), links: await loadConfirmedLinks(id).catch(() => new Map<string, string>()) } : null))
       .catch(() => null),
     readFreshness(storeId, now).catch(() => null)
   ]);
-  return computeDecisionImpact(episodes, { now, days, domain, learnings: memory.learnings, audit, health, plan, freshness });
+  return computeDecisionImpact(episodes, { now, days, domain, learnings: memory.learnings, audit, health, plan: planAndLinks?.plan ?? null, confirmedLinks: planAndLinks?.links ?? null, freshness });
 }
 
 // Real sync timestamps only — when a source has none, the row shows nothing.
