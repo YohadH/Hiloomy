@@ -218,7 +218,8 @@ export interface BusinessContext {
     decisionsSurfaced: number;
     pendingDecisions: number;
   };
-  mostUrgent: { id: string; question: Localized; href: string; why: Localized } | null;
+  // The one decision to put in front of the manager: the receipt's own question, why-now and recommendation (presentation of existing fields, no new logic).
+  mostUrgent: { id: string; question: Localized; href: string; why: Localized; whyNow: Localized; recommendation: Localized; status: Decision["status"]; deadline: string | null } | null;
 }
 
 export interface DecisionImpactReport {
@@ -395,6 +396,14 @@ export function buildBusinessContext(plan: PlanView | null, surfaced: Decision[]
         id: pick.id,
         question: pick.question,
         href: `/today/${pick.id}`,
+        whyNow: pick.whyNow,
+        recommendation: pick.recommendation,
+        status: pick.status,
+        deadline:
+          (pick.entity?.id &&
+            (calendar.events.flatMap((e) => e.linkedInitiatives).find((l) => l.id === pick.entity!.id)?.decisionWindow?.end ??
+              windows.find((w) => w.initiativeIds.includes(pick.entity!.id!))?.decisionWindow?.end)) ||
+          null,
         why:
           inWindow && pick === inWindow
             ? (calendar.events.find((e) => e.decisionUrgency && e.linkedInitiatives.some((l) => l.id === pick.entity!.id!))?.decisionUrgency ??

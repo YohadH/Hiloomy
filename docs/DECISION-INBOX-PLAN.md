@@ -474,6 +474,40 @@ the holiday's name. Three concepts are now modelled and rendered apart:
   "why" of the most-urgent line, never the decision's status or rank
   (documented gap: calendar timing is not in the engine or the audit).
 
+### 0d.4 Decision Impact as a management surface (2026-09-11, UI only)
+
+Hierarchy reversed: the answer first, the method behind disclosures. No
+product logic changed; the only service addition is presentation data on
+`mostUrgent` (the receipt's own `whyNow`, `recommendation`, `status`, and
+a `deadline` from the linked initiative's hook window).
+
+Order and weight: (1) **עכשיו בעסק** — one sentence (`summaryLine`) at
+body-large, 3–5 chips (event · dates, active initiatives, Meta campaigns,
+inventory risks, open decisions), then two visually different groups:
+calendar events as compact divided rows with a state chip and a nested
+"↳ initiative" line (suggested links get a chip "קישור מוצע — דורש
+אישור" and a `<details>` "פרטים" with the reason + confirm button), and
+active initiatives as small cards. (2) **דורש ממך החלטה** — one primary
+card: question, why now, recommendation, deadline chip, "פתח החלטה" +
+"ראה ראיות"; under it the pending line "N החלטות מחכות לתגובה → עבור
+להחלטות" and, when present, the feedback line. (3) **האם Hiloomy רואה
+את כל התמונה?** — one sentence "בדקה X מתוך 8 תחומים. רק Y יצרו החלטות",
+compact rows for evaluated domains only (chip, "N נבדקו · N מועמדים · N
+הוצגו", small "עודכן לפני…"), a one-line "לא נבדק: …" (Meta in red when
+missing), the full table behind "הצג פירוט תחומים". (4) **איך Hiloomy
+צמצמה את הרעש?** — labelled "הבדיקה האחרונה", a single-line flow. (5)
+**האם Hiloomy באמת עוזרת?** — labelled with the period, the four stages
+in a dashed frame (visually distinct from the latest-evaluation flow);
+low-data state = "עדיין מוקדם למדוד השפעה" + one sentence + the pending
+CTA, no empty quality metrics; the feedback queue, domain table, timing
+and stories sit behind `<details>`. (6) Plan × Reality only when a plan
+decision was surfaced. (7) Memory last, labelled "כל הזמן", three stats.
+
+Removed: section cards around metrics, repeated helper paragraphs, long
+source descriptions (one 11px line), the "commercial timing" note (now in
+the table footer). Arrows follow reading direction (← in Hebrew);
+flows go vertical with ↓ under `sm`.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape
