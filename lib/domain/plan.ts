@@ -126,6 +126,9 @@ export interface Initiative {
   decisionHooks: DecisionHook[];
   relatedDecisions: RelatedDecision[];
   rowIds: string[];
+  // The plan's own words for this initiative (all rows' task text, capped).
+  // Initiative Reality reads gift phrases and campaign names from it.
+  text: string;
 }
 
 export interface PlanDay {
@@ -150,6 +153,10 @@ export interface PlanOverrides {
   // (e.g. rosh_hashanah_2026). A link the operator did not confirm is only
   // ever a suggestion — see lib/domain/calendar-events.ts.
   calendarLinks: Array<{ initiativeId: string; eventId: string }>;
+  // Operator-confirmed links initiative → business entity (product, gift
+  // product, discount code, Meta campaign). Suggested links are computed on
+  // read (lib/domain/initiative-reality.ts) and never stored as confirmed.
+  entityLinks: Array<{ initiativeId: string; kind: "product" | "gift_product" | "discount" | "meta_campaign"; id: string; label: string; via?: string | null }>;
 }
 
 export interface PlanView {

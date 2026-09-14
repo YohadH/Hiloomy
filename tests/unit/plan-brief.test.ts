@@ -44,6 +44,7 @@ const initiative = (over: Partial<Initiative>): Initiative => ({
   decisionHooks: [],
   relatedDecisions: [],
   rowIds: [],
+  text: "",
   ...over
 });
 

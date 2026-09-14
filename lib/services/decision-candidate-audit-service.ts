@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/server/db";
 import type { Decision, JudgmentTag, Localized } from "@/lib/domain/decision";
 import type { PlanView } from "@/lib/domain/plan";
+import type { InitiativeFindingSignal } from "@/lib/domain/initiative-reality";
 import type { MetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
 import type { LeakageSummary } from "@/lib/services/affiliate-leakage-service";
 import { buildCompetitorWeekSection, type CompetitorWeekSection } from "@/lib/services/competitor-intel-service";
@@ -77,6 +78,10 @@ export interface ProbeData {
   // (30d) WITHOUT the engines' unit / LIMIT gates. null = query not run.
   discount: { worstLoss: DiscountProbeRow | null; thinnest: DiscountProbeRow | null; anyRealCost: boolean } | null;
   competitors: CompetitorWeekSection | null;
+  // Initiative Reality findings (risk on confirmed / provisional evidence),
+  // each a candidate in its own right. Finding → candidate → scoring →
+  // clustering → ranking → threshold → Today; never straight to Today.
+  initiativeFindings?: InitiativeFindingSignal[];
 }
 
 export interface DiscountProbeRow {
@@ -110,8 +115,39 @@ const EXPOSURE_TYPE: Record<string, string> = {
   decision_discount_tradeoff: "discounts_30d",
   product_gone_silent: "lost_sales_14d",
   competitor_promo: "none",
-  plan_decision: "none"
+  plan_decision: "none",
+  initiative_gift_stock_risk: "initiative_revenue_window",
+  initiative_stock_risk: "initiative_revenue_window",
+  initiative_margin_risk: "initiative_revenue_window"
 };
+
+// An Initiative Reality finding as a raw signal. Suppressed only when the
+// initiative already has an open decision (ALREADY_OPEN) or is not live.
+function initiativeFindingCandidate(f: InitiativeFindingSignal, revenue14: number | null): DecisionCandidateInput {
+  const suppression: SuppressionReason | null = f.hasOpenDecision ? "ALREADY_OPEN" : !f.live ? "NOT_IN_DECISION_WINDOW" : null;
+  return {
+    domain: "plan",
+    kind: f.candidateKind,
+    title: L(`${f.initiativeTitle} — ${f.question.he}`, `${f.initiativeTitle} — ${f.question.en}`),
+    managementQuestion: f.question,
+    trigger: f.finding.statement,
+    evidenceSummary: [...f.finding.evidence, `mapping basis: ${f.basis}`],
+    connectedDomains: ["plan", ...(f.finding.product ? ["inventory"] : []), ...(f.initiativeRevenue !== null ? ["shopify"] : [])],
+    financialExposure: f.initiativeRevenue,
+    financialExposureType: f.initiativeRevenue === null ? null : "initiative_revenue_window",
+    financialConfidence: f.initiativeRevenue === null ? "unavailable" : f.basis === "provisional" ? "estimated" : f.revenueQuality,
+    proposedStatus: "change_plan",
+    proposedRecommendation: null,
+    missingEvidence: f.finding.missing.map((m) => m.en),
+    entity: { type: "plan_initiative", id: f.initiativeId, label: f.initiativeTitle },
+    inputs: { daysCover: f.daysCover, confidence: f.confidence, domainsJoined: f.domainsJoined, revenue14dStore: revenue14, engineGate: null },
+    relatedDecisionId: null,
+    surfaced: false,
+    todayRank: null,
+    suppressionReason: suppression,
+    eligible: suppression === null
+  };
+}
 
 function ledgerCandidate(src: LedgerCandidateSource, cardIds: string[], todayOrder: string[], cardsByKind: Map<string, number>, revenue14: number | null): DecisionCandidateInput {
   const d = src.decision;
@@ -572,6 +608,8 @@ export function composeRun(input: ComposeInput): ComposedRun {
   const raw: DecisionCandidateInput[] = input.ledger.map((src) => ledgerCandidate(src, input.cardIds, input.todayOrder, cardsByKind, revenue14));
   const covered = new Set(raw.map((c) => c.domain));
   for (const domain of CANDIDATE_DOMAINS) if (!covered.has(domain)) raw.push(probe(domain, input.probes, input.now, revenue14));
+  // Initiative Reality findings compete like every other signal.
+  for (const f of input.probes.initiativeFindings ?? []) raw.push(initiativeFindingCandidate(f, revenue14));
 
   // Level 1 — raw signals, unclustered shadow ranking (as before).
   const scored = raw.map((c) => {
@@ -582,7 +620,7 @@ export function composeRun(input: ComposeInput): ComposedRun {
 
   // Level 2 — management situations. A signal that is already decided or a
   // duplicate is resolved; it stays a signal and joins no candidate.
-  const clusterable = signals.filter((s) => s.kind !== "none" && s.suppressionReason !== "ALREADY_DECIDED" && s.suppressionReason !== "DUPLICATE");
+  const clusterable = signals.filter((s) => s.kind !== "none" && s.suppressionReason !== "ALREADY_DECIDED" && s.suppressionReason !== "DUPLICATE" && s.suppressionReason !== "ALREADY_OPEN");
   const candidates: CandidateRow[] = [];
   const byFamily = new Map<ActionFamily, SignalRow[]>();
   for (const s of clusterable) {
@@ -801,6 +839,7 @@ export interface RecordRunInput {
   meta: MetaCampaignsOverview | null;
   plan: PlanView | null;
   silentAlerts: ProbeData["silentAlerts"];
+  initiativeFindings?: InitiativeFindingSignal[];
 }
 
 function rowData(c: ScoredCandidate & { id: string }, runId: string, storeId: string, runAt: Date, extra: Record<string, unknown>) {
@@ -868,7 +907,7 @@ export async function recordCandidateRun(input: RecordRunInput): Promise<string 
     ledger: input.ledger,
     cardIds: input.cardIds,
     todayOrder: input.todayOrder,
-    probes: { productEcon: input.productEcon, leakage: input.leakage, leakageAllProtected: input.leakageAllProtected, meta: input.meta, plan: input.plan, silentAlerts: input.silentAlerts, discount, competitors }
+    probes: { productEcon: input.productEcon, leakage: input.leakage, leakageAllProtected: input.leakageAllProtected, meta: input.meta, plan: input.plan, silentAlerts: input.silentAlerts, discount, competitors, initiativeFindings: input.initiativeFindings ?? [] }
   });
   const s = composed.summary;
   const run = await db.decisionCandidateRun.create({
@@ -909,6 +948,34 @@ export async function recordCandidateRun(input: RecordRunInput): Promise<string 
     data: composed.candidates.map((c) => rowData(c, run.id, input.storeId, input.now, { level: "candidate", clusterId: null, memberCount: c.memberCount, leadSignalId: c.leadSignalId, actionFamily: c.actionFamily, auditStatus: null, clusterJson: c.cluster }))
   });
   return run.id as string;
+}
+
+// The pipeline's verdict on Initiative Reality candidates at the last
+// recorded run: passed the global threshold (shadow-surfaced) or not, with
+// score, rank and suppression. The plan engine opens a decision ONLY for the
+// ones that passed — Finding → Candidate → … → threshold → Today.
+export interface InitiativeCandidateVerdict {
+  runId: string;
+  runAt: string;
+  initiativeId: string;
+  kind: string;
+  candidateId: string;
+  globalScore: number;
+  rank: number | null;
+  surfaced: boolean;
+  suppressionReason: string | null;
+}
+
+export async function readInitiativeCandidateVerdicts(storeId: string): Promise<InitiativeCandidateVerdict[]> {
+  const db = getDb() as any;
+  const run = (await db.decisionCandidateRun.findFirst({ where: { storeId }, orderBy: { runAt: "desc" }, select: { id: true, runAt: true } }).catch(() => null)) as { id: string; runAt: Date } | null;
+  if (!run) return [];
+  const rows = (await db.decisionCandidate
+    .findMany({ where: { runId: run.id, level: "candidate", kind: { startsWith: "initiative_" } }, select: { id: true, kind: true, entityId: true, globalScore: true, rank: true, surfaced: true, suppressionReason: true } })
+    .catch(() => [])) as Array<{ id: string; kind: string; entityId: string | null; globalScore: unknown; rank: number | null; surfaced: boolean; suppressionReason: string | null }>;
+  return rows
+    .filter((r) => r.entityId)
+    .map((r) => ({ runId: run.id, runAt: run.runAt.toISOString(), initiativeId: r.entityId!, kind: r.kind, candidateId: r.id, globalScore: Number(r.globalScore), rank: r.rank, surfaced: r.surfaced, suppressionReason: r.suppressionReason }));
 }
 
 // ─── Report ───────────────────────────────────────────────────────────

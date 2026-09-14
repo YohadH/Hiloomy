@@ -1,3 +1,4 @@
+import type { InitiativeRealitySummary } from "@/lib/domain/initiative-reality";
 // Decision Objects — the unit Hiloomy's home screen is built from.
 //
 // A Decision is not an alert and not a KPI. It is a management question with
@@ -175,6 +176,9 @@ export interface Decision {
   judgment: Judgment | null;
   outcome: DecisionOutcome | null;
   entity: { type: string; id: string | null; label: string } | null;
+  // Plan decisions only: the initiative's live reality (what was planned,
+  // what is happening now, what changed) — shown before the recommendation.
+  initiative?: InitiativeRealitySummary | null;
 }
 
 export interface WatchItem {

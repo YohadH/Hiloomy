@@ -16,6 +16,7 @@ import {
 } from "@/lib/domain/decision";
 import { StatusPill, ConfidenceTag } from "./status-pill";
 import { EvidenceGroups, QualityTag } from "./evidence";
+import { InitiativeRealityPanel } from "@/components/plan/initiative-reality-panel";
 import { formatWhen } from "./decision-card";
 
 type Locale = "he" | "en";
@@ -120,6 +121,12 @@ export function DecisionReceipt({
         </div>
         <h2 className="text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">{d.title[locale]}</h2>
       </header>
+
+      {d.initiative ? (
+        <Section title={t("מצב היוזמה", "Initiative reality")}>
+          <InitiativeRealityPanel r={d.initiative} locale={locale} now={new Date()} mappingHref={`/plan/initiative/${d.initiative.initiativeId}`} />
+        </Section>
+      ) : null}
 
       <Section title={t("החלטה", "Decision")}>
         <p className="text-lg font-semibold leading-7">{d.question[locale]}</p>

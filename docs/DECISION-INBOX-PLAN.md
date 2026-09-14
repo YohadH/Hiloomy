@@ -508,6 +508,126 @@ source descriptions (one 11px line), the "commercial timing" note (now in
 the table footer). Arrows follow reading direction (← in Hebrew);
 flows go vertical with ↓ under `sm`.
 
+#### 0d.4.1 Second polish (owner review, 2026-09-11)
+
+Decision card moved directly under the snapshot sentence + chips
+(section title "החלטה אחת דורשת ממך תשומת לב עכשיו"); the calendar /
+initiatives grid became its own compact section after it, with two
+events by default and "הצג עוד N אירועים" behind a disclosure.
+Compression reads as a product sentence — "Hiloomy בדקה 40 שינויים. רק 3
+היו שווים את תשומת הלב שלך." — with the flow in business words
+(שינויים נבדקו → דרשו בחינה → הגיעו אליך). Coverage headline is "6 מתוך 8
+תחומים נבדקו" followed by "2 תחומים לא נבדקו: …" (Meta / profitability in
+red). Validation in the low-data state shows only the headline "עדיין
+מוקדם לדעת אם Hiloomy משפרת החלטות.", one small count line and the CTA;
+the four-stage flow appears once feedback exists. Chips say "Meta · 25
+קמפיינים נבדקו". Flows are a connected band (bold number + label, arrows
+between, max-width 42rem) instead of spread stats; Plan × Reality uses
+the same band.
+
+## 0e. Initiative Reality — the layer between Plan and Decision (2026-09-14)
+
+**The gap:** a plan decision ("Satin Couture launch — check campaign,
+sales, pillows given, decide on the coupon") reasoned from whole-store
+numbers (+15% store sales, store margin). Real, but not about the
+initiative. Rule: **brand-wide data never answers an initiative-specific
+question just because it is available. Missing initiative context beats a
+confident, misleading answer.**
+
+    Commercial Plan → Initiative Reality → gap / risk → Decision → choice → outcome
+
+- **Domain** `lib/domain/initiative-reality.ts` (pure, tested):
+  `resolveMappings` (initiative → products / gift product / discount / Meta
+  campaign, each `confirmed` | `suggested` | `missing`), `evaluateInitiativeReality`
+  (period, status, status lines, metrics, findings, missing evidence,
+  confidence, freshness, `decisionRequired`), `summarizeReality` (the
+  compact shape stored on the decision payload).
+- **Mapping rules.** Confirmed = the operator (plan overrides
+  `entityLinks`, ops `link_entity` / `unlink_entity`) or an exact identifier
+  that exists in the store (a coupon code seen on Shopify orders / affiliate
+  coupons). Suggested = deterministic text evidence: the exact catalogue
+  title in the plan text (high; "gift" in the same clause → gift product), a
+  campaign linked to a mapped product in campaign–product links (high), a
+  campaign whose name contains a specific token of the initiative name
+  (medium). Text never confirms anything. The reason for every link is kept.
+- **Metrics** carry `scope: initiative | store`, `basis: confirmed |
+  suggested`, and quality. Suggested-based numbers are capped at
+  "estimated" with "mapping unconfirmed". Store numbers (7-day sales, store
+  margin) are separate metrics labelled "Whole-store … — broader context"
+  and are never rendered in the initiative block. Supported today:
+  initiative revenue / units (mapped products' order lines in the window,
+  net of discounts and refunds) with % vs the previous comparable period,
+  per-product inventory + cover at the window's own pace, gift units given
+  + gift cover, coupon orders + discount given (mapped code, window), Meta
+  spend / purchases / Meta-attributed revenue / ROAS (mapped campaigns,
+  window), contribution margin on the window's lines (calculated only with
+  real costs, else estimated). Still store-wide only: traffic, new vs
+  returning customers, Shopify-side UTM attribution per campaign (the
+  attribution service exists but is not wired to initiatives), creator
+  attribution.
+- **Findings** (rules on facts, no invented thresholds): no sales since
+  start (≥3 days), coupon unused, campaign without spend, spend above
+  Meta-attributed revenue, inventory / gift cover shorter than the days
+  remaining (risk), negative margin with real costs (risk), half the window
+  gone with no activity, sales vs previous comparable period (info).
+  Findings on suggested mappings are `unconfirmed`.
+- **Three tiers of mapping trust — data, not labels (2026-09-14 pass 2).**
+  `confirmed` (operator, or a coupon code seen on orders) · `provisional`
+  (exact catalogue title in the plan text; a campaign tied to a mapped
+  product through a real campaign–product link) · `suggested` (a token in a
+  campaign name — weak; never used). Provisional IS used: every number on
+  it is capped at `estimated`, carries "מבוסס על התאמה אוטומטית · טרם
+  אושר", and the status confidence is at most `medium`. Each link carries
+  `provenance {rule, matchedOn, auto}`; each metric carries the exact
+  mappings it rests on; confirming a provisional link stores `via` (the
+  automatic rule) so the origin is never rewritten.
+- **Status semantics.** `on_track` / `off_track` require an explicit target
+  and enough data — the plan model has no target, so they cannot occur
+  today. Without a target: `no_issue_detected` (usable evidence, no
+  attention/risk finding — the reason says "no target exists to say whether
+  it is on track"), `needs_attention` (a finding on confirmed OR provisional
+  evidence), `insufficient_data` (nothing usable: unmapped or suggested
+  only). `evidenceBasis` says which tier the status rests on. Confidence is
+  deterministic: high (all confirmed, real costs, fresh), medium (anything
+  provisional / costs missing / >24h), low (nothing usable or >48h).
+- **Findings never open Today.** The only path: finding → `candidateFinding`
+  (a RISK on usable evidence: gift or product cover shorter than the days
+  remaining, negative margin with real costs) → `findingSignals` →
+  `ProbeData.initiativeFindings` → `composeRun` (kinds
+  `initiative_gift_stock_risk` / `initiative_stock_risk` /
+  `initiative_margin_risk`, domain plan; priors = plan_decision's numbers
+  verbatim, NO tuning; urgency from the measured days of cover; exposure =
+  the initiative's window revenue, `estimated` when provisional) → scoring →
+  clustering (singleton) → ranking → the existing shadow threshold (top 5).
+  Suppressed as ALREADY_OPEN when the initiative has an open decision. The
+  plan engine (`upsertPlanDecisions`) reads the LAST recorded run
+  (`readInitiativeCandidateVerdicts`) and opens `plan_decision:<sheet>:
+  reality:<initiative>:<finding>` only for a candidate that run surfaced;
+  the payload stores `viaCandidate {runId, candidateId, globalScore, rank}`.
+  One-cycle lag by design (the audit runs after the engines on a Today
+  load / cron). Computable evidence on the candidate: inventory, units
+  given, consumption per day, trend and stability (second half vs first
+  half of the window), estimated days remaining vs initiative days.
+  Unknowns are `missingEvidence`, not gates: restock date, gift mandatory
+  or optional, an alternative gift, whether the campaign keeps its pace.
+- **Acceptance trace on real data**: `node --import tsx
+  scripts/initiative-reality-trace.ts incenseparfums.myshopify.com "Satin"`
+  prints mapping + rule per link, metrics with quality/basis/provenance,
+  confidence, status, findings, the candidate, its score (from the last
+  recorded run, else a local preview with the same scoreCandidate), whether
+  the pipeline surfaced it, and the suppression reason.
+- **UI.** The receipt shows "מצב היוזמה" (what was planned → what is
+  happening now → what changed → what Hiloomy cannot answer) before the
+  decision question and the recommendation (`components/plan/initiative-reality-panel.tsx`).
+  `/plan/initiative/[id]?sheet=` shows the definition, the mappings with
+  confirm / remove buttons, the live status, and the initiative's
+  decisions; plan cards link to it. Today cards stay concise (why-now only).
+- **Gaps to close next** (not built): Shopify UTM attribution per initiative
+  campaign; structured plan metadata (goal, offer, gift, campaign) in the
+  sheet import; Meta ad-set / ad level; creator / affiliate mapping; a
+  "map this initiative" flow that lists candidate products beyond exact
+  title matches.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

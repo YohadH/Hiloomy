@@ -92,13 +92,12 @@ function SectionHead({ title, label }: { title: string; label?: string }) {
 // mobile. Arrows follow the reading direction.
 function Flow({ stages, fwd, size = "md" }: { stages: Array<{ n: number | string; label: string; muted?: boolean }>; fwd: string; size?: "md" | "lg" }) {
   return (
-    <ol className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+    <ol className="flex w-full max-w-2xl flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
       {stages.map((s, i) => (
         <li key={s.label} className="contents">
-          <div className="flex items-baseline gap-2">
-            <span className={cn("font-semibold tabular-nums tracking-tight", size === "lg" ? "text-3xl" : "text-2xl", s.muted && "text-muted-foreground")}>{s.n}</span>
-            <span className="text-sm text-muted-foreground">{s.label}</span>
-          </div>
+          <span className={cn("whitespace-nowrap", size === "lg" ? "text-xl" : "text-lg", s.muted && "text-muted-foreground")}>
+            <b className="tabular-nums">{s.n}</b> {s.label}
+          </span>
           {i < stages.length - 1 ? (
             <span aria-hidden className="text-muted-foreground">
               <span className="sm:hidden">↓</span>
@@ -184,7 +183,7 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
   const e0 = ctx.events[0];
   if (e0) chips.push({ text: `${e0.calendarEvent.name[locale]} · ${e0.state === "starts_today" ? t("היום", "today") : e0.state === "active" ? t(`עד ${fmtDate(e0.calendarEvent.endDate)}`, `until ${fmtDate(e0.calendarEvent.endDate)}`) : fmtRange(e0.calendarEvent.startDate, e0.calendarEvent.endDate)}`, tone: e0.state === "active" || e0.state === "starts_today" ? "success" : "neutral" });
   if (ctx.summary.activeInitiatives !== null) chips.push({ text: t(`${ctx.summary.activeInitiatives} מהלכים פעילים`, `${ctx.summary.activeInitiatives} initiatives active`) });
-  if (ctx.summary.campaignsChecked !== null) chips.push({ text: `Meta · ${ctx.summary.campaignsChecked} ${t("קמפיינים", "campaigns")}` });
+  if (ctx.summary.campaignsChecked !== null) chips.push({ text: t(`Meta · ${ctx.summary.campaignsChecked} קמפיינים נבדקו`, `Meta · ${ctx.summary.campaignsChecked} campaigns checked`) });
   chips.push({ text: t(`${ctx.summary.inventoryRisks} סיכוני מלאי`, `${ctx.summary.inventoryRisks} inventory risks`), tone: ctx.summary.inventoryRisks > 0 ? "warning" : "neutral" });
   chips.push({ text: t(`${ctx.summary.pendingDecisions} החלטות פתוחות`, `${ctx.summary.pendingDecisions} open decisions`), tone: ctx.summary.pendingDecisions > 0 ? "warning" : "neutral" });
 
@@ -235,83 +234,11 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
             ))}
           </div>
 
-          {ctx.events.length > 0 || ctx.windows.length > 0 ? (
-            <div className="grid gap-8 lg:grid-cols-2">
-              {/* Calendar events — compact rows; a linked initiative nests underneath */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("אירועים מסחריים קרובים", "Upcoming commercial events")}</h3>
-                {ctx.events.length === 0 ? <p className="text-sm text-muted-foreground">{t("אין אירוע ב-30 הימים הקרובים.", "No event in the next 30 days.")}</p> : null}
-                <ul className="divide-y divide-border">
-                  {ctx.events.slice(0, 4).map((ev) => {
-                    const e = ev.calendarEvent;
-                    const chip = eventChip(ev.state, ev.daysUntil, e.endDate);
-                    return (
-                      <li key={e.id} className="space-y-2 py-3 first:pt-0">
-                        <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <div className="flex items-baseline gap-3">
-                            <span className="text-base font-semibold">{e.name[locale]}</span>
-                            <span className="text-sm text-muted-foreground tabular-nums">{ev.dateRange[locale]}</span>
-                          </div>
-                          <Chip tone={chip.tone}>{chip.text}</Chip>
-                        </div>
-                        {ev.linkedInitiatives.slice(0, 3).map((li) => (
-                          <div key={li.id} className="ms-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-s-2 border-border ps-3 text-sm">
-                            <span aria-hidden className="text-muted-foreground">↳</span>
-                            <span className="font-medium">{li.title}</span>
-                            <span className="text-muted-foreground tabular-nums">{fmtRange(li.startDate, li.endDate)}</span>
-                            {li.linkState === "suggested" ? <Chip tone="warning">{t("קישור מוצע — דורש אישור", "Suggested link — needs confirmation")}</Chip> : null}
-                            {li.openDecisionCount > 0 ? <Chip tone="warning">{t(`${li.openDecisionCount} החלטה פתוחה`, `${li.openDecisionCount} open decision`)}</Chip> : null}
-                            {li.linkState === "suggested" ? (
-                              <details className="basis-full text-xs text-muted-foreground">
-                                <summary className="cursor-pointer select-none underline-offset-4 hover:underline">{t("פרטים", "Details")}</summary>
-                                <p className="mt-1">{li.linkReason[locale]}</p>
-                                {ctx.sheetId ? <ConfirmLinkButton sheetId={ctx.sheetId} initiativeId={li.id} eventId={e.id} label={t("כן, לקשר", "Yes, link it")} /> : null}
-                              </details>
-                            ) : null}
-                          </div>
-                        ))}
-                        {ev.decisionUrgency ? <p className="ms-4 text-sm text-warning">{ev.decisionUrgency[locale]}</p> : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-                <p className="text-[11px] text-muted-foreground">{t(`מקור: ${ctx.calendarSources.map((s) => s.he).join(", ")} · יוזמות: התוכנית המסחרית`, `Source: ${ctx.calendarSources.map((s) => s.en).join(", ")} · initiatives: the commercial plan`)}</p>
-              </div>
-
-              {/* Active initiatives — objects, so small cards; visually distinct from events */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("יוזמות פעילות", "Active initiatives")}</h3>
-                {ctx.windows.length === 0 ? <p className="text-sm text-muted-foreground">{ctx.calendarSource === null ? t("אין תוכנית מסחרית מחוברת.", "No commercial plan connected.") : t("כל היוזמות הקרובות מקושרות לאירוע.", "Every upcoming initiative is linked to an event.")}</p> : null}
-                <div className="grid gap-2">
-                  {ctx.windows.slice(0, 3).map((w) => {
-                    const live = w.state === "active" || w.state === "starts_today";
-                    return (
-                      <Card key={w.id} className="space-y-1.5 p-4">
-                        <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <span className="text-base font-semibold">{w.campaignTitle[locale]}</span>
-                          <Chip tone={live ? "success" : w.state === "starts_soon" ? "warning" : "neutral"}>{live ? t("קמפיין פעיל", "Campaign active") : t(`מתחיל בעוד ${w.daysUntil} ימים`, `starts in ${w.daysUntil} days`)}</Chip>
-                        </div>
-                        <p className="text-sm text-muted-foreground tabular-nums">
-                          {fmtRange(w.start, w.end)} · {t(`${w.initiativeCount} מהלכים קשורים`, `${w.initiativeCount} initiatives`)}
-                          {w.thinStockProducts ? <span className="text-warning"> · {t(`${w.thinStockProducts} מוצרים במלאי דק`, `${w.thinStockProducts} thin on stock`)}</span> : null}
-                        </p>
-                        {w.openQuestion ? (
-                          <Link href={(w.openDecisionHref ?? "/today") as never} className="text-sm font-medium underline-offset-4 hover:underline">
-                            {w.openQuestion[locale]} {fwd}
-                          </Link>
-                        ) : null}
-                      </Card>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          ) : null}
         </section>
 
         {/* 2 — Needs your decision */}
         <section className="space-y-4">
-          <SectionHead title={t("דורש ממך החלטה", "Needs your decision")} />
+          <SectionHead title={primary ? t("החלטה אחת דורשת ממך תשומת לב עכשיו", "One decision needs your attention now") : t("דורש ממך החלטה", "Needs your decision")} />
           {primary ? (
             <Card className="space-y-4 border-foreground/20 p-5 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -367,14 +294,123 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
           ) : null}
         </section>
 
-        {/* 3 — Does Hiloomy see the whole picture? */}
+        {/* 3 — Commercial calendar / initiatives: compact, only what is relevant now */}
         <section className="space-y-4">
-          <SectionHead title={t("האם Hiloomy רואה את כל התמונה?", "Does Hiloomy see the whole picture?")} label={r.compression.asOf ? t(`הבדיקה האחרונה · ${agoShort(r.compression.asOf, now, true)}`, `Last check · ${agoShort(r.compression.asOf, now, false)}`) : undefined} />
-          <p className="text-lg">
-            {r.coverageSummary.checkedDomains > 0
-              ? t(`Hiloomy בדקה ${r.coverageSummary.checkedDomains} מתוך ${r.coverage.length} תחומים. `, `Hiloomy checked ${r.coverageSummary.checkedDomains} of ${r.coverage.length} domains. `) + (r.coverageSummary.domainsWithSurfaced === 0 ? t("אף אחד לא יצר החלטה בתקופה.", "None produced a decision in the period.") : t(`רק ${r.coverageSummary.domainsWithSurfaced} יצרו החלטות.`, `Only ${r.coverageSummary.domainsWithSurfaced} produced decisions.`))
-              : t("עדיין לא נרשמה בדיקה — המצב לפי בריאות הנתונים בלבד.", "No check recorded yet — states come from Data Health only.")}
-          </p>
+          <SectionHead title={t("לוח מסחרי ויוזמות", "Commercial calendar and initiatives")} />
+          {ctx.events.length > 0 || ctx.windows.length > 0 ? (
+            <div className="grid gap-8 lg:grid-cols-2">
+              {/* Calendar events — compact rows; a linked initiative nests underneath */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("אירועים מסחריים קרובים", "Upcoming commercial events")}</h3>
+                {ctx.events.length === 0 ? <p className="text-sm text-muted-foreground">{t("אין אירוע ב-30 הימים הקרובים.", "No event in the next 30 days.")}</p> : null}
+                <ul className="divide-y divide-border">
+                  {ctx.events.slice(0, 2).map((ev) => {
+                    const e = ev.calendarEvent;
+                    const chip = eventChip(ev.state, ev.daysUntil, e.endDate);
+                    return (
+                      <li key={e.id} className="space-y-2 py-3 first:pt-0">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <div className="flex items-baseline gap-3">
+                            <span className="text-base font-semibold">{e.name[locale]}</span>
+                            <span className="text-sm text-muted-foreground tabular-nums">{ev.dateRange[locale]}</span>
+                          </div>
+                          <Chip tone={chip.tone}>{chip.text}</Chip>
+                        </div>
+                        {ev.linkedInitiatives.slice(0, 3).map((li) => (
+                          <div key={li.id} className="ms-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-s-2 border-border ps-3 text-sm">
+                            <span aria-hidden className="text-muted-foreground">↳</span>
+                            <span className="font-medium">{li.title}</span>
+                            <span className="text-muted-foreground tabular-nums">{fmtRange(li.startDate, li.endDate)}</span>
+                            {li.linkState === "suggested" ? <Chip tone="warning">{t("קישור מוצע — דורש אישור", "Suggested link — needs confirmation")}</Chip> : null}
+                            {li.openDecisionCount > 0 ? <Chip tone="warning">{t(`${li.openDecisionCount} החלטה פתוחה`, `${li.openDecisionCount} open decision`)}</Chip> : null}
+                            {li.linkState === "suggested" ? (
+                              <details className="basis-full text-xs text-muted-foreground">
+                                <summary className="cursor-pointer select-none underline-offset-4 hover:underline">{t("פרטים", "Details")}</summary>
+                                <p className="mt-1">{li.linkReason[locale]}</p>
+                                {ctx.sheetId ? <ConfirmLinkButton sheetId={ctx.sheetId} initiativeId={li.id} eventId={e.id} label={t("כן, לקשר", "Yes, link it")} /> : null}
+                              </details>
+                            ) : null}
+                          </div>
+                        ))}
+                        {ev.decisionUrgency ? <p className="ms-4 text-sm text-warning">{ev.decisionUrgency[locale]}</p> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {ctx.events.length > 2 ? (
+                  <details className="text-sm">
+                    <summary className="cursor-pointer select-none text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{t(`הצג עוד ${ctx.events.length - 2} אירועים ${fwd}`, `Show ${ctx.events.length - 2} more events ${fwd}`)}</summary>
+                    <ul className="mt-2 divide-y divide-border">
+                      {ctx.events.slice(2).map((ev) => {
+                        const chip = eventChip(ev.state, ev.daysUntil, ev.calendarEvent.endDate);
+                        return (
+                          <li key={ev.calendarEvent.id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
+                            <span className="flex items-baseline gap-3">
+                              <span className="font-medium">{ev.calendarEvent.name[locale]}</span>
+                              <span className="text-muted-foreground tabular-nums">{ev.dateRange[locale]}</span>
+                            </span>
+                            <Chip tone={chip.tone}>{chip.text}</Chip>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </details>
+                ) : null}
+                <p className="text-[11px] text-muted-foreground">{t(`מקור: ${ctx.calendarSources.map((s) => s.he).join(", ")}`, `Source: ${ctx.calendarSources.map((s) => s.en).join(", ")}`)}</p>
+              </div>
+
+              {/* Active initiatives — objects, so small cards; visually distinct from events */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("יוזמות פעילות", "Active initiatives")}</h3>
+                {ctx.windows.length === 0 ? <p className="text-sm text-muted-foreground">{ctx.calendarSource === null ? t("אין תוכנית מסחרית מחוברת.", "No commercial plan connected.") : t("כל היוזמות הקרובות מקושרות לאירוע.", "Every upcoming initiative is linked to an event.")}</p> : null}
+                <div className="grid gap-2">
+                  {ctx.windows.slice(0, 3).map((w) => {
+                    const live = w.state === "active" || w.state === "starts_today";
+                    return (
+                      <Card key={w.id} className="space-y-1.5 p-4">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <span className="text-base font-semibold">{w.campaignTitle[locale]}</span>
+                          <Chip tone={live ? "success" : w.state === "starts_soon" ? "warning" : "neutral"}>{live ? t("קמפיין פעיל", "Campaign active") : t(`מתחיל בעוד ${w.daysUntil} ימים`, `starts in ${w.daysUntil} days`)}</Chip>
+                        </div>
+                        <p className="text-sm text-muted-foreground tabular-nums">
+                          {fmtRange(w.start, w.end)} · {t(`${w.initiativeCount} מהלכים קשורים`, `${w.initiativeCount} initiatives`)}
+                          {w.thinStockProducts ? <span className="text-warning"> · {t(`${w.thinStockProducts} מוצרים במלאי דק`, `${w.thinStockProducts} thin on stock`)}</span> : null}
+                        </p>
+                        {w.openQuestion ? (
+                          <Link href={(w.openDecisionHref ?? "/today") as never} className="text-sm font-medium underline-offset-4 hover:underline">
+                            {w.openQuestion[locale]} {fwd}
+                          </Link>
+                        ) : null}
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        {/* 4 — What Hiloomy checked */}
+        <section className="space-y-4">
+          <SectionHead title={t("מה Hiloomy בדקה", "What Hiloomy checked")} label={r.compression.asOf ? t(`הבדיקה האחרונה · ${agoShort(r.compression.asOf, now, true)}`, `Last check · ${agoShort(r.compression.asOf, now, false)}`) : undefined} />
+          <div className="space-y-1">
+            <p className="text-lg font-semibold">
+              {r.coverageSummary.checkedDomains > 0
+                ? t(`${r.coverageSummary.checkedDomains} מתוך ${r.coverage.length} תחומים נבדקו`, `${r.coverageSummary.checkedDomains} of ${r.coverage.length} domains checked`) + (r.coverageSummary.domainsWithSurfaced > 0 ? t(` · ${r.coverageSummary.domainsWithSurfaced} יצרו החלטות`, ` · ${r.coverageSummary.domainsWithSurfaced} produced decisions`) : "")
+                : t("עדיין לא נרשמה בדיקה", "No check recorded yet")}
+            </p>
+            {notEvaluated.length ? (
+              <p className="text-sm">
+                <span className="font-medium">{t(`${notEvaluated.length} תחומים לא נבדקו: `, `${notEvaluated.length} domains not checked: `)}</span>
+                {notEvaluated.map((c, i) => (
+                  <span key={c.domain} className={c.domain === "paid_media" || c.domain === "discount_profit" ? "text-danger" : "text-muted-foreground"}>
+                    {i > 0 ? " · " : ""}
+                    {c.label[locale]}
+                  </span>
+                ))}
+              </p>
+            ) : null}
+          </div>
           <ul className="divide-y divide-border">
             {evaluated.map((c) => (
               <li key={c.domain} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
@@ -393,18 +429,6 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
               </li>
             ))}
           </ul>
-          {notEvaluated.length ? (
-            <p className="text-sm text-muted-foreground">
-              {t("לא נבדק: ", "Not checked: ")}
-              {notEvaluated.map((c, i) => (
-                <span key={c.domain}>
-                  {i > 0 ? " · " : ""}
-                  <span className={c.domain === "paid_media" ? "text-danger" : undefined}>{c.label[locale]}</span>
-                  {c.reason ? <span className="text-[11px]"> ({c.reason[locale]})</span> : null}
-                </span>
-              ))}
-            </p>
-          ) : null}
           {r.dominance ? (
             <p className="text-sm text-muted-foreground">
               {t(`${r.dominance.surfaced} מתוך ${r.dominance.total} ההחלטות הן ${r.dominance.label.he}. `, `${r.dominance.surfaced} of ${r.dominance.total} decisions are ${r.dominance.label.en}. `)}
@@ -418,31 +442,33 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
           </Details>
         </section>
 
-        {/* 4 — How Hiloomy removed the noise (ONE evaluation) */}
+        {/* 5 — How Hiloomy filtered the business (ONE evaluation) */}
         <section className="space-y-3">
-          <SectionHead title={t("איך Hiloomy צמצמה את הרעש?", "How Hiloomy removed the noise")} label={r.compression.asOf ? t(`הבדיקה האחרונה · ${agoShort(r.compression.asOf, now, true)}`, `Latest evaluation · ${agoShort(r.compression.asOf, now, false)}`) : t("הבדיקה האחרונה", "Latest evaluation")} />
+          <SectionHead title={t("איך Hiloomy סיננה את העסק", "How Hiloomy filtered the business")} label={r.compression.asOf ? t(`הבדיקה האחרונה · ${agoShort(r.compression.asOf, now, true)}`, `Latest evaluation · ${agoShort(r.compression.asOf, now, false)}`) : t("הבדיקה האחרונה", "Latest evaluation")} />
           {r.compression.rawSignals !== null && r.compression.candidates !== null && r.compression.candidatesOnToday !== null ? (
-            <Flow fwd={fwd} size="lg" stages={[{ n: r.compression.rawSignals, label: t("אותות", "signals") }, { n: r.compression.candidates, label: t("מועמדים", "candidates") }, { n: r.compression.candidatesOnToday, label: t("החלטות", "decisions") }]} />
+            <>
+              <p className="text-lg font-semibold">
+                {t(`Hiloomy בדקה ${r.compression.rawSignals} שינויים. `, `Hiloomy checked ${r.compression.rawSignals} changes. `)}
+                {r.compression.candidatesOnToday === 0 ? t("אף אחד לא היה שווה את תשומת הלב שלך.", "None was worth your attention.") : t(`רק ${r.compression.candidatesOnToday} היו שווים את תשומת הלב שלך.`, `Only ${r.compression.candidatesOnToday} were worth your attention.`)}
+              </p>
+              <Flow fwd={fwd} stages={[{ n: r.compression.rawSignals, label: t("שינויים נבדקו", "changes checked") }, { n: r.compression.candidates, label: t("דרשו בחינה", "needed a closer look") }, { n: r.compression.candidatesOnToday, label: t("הגיעו אליך", "reached you") }]} />
+            </>
           ) : (
-            <p className="text-sm text-muted-foreground">{t("ספירת האותות תופיע אחרי הבדיקה הבאה.", "Signal counts appear after the next evaluation.")}</p>
+            <p className="text-sm text-muted-foreground">{t("הספירה תופיע אחרי הבדיקה הבאה.", "Counts appear after the next evaluation.")}</p>
           )}
-          <p className="text-sm text-muted-foreground">{t("Hiloomy סיננה את הנתונים והעבירה רק מה שמצדיק תשומת לב ניהולית.", "Hiloomy filtered the data and passed on only what deserves management attention.")}</p>
         </section>
 
-        {/* 5 — Is Hiloomy actually helping? (the selected period) */}
+        {/* 6 — Is Hiloomy proving value? (the selected period) */}
         <section className="space-y-4">
-          <SectionHead title={t("האם Hiloomy באמת עוזרת?", "Is Hiloomy actually helping?")} label={periodLabel} />
+          <SectionHead title={t("האם Hiloomy מוכיחה ערך?", "Is Hiloomy proving its value?")} label={periodLabel} />
           {f.surfaced === 0 ? (
             <p className="text-sm text-muted-foreground">{r.memory.recorded > 0 ? t(`נרשמו ${r.memory.recorded} החלטות בתקופה, אבל אף אחת עדיין לא הוצגה בהיום.`, `${r.memory.recorded} decisions were recorded in the period, but none was surfaced on Today yet.`) : t("עדיין לא הוצגו החלטות בתקופה הזו.", "No decisions were surfaced in this period.")}</p>
           ) : (
             <>
-              <div className="rounded-lg border border-dashed border-border px-4 py-4">
-                <Flow fwd={fwd} stages={[{ n: f.surfaced, label: t("הוצגו", "surfaced") }, { n: f.acted, label: t("המנהל פעל", "manager acted"), muted: f.acted === 0 }, { n: f.judged, label: t("משוב", "feedback"), muted: f.judged === 0 }, { n: f.measured, label: t("תוצאות נמדדו", "measured outcomes"), muted: f.measured === 0 }]} />
-              </div>
               {!hasJudgment ? (
-                <div className="space-y-2">
-                  <h3 className="text-lg font-semibold">{t("עדיין מוקדם למדוד השפעה", "Too early to measure impact")}</h3>
-                  <p className="text-sm text-muted-foreground">{t(`${f.surfaced} החלטות הוצגו, אבל עדיין לא התקבל מספיק משוב מהמנהל.`, `${f.surfaced} decisions were surfaced, but not enough manager feedback has come in yet.`)}</p>
+                <div className="space-y-3">
+                  <p className="text-lg font-semibold">{t("עדיין מוקדם לדעת אם Hiloomy משפרת החלטות.", "Too early to know whether Hiloomy improves decisions.")}</p>
+                  <p className="text-sm text-muted-foreground tabular-nums">{t(`${f.surfaced} החלטות הוצגו · ${f.acted} המנהל פעל · ${f.judged} משוב`, `${f.surfaced} decisions surfaced · ${f.acted} acted on · ${f.judged} feedback`)}</p>
                   {pending > 0 ? (
                     <Link href={"/today" as never} className="inline-flex items-center gap-1 rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-background hover:opacity-90">
                       {t(`${pending} החלטות מחכות לתגובה`, `${pending} decisions await your response`)} {fwd}
@@ -455,6 +481,9 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
                 </div>
               ) : (
                 <div className="space-y-4">
+                  <div className="rounded-lg border border-dashed border-border px-4 py-3">
+                    <Flow fwd={fwd} stages={[{ n: f.surfaced, label: t("הוצגו", "surfaced") }, { n: f.acted, label: t("המנהל פעל", "manager acted"), muted: f.acted === 0 }, { n: f.judged, label: t("משוב", "feedback"), muted: f.judged === 0 }, { n: f.measured, label: t("תוצאות נמדדו", "measured outcomes"), muted: f.measured === 0 }]} />
+                  </div>
                   {!enoughJudged ? <p className="text-sm text-muted-foreground">{t(`סימן מוקדם: ${j.total} מתוך ${MIN_JUDGED_FOR_RATE} החלטות עם משוב שנדרשות לפני שהמדד משמעותי.`, `Early signal: ${j.total} of the ${MIN_JUDGED_FOR_RATE} judged decisions needed before this is meaningful.`)}</p> : null}
                   <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
                     <Stat n={`${j.useful} / ${j.total}`} label={t("מועילות", "Useful")} />
@@ -561,22 +590,25 @@ export default async function DecisionImpactPage({ searchParams }: { searchParam
           ) : null}
         </section>
 
-        {/* 6 — Plan × Reality, only when relevant */}
+        {/* 7 — Plan × Reality, only when relevant */}
         {r.plan.surfaced > 0 ? (
           <section className="space-y-3">
             <SectionHead title={t("האם המציאות שינתה את התוכנית?", "Did reality change the plan?")} label={periodLabel} />
-            <div className="flex flex-wrap gap-x-8 gap-y-3">
-              {r.plan.initiativesEvaluated !== null ? <Stat n={r.plan.initiativesEvaluated} label={t("מהלכים נבדקו", "initiatives checked")} /> : null}
-              <Stat n={r.plan.surfaced} label={t("החלטות תוכנית הוצגו", "plan decisions surfaced")} sub={r.plan.changePlanStatus ? t(`${r.plan.changePlanStatus} עם המלצה לשנות`, `${r.plan.changePlanStatus} recommended a change`) : undefined} />
-              {r.plan.surfaced - r.plan.acted > 0 ? <Stat n={r.plan.surfaced - r.plan.acted} label={t("מחכות לתגובה", "awaiting response")} /> : null}
-              {r.plan.acted > 0 ? <Stat n={r.plan.changedPlan} label={t("שינו את התוכנית", "changed the plan")} /> : null}
-              {r.plan.acted > 0 ? <Stat n={r.plan.continuedAsPlanned} label={t("המשיכו כמתוכנן", "continued as planned")} /> : null}
-              {r.plan.judged > 0 ? <Stat n={`${r.plan.useful} / ${r.plan.judged}`} label={t("מועילות", "useful")} /> : null}
-            </div>
+            <Flow
+              fwd={fwd}
+              stages={[
+                ...(r.plan.initiativesEvaluated !== null ? [{ n: r.plan.initiativesEvaluated, label: t("מהלכים נבדקו", "initiatives checked") }] : []),
+                { n: r.plan.surfaced, label: t("החלטות תוכנית", "plan decisions") },
+                ...(r.plan.surfaced - r.plan.acted > 0 ? [{ n: r.plan.surfaced - r.plan.acted, label: t("מחכות לתגובה", "awaiting response") }] : []),
+                ...(r.plan.acted > 0 ? [{ n: r.plan.changedPlan, label: t("שינו את התוכנית", "changed the plan") }, { n: r.plan.continuedAsPlanned, label: t("המשיכו כמתוכנן", "continued as planned") }] : []),
+                ...(r.plan.judged > 0 ? [{ n: `${r.plan.useful}/${r.plan.judged}`, label: t("מועילות", "useful") }] : [])
+              ]}
+            />
+            {r.plan.changePlanStatus ? <p className="text-xs text-muted-foreground">{t(`${r.plan.changePlanStatus} עם המלצה לשנות את התוכנית`, `${r.plan.changePlanStatus} recommended changing the plan`)}</p> : null}
           </section>
         ) : null}
 
-        {/* 7 — Decision memory: all time, low on the page */}
+        {/* 8 — Decision memory: all time, low on the page */}
         <section className="space-y-3 border-t border-border pt-8">
           <SectionHead title={t("זיכרון החלטות", "Decision memory")} label={t("כל הזמן", "All time")} />
           <div className="flex flex-wrap gap-x-10 gap-y-3">

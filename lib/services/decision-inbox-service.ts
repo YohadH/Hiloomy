@@ -49,9 +49,12 @@ import { getMetaCampaignsOverview, type MetaCampaignsOverview } from "@/lib/serv
 import { getBundleOverview } from "@/lib/services/bundle-profitability-service";
 import { getLlmUsageToday, llmDailyBudgetUsd, LLM_GLOBAL_BUCKET } from "@/lib/services/llm-usage-service";
 import { writeDecisionInboxSummary } from "@/lib/services/command-center-summary-service";
-import { recordCandidateRun } from "@/lib/services/decision-candidate-audit-service";
+import { recordCandidateRun, readInitiativeCandidateVerdicts } from "@/lib/services/decision-candidate-audit-service";
 import { getSalesByChannel } from "@/lib/services/sales-channel-service";
 import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
+import { buildPlanRealities, summarizeReality } from "@/lib/services/initiative-reality-service";
+import { findingSignals } from "@/lib/domain/initiative-reality";
+import type { InitiativeRealitySummary } from "@/lib/domain/initiative-reality";
 import type { PlanView } from "@/lib/domain/plan";
 import type {
   Decision,
@@ -1302,7 +1305,12 @@ export const buildDecisionInbox = cache(async (storeId: string): Promise<Decisio
       plan,
       silentAlerts: otherAlerts
         .filter((a) => a.type === "product_gone_silent")
-        .map((a) => ({ id: a.id, title: a.title, payload: payloadOf(a), createdAt: a.createdAt.toISOString() }))
+        .map((a) => ({ id: a.id, title: a.title, payload: payloadOf(a), createdAt: a.createdAt.toISOString() })),
+      initiativeFindings: plan
+        ? await buildPlanRealities(storeId, plan, now, { sales7: ctx.pulse.sales7, velocityChangePct: ctx.pulse.velocityChangePct, marginRate: ctx.pulse.marginRate })
+            .then((rs) => [...rs.values()].flatMap((r) => findingSignals(r, plan.initiatives.find((i) => i.id === r.initiativeId) ?? { relatedDecisions: [] })))
+            .catch(() => [])
+        : []
     }).catch((e) => console.error("[decision-inbox] candidate audit failed:", e));
   }
 
@@ -1421,8 +1429,65 @@ async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> 
   const today = plan.today;
   const keep: string[] = [];
   let created = 0;
+  // Initiative Reality for every live initiative — the initiative-specific
+  // evidence a plan decision must reason from before any store-wide number.
+  const pulse = await buildPulse(storeId, now).catch(() => null);
+  const realities = await buildPlanRealities(storeId, plan, now, pulse ? { sales7: pulse.sales7, velocityChangePct: pulse.velocityChangePct, marginRate: pulse.marginRate } : null).catch(() => new Map());
+  const verdicts = await readInitiativeCandidateVerdicts(storeId).catch(() => []);
   for (const i of plan.initiatives) {
     if (i.status === "completed" || i.excludedFromEngine) continue;
+    const reality = realities.get(i.id) ?? null;
+    const realitySummary = reality ? summarizeReality(reality, i.offer) : null;
+    // Finding → candidate → pipeline. A decision opens ONLY when the last
+    // candidate run put this initiative's finding through scoring, clustering,
+    // ranking and the global threshold (shadow-surfaced). The finding must
+    // still hold now, rest on confirmed or provisional evidence, and the
+    // initiative must be live with no open decision.
+    const verdict = reality?.candidateFinding ? verdicts.find((v) => v.initiativeId === i.id && v.kind === reality.candidateFinding!.candidateKind) ?? null : null;
+    if (reality && reality.candidateFinding && verdict && verdict.surfaced && i.start <= today && i.end >= today && !i.relatedDecisions.some((r) => r.state === "open")) {
+      const cf = reality.candidateFinding;
+      const fp = `plan_decision:${sheetId}:reality:${i.id}:${cf.kind}`;
+      keep.push(fp);
+      created += 1;
+      await upsertAlert({
+        storeId,
+        type: "plan_decision",
+        fingerprint: fp,
+        severity: "high",
+        source: "Calculated",
+        detectedBy: "decision-inbox-service",
+        title: cf.question.he,
+        description: cf.finding.statement.he,
+        recommendedAction: "להחליט לפי מצב היוזמה בעמוד היום.",
+        relatedEntityType: "plan_initiative",
+        relatedEntityId: i.id,
+        payloadJson: {
+          sheetId,
+          initiativeId: i.id,
+          initiativeTitle: i.title,
+          hookId: `reality:${cf.kind}`,
+          hookKind: "review",
+          hookText: cf.finding.statement.he,
+          question: cf.question,
+          windowStart: today,
+          windowEnd: i.end,
+          realityTriggered: true,
+          // Provenance of the path to Today: which run, which candidate, what score.
+          viaCandidate: { runId: verdict.runId, runAt: verdict.runAt, candidateId: verdict.candidateId, kind: verdict.kind, globalScore: verdict.globalScore, rank: verdict.rank },
+          evidenceBasis: cf.finding.basis,
+          evidenceRefreshedAt: now.toISOString(),
+          triggerRule: `initiative reality finding ${cf.kind} (${cf.finding.basis} mapping) → candidate ${cf.candidateKind} → shadow rank ${verdict.rank} ≤ threshold`,
+          start: i.start,
+          end: i.end,
+          discountPct: i.offer.discountPct,
+          couponCode: i.offer.couponCode,
+          channels: i.channels,
+          products: i.products.map((p) => ({ title: p.title, units14d: p.units14d, unitsPrior14d: p.unitsPrior14d, coverDays: p.coverDays, inventory: p.inventory, hasRealCost: p.hasRealCost, liveCampaigns: p.liveCampaigns })),
+          reality: realitySummary
+        },
+        periodLabel: `${today} → ${i.end}`
+      }).catch(() => null);
+    }
     for (const hook of i.decisionHooks) {
       if (hook.windowStart > today || hook.windowEnd < today) continue;
       const fp = `plan_decision:${sheetId}:${hook.id}`;
@@ -1462,7 +1527,10 @@ async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> 
           discountPct: i.offer.discountPct,
           couponCode: i.offer.couponCode,
           channels: i.channels,
-          products: i.products.map((p) => ({ title: p.title, units14d: p.units14d, unitsPrior14d: p.unitsPrior14d, coverDays: p.coverDays, inventory: p.inventory, hasRealCost: p.hasRealCost, liveCampaigns: p.liveCampaigns }))
+          products: i.products.map((p) => ({ title: p.title, units14d: p.units14d, unitsPrior14d: p.unitsPrior14d, coverDays: p.coverDays, inventory: p.inventory, hasRealCost: p.hasRealCost, liveCampaigns: p.liveCampaigns })),
+          // Initiative Reality at this evaluation — initiative-specific
+          // evidence first; store-wide numbers only as labelled context.
+          reality: realitySummary
         },
         periodLabel: `${hook.windowStart} → ${hook.windowEnd}`
       }).catch(() => null);
@@ -1518,14 +1586,23 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
   const realCost = products.length > 0 && products.every((x) => x.hasRealCost);
   const start = String(p.start ?? "");
   const end = String(p.end ?? "");
+  const reality = (p.reality && typeof p.reality === "object" ? (p.reality as InitiativeRealitySummary) : null) ?? null;
+  const realityTriggered = p.realityTriggered === true;
+  // Initiative-specific evidence exists only through CONFIRMED mappings.
+  // Suggested mappings show their numbers as estimates, never as the basis.
+  const specific = reality ? reality.metrics.filter((m) => m.scope === "initiative" && m.value !== null && m.basis !== null) : [];
+  const hasSpecificSales = specific.some((m) => m.key === "units");
+  const srcOf = (m: InitiativeRealitySummary["metrics"][number]): EvidenceFact["source"] => (m.source === "meta" ? "meta" : m.source === "inventory" ? "inventory" : m.source === "profit" ? "profit" : m.source === "plan" ? "plan" : "shopify");
+  const realityFacts: EvidenceFact[] = specific.slice(0, 8).map((m) => fact(m.label, m.value, srcOf(m), m.basis === "provisional" ? L("מצב היוזמה — התאמה אוטומטית, טרם אושרה", "Initiative reality — automatic match, not yet confirmed") : L("מצב היוזמה — ישות מאושרת", "Initiative reality — confirmed entity"), m.quality, m.note));
 
   const refreshedAt = typeof p.evidenceRefreshedAt === "string" ? p.evidenceRefreshedAt.slice(0, 10) : null;
   const evidence: EvidenceFact[] = [
+    ...realityFacts,
     fact(L("מה התוכנית אומרת", "What the plan says"), hookText.slice(0, 160), "plan", L("הגאנט", "The Gantt"), "known", L(`${start} → ${end}`, `${start} → ${end}`)),
     fact(L("בסיס הטריגר", "Trigger basis"), L("כלל V0", "V0 rule"), "plan", L("היוריסטיקת מהותיות, לא הסקה", "Materiality heuristic, not reasoning"), "calculated", L(`קצב 7 ימים ≥ +10% או כיסוי מלאי < 14 יום${refreshedAt ? ` · ראיות נכון ל־${refreshedAt}` : ""}`, `7d pace ≥ +10% or stock cover < 14d${refreshedAt ? ` · evidence as of ${refreshedAt}` : ""}`)),
-    fact(L("קצב מכירות", "Sales velocity"), velocityLabel, "shopify", L("הזמנות Shopify, 7 ימים מול 7 קודמים", "Shopify Orders, 7d vs prior 7d"), v === null ? "unavailable" : "calculated"),
-    fact(L("מכירות נטו / 7 ימים", "Net sales / 7 days"), ctx.pulse.sales7 === null ? null : ils(ctx.pulse.sales7), "shopify", L("הזמנות Shopify", "Shopify Orders"), ctx.pulse.sales7 === null ? "unavailable" : "known"),
-    fact(L("מרווח תרומה", "Contribution margin"), ctx.pulse.marginRate === null ? null : pct(ctx.pulse.marginRate), "profit", L("30 ימים", "30 days"), ctx.pulse.marginQuality, ctx.pulse.marginRate === null ? L("כיסוי עלויות חסר", "cost coverage missing") : undefined),
+    fact(L("קצב מכירות — כל החנות", "Sales velocity — whole store"), velocityLabel, "shopify", L("הקשר רחב: הזמנות Shopify, 7 ימים מול 7 קודמים — לא ביצועי היוזמה", "Broader context: Shopify Orders, 7d vs prior 7d — not initiative performance"), v === null ? "unavailable" : "calculated"),
+    fact(L("מכירות נטו / 7 ימים — כל החנות", "Net sales / 7 days — whole store"), ctx.pulse.sales7 === null ? null : ils(ctx.pulse.sales7), "shopify", L("הקשר רחב: הזמנות Shopify", "Broader context: Shopify Orders"), ctx.pulse.sales7 === null ? "unavailable" : "known"),
+    fact(L("מרווח תרומה — כל החנות", "Contribution margin — whole store"), ctx.pulse.marginRate === null ? null : pct(ctx.pulse.marginRate), "profit", L("הקשר רחב: 30 ימים", "Broader context: 30 days"), ctx.pulse.marginQuality, ctx.pulse.marginRate === null ? L("כיסוי עלויות חסר", "cost coverage missing") : undefined),
     ...products.slice(0, 4).map((x) =>
       fact(
         L(x.title, x.title),
@@ -1542,34 +1619,56 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
   ];
 
   // The rule, stated with the numbers. No causation, no invented targets.
-  const demandUp = v !== null && v >= 0.1;
-  const demandDown = v !== null && v <= -0.1;
-  const conflict = kind === "conditional" && (demandUp || thin.length > 0);
-  const status: DecisionStatus = conflict ? "change_plan" : "test";
-  const recommendation =
-    kind === "conditional"
+  // Evidence hierarchy: confirmed initiative sales (vs the previous
+  // comparable period) → linked-entity findings → whole-store pace, which
+  // is only a fallback and is named as such.
+  const initiativeVs = reality?.findings.find((f) => f.kind === "sales_vs_prior")?.statement.en.match(/\(([+-]\d+)%\)/)?.[1];
+  const iv = hasSpecificSales && initiativeVs ? Number(initiativeVs) / 100 : null;
+  const paceSource: "initiative" | "store" = iv !== null ? "initiative" : "store";
+  const paceValue = iv ?? v;
+  const demandUp = paceValue !== null && paceValue >= 0.1;
+  const demandDown = paceValue !== null && paceValue <= -0.1;
+  const paceLabel = paceValue === null ? null : Math.abs(paceValue) < 0.05 ? L("יציב", "stable") : paceValue > 0 ? L(`עלייה ${pct(paceValue)}`, `up ${pct(paceValue)}`) : L(`ירידה ${pct(-paceValue)}`, `down ${pct(-paceValue)}`);
+  // Usable = confirmed or provisional (suggested never reaches the summary's findings).
+  const confirmedRisk = reality?.findings.find((f) => f.severity === "risk") ?? null;
+  const conflict = kind === "conditional" && (demandUp || thin.length > 0 || confirmedRisk !== null);
+  const status: DecisionStatus = confirmedRisk ? "change_plan" : conflict ? "change_plan" : "test";
+  const giftRisk = reality?.findings.find((f) => f.kind === "gift_inventory_short") ?? null;
+  const recommendation = realityTriggered && confirmedRisk
+    ? giftRisk
+      ? L(`להמשיך את הקמפיין, אבל לעצור או להחליף את המתנה לפני שהמלאי מגיע לכיסוי קריטי. ${giftRisk.statement.he}`, `Keep the campaign running, but stop or replace the gift before stock reaches critical cover. ${giftRisk.statement.en}`)
+      : L(`להחליט על היוזמה לפי הממצא: ${confirmedRisk.statement.he}`, `Decide on the initiative from the finding: ${confirmedRisk.statement.en}`)
+    : kind === "conditional"
       ? demandUp && thin.length > 0
-        ? L(`לא להפעיל את ההנחה${discountPct !== null ? ` של ${discountPct}%` : ""} כמתוכנן: הביקוש כבר ${velocityLabel!.he} ו־${thin.map((x) => x.title).join(", ")} עם פחות מ־14 ימי כיסוי.`, `Do not activate the${discountPct !== null ? ` ${discountPct}%` : ""} discount as planned: demand is already ${velocityLabel!.en} and ${thin.map((x) => x.title).join(", ")} has under 14 days of cover.`)
+        ? L(`לא להפעיל את ההנחה${discountPct !== null ? ` של ${discountPct}%` : ""} כמתוכנן: ${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} כבר ${paceLabel!.he} ו־${thin.map((x) => x.title).join(", ")} עם פחות מ־14 ימי כיסוי.`, `Do not activate the${discountPct !== null ? ` ${discountPct}%` : ""} discount as planned: ${paceSource === "initiative" ? "initiative sales are" : "store demand is"} already ${paceLabel!.en} and ${thin.map((x) => x.title).join(", ")} has under 14 days of cover.`)
         : demandUp
-          ? L(`לשקול הנחה רדודה יותר${discountPct !== null ? ` מ־${discountPct}%` : ""}: הביקוש כבר ${velocityLabel!.he} בלי ההנחה.`, `Consider a shallower discount${discountPct !== null ? ` than ${discountPct}%` : ""}: demand is already ${velocityLabel!.en} without it.`)
+          ? L(`לשקול הנחה רדודה יותר${discountPct !== null ? ` מ־${discountPct}%` : ""}: ${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} כבר ${paceLabel!.he} בלי ההנחה.`, `Consider a shallower discount${discountPct !== null ? ` than ${discountPct}%` : ""}: ${paceSource === "initiative" ? "initiative sales are" : "store demand is"} already ${paceLabel!.en} without it.`)
           : demandDown
-            ? L(`להפעיל כמתוכנן: קצב המכירות ${velocityLabel!.he} — התנאי שהתוכנית קבעה מתקיים.`, `Activate as planned: sales velocity is ${velocityLabel!.en} — the condition the plan set is met.`)
-            : L("להחליט לפי הקצב: המכירות יציבות, אין אות חד לכאן או לכאן. הנתונים למטה.", "Decide on pace: sales are stable, no strong signal either way. The numbers are below.")
+            ? L(`להפעיל כמתוכנן: ${paceSource === "initiative" ? "מכירות היוזמה" : "קצב המכירות בחנות"} ${paceLabel!.he} — התנאי שהתוכנית קבעה מתקיים.`, `Activate as planned: ${paceSource === "initiative" ? "initiative sales are" : "store sales velocity is"} ${paceLabel!.en} — the condition the plan set is met.`)
+            : paceValue === null && reality && reality.status === "insufficient_data"
+              ? L("אין ראיות ספציפיות ליוזמה — למפות את המוצרים, הקופון והקמפיין לפני שמחליטים על ההנחה.", "No initiative-specific evidence — map the products, coupon and campaign before deciding on the discount.")
+              : L("להחליט לפי הקצב: המכירות יציבות, אין אות חד לכאן או לכאן. הנתונים למטה.", "Decide on pace: sales are stable, no strong signal either way. The numbers are below.")
       : demandDown
-        ? L(`הביקוש ${velocityLabel!.he} — זה הרגע לשנות, לא להשאיר כמו שהוא.`, `Demand is ${velocityLabel!.en} — this is the moment to change, not to keep as is.`)
+        ? L(`${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} ${paceLabel!.he} — זה הרגע לשנות, לא להשאיר כמו שהוא.`, `${paceSource === "initiative" ? "Initiative sales are" : "Store demand is"} ${paceLabel!.en} — this is the moment to change, not to keep as is.`)
         : demandUp
-          ? L(`הביקוש ${velocityLabel!.he} — אין סיבה מהנתונים להעמיק הנחה.`, `Demand is ${velocityLabel!.en} — nothing in the data argues for a deeper discount.`)
-          : L("להחליט לפי מה שנמדד: קצב יציב. הנתונים למטה.", "Decide on what is measured: pace is stable. The numbers are below.");
+          ? L(`${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} ${paceLabel!.he} — אין סיבה מהנתונים להעמיק הנחה.`, `${paceSource === "initiative" ? "Initiative sales are" : "Store demand is"} ${paceLabel!.en} — nothing in the data argues for a deeper discount.`)
+          : paceValue === null && reality && reality.status === "insufficient_data"
+            ? L("Hiloomy עדיין לא יכולה לענות על שאלות היוזמה — הישויות לא ממופות. להשלים את המיפוי לפני שמחליטים.", "Hiloomy cannot yet answer the initiative's questions — its entities are not mapped. Complete the mapping before deciding.")
+            : L("להחליט לפי מה שנמדד: קצב יציב. הנתונים למטה.", "Decide on what is measured: pace is stable. The numbers are below.");
 
   return finish(alert, {
     id: alert.id,
     kind: "plan_decision",
     status,
     title: question,
-    whyNow: L(
-      `${kind === "conditional" ? "ההפעלה מתוכננת ל־" : "בדיקה מתוכננת ל־"}${start}${velocityLabel ? ` · המכירות: ${velocityLabel.he}` : ""}${thin.length > 0 ? ` · ${thin.length} מוצרים עם מלאי דק` : ""}`,
-      `${kind === "conditional" ? "Activation planned for " : "Review scheduled for "}${start}${velocityLabel ? ` · sales: ${velocityLabel.en}` : ""}${thin.length > 0 ? ` · ${thin.length} products with thin cover` : ""}`
-    ),
+    whyNow: realityTriggered && confirmedRisk
+      ? L(`${title}: ${confirmedRisk.statement.he}`, `${title}: ${confirmedRisk.statement.en}`)
+      : reality && reality.status === "insufficient_data"
+        ? L(`${kind === "conditional" ? "ההפעלה מתוכננת ל־" : "בדיקה מתוכננת ל־"}${start} · Hiloomy עדיין לא יכולה לענות על שאלות היוזמה — הישויות לא ממופות`, `${kind === "conditional" ? "Activation planned for " : "Review scheduled for "}${start} · Hiloomy cannot yet answer the initiative's questions — entities not mapped`)
+        : L(
+            `${kind === "conditional" ? "ההפעלה מתוכננת ל־" : "בדיקה מתוכננת ל־"}${start}${paceLabel ? ` · ${paceSource === "initiative" ? "מכירות היוזמה" : "מכירות כל החנות"}: ${paceLabel.he}` : ""}${thin.length > 0 ? ` · ${thin.length} מוצרים עם מלאי דק` : ""}`,
+            `${kind === "conditional" ? "Activation planned for " : "Review scheduled for "}${start}${paceLabel ? ` · ${paceSource === "initiative" ? "initiative sales" : "whole-store sales"}: ${paceLabel.en}` : ""}${thin.length > 0 ? ` · ${thin.length} products with thin cover` : ""}`
+          ),
     question,
     trigger: L(`התוכנית קבעה כאן החלטה: "${hookText.slice(0, 120)}"`, `The plan set a decision here: "${hookText.slice(0, 120)}"`),
     evidence,
@@ -1598,18 +1697,25 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
           ],
     recommendation,
     reason: null,
-    confidence: v === null ? "low" : realCost ? "medium" : "medium",
-    confidenceReason: v === null
+    confidence: reality ? reality.confidence : v === null ? "low" : realCost ? "medium" : "medium",
+    confidenceReason: reality
+      ? reality.confidenceReason
+      : v === null
       ? L("אין מספיק מכירות בשני חלונות של 7 ימים כדי למדוד קצב. הטריגר מבוסס כלל V0.", "Not enough sales in two 7-day windows to measure pace. The trigger is a V0 rule.")
       : realCost
         ? L("קצב, מלאי ועלות נמדדו. הטריגר מבוסס כלל V0, לא הסקה.", "Pace, inventory and cost are measured. The trigger is a V0 rule, not reasoning.")
         : L("קצב ומלאי נמדדו; הרווחיות לא מאומתת בלי עלות לכל המוצרים. הטריגר מבוסס כלל V0.", "Pace and inventory are measured; profitability is unverified without a cost on every product. The trigger is a V0 rule."),
-    missingEvidence: [...(products.length === 0 ? [L("מוצרים שהתוכנית מתייחסת אליהם", "Which products the plan refers to")] : []), ...(realCost ? [] : [L("עלות אמיתית לכל המוצרים", "A real cost on every product")])],
+    missingEvidence: reality
+      ? reality.missingEvidence.map((m) => m.label)
+      : [...(products.length === 0 ? [L("מוצרים שהתוכנית מתייחסת אליהם", "Which products the plan refers to")] : []), ...(realCost ? [] : [L("עלות אמיתית לכל המוצרים", "A real cost on every product")])],
     wouldChange: [L("קצב המכירות משתנה ביותר מ־10%.", "Sales velocity moves more than 10%."), L("כיסוי המלאי יורד מתחת ל־14 יום.", "Stock cover drops under 14 days."), L("החלטה קודמת על אותה יוזמה.", "A prior decision on the same initiative.")],
-    unknown: L("הילומי לא יודעת מה היעד המסחרי של היוזמה — הגאנט לא מציין אותו.", "Hiloomy does not know the initiative's commercial target — the Gantt does not state one."),
+    unknown: reality && reality.status === "insufficient_data"
+      ? L(`הילומי עדיין לא יכולה לענות: ${reality.missingEvidence.map((m) => m.label.he).join(" · ")}. הסיבה: הישויות של היוזמה לא ממופות. היעד המסחרי לא מצוין בגאנט.`, `Hiloomy cannot yet answer: ${reality.missingEvidence.map((m) => m.label.en).join(" · ")}. Reason: the initiative's entities are not mapped. The commercial target is not stated in the Gantt.`)
+      : L("הילומי לא יודעת מה היעד המסחרי של היוזמה — הגאנט לא מציין אותו.", "Hiloomy does not know the initiative's commercial target — the Gantt does not state one."),
     primaryAction: "review",
     rank: ctx.pulse.sales7 ?? 0,
-    entity: { type: "plan_initiative", id: String(p.initiativeId ?? ""), label: title }
+    entity: { type: "plan_initiative", id: String(p.initiativeId ?? ""), label: title },
+    initiative: reality
   });
 }
 

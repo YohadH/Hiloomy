@@ -497,7 +497,11 @@ function InitiativeCard({
           {i.days > 1 ? ` · ${i.days} ${t("ימים", "days")}` : ""}
         </span>
       </div>
-      <h4 className="mt-2 text-lg font-semibold leading-snug">{i.title}</h4>
+      <h4 className="mt-2 text-lg font-semibold leading-snug">
+        <Link href={`/plan/initiative/${i.id}?sheet=${sheetId}` as never} className="underline-offset-4 hover:underline">
+          {i.title}
+        </Link>
+      </h4>
       <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
         {i.offer.discountPct !== null ? <span>{i.offer.discountPct}%</span> : null}
         {i.offer.couponCode ? <span dir="ltr">· {i.offer.couponCode}</span> : null}

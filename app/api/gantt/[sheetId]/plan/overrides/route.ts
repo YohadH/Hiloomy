@@ -13,7 +13,7 @@ import { savePlanOverride, type PlanOverrideOp } from "@/lib/services/plan-servi
 
 export const dynamic = "force-dynamic";
 
-const OPS = new Set(["move", "split", "merge", "exclude", "include", "link_event", "unlink_event", "reset"]);
+const OPS = new Set(["move", "split", "merge", "exclude", "include", "link_event", "unlink_event", "link_entity", "unlink_entity", "reset"]);
 
 export async function POST(request: Request, context: { params: Promise<{ sheetId: string }> }) {
   try {

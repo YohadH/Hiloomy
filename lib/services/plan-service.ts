@@ -186,7 +186,8 @@ export function executionKey(r: { task: string; category: string | null; s: stri
   return `${norm(r.task)}|${norm(r.category)}|${r.s}`;
 }
 
-const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [] };
+const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [], entityLinks: [] };
+const ENTITY_KINDS = new Set(["product", "gift_product", "discount", "meta_campaign"]);
 
 export async function readPlanOverrides(sheetId: string): Promise<PlanOverrides> {
   try {
@@ -198,7 +199,8 @@ export async function readPlanOverrides(sheetId: string): Promise<PlanOverrides>
       splits: Array.isArray(parsed.splits) ? parsed.splits : [],
       merges: Array.isArray(parsed.merges) ? parsed.merges : [],
       excludedFromEngine: Array.isArray(parsed.excludedFromEngine) ? parsed.excludedFromEngine : [],
-      calendarLinks: Array.isArray(parsed.calendarLinks) ? parsed.calendarLinks.filter((l) => l && typeof l.initiativeId === "string" && typeof l.eventId === "string") : []
+      calendarLinks: Array.isArray(parsed.calendarLinks) ? parsed.calendarLinks.filter((l) => l && typeof l.initiativeId === "string" && typeof l.eventId === "string") : [],
+      entityLinks: Array.isArray(parsed.entityLinks) ? parsed.entityLinks.filter((l) => l && typeof l.initiativeId === "string" && ENTITY_KINDS.has(l.kind) && typeof l.id === "string" && typeof l.label === "string") : []
     };
   } catch {
     return EMPTY_OVERRIDES;
@@ -213,11 +215,13 @@ export type PlanOverrideOp =
   | { op: "include"; initiativeId: string }
   | { op: "link_event"; initiativeId: string; eventId: string }
   | { op: "unlink_event"; initiativeId: string }
+  | { op: "link_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string; label: string; via?: string | null }
+  | { op: "unlink_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string }
   | { op: "reset" };
 
 export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Promise<PlanOverrides> {
   const cur = await readPlanOverrides(sheetId);
-  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine], calendarLinks: [...cur.calendarLinks] };
+  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine], calendarLinks: [...cur.calendarLinks], entityLinks: [...cur.entityLinks] };
   switch (op.op) {
     case "move":
       next.moves = [...next.moves.filter((m) => m.executionKey !== op.executionKey), { executionKey: op.executionKey, toInitiativeId: op.toInitiativeId }];
@@ -242,6 +246,13 @@ export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Pro
       break;
     case "unlink_event":
       next.calendarLinks = next.calendarLinks.filter((l) => l.initiativeId !== op.initiativeId);
+      break;
+    case "link_entity":
+      if (!ENTITY_KINDS.has(op.kind) || !op.id || !op.label) break;
+      next.entityLinks = [...next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && l.id === op.id)), { initiativeId: op.initiativeId, kind: op.kind, id: String(op.id).slice(0, 200), label: String(op.label).slice(0, 200), via: typeof op.via === "string" ? op.via.slice(0, 40) : null }];
+      break;
+    case "unlink_entity":
+      next.entityLinks = next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && l.id === op.id));
       break;
     case "reset":
       next = { ...EMPTY_OVERRIDES };
@@ -634,7 +645,8 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
       profitConfidence: productFacts.length === 0 ? null : productFacts.filter((p) => p.hasRealCost).length / productFacts.length,
       decisionHooks: hooks,
       relatedDecisions: related,
-      rowIds: c.rows.map((r) => r.id)
+      rowIds: c.rows.map((r) => r.id),
+      text: allText.slice(0, 2000)
     };
   });
 

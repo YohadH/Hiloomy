@@ -43,7 +43,11 @@ export const DOMAIN_OF_KIND: Record<string, CandidateDomain> = {
   product_gone_silent: "product_performance",
   commission_leakage: "affiliate",
   plan_decision: "plan",
-  competitor_promo: "market"
+  competitor_promo: "market",
+  // Initiative Reality findings that enter the pipeline as candidates.
+  initiative_gift_stock_risk: "plan",
+  initiative_stock_risk: "plan",
+  initiative_margin_risk: "plan"
 };
 
 // Why a candidate did not reach Today. The audit never pretends a card lost
@@ -133,6 +137,12 @@ export const KIND_PRIORS: Record<string, KindPrior> = {
   roas_collapse: { actionability: 75, managementJudgment: 60, novelty: 45, urgencyDefault: 55, materialityDefault: 40 },
   product_gone_silent: { actionability: 55, managementJudgment: 50, novelty: 55, urgencyDefault: 35, materialityDefault: 35 },
   plan_decision: { actionability: 90, managementJudgment: 90, novelty: 50, urgencyDefault: 60, materialityDefault: 45 },
+  // Initiative Reality candidates (2026-09-14). NOT tuned: the same numbers
+  // as plan_decision — they are decisions the plan implies, found from the
+  // initiative's own data. Urgency comes from the measured days of cover.
+  initiative_gift_stock_risk: { actionability: 90, managementJudgment: 90, novelty: 50, urgencyDefault: 60, materialityDefault: 45 },
+  initiative_stock_risk: { actionability: 90, managementJudgment: 90, novelty: 50, urgencyDefault: 60, materialityDefault: 45 },
+  initiative_margin_risk: { actionability: 90, managementJudgment: 90, novelty: 50, urgencyDefault: 60, materialityDefault: 45 },
   competitor_promo: { actionability: 45, managementJudgment: 55, novelty: 60, urgencyDefault: 65, materialityDefault: 35 },
   // ── Clustered inventory kinds (management situations, not SKU alerts) ──
   // A single low-stock alert is operational; deciding replenishment
