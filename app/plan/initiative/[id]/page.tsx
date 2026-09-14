@@ -9,6 +9,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
 import { InitiativeRealityPanel } from "@/components/plan/initiative-reality-panel";
 import { EntityLinkButton } from "@/components/plan/entity-link-controls";
+import { ContextResolution } from "@/components/plan/context-resolution";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
@@ -47,9 +48,14 @@ export default async function InitiativePage({ params, searchParams }: { params:
     <AppShell store={chrome.store}>
       <div className="space-y-10">
         <div className="space-y-2">
-          <Link href={"/marketing-planner" as never} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
-            {t("התוכנית המסחרית", "Commercial plan")} {fwd}
-          </Link>
+          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+            <Link href={"/marketing-planner" as never} className="underline-offset-4 hover:underline">
+              {t("התוכנית המסחרית", "Commercial plan")} {fwd}
+            </Link>
+            <Link href={`/plan/initiative?sheet=${sheetId}` as never} className="underline-offset-4 hover:underline">
+              {t("כל היוזמות", "All initiatives")} {fwd}
+            </Link>
+          </div>
           <p className="text-sm text-muted-foreground">{t("יוזמה מסחרית", "Commercial initiative")}</p>
           <h1 className="text-3xl font-semibold tracking-tight">{initiative.title}</h1>
           <p className="text-sm text-muted-foreground">
@@ -59,6 +65,13 @@ export default async function InitiativePage({ params, searchParams }: { params:
             {initiative.channels.length ? ` · ${initiative.channels.join(", ")}` : ""}
           </p>
         </div>
+
+        {/* 0 — Context resolution: what Hiloomy needs before it can evaluate */}
+        {reality.context.required > 0 || reality.context.rows.some((r) => r.action !== "none") ? (
+          <section id="context" className="space-y-3">
+            <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} locale={locale} />
+          </section>
+        ) : null}
 
         {/* 1 — Definition: the plan's own words */}
         <section className="space-y-2">

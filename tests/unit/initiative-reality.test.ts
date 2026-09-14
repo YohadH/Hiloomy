@@ -87,7 +87,7 @@ test("mapping tiers: exact product name → PROVISIONAL (gift phrase → gift); 
   const m2 = resolveMappings(initiative(), candidates({ metaCampaigns: [{ id: "c9", name: "Whatever", linkedProductIds: ["p_satin"] }] }), []);
   assert.deepEqual(m2.links.filter((l) => l.kind === "meta_campaign").map((l) => [l.id, l.state, l.provenance.rule, l.provenance.matchedOn]), [["c9", "provisional", "campaign_product_link", "p_satin"]]);
   const m3 = resolveMappings(initiative(), candidates({ knownDiscountCodes: [] }), []);
-  assert.equal(m3.byKind.discount.state, "missing");
+  assert.equal(m3.byKind.discount.state, "unresolved");
 });
 
 test("confirming a provisional link keeps its origin: rule becomes operator, the automatic rule stays in provenance", () => {
@@ -101,7 +101,9 @@ test("confirming a provisional link keeps its origin: rule becomes operator, the
 });
 
 test("provisional evidence is USED: metrics are computed, capped at estimated, carry the note and full provenance; confidence ≤ medium; status can be needs_attention", () => {
-  const m = resolveMappings(initiative(), candidates(), []); // nothing confirmed but the coupon
+  // The campaign is critical here ("קמפיין" in the plan) — resolve it provisionally through a product link, so this test measures provisional trust, not a missing entity.
+  const cands = candidates({ metaCampaigns: [{ id: "c9", name: "Satin Sets", linkedProductIds: ["p_satin"] }] });
+  const m = resolveMappings(initiative(), cands, []); // nothing confirmed but the coupon
   const r = evaluateInitiativeReality(initiative(), m, evidence(m), NOW);
   const val = (k: string) => r.metrics.find((x) => x.key === k)!;
   assert.equal(val("revenue").value, "₪32,480");
@@ -115,22 +117,23 @@ test("provisional evidence is USED: metrics are computed, capped at estimated, c
   // The coupon is confirmed → its number stays "known".
   assert.equal(val("coupon_orders").quality, "known");
   assert.equal(val("coupon_orders").basis, "confirmed");
-  // The name-token campaign is only suggested → no Meta numbers at all.
-  assert.equal(val("meta_spend").value, null);
-  assert.ok(r.missingEvidence.some((x) => x.key === "campaign" && /weak suggestion/.test(x.label.en)));
+  // The product-linked campaign is provisional → Meta numbers exist, as estimates.
+  assert.equal(val("meta_spend").value, "₪7,240");
+  assert.equal(val("meta_spend").quality, "estimated");
   assert.equal(r.evidenceBasis, "confirmed"); // coupon
   assert.equal(r.status, "needs_attention"); // gift cover 6 < 16 days remaining, on provisional evidence
   assert.equal(r.confidence, "medium");
-  assert.match(r.confidenceReason.en, /automatic matches that are not yet confirmed/);
+  assert.match(r.confidenceReason.en, /auto-matched and not yet confirmed/);
   assert.ok(r.candidateFinding);
   assert.equal(r.candidateFinding!.candidateKind, "initiative_gift_stock_risk");
   assert.equal(r.candidateFinding!.finding.basis, "provisional");
-  // Provisional-only (coupon unknown) → still usable, status reason says so.
-  const m2 = resolveMappings(initiative(), candidates({ knownDiscountCodes: [] }), []);
+  // Provisional-only, and the plan's coupon is unresolved (critical) → evidence is still usable, but a measured risk on it still wins over setup; confidence is low because the coupon is critical.
+  const m2 = resolveMappings(initiative(), { ...cands, knownDiscountCodes: [] }, []);
   const r2 = evaluateInitiativeReality(initiative(), m2, evidence(m2), NOW);
   assert.equal(r2.evidenceBasis, "provisional");
-  assert.notEqual(r2.status, "insufficient_data");
-  assert.match(r2.statusReason.en, /Based on automatic matches — not yet confirmed/);
+  assert.equal(r2.metrics.find((x) => x.key === "revenue")!.value, "₪32,480");
+  assert.equal(r2.status, "needs_attention");
+  assert.equal(r2.confidence, "low");
 });
 
 test("status semantics: no target → NO_ISSUE_DETECTED, never ON_TRACK; the goal note says no target was defined", () => {
@@ -160,15 +163,15 @@ test("missing product mapping: store-wide sales are NOT used as initiative sales
   assert.ok(r.metrics.filter((x) => x.scope === "initiative").every((x) => !/Whole-store|\+15%/.test(`${x.label.en} ${x.note?.en ?? ""}`)));
 });
 
-test("missing Meta mapping: no ROAS is claimed; weak suggestions are never used; insufficient data when nothing usable exists", () => {
+test("missing Meta mapping: no ROAS is claimed; weak suggestions are never used; a missing critical entity is needs_context, not insufficient data", () => {
   const init = initiative({ products: [], offer: { discountPct: null, couponCode: null } });
   const m = resolveMappings(init, candidates(), []);
   const r = evaluateInitiativeReality(init, m, evidence(m), NOW);
   assert.equal(r.metrics.find((x) => x.key === "meta_roas"), undefined);
-  assert.equal(r.status, "insufficient_data");
+  assert.equal(r.status, "needs_context");
   assert.equal(r.evidenceBasis, "none");
   assert.equal(r.confidence, "low");
-  assert.match(r.confidenceReason.en, /Only weak suggestions/);
+  assert.match(r.confidenceReason.en, /cannot be evaluated because .* are not connected/);
 });
 
 test("a finding becomes a CANDIDATE signal with computable evidence and explicit unknowns — never a decision", () => {

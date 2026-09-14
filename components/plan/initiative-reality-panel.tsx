@@ -6,6 +6,7 @@
 import Link from "next/link";
 import type { InitiativeRealitySummary, InitiativeMetric } from "@/lib/domain/initiative-reality";
 import { MAPPING_KIND_LABEL } from "@/lib/domain/initiative-reality";
+import { ContextCompletion } from "@/components/plan/context-completion";
 import { cn } from "@/lib/utils";
 
 type Locale = "he" | "en";
@@ -15,6 +16,7 @@ const STATUS: Record<InitiativeRealitySummary["status"], { he: string; en: strin
   off_track: { he: "מחוץ למסלול", en: "Off track", cls: "bg-danger/10 text-danger" },
   no_issue_detected: { he: "לא נמצאה בעיה", en: "No issue detected", cls: "bg-success/15 text-success" },
   needs_attention: { he: "דורש תשומת לב", en: "Needs attention", cls: "bg-warning/15 text-warning" },
+  needs_context: { he: "דורש השלמה", en: "Needs context", cls: "bg-warning/15 text-warning" },
   insufficient_data: { he: "אין מספיק מידע", en: "Insufficient data", cls: "bg-muted text-muted-foreground" }
 };
 const QUALITY: Record<InitiativeMetric["quality"], { he: string; en: string }> = {
@@ -75,9 +77,10 @@ export function InitiativeRealityPanel({ r, locale, now, showPlan = true, mappin
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", st.cls)}>{isHe ? st.he : st.en}</span>
-          {r.evidenceBasis === "provisional" ? <span className="rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-medium text-warning">{t("מצב ראשוני — דורש אימות", "Provisional — needs verification")}</span> : null}
+          {r.evidenceBasis === "provisional" && r.status !== "needs_context" ? <span className="rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-medium text-warning">{t("מצב ראשוני — דורש אימות", "Provisional — needs verification")}</span> : null}
           <span className="text-sm">{r.statusReason[locale]}</span>
         </div>
+        {r.context.required > 0 || r.context.rows.some((row) => row.action === "confirm") ? <ContextCompletion context={r.context} locale={locale} href={mappingHref ?? null} /> : null}
         <ul className="grid gap-1 text-sm sm:grid-cols-2">
           {r.lines.map((l) => (
             <li key={l.label.en} className="flex gap-2">

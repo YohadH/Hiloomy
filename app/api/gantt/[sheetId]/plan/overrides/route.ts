@@ -10,6 +10,7 @@ import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { assertStoreInActiveOrg } from "@/lib/auth/guards";
 import { getDb } from "@/lib/server/db";
 import { savePlanOverride, type PlanOverrideOp } from "@/lib/services/plan-service";
+import { refreshInitiativeAfterMapping } from "@/lib/services/initiative-reality-service";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,13 @@ export async function POST(request: Request, context: { params: Promise<{ sheetI
     const body = (await request.json().catch(() => ({}))) as Partial<PlanOverrideOp> & { op?: string };
     if (!body.op || !OPS.has(body.op)) throw new AppError("Unknown override op.", 400);
     const overrides = await savePlanOverride(sheetId, body as PlanOverrideOp);
-    return NextResponse.json({ ok: true, overrides });
+    // A mapping change re-evaluates the initiative now (metrics, confidence,
+    // findings) and refreshes any open plan decision that shows it.
+    let reality: { status: string; updatedDecisions: number } | null = null;
+    if ((body.op === "link_entity" || body.op === "unlink_entity") && typeof (body as { initiativeId?: string }).initiativeId === "string") {
+      reality = await refreshInitiativeAfterMapping(storeId, sheetId, (body as { initiativeId: string }).initiativeId).catch(() => null);
+    }
+    return NextResponse.json({ ok: true, overrides, reality });
   } catch (error) {
     const status = error instanceof AppError ? error.statusCode : 500;
     return NextResponse.json({ ok: false, error: toErrorMessage(error) }, { status });

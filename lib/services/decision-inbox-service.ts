@@ -1645,14 +1645,14 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
           ? L(`לשקול הנחה רדודה יותר${discountPct !== null ? ` מ־${discountPct}%` : ""}: ${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} כבר ${paceLabel!.he} בלי ההנחה.`, `Consider a shallower discount${discountPct !== null ? ` than ${discountPct}%` : ""}: ${paceSource === "initiative" ? "initiative sales are" : "store demand is"} already ${paceLabel!.en} without it.`)
           : demandDown
             ? L(`להפעיל כמתוכנן: ${paceSource === "initiative" ? "מכירות היוזמה" : "קצב המכירות בחנות"} ${paceLabel!.he} — התנאי שהתוכנית קבעה מתקיים.`, `Activate as planned: ${paceSource === "initiative" ? "initiative sales are" : "store sales velocity is"} ${paceLabel!.en} — the condition the plan set is met.`)
-            : paceValue === null && reality && reality.status === "insufficient_data"
+            : paceValue === null && reality && (reality.status === "insufficient_data" || reality.status === "needs_context")
               ? L("אין ראיות ספציפיות ליוזמה — למפות את המוצרים, הקופון והקמפיין לפני שמחליטים על ההנחה.", "No initiative-specific evidence — map the products, coupon and campaign before deciding on the discount.")
               : L("להחליט לפי הקצב: המכירות יציבות, אין אות חד לכאן או לכאן. הנתונים למטה.", "Decide on pace: sales are stable, no strong signal either way. The numbers are below.")
       : demandDown
         ? L(`${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} ${paceLabel!.he} — זה הרגע לשנות, לא להשאיר כמו שהוא.`, `${paceSource === "initiative" ? "Initiative sales are" : "Store demand is"} ${paceLabel!.en} — this is the moment to change, not to keep as is.`)
         : demandUp
           ? L(`${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} ${paceLabel!.he} — אין סיבה מהנתונים להעמיק הנחה.`, `${paceSource === "initiative" ? "Initiative sales are" : "Store demand is"} ${paceLabel!.en} — nothing in the data argues for a deeper discount.`)
-          : paceValue === null && reality && reality.status === "insufficient_data"
+          : paceValue === null && reality && (reality.status === "insufficient_data" || reality.status === "needs_context")
             ? L("Hiloomy עדיין לא יכולה לענות על שאלות היוזמה — הישויות לא ממופות. להשלים את המיפוי לפני שמחליטים.", "Hiloomy cannot yet answer the initiative's questions — its entities are not mapped. Complete the mapping before deciding.")
             : L("להחליט לפי מה שנמדד: קצב יציב. הנתונים למטה.", "Decide on what is measured: pace is stable. The numbers are below.");
 
@@ -1663,8 +1663,8 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     title: question,
     whyNow: realityTriggered && confirmedRisk
       ? L(`${title}: ${confirmedRisk.statement.he}`, `${title}: ${confirmedRisk.statement.en}`)
-      : reality && reality.status === "insufficient_data"
-        ? L(`${kind === "conditional" ? "ההפעלה מתוכננת ל־" : "בדיקה מתוכננת ל־"}${start} · Hiloomy עדיין לא יכולה לענות על שאלות היוזמה — הישויות לא ממופות`, `${kind === "conditional" ? "Activation planned for " : "Review scheduled for "}${start} · Hiloomy cannot yet answer the initiative's questions — entities not mapped`)
+      : reality && (reality.status === "insufficient_data" || reality.status === "needs_context")
+        ? L(`${kind === "conditional" ? "ההפעלה מתוכננת ל־" : "בדיקה מתוכננת ל־"}${start} · Hiloomy עדיין לא יכולה לענות על שאלות היוזמה — ${reality.status === "needs_context" ? `חסרים ${reality.context.required} חיבורים` : "הישויות לא ממופות"}`, `${kind === "conditional" ? "Activation planned for " : "Review scheduled for "}${start} · Hiloomy cannot yet answer the initiative's questions — ${reality.status === "needs_context" ? `${reality.context.required} connection${reality.context.required === 1 ? "" : "s"} missing` : "entities not mapped"}`)
         : L(
             `${kind === "conditional" ? "ההפעלה מתוכננת ל־" : "בדיקה מתוכננת ל־"}${start}${paceLabel ? ` · ${paceSource === "initiative" ? "מכירות היוזמה" : "מכירות כל החנות"}: ${paceLabel.he}` : ""}${thin.length > 0 ? ` · ${thin.length} מוצרים עם מלאי דק` : ""}`,
             `${kind === "conditional" ? "Activation planned for " : "Review scheduled for "}${start}${paceLabel ? ` · ${paceSource === "initiative" ? "initiative sales" : "whole-store sales"}: ${paceLabel.en}` : ""}${thin.length > 0 ? ` · ${thin.length} products with thin cover` : ""}`
@@ -1709,7 +1709,7 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
       ? reality.missingEvidence.map((m) => m.label)
       : [...(products.length === 0 ? [L("מוצרים שהתוכנית מתייחסת אליהם", "Which products the plan refers to")] : []), ...(realCost ? [] : [L("עלות אמיתית לכל המוצרים", "A real cost on every product")])],
     wouldChange: [L("קצב המכירות משתנה ביותר מ־10%.", "Sales velocity moves more than 10%."), L("כיסוי המלאי יורד מתחת ל־14 יום.", "Stock cover drops under 14 days."), L("החלטה קודמת על אותה יוזמה.", "A prior decision on the same initiative.")],
-    unknown: reality && reality.status === "insufficient_data"
+    unknown: reality && (reality.status === "insufficient_data" || reality.status === "needs_context")
       ? L(`הילומי עדיין לא יכולה לענות: ${reality.missingEvidence.map((m) => m.label.he).join(" · ")}. הסיבה: הישויות של היוזמה לא ממופות. היעד המסחרי לא מצוין בגאנט.`, `Hiloomy cannot yet answer: ${reality.missingEvidence.map((m) => m.label.en).join(" · ")}. Reason: the initiative's entities are not mapped. The commercial target is not stated in the Gantt.`)
       : L("הילומי לא יודעת מה היעד המסחרי של היוזמה — הגאנט לא מציין אותו.", "Hiloomy does not know the initiative's commercial target — the Gantt does not state one."),
     primaryAction: "review",

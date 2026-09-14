@@ -31,6 +31,20 @@
 //     for the shared pipeline; unknowns (restock date, whether the gift is
 //     mandatory, an alternative gift) are listed as missing evidence, not
 //     used as gates.
+//   • HARD PRODUCT RULE (owner, 2026-09-14): a missing critical mapping must
+//     never produce a "No issue detected" result. If Hiloomy cannot reliably
+//     understand the initiative, it must explicitly mark the evaluation as
+//     incomplete (needs_context), identify the missing context (ContextTask),
+//     help the user resolve it (the resolution flow), and automatically
+//     continue the evaluation once the context is available
+//     (refreshInitiativeAfterMapping). Don't know → say so → ask for exactly
+//     what is missing → continue alone.
+//   • Missing CRITICAL context is not "no issue". Each initiative declares
+//     which entities its evaluation needs (from its own text: a launch needs
+//     its products; "with a gift" needs the gift; "continue the coupon"
+//     needs the coupon; "check the campaign" needs the campaign). An
+//     unresolved critical entity → needs_context, overall confidence low,
+//     and a resolution task — never a Today decision.
 //
 // Everything here is pure and unit-tested; the service gathers the inputs.
 
@@ -44,9 +58,23 @@ const L = (he: string, en: string): Localized => ({ he, en });
 
 export type MappingKind = "product" | "gift_product" | "discount" | "meta_campaign";
 export type LinkBasis = "confirmed" | "provisional" | "suggested";
-export type MappingState = LinkBasis | "missing";
+// unresolved = no usable mapping (nothing, or weak suggestions only).
+export type MappingState = LinkBasis | "unresolved";
 export type LinkConfidence = "high" | "medium" | "low";
-export type MappingRule = "operator" | "exact_product_title" | "campaign_product_link" | "campaign_name_token" | "discount_code_used";
+export type MappingRule =
+  | "operator"
+  | "operator_none" // the operator said "not a Shopify entity" — resolved, nothing to measure
+  | "exact_product_title"
+  | "campaign_product_link"
+  | "campaign_name_token"
+  | "discount_code_used"
+  | "product_title_token" // weak: a token of the initiative name in a product title
+  | "gift_clause_token" // weak: a token of the gift clause in a product title
+  | "coupon_window_usage" // weak: a code used on orders inside the initiative window
+  | "coupon_name_token"; // weak: a token of the initiative name in a code
+
+// The operator's "not a Shopify product / no coupon" answer.
+export const NONE_ENTITY_ID = "__none__";
 
 // Which rules are strong enough to be used without confirmation.
 export const PROVISIONAL_RULES: readonly MappingRule[] = ["exact_product_title", "campaign_product_link"];
@@ -82,6 +110,9 @@ export interface MappingCandidates {
   products: Array<{ id: string; title: string }>;
   knownDiscountCodes: string[]; // codes used on Shopify orders (or affiliate coupons)
   metaCampaigns: Array<{ id: string; name: string; linkedProductIds: string[] }>;
+  // Codes used on orders, with the order dates — so "codes used inside the
+  // initiative window" can be offered when the plan names no code.
+  discountUsage?: Array<{ code: string; orders: number; firstUsed: string; lastUsed: string }>;
 }
 
 export interface InitiativeMappings {
@@ -102,6 +133,47 @@ export const BASIS_LABEL: Record<LinkBasis, Localized> = {
   provisional: L("זוהה אוטומטית · טרם אושר", "Auto-matched · not yet confirmed"),
   suggested: L("הצעה", "Suggested")
 };
+
+// ---------------------------------------------------------------------------
+// What THIS initiative needs — from its own text, not a universal checklist.
+
+export type InitiativeKind = "launch" | "promotion" | "event_campaign" | "creator" | "inventory_push" | "generic";
+
+export interface ContextRequirement {
+  kind: MappingKind;
+  critical: boolean; // unresolved → needs_context
+  why: Localized; // why the evaluation needs it
+}
+
+const CAMPAIGN_RE = /קמפיין|campaign|\bmeta\b|facebook|instagram|ממומן|\bads?\b/i;
+const COUPON_RE = /קופון|coupon|קוד\s*הנחה|discount\s*code|promo\s*code|\d{1,2}\s*%|הנחה|discount|sale|מבצע/i;
+const CREATOR_RE = /משפיענ|קריאייטור|creator|influencer|affiliate|שותפ/i;
+const STOCK_RE = /מלאי|stock|inventory|clearance|חיסול|עודפים/i;
+const LAUNCH_RE = /השקה|launch|חדש|new\b/i;
+
+export function inferInitiativeKind(i: Pick<Initiative, "anchor" | "title" | "offer"> & { text: string }): InitiativeKind {
+  const t = `${i.title} ${i.text}`;
+  if (i.anchor.kind === "launch" || LAUNCH_RE.test(i.title)) return "launch";
+  if (CREATOR_RE.test(t)) return "creator";
+  if (STOCK_RE.test(i.title)) return "inventory_push";
+  if (i.anchor.kind === "coupon" || i.offer.couponCode || i.offer.discountPct !== null) return "promotion";
+  if (i.anchor.kind === "event") return "event_campaign";
+  return "generic";
+}
+
+export function contextRequirements(i: Pick<Initiative, "anchor" | "title" | "offer"> & { text: string }): { kind: InitiativeKind; requirements: ContextRequirement[] } {
+  const kind = inferInitiativeKind(i);
+  const t = `${i.title} ${i.text}`;
+  const reqs: ContextRequirement[] = [];
+  const productsCritical = kind === "launch" || kind === "promotion" || kind === "event_campaign" || kind === "inventory_push";
+  reqs.push({ kind: "product", critical: productsCritical, why: L("בלי המוצרים אי אפשר לחשב מכירות, מלאי ורווחיות של היוזמה", "Without the products, initiative sales, inventory and profitability cannot be computed") });
+  if (GIFT_RE.test(t)) reqs.push({ kind: "gift_product", critical: true, why: L("התוכנית מדברת על מתנה — כמה ניתנו וכמה נשארו במלאי תלוי במוצר המתנה", "The plan mentions a gift — how many were given and how many are left depends on the gift product") });
+  const couponReferenced = !!i.offer.couponCode || COUPON_RE.test(t);
+  if (couponReferenced) reqs.push({ kind: "discount", critical: kind === "promotion" || kind === "creator" || /קופון|coupon|קוד/i.test(t), why: L("התוכנית מתייחסת לקופון — השימוש בו הוא חלק ממצב היוזמה", "The plan refers to a coupon — its usage is part of the initiative's reality") });
+  const campaignReferenced = CAMPAIGN_RE.test(t);
+  reqs.push({ kind: "meta_campaign", critical: campaignReferenced, why: campaignReferenced ? L("התוכנית מבקשת לבדוק את הקמפיין — בלי הקמפיין אין הוצאה ו-ROAS של היוזמה", "The plan asks to check the campaign — without it there is no initiative spend or ROAS") : L("קמפיין מקושר מוסיף הוצאה ו-ROAS ליוזמה", "A linked campaign adds spend and ROAS to the initiative") });
+  return { kind, requirements: reqs };
+}
 
 export const PROVISIONAL_NOTE: Localized = L("מבוסס על התאמה אוטומטית · טרם אושר", "Based on an automatic match · not yet confirmed");
 
@@ -129,6 +201,8 @@ export function mentionedAsGift(text: string, title: string): boolean {
 
 // Tokens of the initiative's own name that are specific enough to point at
 // a campaign — a WEAK signal, always a suggestion.
+// Function words that appear in a gift clause but name nothing.
+const GIFT_STOP = new Set(["with", "every", "order", "orders", "full", "went", "many", "much", "each", "purchase", "their", "them", "that", "this", "when", "from", "sent", "ship", "shipped", "בכל", "הזמנה", "מלא", "ניתנו", "ניתן", "שנתנו", "יצאו", "כמה", "מקבלים", "מקבל", "רכישה", "שלהם"]);
 const GENERIC = new Set(["campaign", "launch", "sale", "promo", "promotion", "meta", "facebook", "instagram", "september", "october", "קמפיין", "השקה", "מבצע", "מכירה"]);
 export function nameTokens(s: string): string[] {
   return normalizeText(s)
@@ -178,8 +252,42 @@ export function resolveMappings(
     if (tok) links.push({ kind: "meta_campaign", id: c.id, label: c.name, state: "suggested", confidence: "medium", reason: L(`שם הקמפיין מכיל "${tok}" — התאמה חלשה, דורשת אישור`, `The campaign name contains "${tok}" — a weak match, needs confirmation`), provenance: { rule: "campaign_name_token", matchedOn: tok, auto: null } });
   }
 
-  // 2. Operator confirmations override the state but keep the origin.
+  // 1b. Weak discovery — offered to the operator, never used in a number.
+  const productTokens = [...new Set([...nameTokens(initiative.title), ...nameTokens(initiative.anchor.label)])];
+  const exactIds = new Set(links.filter((l) => l.kind === "product" || l.kind === "gift_product").map((l) => l.id));
+  const giftClause = initiative.text
+    .split(/[,.;\n—|/]+/)
+    .find((c) => GIFT_RE.test(c));
+  const giftTokens = giftClause ? nameTokens(giftClause.replace(GIFT_RE, " ")).filter((tk) => !GIFT_STOP.has(tk) && !productTokens.includes(tk)) : [];
+  for (const p of candidates.products) {
+    if (exactIds.has(p.id)) continue;
+    const pt = normalizeText(p.title);
+    // A product carrying the initiative's own name is a product candidate, never a gift candidate.
+    const tok = productTokens.find((tk) => pt.includes(tk));
+    if (tok) {
+      links.push({ kind: "product", id: p.id, label: p.title, state: "suggested", confidence: "medium", reason: L(`"${tok}" משם היוזמה מופיע בשם המוצר`, `"${tok}" from the initiative name appears in the product name`), provenance: { rule: "product_title_token", matchedOn: tok, auto: null } });
+      continue;
+    }
+    const gtok = giftTokens.find((tk) => pt.includes(tk));
+    if (gtok) links.push({ kind: "gift_product", id: p.id, label: p.title, state: "suggested", confidence: "medium", reason: L(`"${gtok}" מהמשפט על המתנה מופיע בשם המוצר`, `"${gtok}" from the gift clause appears in the product name`), provenance: { rule: "gift_clause_token", matchedOn: gtok, auto: null } });
+  }
+  if (!links.some((l) => l.kind === "discount") && candidates.discountUsage?.length) {
+    // Codes used on orders inside the initiative window, most used first;
+    // a code carrying a token of the initiative name is named as such.
+    const inWindow = candidates.discountUsage.filter((d) => d.lastUsed >= (initiative as { start?: string }).start! && d.firstUsed <= (initiative as { end?: string }).end!);
+    for (const d of [...inWindow].sort((a, b) => b.orders - a.orders).slice(0, 5)) {
+      const tok = productTokens.find((tk) => normalizeText(d.code).includes(tk));
+      links.push({ kind: "discount", id: d.code, label: d.code, state: "suggested", confidence: tok ? "medium" : "low", reason: tok ? L(`הקוד מכיל "${tok}" ושימש ב-${d.orders} הזמנות בחלון היוזמה`, `The code contains "${tok}" and was used on ${d.orders} orders in the initiative window`) : L(`שימש ב-${d.orders} הזמנות בחלון היוזמה`, `Used on ${d.orders} orders in the initiative window`), provenance: { rule: tok ? "coupon_name_token" : "coupon_window_usage", matchedOn: tok ?? d.code, auto: null } });
+    }
+  }
+
+  // 2. Operator confirmations override the state but keep the origin. An
+  // explicit "none" resolves the kind without an entity.
   for (const c of mine) {
+    if (c.id === NONE_ENTITY_ID) {
+      links.push({ kind: c.kind, id: NONE_ENTITY_ID, label: c.label, state: "confirmed", confidence: null, reason: L("המנהל סימן: אין ישות כזו ב-Shopify", "The operator marked: no such Shopify entity"), provenance: { rule: "operator_none", matchedOn: c.label, auto: null } });
+      continue;
+    }
     const existing = find(c.kind, c.id);
     if (existing) {
       existing.state = "confirmed";
@@ -195,24 +303,29 @@ export function resolveMappings(
   for (const kind of ["product", "gift_product", "discount", "meta_campaign"] as MappingKind[]) {
     const of = links.filter((l) => l.kind === kind);
     const n = (s: LinkBasis) => of.filter((l) => l.state === s).length;
-    const state: MappingState = n("confirmed") > 0 ? "confirmed" : n("provisional") > 0 ? "provisional" : n("suggested") > 0 ? "suggested" : "missing";
-    const detail =
-      state === "confirmed"
+    const none = of.some((l) => l.provenance.rule === "operator_none");
+    // Resolved = confirmed or provisional. Suggestions alone are unresolved.
+    const state: MappingState = n("confirmed") > 0 ? "confirmed" : n("provisional") > 0 ? "provisional" : n("suggested") > 0 ? "suggested" : "unresolved";
+    const detail = none
+      ? L("אין ישות כזו ב-Shopify (סומן על ידי המנהל)", "No such Shopify entity (marked by the operator)")
+      : state === "confirmed"
         ? L(`${n("confirmed")} מאושרים${n("provisional") ? ` · ${n("provisional")} זוהו אוטומטית` : ""}`, `${n("confirmed")} confirmed${n("provisional") ? ` · ${n("provisional")} auto-matched` : ""}`)
         : state === "provisional"
           ? L(`${n("provisional")} זוהו אוטומטית — טרם אושרו`, `${n("provisional")} auto-matched — not yet confirmed`)
           : state === "suggested"
-            ? L(`${n("suggested")} הצעות חלשות — דורשות אישור`, `${n("suggested")} weak suggestions — need confirmation`)
+            ? L(`${n("suggested")} הצעות — לבחירה`, `${n("suggested")} suggestions — choose`)
             : kind === "discount" && code
               ? L(`${code} נזכר בתוכנית אך לא נראה ב-Shopify`, `${code} is named in the plan but not seen in Shopify`)
-              : L("לא מקושר", "Not linked");
+              : L("אין התאמה בטוחה — חיפוש", "No confident match — search");
     byKind[kind] = { state, count: of.length, detail };
   }
   return { initiativeId: initiative.id, links, byKind };
 }
 
-// Links that may feed evidence: confirmed and provisional. Suggested never.
-export const usableLinks = (m: InitiativeMappings) => m.links.filter((l) => l.state !== "suggested");
+// Links that may feed evidence: confirmed and provisional. Suggested never;
+// an explicit "none" resolves the requirement but measures nothing.
+export const usableLinks = (m: InitiativeMappings) => m.links.filter((l) => l.state !== "suggested" && l.id !== NONE_ENTITY_ID);
+export const isResolved = (state: MappingState) => state === "confirmed" || state === "provisional";
 
 // ---------------------------------------------------------------------------
 // Evidence gathered per USABLE entity for the initiative's window.
@@ -271,7 +384,7 @@ export interface InitiativeEvidence {
 // ---------------------------------------------------------------------------
 // The evaluated reality.
 
-export type InitiativeRealityStatus = "on_track" | "off_track" | "no_issue_detected" | "needs_attention" | "insufficient_data";
+export type InitiativeRealityStatus = "on_track" | "off_track" | "no_issue_detected" | "needs_attention" | "needs_context" | "insufficient_data";
 export type MetricScope = "initiative" | "store";
 
 export interface MetricProvenance {
@@ -331,6 +444,25 @@ export interface MissingEvidence {
   label: Localized;
 }
 
+// One row of "Hiloomy needs a short completion".
+export interface ContextRow {
+  kind: MappingKind;
+  critical: boolean;
+  state: MappingState;
+  why: Localized;
+  candidates: number; // suggestions the operator can pick from
+  provisional: number; // auto-matched, awaiting confirmation
+  action: "confirm" | "choose" | "search" | "none";
+}
+
+export interface ContextTask {
+  initiativeKind: InitiativeKind;
+  rows: ContextRow[];
+  missingCritical: MappingKind[]; // unresolved critical kinds
+  known: Localized[]; // what Hiloomy already knows for this initiative
+  required: number; // missingCritical.length — the CTA's number
+}
+
 export interface StatusLine {
   label: Localized;
   state: "healthy" | "above" | "below" | "risk" | "acceptable" | "unknown";
@@ -365,6 +497,8 @@ export interface InitiativeReality {
   stale: boolean;
   // Rests on confirmed or provisional evidence only.
   evidenceBasis: "confirmed" | "provisional" | "none";
+  // What this initiative needs, and what is still unresolved. Setup, not a decision.
+  context: ContextTask;
   candidateFinding: CandidateFinding | null;
   evaluatedAt: string;
 }
@@ -389,7 +523,7 @@ export function consumptionProfile(dailyUnits: number[]): ConsumptionProfile {
 }
 
 export function evaluateInitiativeReality(
-  initiative: Pick<Initiative, "id" | "title" | "start" | "end" | "offer">,
+  initiative: Pick<Initiative, "id" | "title" | "start" | "end" | "offer" | "anchor"> & { text: string },
   mappings: InitiativeMappings,
   ev: InitiativeEvidence,
   now: Date
@@ -532,6 +666,25 @@ export function evaluateInitiativeReality(
     if (ev.store.marginRate !== null) metrics.push({ key: "store_margin", label: L("מרווח תרומה כל החנות", "Whole-store contribution margin"), value: `${Math.round(ev.store.marginRate * 100)}%`, quality: "estimated", scope: "store", basis: null, source: "profit", provenance: [] });
   }
 
+  // ── Context: what this initiative needs, and what is unresolved ──────
+  const { kind: initiativeKind, requirements } = contextRequirements(initiative as Pick<Initiative, "anchor" | "title" | "offer"> & { text: string });
+  const rows: ContextRow[] = requirements.map((req) => {
+    const k = mappings.byKind[req.kind];
+    const suggestions = mappings.links.filter((l) => l.kind === req.kind && l.state === "suggested").length;
+    const provisionalN = mappings.links.filter((l) => l.kind === req.kind && l.state === "provisional").length;
+    const action: ContextRow["action"] = k.state === "confirmed" ? "none" : k.state === "provisional" ? "confirm" : suggestions > 0 ? "choose" : "search";
+    return { kind: req.kind, critical: req.critical, state: k.state, why: req.why, candidates: suggestions, provisional: provisionalN, action };
+  });
+  const missingCritical = rows.filter((r) => r.critical && !isResolved(r.state)).map((r) => r.kind);
+  const known: Localized[] = [
+    L(`חלון התוכנית ${initiative.start} → ${initiative.end}`, `Plan window ${initiative.start} → ${initiative.end}`),
+    ...(ev.campaigns.length ? [L(`קמפיין Meta: ${ev.campaigns.map((c) => c.name).join(", ")}`, `Meta campaign: ${ev.campaigns.map((c) => c.name).join(", ")}`), L(`הוצאת Meta ${ils(ev.campaigns.reduce((n, c) => n + c.spend, 0))}`, `Meta spend ${ils(ev.campaigns.reduce((n, c) => n + c.spend, 0))}`)] : []),
+    ...(ev.discount ? [L(`קופון ${ev.discount.code}: ${ev.discount.orders} הזמנות`, `Coupon ${ev.discount.code}: ${ev.discount.orders} orders`)] : []),
+    ...(mainProducts.length ? [L(`${mainProducts.length} מוצרים מקושרים`, `${mainProducts.length} linked products`)] : []),
+    ...(gifts.length ? [L(`מוצר מתנה: ${gifts.map((g) => g.title).join(", ")}`, `Gift product: ${gifts.map((g) => g.title).join(", ")}`)] : [])
+  ];
+  const context: ContextTask = { initiativeKind, rows, missingCritical, known, required: missingCritical.length };
+
   // ── Status ───────────────────────────────────────────────────────────
   const usable = [...ev.products.map((p) => p.basis), ...(ev.discount ? [ev.discount.basis] : []), ...ev.campaigns.map((c) => c.basis)];
   const evidenceBasis: InitiativeReality["evidenceBasis"] = usable.length === 0 ? "none" : usable.some((b) => b === "confirmed") ? "confirmed" : "provisional";
@@ -539,14 +692,23 @@ export function evaluateInitiativeReality(
   const issues = findings.filter((f) => f.severity !== "info");
   const risks = findings.filter((f) => f.severity === "risk");
   const goalDefined = false; // the plan model carries no target
+  const kindLabels = (ks: MappingKind[], loc: "he" | "en") => ks.map((k) => MAPPING_KIND_LABEL[k][loc].toLowerCase()).join(", ");
+  const cannot = missingCritical.includes("product") ? L("מכירות, מלאי ורווחיות", "sales, inventory or profitability") : missingCritical.includes("gift_product") ? L("כמה מתנות ניתנו וכמה נשארו", "how many gifts were given and how many remain") : missingCritical.includes("discount") ? L("את השימוש בקופון", "coupon usage") : L("את ביצועי הקמפיין", "campaign performance");
   let status: InitiativeRealityStatus;
   let statusReason: Localized;
-  if (!hasEvidence) {
+  if (risks.length) {
+    // A measured risk on usable evidence is never hidden behind setup.
+    status = "needs_attention";
+    statusReason = risks[0].statement;
+  } else if (missingCritical.length) {
+    status = "needs_context";
+    statusReason = L(`Hiloomy מבינה את היוזמה אבל לא יכולה להעריך ${cannot.he} עד שיחוברו: ${kindLabels(missingCritical, "he")}.`, `Hiloomy understands the initiative but cannot evaluate ${cannot.en} until these are connected: ${kindLabels(missingCritical, "en")}.`);
+  } else if (!hasEvidence) {
     status = "insufficient_data";
-    statusReason = mappings.links.length ? L("הישויות של היוזמה מוצעות בלבד (התאמה חלשה) — אין מספיק מידע להעריך.", "The initiative's entities are only weakly suggested — not enough to evaluate.") : L("הישויות של היוזמה לא ממופות — אין מספיק מידע להעריך.", "The initiative's entities are not mapped — not enough to evaluate.");
+    statusReason = L("הישויות ממופות, אבל אין עדיין ראיות למדידה (היוזמה טרם התחילה או שהנתונים לא נטענו).", "Entities are mapped, but there is no evidence to measure yet (the initiative has not started, or data did not load).");
   } else if (issues.length) {
     status = "needs_attention";
-    statusReason = (risks[0] ?? issues[0]).statement;
+    statusReason = issues[0].statement;
   } else if (goalDefined) {
     status = "on_track"; // unreachable today: kept for when a target exists
     statusReason = L("עומד ביעד.", "Meeting the target.");
@@ -554,7 +716,7 @@ export function evaluateInitiativeReality(
     status = "no_issue_detected";
     statusReason = L("נבדק — לא נמצאה בעיה מהותית. אין יעד שמאפשר לקבוע אם היוזמה במסלול.", "Checked — no material issue found. No target exists to say whether it is on track.");
   }
-  if (evidenceBasis === "provisional" && status !== "insufficient_data") statusReason = L(`${statusReason.he} מבוסס על התאמה אוטומטית — טרם אושר.`, `${statusReason.en} Based on automatic matches — not yet confirmed.`);
+  if (evidenceBasis === "provisional" && status !== "insufficient_data" && status !== "needs_context") statusReason = L(`${statusReason.he} מבוסס על התאמה אוטומטית — טרם אושר.`, `${statusReason.en} Based on automatic matches — not yet confirmed.`);
   if (status === "no_issue_detected" && !findings.some((f) => f.kind !== "sales_vs_prior")) findings.push({ kind: "progressing", severity: "info", basis: evidenceBasis === "confirmed" ? "confirmed" : "provisional", unconfirmed: evidenceBasis !== "confirmed", statement: L("היוזמה מתקדמת ללא ממצא חריג.", "The initiative is progressing with no exceptional finding."), evidence: [], missing: [] });
 
   // Status lines (Campaign / Sales / Inventory / Margin) — each with a reason.
@@ -570,30 +732,39 @@ export function evaluateInitiativeReality(
   const marginM = metrics.find((m) => m.key === "margin");
   lines.push({ label: L("רווחיות", "Margin"), state: !marginM ? "unknown" : findings.some((f) => f.kind === "negative_margin") ? "risk" : "acceptable", text: marginM ? L(`${marginM.value} (${marginM.quality === "estimated" ? "אומדן" : "מחושב"})`, `${marginM.value} (${marginM.quality})`) : L("עלויות חסרות", "costs missing") });
 
-  // ── Confidence: deterministic, from mapping trust + costs + freshness ──
+  // ── Overall confidence: REQUIRED coverage first, then trust, costs, freshness ──
+  // Per-entity mapping confidence lives on each link; this is the whole
+  // evaluation's confidence, so a confirmed campaign next to unmapped
+  // products is LOW, not high.
   const shopifyAge = hoursOld(ev.freshness.shopify, now);
   const metaAge = hoursOld(ev.freshness.meta, now);
   const stale = (shopifyAge !== null && shopifyAge > 24) || (metaAge !== null && ev.campaigns.length > 0 && metaAge > 24);
   const veryStale = (shopifyAge !== null && shopifyAge > 48) || (metaAge !== null && ev.campaigns.length > 0 && metaAge > 48);
   const costsMissing = missing.some((m) => m.key === "costs");
-  const anyProvisional = usable.some((b) => b === "provisional");
+  const criticalRows = rows.filter((r) => r.critical);
+  const criticalProvisional = criticalRows.some((r) => r.state === "provisional");
+  const optionalUnresolved = rows.filter((r) => !r.critical && !isResolved(r.state));
   let confidence: LinkConfidence;
   let confidenceReason: Localized;
-  if (!hasEvidence || veryStale) {
+  if (missingCritical.length || !hasEvidence || veryStale) {
     confidence = "low";
-    confidenceReason = veryStale ? L("הנתונים לא סונכרנו יותר מ-48 שעות.", "Data has not synced for more than 48 hours.") : mappings.links.length ? L("רק הצעות חלשות — אף מיפוי אינו שמיש.", "Only weak suggestions — no usable mapping.") : L("אין ישויות ממופות.", "No entities are mapped.");
-  } else if (anyProvisional || stale || costsMissing || missing.some((m) => m.key === "campaign")) {
+    confidenceReason = missingCritical.length
+      ? L(`${known.length > 1 ? "חלק מהישויות מאושרות, אבל " : ""}${cannot.he} לא ניתנים להערכה כי ${kindLabels(missingCritical, "he")} לא מחוברים.`, `${known.length > 1 ? "Some entities are confirmed, but " : ""}${cannot.en} cannot be evaluated because ${kindLabels(missingCritical, "en")} are not connected.`)
+      : veryStale
+        ? L("הנתונים לא סונכרנו יותר מ-48 שעות.", "Data has not synced for more than 48 hours.")
+        : L("הישויות ממופות אבל אין ראיות למדידה.", "Entities are mapped but there is no evidence to measure.");
+  } else if (criticalProvisional || stale || costsMissing || optionalUnresolved.length) {
     confidence = "medium";
-    confidenceReason = anyProvisional
-      ? L("חלק מהראיות נשענות על התאמה אוטומטית שטרם אושרה.", "Some evidence rests on automatic matches that are not yet confirmed.")
+    confidenceReason = criticalProvisional
+      ? L("ישויות קריטיות זוהו אוטומטית וטרם אושרו.", "Critical entities are auto-matched and not yet confirmed.")
       : stale
         ? L("הנתונים בני יותר מ-24 שעות.", "Data is more than 24 hours old.")
         : costsMissing
-          ? L("מוצרים וקמפיין מקושרים, אבל עלויות אמיתיות חסרות.", "Products and campaign are linked, but real product costs are incomplete.")
-          : L("הקמפיין של היוזמה אינו מקושר.", "The initiative's campaign is not linked.");
+          ? L("הישויות מאושרות, אבל עלויות אמיתיות חסרות.", "Entities are confirmed, but real product costs are incomplete.")
+          : L(`ישויות משניות לא מחוברות: ${kindLabels(optionalUnresolved.map((r) => r.kind), "he")}.`, `Optional entities are not connected: ${kindLabels(optionalUnresolved.map((r) => r.kind), "en")}.`);
   } else {
     confidence = "high";
-    confidenceReason = L("כל הישויות מאושרות, העלויות אמיתיות והנתונים טריים.", "Every entity is confirmed, costs are real and data is fresh.");
+    confidenceReason = L("כל הישויות הנדרשות מאושרות, העלויות אמיתיות והנתונים טריים.", "Every required entity is confirmed, costs are real and data is fresh.");
   }
 
   // ── Candidate: a risk on usable evidence. Never a decision by itself. ─
@@ -630,6 +801,7 @@ export function evaluateInitiativeReality(
     freshness: ev.freshness,
     stale,
     evidenceBasis,
+    context,
     candidateFinding,
     evaluatedAt: now.toISOString()
   };
@@ -656,6 +828,7 @@ export interface InitiativeRealitySummary {
   freshness: InitiativeFreshness;
   stale: boolean;
   evidenceBasis: InitiativeReality["evidenceBasis"];
+  context: ContextTask;
   candidateFinding: CandidateFinding | null;
   evaluatedAt: string;
 }
@@ -680,6 +853,7 @@ export function summarizeReality(r: InitiativeReality, offer: Initiative["offer"
     freshness: r.freshness,
     stale: r.stale,
     evidenceBasis: r.evidenceBasis,
+    context: r.context,
     candidateFinding: r.candidateFinding,
     evaluatedAt: r.evaluatedAt
   };

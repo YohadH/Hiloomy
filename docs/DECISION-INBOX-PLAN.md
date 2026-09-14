@@ -610,6 +610,37 @@ confident, misleading answer.**
   half of the window), estimated days remaining vs initiative days.
   Unknowns are `missingEvidence`, not gates: restock date, gift mandatory
   or optional, an alternative gift, whether the campaign keeps its pace.
+- **Context resolution (2026-09-14 pass 3).** A missing CRITICAL entity is
+  `needs_context`, never "no issue". Requirements come from the
+  initiative's own text (`contextRequirements`): products are critical for
+  launch / promotion / event / inventory push; the gift is critical when the
+  text has a gift phrase; the coupon is critical when the text names a
+  coupon/code (or the kind is promotion / creator) and optional for a bare
+  "מבצע"; the campaign is critical when the text asks about the campaign.
+  Status precedence: a measured RISK on usable evidence (needs_attention) →
+  needs_context (critical unresolved) → insufficient_data (mapped, no
+  evidence yet) → needs_attention (attention findings) → no_issue_detected.
+  Overall confidence follows REQUIRED coverage: any critical unresolved →
+  low (even with a confirmed campaign); critical provisional / costs
+  missing / >24h / optional unresolved → medium; else high. Per-link
+  confidence stays on the link. Discovery (all `suggested`, never used in a
+  number): product titles carrying a token of the initiative name
+  (`product_title_token`), titles carrying a token of the gift clause minus
+  function words (`gift_clause_token`), codes used on orders inside the
+  window, most used first, name tokens named (`coupon_window_usage` /
+  `coupon_name_token`). "Not a Shopify product / no coupon" is stored as
+  `entityLinks[{id:"__none__"}]` (rule `operator_none`): resolved, nothing
+  measured. `ContextTask` on the reality (rows with state / candidates /
+  action confirm|choose|search, `known`, `missingCritical`, `required`).
+  UI: `components/plan/context-completion.tsx` (receipt + page block:
+  known ✓ / missing ⚠ / "השלם N חיבורים"), `context-resolution.tsx` (pick
+  one or many, search via `GET …/plan/entity-search`, none), and
+  `/plan/initiative` as the "needs context" queue. A confirmation posts a
+  plan override; the overrides route then calls
+  `refreshInitiativeAfterMapping` — re-evaluates the initiative NOW and
+  rewrites `reality` on its open plan decisions; candidates re-enter the
+  pipeline on the next audit pass. needs_context never yields a
+  candidateFinding, so setup never reaches Today.
 - **Acceptance trace on real data**: `node --import tsx
   scripts/initiative-reality-trace.ts incenseparfums.myshopify.com "Satin"`
   prints mapping + rule per link, metrics with quality/basis/provenance,
@@ -643,6 +674,13 @@ confident, misleading answer.**
 - **DO NOT ACT and WATCH are first-class.** The ranking is by ₪ exposure, not severity
   label, and the inbox holds at most five cards. Everything else is on the Watchlist.
 - **Zero decisions is a success state** and is rendered as such.
+- **HARD RULE — missing context (owner, 2026-09-14).** A missing critical mapping must never produce a "No issue detected" result. If Hiloomy cannot reliably understand the initiative, it must explicitly mark the evaluation as incomplete, identify the missing context, help the user resolve it, and automatically continue the evaluation once the context is available.
+  In Hebrew: חיבור קריטי חסר לעולם לא יכול להוביל למסקנה "לא נמצאה בעיה". אם Hiloomy לא מבינה את היוזמה ברמת אמינות מספקת, עליה לסמן שהבדיקה לא הושלמה, להסביר בדיוק איזה הקשר חסר, לעזור למשתמש להשלים אותו, ולאחר מכן להמשיך את הבדיקה אוטומטית.
+  In code: `needs_context` in `lib/domain/initiative-reality.ts`, the
+  `ContextTask` it carries, the resolution flow on `/plan/initiative/[id]`,
+  and `refreshInitiativeAfterMapping` after every confirmation. The rule is
+  state AND behaviour: don't know → say so → ask for exactly what is missing
+  → continue alone. Tested in `tests/unit/initiative-context.test.ts`.
 
 ## 2. Data composition (what feeds each decision)
 

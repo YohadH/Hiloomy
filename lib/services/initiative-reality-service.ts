@@ -26,7 +26,7 @@ import {
   type MappingCandidates,
   type ProductEvidence
 } from "@/lib/domain/initiative-reality";
-import { readPlanOverrides } from "@/lib/services/plan-service";
+import { buildPlanView, readPlanOverrides } from "@/lib/services/plan-service";
 
 const DAY_MS = 86_400_000;
 const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
@@ -46,7 +46,7 @@ export interface RealityInputs {
 export async function loadRealityInputs(storeId: string, sheetId: string, now: Date, store: InitiativeEvidence["store"] = null): Promise<RealityInputs> {
   const db = getDb() as any;
   const since60 = new Date(now.getTime() - 60 * DAY_MS);
-  const [products, usedCodes, affiliateCodes, campaignRows, links, overrides, shopify, meta, sheet] = await Promise.all([
+  const [products, usedCodes, affiliateCodes, campaignRows, links, overrides, shopify, meta, sheet, usageRows] = await Promise.all([
     db.product.findMany({ where: { storeId }, select: { id: true, title: true } }) as Promise<Array<{ id: string; title: string }>>,
     db.discountUsage.findMany({ where: { storeId }, distinct: ["code"], select: { code: true } }).catch(() => []) as Promise<Array<{ code: string }>>,
     (db.affiliateCoupon ? db.affiliateCoupon.findMany({ where: { storeId }, select: { code: true } }) : Promise.resolve([])).catch(() => []) as Promise<Array<{ code: string | null }>>,
@@ -57,15 +57,32 @@ export async function loadRealityInputs(storeId: string, sheetId: string, now: D
     readPlanOverrides(sheetId),
     db.shopifyConnection.findFirst({ where: { storeId }, select: { lastSyncAt: true, lastProductsSyncAt: true } }).catch(() => null) as Promise<{ lastSyncAt: Date | null; lastProductsSyncAt: Date | null } | null>,
     db.metaAdsConnection.findUnique({ where: { storeId }, select: { lastSyncAt: true } }).catch(() => null) as Promise<{ lastSyncAt: Date | null } | null>,
-    db.ganttSheet.findUnique({ where: { id: sheetId }, select: { updatedAt: true, sourceLastSyncedAt: true } }).catch(() => null) as Promise<{ updatedAt: Date; sourceLastSyncedAt: Date | null } | null>
+    db.ganttSheet.findUnique({ where: { id: sheetId }, select: { updatedAt: true, sourceLastSyncedAt: true } }).catch(() => null) as Promise<{ updatedAt: Date; sourceLastSyncedAt: Date | null } | null>,
+    // Codes used on orders in the last 120 days, with dates — coupon candidates
+    // for initiatives whose plan names no code.
+    db.discountUsage
+      .findMany({ where: { storeId, order: { createdAt: { gte: new Date(now.getTime() - 120 * DAY_MS) }, cancelledAt: null, test: false } }, select: { code: true, orderId: true, order: { select: { createdAt: true } } } })
+      .catch(() => []) as Promise<Array<{ code: string; orderId: string; order: { createdAt: Date } }>>
   ]);
+  const usageByCode = new Map<string, { orders: Set<string>; first: string; last: string }>();
+  for (const u of usageRows) {
+    const code = u.code.trim().toUpperCase();
+    if (!code) continue;
+    const d = u.order.createdAt.toISOString().slice(0, 10);
+    const cur = usageByCode.get(code) ?? { orders: new Set<string>(), first: d, last: d };
+    cur.orders.add(u.orderId);
+    if (d < cur.first) cur.first = d;
+    if (d > cur.last) cur.last = d;
+    usageByCode.set(code, cur);
+  }
   const linkedByCampaign = new Map<string, string[]>();
   for (const l of links) linkedByCampaign.set(l.campaignId, [...(linkedByCampaign.get(l.campaignId) ?? []), l.productId]);
   return {
     candidates: {
       products,
       knownDiscountCodes: [...usedCodes.map((c) => c.code), ...affiliateCodes.map((c) => c.code ?? "")].filter(Boolean),
-      metaCampaigns: campaignRows.map((c) => ({ id: c.campaignId, name: c.campaignName, linkedProductIds: linkedByCampaign.get(c.campaignId) ?? [] }))
+      metaCampaigns: campaignRows.map((c) => ({ id: c.campaignId, name: c.campaignName, linkedProductIds: linkedByCampaign.get(c.campaignId) ?? [] })),
+      discountUsage: [...usageByCode.entries()].map(([code, u]) => ({ code, orders: u.orders.size, firstUsed: u.first, lastUsed: u.last }))
     },
     confirmed: overrides.entityLinks,
     freshness: {
@@ -208,6 +225,26 @@ async function buildPlanRealitiesUncached(storeId: string, plan: PlanView, now: 
     }
   }
   return out;
+}
+
+// After the operator confirms / removes a mapping: recompute this initiative's
+// reality NOW and refresh any open plan decision that carries it, so the
+// receipt and Today do not wait for the nightly run. Candidate generation
+// happens on the next audit pass (Today load / cron), through the pipeline.
+export async function refreshInitiativeAfterMapping(storeId: string, sheetId: string, initiativeId: string, now = new Date()): Promise<{ status: InitiativeReality["status"]; updatedDecisions: number } | null> {
+  const db = getDb() as any;
+  const plan = await buildPlanView(storeId, sheetId, now);
+  const initiative = plan.initiatives.find((i) => i.id === initiativeId);
+  if (!initiative) return null;
+  const inputs = await loadRealityInputs(storeId, sheetId, now);
+  const reality = await buildInitiativeReality(storeId, initiative, inputs, now);
+  const summary = summarizeReality(reality, initiative.offer);
+  const open = (await db.alert.findMany({ where: { storeId, type: "plan_decision", relatedEntityId: initiativeId, status: "open" }, select: { id: true, payloadJson: true } }).catch(() => [])) as Array<{ id: string; payloadJson: Record<string, unknown> | null }>;
+  for (const a of open) {
+    await db.alert.update({ where: { id: a.id }, data: { payloadJson: { ...(a.payloadJson ?? {}), reality: summary, evidenceRefreshedAt: now.toISOString() } } }).catch(() => null);
+  }
+  realityMemo.clear();
+  return { status: reality.status, updatedDecisions: open.length };
 }
 
 export { summarizeReality };
