@@ -112,10 +112,21 @@ export function DecisionCard({
           <p className="text-sm leading-6 text-muted-foreground">{d.whyNow[locale]}</p>
         </div>
 
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">{t("הילומי ממליצה", "Hiloomy recommends")}</p>
-          <p className={cn("leading-6", prominent ? "text-base font-medium" : "text-sm")}>{d.recommendation[locale]}</p>
-        </div>
+        {d.blocked ? (
+          <div className="space-y-1 rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
+            <p className="text-xs font-medium text-warning">{t("ההערכה חסומה — חסר הקשר", "Evaluation blocked — context missing")}</p>
+            <p className={cn("leading-6", prominent ? "text-base font-medium" : "text-sm")}>{d.blocked.line[locale]}</p>
+            <p className="text-sm text-muted-foreground">{d.blocked.missing[locale]}</p>
+            <a href={d.blocked.href} className="inline-flex text-sm font-semibold underline-offset-4 hover:underline">
+              {d.blocked.cta[locale]} {isHe ? "←" : "→"}
+            </a>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">{t("הילומי ממליצה", "Hiloomy recommends")}</p>
+            <p className={cn("leading-6", prominent ? "text-base font-medium" : "text-sm")}>{d.recommendation[locale]}</p>
+          </div>
+        )}
 
         <div className="space-y-3 border-t border-border pt-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

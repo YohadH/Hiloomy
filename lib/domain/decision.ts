@@ -179,6 +179,10 @@ export interface Decision {
   // Plan decisions only: the initiative's live reality (what was planned,
   // what is happening now, what changed) — shown before the recommendation.
   initiative?: InitiativeRealitySummary | null;
+  // A BLOCKED evaluation (plan decisions whose initiative lacks critical
+  // context): not a recommendation — the missing context and the resolve
+  // action. The card and the receipt render this instead of "recommends".
+  blocked?: { line: Localized; missing: Localized; cta: Localized; href: string } | null;
 }
 
 export interface WatchItem {

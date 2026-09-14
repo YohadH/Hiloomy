@@ -668,6 +668,27 @@ confident, misleading answer.**
   (one sentence) · Does it require a decision?; every rule, per-metric
   quality, per-product row, store context and decision history sits under
   Details / Audit. `unlink_kind` op clears a kind's confirmed links.
+- **Plan-decision copy (2026-09-14 pass 5)** — `lib/domain/plan-decision-copy.ts`,
+  pure, tested. Four rules: (1) a REVIEW hook answers its own question —
+  `continue` / `change` / `stop` — or says "not enough evidence to choose";
+  never forces an option because one number is positive (+18% sales with a
+  gift covering 8 of 16 days → change, not continue); (2) decision first,
+  evidence second; (3) every number carries its scope in the sentence
+  ("מכירות 3 המוצרים המקושרים ב-14 הימים הראשונים: ₪32,480, +18% מול 14
+  הימים שלפני היוזמה"; provisional → "מבוסס על N התאמות אוטומטיות שטרם
+  אושרו"; store pace → "מכירות כל החנות (הקשר רחב, לא היוזמה)"); (4)
+  needs_context is a BLOCKED evaluation: `Decision.blocked {line, missing,
+  cta, href}` — the card and receipt render "ההערכה חסומה — חסר הקשר" with
+  "השלם N חיבורים →" instead of "Hiloomy recommends". Verdict rules:
+  `continue` needs sales evidence + known inventory + no attention/risk
+  finding; any risk (or spend > attributed, coupon unused, campaign without
+  spend) → `change` with what to change; negative margin with real costs
+  AND sales not growing → `stop`; else `insufficient`. Conditional
+  (discount) hooks keep activate / shallower / hold, with the same scoped
+  pace clause. `whyNow` reads as current context: "בדיקה שהתוכנית קבעה
+  ל-2026-09-01 · יום 14 מתוך 30 · …". Confidence sits under the
+  recommendation on the receipt. Options on a review: keep = "להמשיך
+  כמתוכנן", recommended = the verdict; blocked marks none.
 - **Acceptance trace on real data**: `node --import tsx
   scripts/initiative-reality-trace.ts incenseparfums.myshopify.com "Satin"`
   prints mapping + rule per link, metrics with quality/basis/provenance,

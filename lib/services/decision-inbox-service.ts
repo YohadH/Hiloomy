@@ -54,6 +54,7 @@ import { getSalesByChannel } from "@/lib/services/sales-channel-service";
 import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
 import { buildPlanRealities, summarizeReality } from "@/lib/services/initiative-reality-service";
 import { findingSignals } from "@/lib/domain/initiative-reality";
+import { composeReviewRecommendation, reviewWhyNow, scopedPaceSentence } from "@/lib/domain/plan-decision-copy";
 import type { InitiativeRealitySummary } from "@/lib/domain/initiative-reality";
 import type { PlanView } from "@/lib/domain/plan";
 import type {
@@ -1637,41 +1638,31 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
   const conflict = kind === "conditional" && (demandUp || thin.length > 0 || confirmedRisk !== null);
   const status: DecisionStatus = confirmedRisk ? "change_plan" : conflict ? "change_plan" : "test";
   const giftRisk = reality && reality.status !== "needs_context" ? (reality.findings.find((f) => f.kind === "gift_inventory_short") ?? null) : null;
-  const recommendation = realityTriggered && confirmedRisk
-    ? giftRisk
-      ? L(`להמשיך את הקמפיין, אבל לעצור או להחליף את המתנה לפני שהמלאי מגיע לכיסוי קריטי. ${giftRisk.statement.he}`, `Keep the campaign running, but stop or replace the gift before stock reaches critical cover. ${giftRisk.statement.en}`)
-      : L(`להחליט על היוזמה לפי הממצא: ${confirmedRisk.statement.he}`, `Decide on the initiative from the finding: ${confirmedRisk.statement.en}`)
+  // REVIEW hooks (and reality-triggered reviews) answer their own question —
+  // continue / change / stop — or say the evidence is not enough. Decision
+  // first, scoped evidence second. needs_context is a blocked evaluation.
+  const review = kind === "review" ? composeReviewRecommendation(reality, v) : null;
+  const paceScope = scopedPaceSentence(reality, v);
+  const recommendation = review
+    ? L(`${review.decision.he} ${review.evidence.he}`, `${review.decision.en} ${review.evidence.en}`)
     : kind === "conditional"
       ? demandUp && thin.length > 0
-        ? L(`לא להפעיל את ההנחה${discountPct !== null ? ` של ${discountPct}%` : ""} כמתוכנן: ${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} כבר ${paceLabel!.he} ו־${thin.map((x) => x.title).join(", ")} עם פחות מ־14 ימי כיסוי.`, `Do not activate the${discountPct !== null ? ` ${discountPct}%` : ""} discount as planned: ${paceSource === "initiative" ? "initiative sales are" : "store demand is"} already ${paceLabel!.en} and ${thin.map((x) => x.title).join(", ")} has under 14 days of cover.`)
+        ? L(`לא להפעיל את ההנחה${discountPct !== null ? ` של ${discountPct}%` : ""} כמתוכנן. ${paceScope?.he ?? ""}; ${thin.map((x) => x.title).join(", ")} עם פחות מ־14 ימי כיסוי.`, `Do not activate the${discountPct !== null ? ` ${discountPct}%` : ""} discount as planned. ${paceScope?.en ?? ""}; ${thin.map((x) => x.title).join(", ")} has under 14 days of cover.`)
         : demandUp
-          ? L(`לשקול הנחה רדודה יותר${discountPct !== null ? ` מ־${discountPct}%` : ""}: ${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} כבר ${paceLabel!.he} בלי ההנחה.`, `Consider a shallower discount${discountPct !== null ? ` than ${discountPct}%` : ""}: ${paceSource === "initiative" ? "initiative sales are" : "store demand is"} already ${paceLabel!.en} without it.`)
+          ? L(`לשקול הנחה רדודה יותר${discountPct !== null ? ` מ־${discountPct}%` : ""}. ${paceScope?.he ?? ""} — הביקוש עולה גם בלי ההנחה.`, `Consider a shallower discount${discountPct !== null ? ` than ${discountPct}%` : ""}. ${paceScope?.en ?? ""} — demand is rising without it.`)
           : demandDown
-            ? L(`להפעיל כמתוכנן: ${paceSource === "initiative" ? "מכירות היוזמה" : "קצב המכירות בחנות"} ${paceLabel!.he} — התנאי שהתוכנית קבעה מתקיים.`, `Activate as planned: ${paceSource === "initiative" ? "initiative sales are" : "store sales velocity is"} ${paceLabel!.en} — the condition the plan set is met.`)
+            ? L(`להפעיל כמתוכנן. ${paceScope?.he ?? ""} — התנאי שהתוכנית קבעה מתקיים.`, `Activate as planned. ${paceScope?.en ?? ""} — the condition the plan set is met.`)
             : paceValue === null && reality && (reality.status === "insufficient_data" || reality.status === "needs_context")
               ? L("אין ראיות ספציפיות ליוזמה — למפות את המוצרים, הקופון והקמפיין לפני שמחליטים על ההנחה.", "No initiative-specific evidence — map the products, coupon and campaign before deciding on the discount.")
               : L("להחליט לפי הקצב: המכירות יציבות, אין אות חד לכאן או לכאן. הנתונים למטה.", "Decide on pace: sales are stable, no strong signal either way. The numbers are below.")
-      : demandDown
-        ? L(`${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} ${paceLabel!.he} — זה הרגע לשנות, לא להשאיר כמו שהוא.`, `${paceSource === "initiative" ? "Initiative sales are" : "Store demand is"} ${paceLabel!.en} — this is the moment to change, not to keep as is.`)
-        : demandUp
-          ? L(`${paceSource === "initiative" ? "מכירות היוזמה" : "הביקוש בחנות"} ${paceLabel!.he} — אין סיבה מהנתונים להעמיק הנחה.`, `${paceSource === "initiative" ? "Initiative sales are" : "Store demand is"} ${paceLabel!.en} — nothing in the data argues for a deeper discount.`)
-          : paceValue === null && reality && (reality.status === "insufficient_data" || reality.status === "needs_context")
-            ? L("Hiloomy עדיין לא יכולה לענות על שאלות היוזמה — הישויות לא ממופות. להשלים את המיפוי לפני שמחליטים.", "Hiloomy cannot yet answer the initiative's questions — its entities are not mapped. Complete the mapping before deciding.")
-            : L("להחליט לפי מה שנמדד: קצב יציב. הנתונים למטה.", "Decide on what is measured: pace is stable. The numbers are below.");
+      : L("להחליט לפי מה שנמדד. הנתונים למטה.", "Decide on what is measured. The numbers are below.");
 
   return finish(alert, {
     id: alert.id,
     kind: "plan_decision",
     status,
     title: question,
-    whyNow: realityTriggered && confirmedRisk
-      ? L(`${title}: ${confirmedRisk.statement.he}`, `${title}: ${confirmedRisk.statement.en}`)
-      : reality && (reality.status === "insufficient_data" || reality.status === "needs_context")
-        ? L(`${kind === "conditional" ? "ההפעלה מתוכננת ל־" : "בדיקה מתוכננת ל־"}${start} · Hiloomy עדיין לא יכולה לענות על שאלות היוזמה — ${reality.status === "needs_context" ? `חסרים ${reality.context.required} חיבורים` : "הישויות לא ממופות"}`, `${kind === "conditional" ? "Activation planned for " : "Review scheduled for "}${start} · Hiloomy cannot yet answer the initiative's questions — ${reality.status === "needs_context" ? `${reality.context.required} connection${reality.context.required === 1 ? "" : "s"} missing` : "entities not mapped"}`)
-        : L(
-            `${kind === "conditional" ? "ההפעלה מתוכננת ל־" : "בדיקה מתוכננת ל־"}${start}${paceLabel ? ` · ${paceSource === "initiative" ? "מכירות היוזמה" : "מכירות כל החנות"}: ${paceLabel.he}` : ""}${thin.length > 0 ? ` · ${thin.length} מוצרים עם מלאי דק` : ""}`,
-            `${kind === "conditional" ? "Activation planned for " : "Review scheduled for "}${start}${paceLabel ? ` · ${paceSource === "initiative" ? "initiative sales" : "whole-store sales"}: ${paceLabel.en}` : ""}${thin.length > 0 ? ` · ${thin.length} products with thin cover` : ""}`
-          ),
+    whyNow: realityTriggered && confirmedRisk ? L(`${title}: ${confirmedRisk.statement.he}`, `${title}: ${confirmedRisk.statement.en}`) : reviewWhyNow(reality, String(p.windowStart ?? start), kind),
     question,
     trigger: L(`התוכנית קבעה כאן החלטה: "${hookText.slice(0, 120)}"`, `The plan set a decision here: "${hookText.slice(0, 120)}"`),
     evidence,
@@ -1694,9 +1685,9 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
             { key: "hold", label: L("לא להפעיל עכשיו", "Do not activate now"), recommended: demandUp && thin.length > 0 }
           ]
         : [
-            { key: "keep", label: L("להשאיר כמו שהוא", "Keep as is"), recommended: !demandDown },
-            { key: "change", label: L("לשנות את ההצעה", "Change the offer"), recommended: demandDown },
-            { key: "stop", label: L("לעצור", "Stop"), recommended: false }
+            { key: "keep", label: L("להמשיך כמתוכנן", "Continue as planned"), recommended: review?.recommendedOption === "keep" },
+            { key: "change", label: L("לשנות את ההצעה", "Change the offer"), recommended: review?.recommendedOption === "change" },
+            { key: "stop", label: L("לעצור", "Stop"), recommended: review?.recommendedOption === "stop" }
           ],
     recommendation,
     reason: null,
@@ -1718,7 +1709,11 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     primaryAction: "review",
     rank: ctx.pulse.sales7 ?? 0,
     entity: { type: "plan_initiative", id: String(p.initiativeId ?? ""), label: title },
-    initiative: reality
+    initiative: reality,
+    blocked:
+      review?.blocked && reality
+        ? { line: review.decision, missing: review.evidence, cta: review.blocked.cta, href: `/plan/initiative/${reality.initiativeId}#context` }
+        : null
   });
 }
 

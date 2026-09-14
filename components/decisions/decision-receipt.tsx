@@ -203,7 +203,17 @@ export function DecisionReceipt({
         </ol>
       </Section>
 
-      <Section title={t("המלצה", "Recommendation")}>
+      <Section title={d.blocked ? t("ההערכה חסומה", "Evaluation blocked") : t("המלצה", "Recommendation")}>
+        {d.blocked ? (
+          <div className="rounded-xl border border-warning/40 bg-warning/5 p-4">
+            <p className="text-base font-semibold leading-7">{d.blocked.line[locale]}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{d.blocked.missing[locale]}</p>
+            <a href={d.blocked.href} className="mt-3 inline-flex items-center gap-1 rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-background hover:opacity-90">
+              {d.blocked.cta[locale]} {isHe ? "←" : "→"}
+            </a>
+            <p className="mt-2 text-xs text-muted-foreground">{t("זו פעולה תפעולית שנדרשת כדי להגיע להמלצה — לא המלצה עסקית.", "An operational step needed to reach a recommendation — not a business recommendation.")}</p>
+          </div>
+        ) : (
         <blockquote className="border-s-2 border-primary/60 ps-4">
           <p className="text-base font-semibold leading-7">{d.recommendation[locale]}</p>
           {d.reason ? (
@@ -212,7 +222,11 @@ export function DecisionReceipt({
               {d.reason[locale]}
             </p>
           ) : null}
+          <p className="mt-2 text-xs text-muted-foreground">
+            {t("ביטחון", "Confidence")}: {d.confidence === "high" ? t("גבוה", "high") : d.confidence === "medium" ? t("בינוני", "medium") : t("נמוך", "low")} · {d.confidenceReason[locale]}
+          </p>
         </blockquote>
+        )}
       </Section>
 
       {d.prepared ? (
