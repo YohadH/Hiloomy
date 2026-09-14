@@ -7,7 +7,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { MappingKind } from "@/lib/domain/initiative-reality";
 
-export function EntityLinkButton({ sheetId, initiativeId, kind, id, label, mode, text, via }: { sheetId: string; initiativeId: string; kind: MappingKind; id: string; label: string; mode: "link" | "unlink"; text: string; via?: string | null }) {
+export function EntityLinkButton({ sheetId, initiativeId, kind, id, label, mode, text, via }: { sheetId: string; initiativeId: string; kind: MappingKind; id: string; label: string; mode: "link" | "unlink" | "unlink_kind"; text: string; via?: string | null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export function EntityLinkButton({ sheetId, initiativeId, kind, id, label, mode,
               const res = await fetch(`/api/gantt/${sheetId}/plan/overrides`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(mode === "link" ? { op: "link_entity", initiativeId, kind, id, label, via: via ?? null } : { op: "unlink_entity", initiativeId, kind, id })
+                body: JSON.stringify(mode === "link" ? { op: "link_entity", initiativeId, kind, id, label, via: via ?? null } : mode === "unlink_kind" ? { op: "unlink_kind", initiativeId, kind } : { op: "unlink_entity", initiativeId, kind, id })
               });
               const body = await res.json().catch(() => ({}));
               if (!res.ok || !body.ok) throw new Error(body?.error ?? "failed");

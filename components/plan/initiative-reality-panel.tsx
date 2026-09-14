@@ -1,7 +1,9 @@
-// "מצב היוזמה" — what was planned, what is happening now, what changed.
-// Presentational only; used on the decision receipt (before the
-// recommendation) and on /plan/initiative/[id]. Initiative-specific numbers
-// and broader brand context are never rendered in the same block.
+// "מצב היוזמה" — the manager's view of one initiative. Two modes:
+//   A. context missing → ONLY the short completion (nothing is concluded);
+//   B. context complete → Plan · Reality (four numbers) · What changed (one
+//      sentence) · Does it require a decision? — the mapping audit, every
+//      metric, per-product inventory and the store context sit behind
+//      "details". Presentational only.
 
 import Link from "next/link";
 import type { InitiativeRealitySummary, InitiativeMetric } from "@/lib/domain/initiative-reality";
@@ -25,14 +27,6 @@ const QUALITY: Record<InitiativeMetric["quality"], { he: string; en: string }> =
   estimated: { he: "אומדן", en: "Estimated" },
   unavailable: { he: "לא זמין", en: "Unavailable" }
 };
-const LINE_CLS: Record<InitiativeRealitySummary["lines"][number]["state"], string> = {
-  healthy: "text-success",
-  above: "text-success",
-  acceptable: "text-foreground",
-  below: "text-warning",
-  risk: "text-danger",
-  unknown: "text-muted-foreground"
-};
 
 function ago(iso: string | null, now: Date, isHe: boolean): string {
   if (!iso) return isHe ? "לא סונכרן" : "not synced";
@@ -44,109 +38,149 @@ function ago(iso: string | null, now: Date, isHe: boolean): string {
   return isHe ? `לפני ${m} דקות` : `${m}m ago`;
 }
 
+function Big({ value, label, note }: { value: string | null; label: string; note?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className={cn("text-2xl font-semibold tabular-nums tracking-tight", value === null && "text-muted-foreground")}>{value ?? "—"}</p>
+      <p className="text-sm text-muted-foreground">{label}</p>
+      {note ? <p className="text-[11px] text-muted-foreground">{note}</p> : null}
+    </div>
+  );
+}
+
 export function InitiativeRealityPanel({ r, locale, now, showPlan = true, mappingHref }: { r: InitiativeRealitySummary; locale: Locale; now: Date; showPlan?: boolean; mappingHref?: string }) {
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
-  const fwd = isHe ? "←" : "→";
   const fmt = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(isHe ? "he-IL" : "en-US", { day: "numeric", month: "long", timeZone: "UTC" });
-  const specific = r.metrics.filter((m) => m.scope === "initiative");
-  const store = r.metrics.filter((m) => m.scope === "store");
-  const changes = r.findings.filter((f) => f.kind !== "progressing" && f.kind !== "sales_vs_prior");
   const st = STATUS[r.status];
   const live = r.period.start <= r.period.today && r.period.end >= r.period.today;
+  const m = (k: string) => r.metrics.find((x) => x.key === k) ?? null;
+  const gift = r.metrics.find((x) => x.key.startsWith("gift_inventory:")) ?? null;
+  const giftUnits = r.metrics.find((x) => x.key.startsWith("gift:")) ?? null;
+  const changes = r.findings.filter((f) => f.kind !== "progressing" && f.kind !== "sales_vs_prior");
+  const headline = changes.find((f) => f.severity === "risk") ?? changes[0] ?? null;
+  const specific = r.metrics.filter((x) => x.scope === "initiative");
+  const store = r.metrics.filter((x) => x.scope === "store");
+  const provisional = r.evidenceBasis === "provisional";
 
+  // Mode A — nothing is concluded until the context is complete.
+  if (r.status === "needs_context") {
+    return (
+      <div className="space-y-4">
+        {showPlan ? (
+          <p className="text-sm text-muted-foreground">
+            {r.title} · {fmt(r.period.start)} – {fmt(r.period.end)}
+          </p>
+        ) : null}
+        <ContextCompletion context={r.context} locale={locale} href={mappingHref ?? null} />
+      </div>
+    );
+  }
+
+  // Mode B — Plan · Reality · What changed · Decision?
+  const giftValue = gift ? (gift.value === null ? null : gift.note?.en.includes("days of cover") ? t(`${gift.value} ימים`, `${gift.value} days`) : gift.note?.[locale] ?? gift.value) : null;
   return (
     <div className="space-y-6">
       {showPlan ? (
-        <section className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("מה תוכנן", "What was planned")}</p>
+        <section className="space-y-0.5">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("התוכנית", "Plan")}</p>
           <p className="text-base font-semibold">{r.title}</p>
           <p className="text-sm text-muted-foreground">
             {fmt(r.period.start)} – {fmt(r.period.end)}
             {r.offer.discountPct !== null ? ` · ${r.offer.discountPct}%` : ""}
-            {r.offer.couponCode ? ` · ${r.offer.couponCode}` : ""}
+            {r.offer.couponCode ? ` · ${r.offer.couponCode}` : ""} · {t("יעד", "Goal")}: {r.goalNote[locale]}
           </p>
-          <p className="text-xs text-muted-foreground">{t("יעד", "Goal")}: {r.goalNote[locale]}</p>
         </section>
       ) : null}
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("מה קורה עכשיו", "What is happening now")}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("מציאות", "Reality")}</p>
           <span className="text-xs text-muted-foreground tabular-nums">{live ? t(`יום ${r.period.dayIndex} מתוך ${r.period.totalDays}`, `Day ${r.period.dayIndex} of ${r.period.totalDays}`) : r.period.start > r.period.today ? t("טרם התחיל", "Not started") : t("הסתיים", "Ended")}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", st.cls)}>{isHe ? st.he : st.en}</span>
-          {r.evidenceBasis === "provisional" && r.status !== "needs_context" ? <span className="rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-medium text-warning">{t("מצב ראשוני — דורש אימות", "Provisional — needs verification")}</span> : null}
-          <span className="text-sm">{r.statusReason[locale]}</span>
+          {provisional ? <span className="rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-medium text-warning">{t("מבוסס על התאמה אוטומטית · טרם אושר", "Based on automatic matches · not yet confirmed")}</span> : null}
         </div>
-        {r.context.required > 0 || r.context.rows.some((row) => row.action === "confirm") ? <ContextCompletion context={r.context} locale={locale} href={mappingHref ?? null} /> : null}
-        <ul className="grid gap-1 text-sm sm:grid-cols-2">
-          {r.lines.map((l) => (
-            <li key={l.label.en} className="flex gap-2">
-              <span className="w-20 shrink-0 text-muted-foreground">{l.label[locale]}</span>
-              <span className={LINE_CLS[l.state]}>{l.text[locale]}</span>
-            </li>
-          ))}
-        </ul>
-        <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-          {specific.map((m) => (
-            <div key={m.key} className="flex items-baseline justify-between gap-3 border-b border-border/60 py-1 text-sm">
-              <dt className="text-muted-foreground">{m.label[locale]}</dt>
-              <dd className="text-end">
-                <span className={cn("font-semibold tabular-nums", m.value === null && "text-muted-foreground")}>{m.value ?? t("לא זמין", "unavailable")}</span>
-                <span className="ms-2 text-[11px] text-muted-foreground">{QUALITY[m.quality][locale]}</span>
-                {m.note ? <span className="block text-[11px] text-muted-foreground">{m.note[locale]}</span> : null}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        {store.length ? (
-          <div className="rounded-md bg-muted/50 px-3 py-2 text-xs">
-            <p className="font-medium text-muted-foreground">{t("הקשר רחב — כל המותג (לא ביצועי היוזמה)", "Broader brand context — not initiative performance")}</p>
-            <p className="tabular-nums">{store.map((m) => `${m.label[locale]}: ${m.value}${m.note ? ` (${m.note[locale]})` : ""}`).join(" · ")}</p>
-          </div>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Big value={m("revenue")?.value ?? null} label={t("מכירות", "Sales")} note={m("revenue")?.note?.[locale]} />
+          <Big value={m("units")?.value ?? null} label={t("יחידות", "Units")} />
+          <Big value={m("meta_spend")?.value ?? null} label={t("הוצאת Meta", "Meta spend")} note={m("meta_roas")?.value ? `ROAS ${m("meta_roas")!.value}` : undefined} />
+          {gift ? <Big value={giftValue} label={t("מלאי מוצר המתנה", "Gift inventory")} note={giftUnits?.value ? t(`${giftUnits.value} ניתנו`, `${giftUnits.value} given`) : undefined} /> : <Big value={m("coupon_orders")?.value ?? null} label={t("הזמנות עם קופון", "Coupon orders")} />}
+        </div>
+        {r.inventory.atRisk > 0 ? (
+          <p className="text-sm">
+            <span className="font-medium text-warning">{t(`${r.inventory.atRisk} מוצרים בסיכון מלאי`, `${r.inventory.atRisk} product${r.inventory.atRisk === 1 ? "" : "s"} at inventory risk`)}</span>
+            {r.inventory.worst ? <span className="text-muted-foreground"> · {t("הקריטי ביותר", "most critical")}: {r.inventory.worst.title} — {r.inventory.worst.label[locale]}</span> : null}
+            {r.inventory.negative ? <span className="text-danger"> · {t(`${r.inventory.negative} עם מלאי שלילי — דורש בדיקת נתונים`, `${r.inventory.negative} with negative inventory — check the data`)}</span> : null}
+          </p>
         ) : null}
         <p className="text-[11px] text-muted-foreground">
-          {t("ביטחון", "Confidence")}: {r.confidence === "high" ? t("גבוה", "high") : r.confidence === "medium" ? t("בינוני", "medium") : t("נמוך", "low")} · {r.confidenceReason[locale]}
-          {" · "}
-          {t("Shopify", "Shopify")} {ago(r.freshness.shopify, now, isHe)} · Meta {ago(r.freshness.meta, now, isHe)} · {t("תוכנית", "Plan")} {ago(r.freshness.plan, now, isHe)}
+          {t("ביטחון", "Confidence")}: {r.confidence === "high" ? t("גבוה", "high") : r.confidence === "medium" ? t("בינוני", "medium") : t("נמוך", "low")} · {r.confidenceReason[locale]} · Shopify {ago(r.freshness.shopify, now, isHe)} · Meta {ago(r.freshness.meta, now, isHe)}
           {r.stale ? <span className="text-warning"> · {t("נתונים לא טריים", "stale data")}</span> : null}
         </p>
       </section>
 
-      {changes.length ? (
-        <section className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("מה השתנה / מה חשוב", "What changed / matters")}</p>
-          <ul className="space-y-1 text-sm">
-            {changes.map((f, i) => (
-              <li key={i} className={cn(f.severity === "risk" ? "text-danger" : f.severity === "attention" ? "text-warning" : "")}>
-                {f.statement[locale]}
-                {f.basis === "provisional" ? <span className="text-[11px] text-muted-foreground"> · {t("על התאמה אוטומטית שטרם אושרה", "on an automatic match not yet confirmed")}</span> : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <section className="space-y-1">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("מה השתנה", "What changed")}</p>
+        <p className={cn("text-base font-semibold leading-snug", headline?.severity === "risk" ? "text-danger" : headline?.severity === "attention" ? "text-warning" : "")}>{headline ? headline.statement[locale] : r.statusReason[locale]}</p>
+        {changes.length > 1 ? <p className="text-xs text-muted-foreground">{t(`ועוד ${changes.length - 1} ממצאים בפרטים.`, `And ${changes.length - 1} more finding${changes.length - 1 === 1 ? "" : "s"} in the details.`)}</p> : null}
+      </section>
 
-      {r.missingEvidence.length ? (
-        <section className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("מה Hiloomy לא יכולה לענות עליו", "What Hiloomy cannot answer yet")}</p>
-          <ul className="list-disc space-y-0.5 ps-5 text-sm text-muted-foreground">
-            {r.missingEvidence.map((m) => (
-              <li key={m.key}>{m.label[locale]}</li>
+      <section className="space-y-1">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("האם נדרשת החלטה?", "Does it require a decision?")}</p>
+        {r.candidateFinding ? (
+          <>
+            <p className="text-base font-semibold">{r.candidateFinding.question[locale]}</p>
+            <p className="text-xs text-muted-foreground">{t("מועמד להחלטה — מתחרה על תשומת לב מול שאר המועמדים; מגיע להיום רק אם הוא עובר את הסף.", "A decision candidate — competes for attention against every other candidate; reaches Today only if it passes the threshold.")}</p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t("לא. אין ממצא שמצדיק החלטה ניהולית כרגע.", "No. Nothing currently justifies a management decision.")}</p>
+        )}
+      </section>
+
+      {r.context.rows.some((row) => row.action === "confirm") ? <ContextCompletion context={r.context} locale={locale} href={mappingHref ?? null} /> : null}
+
+      <details className="text-sm">
+        <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{t("פרטים: כל המדדים, המלאי לפי מוצר, המיפוי, הקשר כל החנות", "Details: every metric, inventory per product, the mapping, whole-store context")}</summary>
+        <div className="mt-3 space-y-4">
+          <dl className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+            {specific.map((x) => (
+              <div key={x.key} className="flex items-baseline justify-between gap-3 border-b border-border/60 py-1">
+                <dt className="text-muted-foreground">{x.label[locale]}</dt>
+                <dd className="text-end">
+                  <span className={cn("font-semibold tabular-nums", x.value === null && "text-muted-foreground")}>{x.value ?? t("לא זמין", "unavailable")}</span>
+                  <span className="ms-2 text-[11px] text-muted-foreground">{QUALITY[x.quality][locale]}</span>
+                  {x.note ? <span className="block text-[11px] text-muted-foreground">{x.note[locale]}</span> : null}
+                </dd>
+              </div>
             ))}
-          </ul>
-          <p className="text-xs text-muted-foreground">
-            {r.mappings.map((m) => `${MAPPING_KIND_LABEL[m.kind][locale]}: ${m.detail[locale]}`).join(" · ")}
-          </p>
+          </dl>
+          {changes.length ? (
+            <ul className="space-y-1">
+              {changes.map((f, i) => (
+                <li key={i} className={cn(f.severity === "risk" ? "text-danger" : f.severity === "attention" ? "text-warning" : "")}>
+                  {f.statement[locale]}
+                  {f.basis === "provisional" ? <span className="text-[11px] text-muted-foreground"> · {t("על התאמה אוטומטית", "on an automatic match")}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {store.length ? (
+            <p className="rounded-md bg-muted/50 px-3 py-2 text-xs">
+              <span className="font-medium text-muted-foreground">{t("הקשר רחב — כל המותג (לא ביצועי היוזמה)", "Broader brand context — not initiative performance")}: </span>
+              <span className="tabular-nums">{store.map((x) => `${x.label[locale]}: ${x.value}${x.note ? ` (${x.note[locale]})` : ""}`).join(" · ")}</span>
+            </p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">{r.mappings.map((k) => `${MAPPING_KIND_LABEL[k.kind][locale]}: ${k.detail[locale]}`).join(" · ")}</p>
+          {r.missingEvidence.length ? <p className="text-xs text-muted-foreground">{t("ראיות חסרות", "Missing evidence")}: {r.missingEvidence.map((x) => x.label[locale]).join(" · ")}</p> : null}
           {mappingHref ? (
-            <Link href={mappingHref as never} className="inline-flex text-sm font-semibold underline-offset-4 hover:underline">
-              {r.evidenceBasis === "provisional" ? t("אשר את המיפויים כדי להפוך את הנתונים למאומתים", "Confirm the mappings to make the data verified") : t("להשלים את מיפוי היוזמה", "Complete initiative mapping")} {fwd}
+            <Link href={`${mappingHref}#audit` as never} className="text-xs font-semibold underline-offset-4 hover:underline">
+              {t("ביקורת המיפוי", "Mapping audit")} {isHe ? "←" : "→"}
             </Link>
           ) : null}
-        </section>
-      ) : null}
+        </div>
+      </details>
     </div>
   );
 }

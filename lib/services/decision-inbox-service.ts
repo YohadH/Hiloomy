@@ -1590,7 +1590,10 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
   const realityTriggered = p.realityTriggered === true;
   // Initiative-specific evidence exists only through CONFIRMED mappings.
   // Suggested mappings show their numbers as estimates, never as the basis.
-  const specific = reality ? reality.metrics.filter((m) => m.scope === "initiative" && m.value !== null && m.basis !== null) : [];
+  // needs_context = the evaluation is incomplete: only entity-independent
+  // facts (the campaign, the coupon) may enter the evidence, never product
+  // numbers built on an unresolved mapping.
+  const specific = reality ? reality.metrics.filter((m) => m.scope === "initiative" && m.value !== null && m.basis !== null && (reality.status !== "needs_context" || m.source === "meta" || m.key === "coupon_orders")) : [];
   const hasSpecificSales = specific.some((m) => m.key === "units");
   const srcOf = (m: InitiativeRealitySummary["metrics"][number]): EvidenceFact["source"] => (m.source === "meta" ? "meta" : m.source === "inventory" ? "inventory" : m.source === "profit" ? "profit" : m.source === "plan" ? "plan" : "shopify");
   const realityFacts: EvidenceFact[] = specific.slice(0, 8).map((m) => fact(m.label, m.value, srcOf(m), m.basis === "provisional" ? L("מצב היוזמה — התאמה אוטומטית, טרם אושרה", "Initiative reality — automatic match, not yet confirmed") : L("מצב היוזמה — ישות מאושרת", "Initiative reality — confirmed entity"), m.quality, m.note));
@@ -1630,10 +1633,10 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
   const demandDown = paceValue !== null && paceValue <= -0.1;
   const paceLabel = paceValue === null ? null : Math.abs(paceValue) < 0.05 ? L("יציב", "stable") : paceValue > 0 ? L(`עלייה ${pct(paceValue)}`, `up ${pct(paceValue)}`) : L(`ירידה ${pct(-paceValue)}`, `down ${pct(-paceValue)}`);
   // Usable = confirmed or provisional (suggested never reaches the summary's findings).
-  const confirmedRisk = reality?.findings.find((f) => f.severity === "risk") ?? null;
+  const confirmedRisk = reality && reality.status !== "needs_context" ? (reality.findings.find((f) => f.severity === "risk") ?? null) : null;
   const conflict = kind === "conditional" && (demandUp || thin.length > 0 || confirmedRisk !== null);
   const status: DecisionStatus = confirmedRisk ? "change_plan" : conflict ? "change_plan" : "test";
-  const giftRisk = reality?.findings.find((f) => f.kind === "gift_inventory_short") ?? null;
+  const giftRisk = reality && reality.status !== "needs_context" ? (reality.findings.find((f) => f.kind === "gift_inventory_short") ?? null) : null;
   const recommendation = realityTriggered && confirmedRisk
     ? giftRisk
       ? L(`להמשיך את הקמפיין, אבל לעצור או להחליף את המתנה לפני שהמלאי מגיע לכיסוי קריטי. ${giftRisk.statement.he}`, `Keep the campaign running, but stop or replace the gift before stock reaches critical cover. ${giftRisk.statement.en}`)

@@ -1,15 +1,15 @@
-// /plan/initiative/[id] — one commercial initiative: what was planned, the
-// entities it maps to (confirm / remove), its live reality, what Hiloomy
-// cannot answer yet, and the decisions it produced. ?sheet=<sheetId>
-// (defaults to the plan covering today).
+// /plan/initiative/[id] — one commercial initiative.
+//   Before setup: "צריך ממך דקה" — the numbered questions and nothing else.
+//   After setup: Plan · Reality · What changed · Does it require a decision?
+// Everything technical (mapping rules, confidence sources, per-product
+// rows, decision history) lives under "Details / Audit".
 
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card } from "@/components/ui/card";
 import { InitiativeRealityPanel } from "@/components/plan/initiative-reality-panel";
-import { EntityLinkButton } from "@/components/plan/entity-link-controls";
 import { ContextResolution } from "@/components/plan/context-resolution";
+import { EntityLinkButton } from "@/components/plan/entity-link-controls";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
@@ -43,10 +43,12 @@ export default async function InitiativePage({ params, searchParams }: { params:
   const reality = await buildInitiativeReality(storeId, initiative, inputs, now);
   const summary = summarizeReality(reality, initiative.offer);
   const fmt = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(isHe ? "he-IL" : "en-US", { day: "numeric", month: "long", timeZone: "UTC" });
+  const setupMode = reality.status === "needs_context";
+  const toConfirm = reality.context.rows.filter((r) => r.action === "confirm");
 
   return (
     <AppShell store={chrome.store}>
-      <div className="space-y-10">
+      <div className="space-y-8">
         <div className="space-y-2">
           <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
             <Link href={"/marketing-planner" as never} className="underline-offset-4 hover:underline">
@@ -56,127 +58,111 @@ export default async function InitiativePage({ params, searchParams }: { params:
               {t("כל היוזמות", "All initiatives")} {fwd}
             </Link>
           </div>
-          <p className="text-sm text-muted-foreground">{t("יוזמה מסחרית", "Commercial initiative")}</p>
           <h1 className="text-3xl font-semibold tracking-tight">{initiative.title}</h1>
           <p className="text-sm text-muted-foreground">
             {fmt(initiative.start)} – {fmt(initiative.end)} · {INITIATIVE_STATUS_LABEL[initiative.status][locale]}
-            {initiative.offer.discountPct !== null ? ` · ${initiative.offer.discountPct}%` : ""}
             {initiative.offer.couponCode ? ` · ${initiative.offer.couponCode}` : ""}
-            {initiative.channels.length ? ` · ${initiative.channels.join(", ")}` : ""}
           </p>
         </div>
 
-        {/* 0 — Context resolution: what Hiloomy needs before it can evaluate */}
-        {reality.context.required > 0 || reality.context.rows.some((r) => r.action !== "none") ? (
+        {setupMode ? (
+          /* Mode A — only the setup. Nothing is concluded yet. */
           <section id="context" className="space-y-3">
-            <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} locale={locale} />
+            <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} locale={locale} />
           </section>
-        ) : null}
+        ) : (
+          /* Mode B — the initiative's reality. */
+          <>
+            <section className="space-y-3">
+              <InitiativeRealityPanel r={summary} locale={locale} now={now} showPlan />
+            </section>
+            {toConfirm.length ? (
+              <section id="context" className="space-y-3">
+                <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} locale={locale} compact />
+              </section>
+            ) : null}
+          </>
+        )}
 
-        {/* 1 — Definition: the plan's own words */}
-        <section className="space-y-2">
-          <h2 className="text-xl font-semibold tracking-tight">{t("מה תוכנן", "What was planned")}</h2>
-          <ul className="space-y-1 text-sm">
-            {initiative.executions.slice(0, 8).map((e) => (
-              <li key={e.key} className="flex flex-wrap gap-x-2">
-                <span className="text-muted-foreground">{e.channel ?? "—"}</span>
-                <span>{e.text}</span>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {fmt(e.start)}
-                  {e.end !== e.start ? ` – ${fmt(e.end)}` : ""} · {e.state === "done" ? t("בוצע", "done") : t("פתוח", "open")}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className="text-xs text-muted-foreground">{t("יעד", "Goal")}: {summary.goalNote[locale]}</p>
-        </section>
-
-        {/* 2 — Entity mappings: confirmed / suggested / missing */}
-        <section className="space-y-3">
-          <h2 className="text-xl font-semibold tracking-tight">{t("למה היוזמה מתייחסת", "What the initiative refers to")}</h2>
-          <p className="text-sm text-muted-foreground">{t("מאושר = ראיה מלאה. זוהה אוטומטית = ראיה חזקה (שם מוצר מדויק, קמפיין מקושר למוצר) שמשמשת כאומדן עד שתאשרו. הצעה = התאמה חלשה, לא משמשת בכלל.", "Confirmed = full evidence. Auto-matched = strong evidence (exact product name, campaign linked to the product) used as an estimate until you confirm. Suggested = a weak match, never used.")}</p>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {KINDS.map((kind) => {
-              const links = reality.mappings.links.filter((l) => l.kind === kind);
-              const k = reality.mappings.byKind[kind];
-              return (
-                <Card key={kind} className="space-y-2 p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold">{MAPPING_KIND_LABEL[kind][locale]}</p>
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", k.state === "confirmed" ? "bg-success/15 text-success" : k.state === "provisional" ? "bg-warning/15 text-warning" : k.state === "suggested" ? "bg-muted text-muted-foreground" : "bg-muted text-muted-foreground")}>
-                      {k.state === "confirmed" ? "✓ " : k.state === "provisional" ? "≈ " : k.state === "suggested" ? "? " : "✕ "}
-                      {k.detail[locale]}
+        {/* Details / Audit — for whoever needs to know why */}
+        <details id="audit" className="text-sm">
+          <summary className="cursor-pointer select-none font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{t("פרטים / ביקורת: מה התוכנית אומרת, המיפוי וכלליו, ההחלטות של היוזמה", "Details / audit: the plan's words, the mapping and its rules, this initiative's decisions")}</summary>
+          <div className="mt-4 space-y-6">
+            <section className="space-y-1">
+              <h3 className="font-semibold">{t("מה התוכנית אומרת", "What the plan says")}</h3>
+              <ul className="space-y-1">
+                {initiative.executions.slice(0, 8).map((e) => (
+                  <li key={e.key} className="flex flex-wrap gap-x-2">
+                    <span className="text-muted-foreground">{e.channel ?? "—"}</span>
+                    <span>{e.text}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {fmt(e.start)}
+                      {e.end !== e.start ? ` – ${fmt(e.end)}` : ""} · {e.state === "done" ? t("בוצע", "done") : t("פתוח", "open")}
                     </span>
-                  </div>
-                  {links.length ? (
-                    <ul className="space-y-1.5 text-sm">
-                      {links.map((l) => (
-                        <li key={l.id} className="flex flex-wrap items-center justify-between gap-2">
-                          <span>
-                            <span className="font-medium">{l.label}</span>
-                            <span className={cn("ms-2 rounded px-1.5 py-0.5 text-[11px]", l.state === "confirmed" ? "bg-success/15 text-success" : l.state === "provisional" ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground")}>{BASIS_LABEL[l.state][locale]}</span>
-                            <span className="block text-xs text-muted-foreground">
-                              {l.reason[locale]} · {t("כלל", "rule")}: {l.provenance.rule}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground">
+                {t("סוג היוזמה (מזוהה)", "Initiative kind (inferred)")}: {reality.context.initiativeKind} · {t("יעד", "Goal")}: {summary.goalNote[locale]}
+              </p>
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="font-semibold">{t("המיפוי וכלליו", "The mapping and its rules")}</h3>
+              <p className="text-xs text-muted-foreground">{t("מאושר = ראיה מלאה. זוהה אוטומטית = שם מוצר מדויק או קמפיין מקושר למוצר — משמש כאומדן. הצעה = התאמת מילה, לא משמשת. מזהה מוצר או URL בתוכנית → מאושר (עדיין לא נתמך בייבוא).", "Confirmed = full evidence. Auto-matched = exact product title or a campaign linked to the product — used as an estimate. Suggested = a word match, never used. A product id / URL in the plan → confirmed (not yet supported by the import).")}</p>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {KINDS.map((kind) => {
+                  const links = reality.mappings.links.filter((l) => l.kind === kind);
+                  const k = reality.mappings.byKind[kind];
+                  const disc = reality.mappings.discovery[kind];
+                  return (
+                    <div key={kind} className="space-y-1.5 rounded-md border border-border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium">{MAPPING_KIND_LABEL[kind][locale]}</p>
+                        <span className={cn("rounded-full px-2 py-0.5 text-xs", k.state === "confirmed" ? "bg-success/15 text-success" : k.state === "provisional" ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground")}>{k.detail[locale]}</span>
+                      </div>
+                      {disc?.note ? <p className="text-xs text-warning">{disc.note[locale]}</p> : null}
+                      <ul className="space-y-1 text-xs">
+                        {links.map((l) => (
+                          <li key={l.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <span>
+                              <span className="font-medium">{l.label}</span> · {BASIS_LABEL[l.state][locale]} · {t("כלל", "rule")}: {l.provenance.rule}
                               {l.provenance.auto ? ` (${t("במקור", "originally")} ${l.provenance.auto})` : ""} · {t("התאמה על", "matched on")}: {l.provenance.matchedOn}
                             </span>
-                          </span>
-                          {l.state !== "confirmed" ? (
-                            <EntityLinkButton sheetId={sheetId} initiativeId={initiative.id} kind={kind} id={l.id} label={l.label} via={l.provenance.rule} mode="link" text={t("אשר מיפוי", "Confirm mapping")} />
-                          ) : (
-                            <EntityLinkButton sheetId={sheetId} initiativeId={initiative.id} kind={kind} id={l.id} label={l.label} mode="unlink" text={t("הסר", "Remove")} />
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">{kind === "meta_campaign" ? t("לא נמצא קמפיין שמתאים לשם היוזמה. לקישור ידני: קישורי קמפיין–מוצר בהגדרות.", "No campaign matches the initiative's name. Link manually via campaign–product links in Settings.") : kind === "discount" ? t("אין קופון ממופה.", "No coupon mapped.") : t("לא נמצא מוצר בשם הזה בקטלוג.", "No catalogue product with this name.")}</p>
-                  )}
-                </Card>
-              );
-            })}
+                            {l.state === "confirmed" ? <EntityLinkButton sheetId={sheetId} initiativeId={initiative.id} kind={kind} id={l.id} label={l.label} mode="unlink" text={t("הסר", "Remove")} /> : null}
+                          </li>
+                        ))}
+                      </ul>
+                      {links.some((l) => l.state === "confirmed") ? <EntityLinkButton sheetId={sheetId} initiativeId={initiative.id} kind={kind} id="*" label="*" mode="unlink_kind" text={t("נקה את כל המיפוי של הסוג הזה", "Clear every mapping of this kind")} /> : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="space-y-1">
+              <h3 className="font-semibold">{t("החלטות של היוזמה", "This initiative's decisions")}</h3>
+              {initiative.relatedDecisions.length ? (
+                <ul className="divide-y divide-border">
+                  {initiative.relatedDecisions.map((r) => (
+                    <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                      <span>
+                        <span className="font-medium">{r.question[locale]}</span>
+                        <span className="text-xs text-muted-foreground"> · {r.state === "open" ? t("פתוחה", "open") : t("נסגרה", "closed")} · {r.choice}</span>
+                      </span>
+                      <Link href={`/today/${r.id}` as never} className="font-semibold underline-offset-4 hover:underline">
+                        {displayDecisionId(r.id)} {fwd}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted-foreground">{t("עדיין לא נוצרו החלטות מהיוזמה הזו.", "No decisions have come from this initiative yet.")}</p>
+              )}
+              {initiative.decisionHooks.length ? <p className="text-xs text-muted-foreground">{t("נקודות החלטה בתוכנית", "Decision points in the plan")}: {initiative.decisionHooks.map((h) => `${h.question[locale]} (${fmt(h.windowStart)} – ${fmt(h.windowEnd)})`).join(" · ")}</p> : null}
+            </section>
           </div>
-        </section>
-
-        {/* 3–5 — Live status, metrics, missing evidence */}
-        <section className="space-y-3">
-          <h2 className="text-xl font-semibold tracking-tight">{t("מצב היוזמה עכשיו", "Initiative reality now")}</h2>
-          <InitiativeRealityPanel r={summary} locale={locale} now={now} showPlan={false} />
-        </section>
-
-        {/* 6–7 — Decisions and history */}
-        <section className="space-y-3">
-          <h2 className="text-xl font-semibold tracking-tight">{t("החלטות של היוזמה", "This initiative's decisions")}</h2>
-          {reality.candidateFinding ? (
-            <p className="text-sm">
-              <span className="font-medium text-warning">{t("מועמד להחלטה", "Decision candidate")}:</span> {reality.candidateFinding.question[locale]}
-              <span className="block text-xs text-muted-foreground">{t("הממצא נכנס למסלול המועמדים (ניקוד, איחוד, דירוג, סף). הוא מגיע להיום רק אם הוא עובר את הסף מול שאר המועמדים.", "The finding enters the candidate pipeline (scoring, clustering, ranking, threshold). It reaches Today only if it passes the threshold against every other candidate.")}</span>
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t("אין כרגע ממצא שמצדיק מועמד להחלטה.", "No finding currently justifies a decision candidate.")}</p>
-          )}
-          {initiative.relatedDecisions.length ? (
-            <ul className="divide-y divide-border">
-              {initiative.relatedDecisions.map((r) => (
-                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                  <span>
-                    <span className="font-medium">{r.question[locale]}</span>
-                    <span className="text-xs text-muted-foreground"> · {r.state === "open" ? t("פתוחה", "open") : t("נסגרה", "closed")} · {r.choice}{r.decidedAt ? ` · ${fmt(r.decidedAt.slice(0, 10))}` : ""}</span>
-                  </span>
-                  <Link href={`/today/${r.id}` as never} className="font-semibold underline-offset-4 hover:underline">
-                    {displayDecisionId(r.id)} {fwd}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t("עדיין לא נוצרו החלטות מהיוזמה הזו.", "No decisions have come from this initiative yet.")}</p>
-          )}
-          {initiative.decisionHooks.length ? (
-            <p className="text-xs text-muted-foreground">
-              {t("נקודות החלטה בתוכנית", "Decision points in the plan")}: {initiative.decisionHooks.map((h) => `${h.question[locale]} (${fmt(h.windowStart)} – ${fmt(h.windowEnd)})`).join(" · ")}
-            </p>
-          ) : null}
-        </section>
+        </details>
       </div>
     </AppShell>
   );

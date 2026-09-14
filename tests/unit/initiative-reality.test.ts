@@ -127,12 +127,13 @@ test("provisional evidence is USED: metrics are computed, capped at estimated, c
   assert.ok(r.candidateFinding);
   assert.equal(r.candidateFinding!.candidateKind, "initiative_gift_stock_risk");
   assert.equal(r.candidateFinding!.finding.basis, "provisional");
-  // Provisional-only, and the plan's coupon is unresolved (critical) → evidence is still usable, but a measured risk on it still wins over setup; confidence is low because the coupon is critical.
+  // Provisional-only, and the plan's coupon is unresolved (critical): the numbers exist as estimates for the audit, but NOTHING is concluded — needs_context, no candidate, low confidence (hard rule).
   const m2 = resolveMappings(initiative(), { ...cands, knownDiscountCodes: [] }, []);
   const r2 = evaluateInitiativeReality(initiative(), m2, evidence(m2), NOW);
   assert.equal(r2.evidenceBasis, "provisional");
   assert.equal(r2.metrics.find((x) => x.key === "revenue")!.value, "₪32,480");
-  assert.equal(r2.status, "needs_attention");
+  assert.equal(r2.status, "needs_context");
+  assert.equal(r2.candidateFinding, null);
   assert.equal(r2.confidence, "low");
 });
 

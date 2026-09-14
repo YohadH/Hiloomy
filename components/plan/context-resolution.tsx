@@ -1,14 +1,14 @@
 "use client";
 
-// The resolution flow: for each entity the initiative needs, show the
-// candidates Hiloomy found (with the reason), let the operator pick one or
-// several, search the catalogue, or say "not a Shopify product". Every
-// choice is stored as a plan override and re-evaluates the initiative at
-// once (the overrides route recomputes). Setup — not a management decision.
+// "צריך ממך דקה כדי להשלים את היוזמה" — numbered questions, one per missing
+// entity. Each opens a SHORTLIST (at most five likely candidates, with the
+// reason), a catalogue search, and "none". Never the whole catalogue, never
+// dozens of token matches. Every choice is stored as a plan override and
+// re-evaluates the initiative at once. Setup — not a management decision.
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { ContextTask, EntityLink, MappingKind } from "@/lib/domain/initiative-reality";
+import type { ContextTask, EntityLink, InitiativeMappings, MappingKind } from "@/lib/domain/initiative-reality";
 import { MAPPING_KIND_LABEL, NONE_ENTITY_ID } from "@/lib/domain/initiative-reality";
 import { cn } from "@/lib/utils";
 
@@ -20,19 +20,20 @@ interface Found {
 }
 
 const QUESTION: Record<MappingKind, { he: (title: string) => string; en: (title: string) => string }> = {
-  product: { he: (t) => `אילו מוצרים שייכים ל"${t}"?`, en: (t) => `Which products belong to "${t}"?` },
-  gift_product: { he: () => "איזה מוצר הוא המתנה?", en: () => "Which product is the gift?" },
-  discount: { he: () => "איזה קופון שייך ליוזמה?", en: () => "Which coupon belongs to this initiative?" },
-  meta_campaign: { he: () => "איזה קמפיין Meta מריץ את היוזמה?", en: () => "Which Meta campaign runs this initiative?" }
+  product: { he: () => "אילו מוצרים משתתפים ביוזמה?", en: () => "Which products take part in the initiative?" },
+  gift_product: { he: () => "מהו מוצר המתנה?", en: () => "Which product is the gift?" },
+  discount: { he: () => "איזה קופון שייך ליוזמה?", en: () => "Which coupon belongs to the initiative?" },
+  meta_campaign: { he: () => "איזה קמפיין Meta מריץ את היוזמה?", en: () => "Which Meta campaign runs the initiative?" }
 };
 
-export function ContextResolution({ sheetId, initiativeId, initiativeTitle, context, links, locale }: { sheetId: string; initiativeId: string; initiativeTitle: string; context: ContextTask; links: EntityLink[]; locale: Locale }) {
+export function ContextResolution({ sheetId, initiativeId, initiativeTitle, context, links, discovery, locale, compact = false }: { sheetId: string; initiativeId: string; initiativeTitle: string; context: ContextTask; links: EntityLink[]; discovery: InitiativeMappings["discovery"]; locale: Locale; compact?: boolean }) {
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
+  const fwd = isHe ? "←" : "→";
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
-  const [openKind, setOpenKind] = useState<MappingKind | null>(context.rows.find((r) => r.action !== "none")?.kind ?? null);
+  const [openKind, setOpenKind] = useState<MappingKind | null>(null);
   const [picked, setPicked] = useState<Record<string, Set<string>>>({});
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<Found[]>([]);
@@ -54,10 +55,11 @@ export function ContextResolution({ sheetId, initiativeId, initiativeTitle, cont
     start(async () => {
       try {
         const out = await post(items.map((i) => ({ op: "link_entity", initiativeId, kind, id: i.id, label: i.label, via: i.via })));
-        setDone(out.reality?.status ? t(`נשמר · היוזמה חושבה מחדש (${out.reality.status})`, `Saved · initiative re-evaluated (${out.reality.status})`) : t("נשמר", "Saved"));
+        setDone(out.reality?.status ? t("נשמר · היוזמה חושבה מחדש", "Saved · initiative re-evaluated") : t("נשמר", "Saved"));
         setPicked({});
         setFound([]);
         setQuery("");
+        setOpenKind(null);
         router.refresh();
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
@@ -75,23 +77,29 @@ export function ContextResolution({ sheetId, initiativeId, initiativeTitle, cont
   };
 
   const rows = context.rows.filter((r) => r.action !== "none");
+  const resolved = context.rows.filter((r) => r.action === "none");
   const candidatesOf = useMemo(() => (kind: MappingKind) => links.filter((l) => l.kind === kind && l.state !== "confirmed"), [links]);
   if (!rows.length) return null;
+  const critical = rows.filter((r) => r.critical);
 
   return (
-    <div className="space-y-4 rounded-lg border border-warning/40 bg-warning/5 p-4 sm:p-5">
+    <div className={cn("space-y-4 rounded-lg border border-warning/40 bg-warning/5", compact ? "p-4" : "p-5 sm:p-6")}>
       <div>
-        <p className="text-lg font-semibold">{t("Hiloomy צריכה השלמה קצרה", "Hiloomy needs a short completion")}</p>
-        <p className="text-sm text-muted-foreground">{t("כדי לחשב את המכירות, המלאי והרווחיות של היוזמה, צריך לחבר את הישויות הבאות. זו הגדרה — לא החלטה ניהולית.", "To compute the initiative's sales, inventory and profitability, connect the following entities. This is setup — not a management decision.")}</p>
-        {context.known.length ? <p className="mt-1 text-xs text-success">{context.known.map((k) => `✓ ${k[locale]}`).join(" · ")}</p> : null}
+        <p className={cn("font-semibold", compact ? "text-base" : "text-xl")}>{compact ? t("אישור קצר של ההתאמות האוטומטיות", "A short confirmation of the automatic matches") : t("צריך ממך דקה כדי להשלים את היוזמה", "A minute of your time to complete the initiative")}</p>
+        <p className="text-sm text-muted-foreground">
+          {compact
+            ? t("המספרים כבר מחושבים כאומדן; אישור הופך אותם למאומתים.", "The numbers are already computed as estimates; confirming makes them verified.")
+            : t(`כדי שאוכל לעקוב אחרי המכירות, המלאי והקמפיין, חסרים לי ${critical.length} דברים:`, `To follow sales, inventory and the campaign, ${critical.length} thing${critical.length === 1 ? " is" : "s are"} missing:`)}
+        </p>
       </div>
 
-      <ul className="divide-y divide-border/60">
-        {rows.map((r) => {
+      <ol className="space-y-2">
+        {rows.map((r, idx) => {
           const cands = candidatesOf(r.kind);
           const isOpen = openKind === r.kind;
           const sel = picked[r.kind] ?? new Set<string>();
           const multi = r.kind === "product";
+          const disc = discovery[r.kind];
           const toggle = (id: string) => {
             const next = new Set(multi ? sel : []);
             if (sel.has(id)) next.delete(id);
@@ -99,47 +107,41 @@ export function ContextResolution({ sheetId, initiativeId, initiativeTitle, cont
             setPicked({ ...picked, [r.kind]: next });
           };
           const chosen = [...cands.filter((c) => sel.has(c.id)).map((c) => ({ id: c.id, label: c.label, via: c.provenance.rule as string })), ...found.filter((f) => sel.has(f.id)).map((f) => ({ id: f.id, label: f.label, via: "operator_search" }))];
+          const cta = r.action === "confirm" ? t("אשר", "Confirm") : r.kind === "discount" ? t("בחר קופון / אין קופון", "Choose coupon / none") : r.kind === "product" ? t("בחר מוצרים", "Choose products") : t("בחר מוצר", "Choose product");
           return (
-            <li key={r.kind} className="py-3">
-              <button type="button" onClick={() => setOpenKind(isOpen ? null : r.kind)} className="flex w-full flex-wrap items-center justify-between gap-2 text-start">
-                <span>
-                  <span className={cn("font-semibold", r.critical ? "text-warning" : "")}>
-                    {r.critical ? "⚠ " : "○ "}
-                    {MAPPING_KIND_LABEL[r.kind][locale]}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {" · "}
-                    {r.action === "confirm" ? t(`${r.provisional} זוהו אוטומטית — לאישור`, `${r.provisional} auto-matched — to confirm`) : r.action === "choose" ? t(`${r.candidates} הצעות נמצאו`, `${r.candidates} suggestions found`) : t("אין התאמה בטוחה — חיפוש", "no confident match — search")}
-                    {!r.critical ? ` · ${t("לא חובה", "optional")}` : ""}
-                  </span>
-                  <span className="block text-xs text-muted-foreground">{r.why[locale]}</span>
+            <li key={r.kind} className="rounded-md bg-card">
+              <button type="button" onClick={() => { setOpenKind(isOpen ? null : r.kind); setFound([]); setQuery(""); }} className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-start">
+                <span className="text-base font-medium">
+                  {idx + 1}. {QUESTION[r.kind][locale](initiativeTitle)}
+                  {!r.critical ? <span className="ms-2 text-xs font-normal text-muted-foreground">{t("לא חובה", "optional")}</span> : null}
                 </span>
-                <span className="text-xs font-semibold underline-offset-4 hover:underline">{isOpen ? t("סגור", "Close") : r.action === "confirm" ? t("אשר", "Confirm") : r.action === "choose" ? t("בחר", "Choose") : t("חפש", "Search")}</span>
+                <span className="text-sm font-semibold underline-offset-4 hover:underline">{isOpen ? t("סגור", "Close") : `${cta} ${fwd}`}</span>
               </button>
 
               {isOpen ? (
-                <div className="mt-3 space-y-3 rounded-md bg-card p-3">
-                  <p className="text-sm font-medium">{QUESTION[r.kind][locale](initiativeTitle)}</p>
+                <div className="space-y-3 border-t border-border/60 px-3 py-3">
+                  {disc?.note ? <p className="text-sm text-warning">{disc.note[locale]}</p> : null}
                   {cands.length ? (
-                    <ul className="space-y-1.5 text-sm">
-                      {cands.map((c) => (
-                        <li key={c.id}>
-                          <label className="flex cursor-pointer items-start gap-2">
-                            <input type={multi ? "checkbox" : "radio"} name={`pick-${r.kind}`} checked={sel.has(c.id)} onChange={() => toggle(c.id)} className="mt-1" />
-                            <span>
-                              <span className="font-medium">{c.label}</span>
-                              <span className={cn("ms-2 rounded px-1.5 py-0.5 text-[11px]", c.state === "provisional" ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground")}>{c.state === "provisional" ? t("זוהה אוטומטית", "auto-matched") : t("הצעה", "suggested")}</span>
-                              <span className="block text-xs text-muted-foreground">{c.reason[locale]}</span>
-                            </span>
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
+                    <>
+                      <p className="text-sm font-medium">{r.action === "confirm" ? t("זוהו אוטומטית — לאישור:", "Auto-matched — to confirm:") : t("מצאתי כמה מועמדים שעשויים להתאים:", "I found a few candidates that may fit:")}</p>
+                      <ul className="space-y-1.5 text-sm">
+                        {cands.map((c) => (
+                          <li key={c.id}>
+                            <label className="flex cursor-pointer items-start gap-2">
+                              <input type={multi ? "checkbox" : "radio"} name={`pick-${r.kind}`} checked={sel.has(c.id)} onChange={() => toggle(c.id)} className="mt-1" />
+                              <span>
+                                <span className="font-medium">{c.label}</span>
+                                <span className="block text-[11px] text-muted-foreground">{c.reason[locale]}</span>
+                              </span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
                   ) : (
-                    <p className="text-sm text-muted-foreground">{t("לא נמצאו מועמדים אוטומטית.", "No candidates were found automatically.")}</p>
+                    <p className="text-sm text-muted-foreground">{t("לא מצאתי מועמדים בעצמי — חפשו בקטלוג.", "I could not find candidates on my own — search the catalogue.")}</p>
                   )}
 
-                  {/* Search another entity */}
                   <div className="flex flex-wrap items-center gap-2">
                     <input
                       value={query}
@@ -147,7 +149,7 @@ export function ContextResolution({ sheetId, initiativeId, initiativeTitle, cont
                       onKeyDown={(e) => {
                         if (e.key === "Enter") void search(r.kind, query);
                       }}
-                      placeholder={r.kind === "discount" ? t("חפש קוד קופון…", "Search a coupon code…") : r.kind === "meta_campaign" ? t("חפש שם קמפיין…", "Search a campaign name…") : t("חפש מוצר בקטלוג…", "Search the catalogue…")}
+                      placeholder={r.kind === "discount" ? t("חיפוש קוד קופון…", "Search a coupon code…") : r.kind === "meta_campaign" ? t("חיפוש שם קמפיין…", "Search a campaign name…") : t("חיפוש מוצר", "Search product")}
                       className="h-9 min-w-56 flex-1 rounded-md border border-border bg-background px-3 text-sm"
                     />
                     <button type="button" disabled={searching || query.trim().length < 2} onClick={() => void search(r.kind, query)} className="h-9 rounded-md border border-border px-3 text-sm hover:bg-accent disabled:opacity-50">
@@ -162,7 +164,7 @@ export function ContextResolution({ sheetId, initiativeId, initiativeTitle, cont
                             <input type={multi ? "checkbox" : "radio"} name={`pick-${r.kind}`} checked={sel.has(f.id)} onChange={() => toggle(f.id)} className="mt-1" />
                             <span>
                               <span className="font-medium">{f.label}</span>
-                              {f.detail ? <span className="block text-xs text-muted-foreground">{f.detail}</span> : null}
+                              {f.detail ? <span className="block text-[11px] text-muted-foreground">{f.detail}</span> : null}
                             </span>
                           </label>
                         </li>
@@ -172,8 +174,7 @@ export function ContextResolution({ sheetId, initiativeId, initiativeTitle, cont
 
                   <div className="flex flex-wrap items-center gap-3">
                     <button type="button" disabled={pending || chosen.length === 0} onClick={() => confirm(r.kind, chosen)} className="rounded-md bg-foreground px-4 py-1.5 text-sm font-semibold text-background hover:opacity-90 disabled:opacity-50">
-                      {r.kind === "product" ? t("אשר מוצרים", "Confirm products") : t("אשר", "Confirm")}
-                      {chosen.length > 1 ? ` (${chosen.length})` : ""}
+                      {r.kind === "product" ? (chosen.length > 1 ? t(`אשר ${chosen.length} מוצרים`, `Confirm ${chosen.length} products`) : t("אשר מוצר", "Confirm product")) : t("אשר", "Confirm")}
                     </button>
                     {r.kind === "gift_product" || r.kind === "discount" ? (
                       <button type="button" disabled={pending} onClick={() => confirm(r.kind, [{ id: NONE_ENTITY_ID, label: r.kind === "gift_product" ? t("לא מוצר Shopify", "Not a Shopify product") : t("אין קופון", "No coupon"), via: null }])} className="text-sm text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50">
@@ -186,7 +187,14 @@ export function ContextResolution({ sheetId, initiativeId, initiativeTitle, cont
             </li>
           );
         })}
-      </ul>
+      </ol>
+
+      {resolved.length ? (
+        <p className="text-sm text-success">
+          {resolved.map((r) => `✓ ${MAPPING_KIND_LABEL[r.kind][locale]}`).join(" · ")}
+          {context.known.length ? <span className="text-muted-foreground"> · {context.known.filter((k) => !/^Plan window|^חלון התוכנית/.test(k.en)).map((k) => k[locale]).join(" · ")}</span> : null}
+        </p>
+      ) : null}
       {done ? <p className="text-xs text-success">{done}</p> : null}
       {err ? <p className="text-xs text-danger">{err}</p> : null}
     </div>

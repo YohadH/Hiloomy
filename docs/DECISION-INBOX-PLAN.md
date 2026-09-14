@@ -641,6 +641,33 @@ confident, misleading answer.**
   rewrites `reality` on its open plan decisions; candidates re-enter the
   pipeline on the next audit pass. needs_context never yields a
   candidateFinding, so setup never reaches Today.
+- **Mapping precision + setup/reality separation (2026-09-14 pass 4).**
+  Root cause of "37 products confirmed by סאטן": the plan parser attached a
+  catalogue product whenever its normalised title (≥4 chars) was a substring
+  of the plan text, so the family word "סאטן" pulled every satin product into
+  `initiative.products`, and Initiative Reality treated each as an exact
+  title → provisional → ₪55K revenue built on the wrong set. Fixes:
+  `extractAnchors` requires the FULL title as a phrase (≥2 words, ≥8 chars,
+  not glued to other letters); `resolveMappings` downgrades exact matches
+  to `suggested` when more than EXACT_MATCH_MAX (5) products match ("the
+  initiative relates to X, but N products match — cannot tell which belong");
+  weak discovery is scored (tokens matched, then the shorter title) and
+  capped at SHORTLIST_MAX (5) per kind, the rest via search (`discovery`
+  on the mappings carries token / total / shown / note). Policy: product id
+  or URL → confirmed (import support pending); exact unique title → provisional;
+  campaign–product link → provisional; any token → suggestion only.
+  Precedence: `needs_context` now beats a risk measured on the usable parts
+  — an incomplete evaluation concludes nothing, produces no candidate, and
+  the plan decision builder drops product numbers and risks when the status
+  is needs_context. Inventory ≤ 0 reads "אזל מהמלאי" / "מלאי שלילי — דורש
+  בדיקת נתונים" (`coverLabel`), cover is clamped to 0, and the reality
+  carries an `inventory` summary (at risk, out of stock, negative, worst)
+  instead of per-product rows in the manager's view. UI: mode A (needs
+  context) shows only the numbered questions ("צריך ממך דקה"); mode B shows
+  Plan · Reality (four numbers + inventory summary line) · What changed
+  (one sentence) · Does it require a decision?; every rule, per-metric
+  quality, per-product row, store context and decision history sits under
+  Details / Audit. `unlink_kind` op clears a kind's confirmed links.
 - **Acceptance trace on real data**: `node --import tsx
   scripts/initiative-reality-trace.ts incenseparfums.myshopify.com "Satin"`
   prints mapping + rule per link, metrics with quality/basis/provenance,

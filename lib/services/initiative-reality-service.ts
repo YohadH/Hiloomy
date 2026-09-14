@@ -159,7 +159,7 @@ export async function gatherInitiativeEvidence(storeId: string, initiative: Init
       priorUnits: p ? p.units : 0,
       dailyUnits: s ? s.dailyUnits : Array.from({ length: windowDays }, () => 0),
       inventory,
-      coverDays: inventory === null ? null : perDay > 0 ? Math.round(inventory / perDay) : null,
+      coverDays: inventory === null ? null : inventory <= 0 ? 0 : perDay > 0 ? Math.round(inventory / perDay) : null,
       hasRealCost,
       marginRate
     };

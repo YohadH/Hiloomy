@@ -114,10 +114,20 @@ export function extractAnchors(text: string, productTitles: string[] = []): Anch
   }
   const coupon = extractCouponCode(text);
   if (coupon) out.push({ kind: "coupon", key: `coupon:${coupon.toUpperCase()}`, label: coupon.toUpperCase() });
-  const t = norm(text);
+  // A product is "named in the plan" only when its FULL title appears as a
+  // phrase: at least two words, eight characters, and not glued to other
+  // letters. "סאטן" inside "השקת סאטן קוטור" must not attach every satin
+  // product in the catalogue (37 of them, 14 Sep 2026).
+  const t = ` ${norm(text)} `;
   for (const title of productTitles) {
     const n = norm(title);
-    if (n.length >= 4 && t.includes(n)) out.push({ kind: "product", key: `product:${n}`, label: title });
+    if (n.length < 8 || n.split(" ").length < 2) continue;
+    const i = t.indexOf(n);
+    if (i < 0) continue;
+    const before = t[i - 1] ?? " ";
+    const after = t[i + n.length] ?? " ";
+    if (/[\p{L}\p{N}]/u.test(before) || /[\p{L}\p{N}]/u.test(after)) continue;
+    out.push({ kind: "product", key: `product:${n}`, label: title });
   }
   return out;
 }
@@ -217,6 +227,7 @@ export type PlanOverrideOp =
   | { op: "unlink_event"; initiativeId: string }
   | { op: "link_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string; label: string; via?: string | null }
   | { op: "unlink_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string }
+  | { op: "unlink_kind"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"] }
   | { op: "reset" };
 
 export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Promise<PlanOverrides> {
@@ -253,6 +264,9 @@ export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Pro
       break;
     case "unlink_entity":
       next.entityLinks = next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && l.id === op.id));
+      break;
+    case "unlink_kind":
+      next.entityLinks = next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind));
       break;
     case "reset":
       next = { ...EMPTY_OVERRIDES };
@@ -515,7 +529,7 @@ export async function buildPlanView(storeId: string, sheetId: string, now = new 
         inventory: p.inventory,
         units14d: recent,
         unitsPrior14d: u?.prior ?? 0,
-        coverDays: p.inventory === null ? null : perDay > 0 ? Math.round(p.inventory / perDay) : null,
+        coverDays: p.inventory === null ? null : p.inventory <= 0 ? 0 : perDay > 0 ? Math.round(p.inventory / perDay) : null,
         hasRealCost: p.hasRealCost,
         liveCampaigns: (campaignsByProduct.get(p.id) as unknown[] | undefined)?.length ?? 0
       };

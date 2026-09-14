@@ -232,3 +232,55 @@ test("insufficient_data is distinct: mapped products but no evidence to measure 
   assert.equal(r.context.required, 0);
   assert.equal(r.status, "insufficient_data");
 });
+
+test("precision: a family name that matches 37 catalogue titles never becomes provisional — every one is a suggestion, the note says the query is too broad, and only a shortlist of 5 is offered", () => {
+  const many = Array.from({ length: 37 }, (_, i) => ({ productId: `s${i}`, title: `סאטן ${["ציפית", "סדין", "ציפה", "סט מצעים", "שמיכה"][i % 5]} ${i}`, inventory: 10, units14d: 1, unitsPrior14d: 0, coverDays: 30, hasRealCost: true, liveCampaigns: 0 }));
+  const init = satin({ title: "השקת סאטן קוטור", anchor: { kind: "launch", label: "סאטן קוטור" }, products: many, text: "השקת סאטן קוטור — לבדוק סטטוס קמפיין, כמה מכירות, כמה כריות ניתנו במתנה ולהחליט אם להמשיך את הקופון" } as Partial<Initiative>);
+  const cat: MappingCandidates = { ...catalogue, products: many.map((p) => ({ id: p.productId, title: p.title })) };
+  const m = resolveMappings(init, cat, []);
+  const prods = m.links.filter((l) => l.kind === "product");
+  assert.ok(prods.every((l) => l.state === "suggested"));
+  assert.equal(usableLinks(m).filter((l) => l.kind === "product").length, 0);
+  assert.equal(m.byKind.product.state, "suggested");
+  assert.match(m.discovery.product!.note!.he, /מצאתי 37 מוצרים/);
+  const r = evaluateInitiativeReality(init, m, evidenceFor(m), NOW);
+  assert.equal(r.status, "needs_context");
+  assert.equal(r.metrics.find((x) => x.key === "revenue")!.value, null); // no ₪55K built on 37 satin products
+  assert.equal(r.candidateFinding, null);
+  // Weak token discovery on a big catalogue is capped at five, best first.
+  const bigCatalogue: MappingCandidates = { ...catalogue, products: [...catalogue.products, ...Array.from({ length: 30 }, (_, i) => ({ id: `x${i}`, title: `Satin Extra Long Name Variant ${i} — Color` }))] };
+  const m2 = resolveMappings(satin(), bigCatalogue, []);
+  const sug = m2.links.filter((l) => l.kind === "product");
+  assert.equal(sug.length, 5);
+  assert.equal(sug[0].label, "Satin Couture Full Set — Stone"); // two initiative tokens beat one
+  assert.equal(m2.discovery.product!.total, 33);
+  assert.match(m2.discovery.product!.note!.en, /the 5 most likely are shown/);
+});
+
+test("inventory language: zero and negative inventory never read as 'runs out in −N days'", () => {
+  const confirmed: ConfirmedEntityLink[] = [...confirmedCampaign, { initiativeId: "satin", kind: "product", id: "p_full", label: "Satin Couture Full Set — Stone" }, { initiativeId: "satin", kind: "gift_product", id: "p_pillow", label: "Travel Pillow" }, { initiativeId: "satin", kind: "discount", id: "SATIN20", label: "SATIN20" }];
+  const m = resolveMappings(satin(), catalogue, confirmed);
+  const ev = evidenceFor(m);
+  ev.products = ev.products.map((p) => (p.role === "gift" ? { ...p, inventory: -11, coverDays: 0 } : { ...p, inventory: 0, coverDays: 0 }));
+  const r = evaluateInitiativeReality(satin(), m, ev, NOW);
+  const gift = r.findings.find((f) => f.kind === "gift_inventory_short")!;
+  assert.match(gift.statement.he, /שלילי — דורש בדיקת נתונים/);
+  assert.doesNotMatch(gift.statement.he, /-11|ייגמר בעוד/);
+  const prod = r.findings.find((f) => f.kind === "inventory_short_of_window")!;
+  assert.match(prod.statement.he, /אזל מהמלאי/);
+  assert.equal(r.inventory.negative, 1);
+  assert.equal(r.inventory.outOfStock, 1);
+  assert.equal(r.inventory.atRisk, 2);
+  assert.match(r.inventory.worst!.label.he, /אזל מהמלאי|שלילי/);
+  assert.equal(r.metrics.find((x) => x.key === "gift_inventory:p_pillow")!.value, "0");
+});
+
+test("precedence: a missing critical entity wins over a risk measured on the usable parts — the evaluation is incomplete, so nothing is concluded", () => {
+  const confirmed: ConfirmedEntityLink[] = [...confirmedCampaign, { initiativeId: "satin", kind: "gift_product", id: "p_pillow", label: "Travel Pillow" }];
+  const m = resolveMappings(satin(), catalogue, confirmed); // products + coupon still unresolved; gift cover 8 < 16 is a risk
+  const r = evaluateInitiativeReality(satin(), m, evidenceFor(m), NOW);
+  assert.ok(r.findings.some((f) => f.kind === "gift_inventory_short"));
+  assert.equal(r.status, "needs_context");
+  assert.equal(r.candidateFinding, null);
+  assert.deepEqual(findingSignals(r, satin()), []);
+});

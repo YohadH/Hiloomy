@@ -163,3 +163,13 @@ test("a newsletter cell that mentions 15% is an email, not a Shopify coupon", ()
   assert.equal(effectiveActionType("סיפור ראשי", "discount_code"), "discount_code");
   assert.equal(effectiveActionType(null, null), null);
 });
+
+test("product anchors need the full product phrase — a family word like \"סאטן\" attaches nothing, a real two-word title does", () => {
+  const titles = ["סאטן", "סאטן קוטור", "סדין סאטן Tailored", "Second Skin"];
+  const a = extractAnchors("השקת סאטן קוטור — קמפיין", titles).filter((x) => x.kind === "product");
+  assert.deepEqual(a.map((x) => x.label), ["סאטן קוטור"]);
+  const b = extractAnchors("מבצע על כל הסאטן באתר", titles).filter((x) => x.kind === "product");
+  assert.deepEqual(b, []);
+  const c = extractAnchors("Second Skin bundle live", titles).filter((x) => x.kind === "product");
+  assert.deepEqual(c.map((x) => x.label), ["Second Skin"]);
+});

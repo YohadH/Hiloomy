@@ -119,7 +119,16 @@ export interface InitiativeMappings {
   initiativeId: string;
   links: EntityLink[];
   byKind: Record<MappingKind, { state: MappingState; count: number; detail: Localized }>;
+  // Discovery notes per kind: how many products a token matched, how many
+  // are shown. A token that hits dozens of products is proof the query is
+  // too broad — the shortlist is offered, never the whole set.
+  discovery: Partial<Record<MappingKind, { token: string | null; total: number; shown: number; note: Localized | null }>>;
 }
+
+// At most this many candidates are offered per kind before "search".
+export const SHORTLIST_MAX = 5;
+// More exact-title matches than this = the name is generic, not a product.
+export const EXACT_MATCH_MAX = 5;
 
 export const MAPPING_KIND_LABEL: Record<MappingKind, Localized> = {
   product: L("מוצרים", "Products"),
@@ -219,7 +228,12 @@ export function resolveMappings(
   const mine = confirmed.filter((c) => c.initiativeId === initiative.id);
   const find = (kind: MappingKind, id: string) => links.find((l) => l.kind === kind && l.id === id);
 
-  // 1. Automatic links, each with its rule.
+  // 1. Automatic links, each with its rule. An exact FULL title in the plan
+  // text is provisional — unless the plan "names" more than EXACT_MATCH_MAX
+  // products, which means the phrase is a family name ("סאטן"), not a
+  // product; then every one of them is only a suggestion.
+  const discovery: InitiativeMappings["discovery"] = {};
+  const exactTooBroad = initiative.products.length > EXACT_MATCH_MAX;
   for (const p of initiative.products) {
     const gift = mentionedAsGift(initiative.text, p.title);
     const kind: MappingKind = gift ? "gift_product" : "product";
@@ -227,12 +241,17 @@ export function resolveMappings(
       kind,
       id: p.productId,
       label: p.title,
-      state: "provisional",
-      confidence: "high",
-      reason: gift ? L(`שם המוצר המדויק "${p.title}" מופיע בתוכנית באותו משפט עם "מתנה"`, `The exact product name "${p.title}" appears in the plan in the same clause as "gift"`) : L(`שם המוצר המדויק "${p.title}" מופיע בטקסט התוכנית`, `The exact product name "${p.title}" appears in the plan text`),
+      state: exactTooBroad ? "suggested" : "provisional",
+      confidence: exactTooBroad ? "medium" : "high",
+      reason: exactTooBroad
+        ? L(`שם המוצר מופיע בתוכנית, אבל ${initiative.products.length} מוצרים תואמים — התאמה רחבה מדי לשימוש אוטומטי`, `The product name appears in the plan, but ${initiative.products.length} products match — too broad to use automatically`)
+        : gift
+          ? L(`שם המוצר המדויק "${p.title}" מופיע בתוכנית באותו משפט עם "מתנה"`, `The exact product name "${p.title}" appears in the plan in the same clause as "gift"`)
+          : L(`שם המוצר המדויק "${p.title}" מופיע בטקסט התוכנית`, `The exact product name "${p.title}" appears in the plan text`),
       provenance: { rule: "exact_product_title", matchedOn: p.title, auto: null }
     });
   }
+  if (exactTooBroad) discovery.product = { token: initiative.anchor.label, total: initiative.products.length, shown: initiative.products.length, note: L(`זיהיתי שהיוזמה קשורה ל"${initiative.anchor.label}", אבל מצאתי ${initiative.products.length} מוצרים ולכן אי אפשר לדעת אילו מהם שייכים ליוזמה.`, `The initiative relates to "${initiative.anchor.label}", but ${initiative.products.length} products match, so it is not possible to tell which belong to it.`) };
   const code = initiative.offer.couponCode?.trim().toUpperCase() ?? null;
   const known = new Set(candidates.knownDiscountCodes.map((c) => c.trim().toUpperCase()));
   if (code && known.has(code)) {
@@ -259,18 +278,29 @@ export function resolveMappings(
     .split(/[,.;\n—|/]+/)
     .find((c) => GIFT_RE.test(c));
   const giftTokens = giftClause ? nameTokens(giftClause.replace(GIFT_RE, " ")).filter((tk) => !GIFT_STOP.has(tk) && !productTokens.includes(tk)) : [];
+  // Score every catalogue title against the initiative's tokens; keep the
+  // best SHORTLIST_MAX per kind. More tokens matched wins, then the shorter
+  // (more specific) title. The rest is reachable through search.
+  const prodHits: Array<{ p: { id: string; title: string }; score: number; tok: string }> = [];
+  const giftHits: Array<{ p: { id: string; title: string }; score: number; tok: string }> = [];
   for (const p of candidates.products) {
     if (exactIds.has(p.id)) continue;
     const pt = normalizeText(p.title);
-    // A product carrying the initiative's own name is a product candidate, never a gift candidate.
-    const tok = productTokens.find((tk) => pt.includes(tk));
-    if (tok) {
-      links.push({ kind: "product", id: p.id, label: p.title, state: "suggested", confidence: "medium", reason: L(`"${tok}" משם היוזמה מופיע בשם המוצר`, `"${tok}" from the initiative name appears in the product name`), provenance: { rule: "product_title_token", matchedOn: tok, auto: null } });
+    const words = pt.split(" ").length;
+    const hitP = productTokens.filter((tk) => pt.includes(tk));
+    if (hitP.length) {
+      prodHits.push({ p, score: hitP.length * 100 - words, tok: hitP.sort((a, b) => b.length - a.length)[0] });
       continue;
     }
-    const gtok = giftTokens.find((tk) => pt.includes(tk));
-    if (gtok) links.push({ kind: "gift_product", id: p.id, label: p.title, state: "suggested", confidence: "medium", reason: L(`"${gtok}" מהמשפט על המתנה מופיע בשם המוצר`, `"${gtok}" from the gift clause appears in the product name`), provenance: { rule: "gift_clause_token", matchedOn: gtok, auto: null } });
+    const hitG = giftTokens.filter((tk) => pt.includes(tk));
+    if (hitG.length) giftHits.push({ p, score: hitG.length * 100 - words, tok: hitG.sort((a, b) => b.length - a.length)[0] });
   }
+  prodHits.sort((a, b) => b.score - a.score);
+  giftHits.sort((a, b) => b.score - a.score);
+  for (const h of prodHits.slice(0, SHORTLIST_MAX)) links.push({ kind: "product", id: h.p.id, label: h.p.title, state: "suggested", confidence: "medium", reason: L(`"${h.tok}" משם היוזמה מופיע בשם המוצר`, `"${h.tok}" from the initiative name appears in the product name`), provenance: { rule: "product_title_token", matchedOn: h.tok, auto: null } });
+  for (const h of giftHits.slice(0, SHORTLIST_MAX)) links.push({ kind: "gift_product", id: h.p.id, label: h.p.title, state: "suggested", confidence: "medium", reason: L(`"${h.tok}" מהמשפט על המתנה מופיע בשם המוצר`, `"${h.tok}" from the gift clause appears in the product name`), provenance: { rule: "gift_clause_token", matchedOn: h.tok, auto: null } });
+  if (prodHits.length && !discovery.product) discovery.product = { token: prodHits[0].tok, total: prodHits.length, shown: Math.min(SHORTLIST_MAX, prodHits.length), note: prodHits.length > SHORTLIST_MAX ? L(`"${prodHits[0].tok}" מופיע ב-${prodHits.length} מוצרים — מוצגים ${SHORTLIST_MAX} הסבירים ביותר; השאר בחיפוש.`, `"${prodHits[0].tok}" appears in ${prodHits.length} products — the ${SHORTLIST_MAX} most likely are shown; the rest via search.`) : null };
+  if (giftHits.length) discovery.gift_product = { token: giftHits[0].tok, total: giftHits.length, shown: Math.min(SHORTLIST_MAX, giftHits.length), note: giftHits.length > SHORTLIST_MAX ? L(`${giftHits.length} מוצרים מתאימים למשפט על המתנה — מוצגים ${SHORTLIST_MAX}.`, `${giftHits.length} products fit the gift clause — ${SHORTLIST_MAX} shown.`) : null };
   if (!links.some((l) => l.kind === "discount") && candidates.discountUsage?.length) {
     // Codes used on orders inside the initiative window, most used first;
     // a code carrying a token of the initiative name is named as such.
@@ -319,7 +349,16 @@ export function resolveMappings(
               : L("אין התאמה בטוחה — חיפוש", "No confident match — search");
     byKind[kind] = { state, count: of.length, detail };
   }
-  return { initiativeId: initiative.id, links, byKind };
+  return { initiativeId: initiative.id, links, byKind, discovery };
+}
+
+// Inventory language a manager can read. Never "runs out in −154 days".
+export function coverLabel(inventory: number | null, coverDays: number | null): Localized {
+  if (inventory === null) return L("מלאי לא ידוע", "inventory unknown");
+  if (inventory < 0) return L("מלאי שלילי — דורש בדיקת נתונים", "negative inventory — check the data");
+  if (inventory === 0) return L("אזל מהמלאי", "out of stock");
+  if (coverDays === null) return L(`${inventory} במלאי, אין קצב למדוד`, `${inventory} in stock, no pace to measure`);
+  return L(`${coverDays} ימי כיסוי בקצב היוזמה`, `${coverDays} days of cover at the initiative's pace`);
 }
 
 // Links that may feed evidence: confirmed and provisional. Suggested never;
@@ -478,6 +517,13 @@ export interface CandidateFinding {
   finding: InitiativeFinding;
 }
 
+export interface InventorySummary {
+  atRisk: number; // products (incl. gift) whose cover ends before the window
+  outOfStock: number;
+  negative: number; // inventory < 0 — a data problem, shown as such
+  worst: { title: string; role: "product" | "gift"; inventory: number | null; coverDays: number | null; label: Localized } | null;
+}
+
 export interface InitiativeReality {
   initiativeId: string;
   title: string;
@@ -499,6 +545,7 @@ export interface InitiativeReality {
   evidenceBasis: "confirmed" | "provisional" | "none";
   // What this initiative needs, and what is still unresolved. Setup, not a decision.
   context: ContextTask;
+  inventory: InventorySummary;
   candidateFinding: CandidateFinding | null;
   evaluatedAt: string;
 }
@@ -568,7 +615,7 @@ export function evaluateInitiativeReality(
     if (vs !== null) findings.push({ kind: "sales_vs_prior", severity: "info", basis, unconfirmed: basis !== "confirmed", statement: L(`המכירות ${vs >= 0 ? "מעל" : "מתחת"} לתקופה המקבילה הקודמת (${pctStr(vs)}).`, `Sales are ${vs >= 0 ? "above" : "below"} the previous comparable period (${pctStr(vs)}).`), evidence: [`revenue ${ils(rev)} vs ${ils(priorRev!)} prior`], missing: [] });
     if (live && dayIndex >= 3 && units === 0) findings.push({ kind: "no_sales_since_start", severity: "attention", basis, unconfirmed: basis !== "confirmed", statement: L(`היוזמה התחילה לפני ${dayIndex} ימים ואין מכירות של המוצרים המקושרים.`, `The initiative started ${dayIndex} days ago and the linked products have no sales.`), evidence: [`0 units in ${dayIndex} days`], missing: [] });
     for (const p of mainProducts) {
-      const note = p.coverDays !== null ? L(`${p.coverDays} ימי כיסוי בקצב היוזמה`, `${p.coverDays} days of cover at the initiative's pace`) : p.inventory !== null ? L(`${p.inventory} במלאי, אין קצב למדוד`, `${p.inventory} in stock, no pace to measure`) : L("מלאי לא ידוע", "inventory unknown");
+      const note = coverLabel(p.inventory, p.coverDays);
       metrics.push({ key: `inventory:${p.id}`, label: L(`מלאי · ${p.title}`, `Inventory · ${p.title}`), value: p.inventory === null ? null : String(p.inventory), quality: p.inventory === null ? "unavailable" : cap(p.basis, "known"), scope: "initiative", basis: p.basis, source: "inventory", provenance: provOf([p]), note: provNote(p.basis, note) });
       if (live && p.coverDays !== null && p.coverDays < daysRemaining) {
         const c = consumptionProfile(p.dailyUnits);
@@ -577,7 +624,10 @@ export function evaluateInitiativeReality(
           severity: "risk",
           basis: p.basis,
           unconfirmed: p.basis !== "confirmed",
-          statement: L(`"${p.title}" ייגמר בעוד ~${p.coverDays} ימים, והיוזמה נמשכת עוד ${daysRemaining} ימים.`, `"${p.title}" runs out in ~${p.coverDays} days, and the initiative runs ${daysRemaining} more days.`),
+          statement:
+            (p.inventory ?? 0) <= 0
+              ? L(`"${p.title}" ${p.inventory !== null && p.inventory < 0 ? "במלאי שלילי — דורש בדיקת נתונים" : "אזל מהמלאי"}, והיוזמה נמשכת עוד ${daysRemaining} ימים.`, `"${p.title}" is ${p.inventory !== null && p.inventory < 0 ? "at negative inventory — check the data" : "out of stock"}, and the initiative runs ${daysRemaining} more days.`)
+              : L(`"${p.title}" ייגמר בעוד ~${p.coverDays} ימים, והיוזמה נמשכת עוד ${daysRemaining} ימים.`, `"${p.title}" runs out in ~${p.coverDays} days, and the initiative runs ${daysRemaining} more days.`),
           evidence: [`inventory ${p.inventory}`, `consumption ${c.perDay.toFixed(1)}/day over ${c.daysObserved} days`, `trend ${c.trendPct === null ? "n/a" : pctStr(c.trendPct)} (${c.stability})`, `estimated ${p.coverDays} days remaining vs ${daysRemaining} initiative days`],
           missing: unknownStock,
           consumption: c,
@@ -605,7 +655,7 @@ export function evaluateInitiativeReality(
   for (const g of gifts) {
     const units = g.units ?? 0;
     metrics.push({ key: `gift:${g.id}`, label: L(`מתנה · ${g.title}`, `Gift · ${g.title}`), value: g.units === null ? null : String(units), quality: g.units === null ? "unavailable" : cap(g.basis, "known"), scope: "initiative", basis: g.basis, source: "shopify", provenance: provOf([g]), note: provNote(g.basis, L("יחידות שניתנו בחלון היוזמה", "units given in the initiative window")) });
-    metrics.push({ key: `gift_inventory:${g.id}`, label: L(`מלאי מתנה · ${g.title}`, `Gift inventory · ${g.title}`), value: g.coverDays === null ? (g.inventory === null ? null : String(g.inventory)) : `${g.coverDays}`, quality: g.inventory === null ? "unavailable" : cap(g.basis, "known"), scope: "initiative", basis: g.basis, source: "inventory", provenance: provOf([g]), note: provNote(g.basis, g.coverDays !== null ? L("ימי כיסוי בקצב היוזמה", "days of cover at the initiative's pace") : L("יחידות במלאי", "units in stock")) });
+    metrics.push({ key: `gift_inventory:${g.id}`, label: L(`מלאי מתנה · ${g.title}`, `Gift inventory · ${g.title}`), value: g.inventory === null ? null : (g.inventory ?? 0) <= 0 ? "0" : g.coverDays === null ? String(g.inventory) : `${g.coverDays}`, quality: g.inventory === null ? "unavailable" : cap(g.basis, "known"), scope: "initiative", basis: g.basis, source: "inventory", provenance: provOf([g]), note: provNote(g.basis, coverLabel(g.inventory, g.coverDays)) });
     if (live && g.coverDays !== null && g.coverDays < daysRemaining) {
       const c = consumptionProfile(g.dailyUnits);
       findings.push({
@@ -613,7 +663,10 @@ export function evaluateInitiativeReality(
         severity: "risk",
         basis: g.basis,
         unconfirmed: g.basis !== "confirmed",
-        statement: L(`מלאי המתנה "${g.title}" ייגמר בעוד ~${g.coverDays} ימים, לפני סוף היוזמה (${daysRemaining} ימים).`, `Gift stock for "${g.title}" runs out in ~${g.coverDays} days, before the initiative ends (${daysRemaining} days).`),
+        statement:
+          (g.inventory ?? 0) <= 0
+            ? L(`מלאי המתנה "${g.title}" ${g.inventory !== null && g.inventory < 0 ? "שלילי — דורש בדיקת נתונים" : "אזל"}, והיוזמה נמשכת עוד ${daysRemaining} ימים.`, `Gift stock for "${g.title}" is ${g.inventory !== null && g.inventory < 0 ? "negative — check the data" : "out"}, and the initiative runs ${daysRemaining} more days.`)
+            : L(`מלאי המתנה "${g.title}" ייגמר בעוד ~${g.coverDays} ימים, לפני סוף היוזמה (${daysRemaining} ימים).`, `Gift stock for "${g.title}" runs out in ~${g.coverDays} days, before the initiative ends (${daysRemaining} days).`),
         evidence: [`gift inventory ${g.inventory}`, `given ${units} units · ${c.perDay.toFixed(1)}/day over ${c.daysObserved} days`, `trend ${c.trendPct === null ? "n/a" : pctStr(c.trendPct)} (${c.stability})`, `estimated ${g.coverDays} days remaining vs ${daysRemaining} initiative days`],
         missing: unknownGift,
         consumption: c,
@@ -696,11 +749,10 @@ export function evaluateInitiativeReality(
   const cannot = missingCritical.includes("product") ? L("מכירות, מלאי ורווחיות", "sales, inventory or profitability") : missingCritical.includes("gift_product") ? L("כמה מתנות ניתנו וכמה נשארו", "how many gifts were given and how many remain") : missingCritical.includes("discount") ? L("את השימוש בקופון", "coupon usage") : L("את ביצועי הקמפיין", "campaign performance");
   let status: InitiativeRealityStatus;
   let statusReason: Localized;
-  if (risks.length) {
-    // A measured risk on usable evidence is never hidden behind setup.
-    status = "needs_attention";
-    statusReason = risks[0].statement;
-  } else if (missingCritical.length) {
+  if (missingCritical.length) {
+    // HARD RULE: an incomplete evaluation concludes nothing — not even a
+    // risk. Findings on the usable parts are kept for the audit but the
+    // status is the missing context.
     status = "needs_context";
     statusReason = L(`Hiloomy מבינה את היוזמה אבל לא יכולה להעריך ${cannot.he} עד שיחוברו: ${kindLabels(missingCritical, "he")}.`, `Hiloomy understands the initiative but cannot evaluate ${cannot.en} until these are connected: ${kindLabels(missingCritical, "en")}.`);
   } else if (!hasEvidence) {
@@ -708,7 +760,7 @@ export function evaluateInitiativeReality(
     statusReason = L("הישויות ממופות, אבל אין עדיין ראיות למדידה (היוזמה טרם התחילה או שהנתונים לא נטענו).", "Entities are mapped, but there is no evidence to measure yet (the initiative has not started, or data did not load).");
   } else if (issues.length) {
     status = "needs_attention";
-    statusReason = issues[0].statement;
+    statusReason = (risks[0] ?? issues[0]).statement;
   } else if (goalDefined) {
     status = "on_track"; // unreachable today: kept for when a target exists
     statusReason = L("עומד ביעד.", "Meeting the target.");
@@ -768,7 +820,7 @@ export function evaluateInitiativeReality(
   }
 
   // ── Candidate: a risk on usable evidence. Never a decision by itself. ─
-  const risk = risks[0] ?? null;
+  const risk = missingCritical.length ? null : (risks[0] ?? null);
   const giftName = risk?.product?.title;
   const candidateFinding: CandidateFinding | null = risk
     ? {
@@ -783,6 +835,16 @@ export function evaluateInitiativeReality(
         finding: risk
       }
     : null;
+
+  const invProducts = ev.products.filter((p) => p.inventory !== null);
+  const atRiskList = invProducts.filter((p) => live && ((p.inventory ?? 0) <= 0 || (p.coverDays !== null && p.coverDays < daysRemaining)));
+  const worstP = [...atRiskList].sort((a, b) => (a.coverDays ?? 0) - (b.coverDays ?? 0))[0] ?? null;
+  const inventory: InventorySummary = {
+    atRisk: atRiskList.length,
+    outOfStock: invProducts.filter((p) => p.inventory === 0).length,
+    negative: invProducts.filter((p) => (p.inventory ?? 0) < 0).length,
+    worst: worstP ? { title: worstP.title, role: worstP.role, inventory: worstP.inventory, coverDays: worstP.coverDays, label: coverLabel(worstP.inventory, worstP.coverDays) } : null
+  };
 
   return {
     initiativeId: initiative.id,
@@ -802,6 +864,7 @@ export function evaluateInitiativeReality(
     stale,
     evidenceBasis,
     context,
+    inventory,
     candidateFinding,
     evaluatedAt: now.toISOString()
   };
@@ -829,6 +892,8 @@ export interface InitiativeRealitySummary {
   stale: boolean;
   evidenceBasis: InitiativeReality["evidenceBasis"];
   context: ContextTask;
+  inventory: InventorySummary;
+  discovery: InitiativeMappings["discovery"];
   candidateFinding: CandidateFinding | null;
   evaluatedAt: string;
 }
@@ -854,6 +919,8 @@ export function summarizeReality(r: InitiativeReality, offer: Initiative["offer"
     stale: r.stale,
     evidenceBasis: r.evidenceBasis,
     context: r.context,
+    inventory: r.inventory,
+    discovery: r.mappings.discovery,
     candidateFinding: r.candidateFinding,
     evaluatedAt: r.evaluatedAt
   };
