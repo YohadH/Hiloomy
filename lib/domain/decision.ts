@@ -1,4 +1,5 @@
 import type { InitiativeRealitySummary } from "@/lib/domain/initiative-reality";
+import type { DecisionBrief } from "@/lib/domain/decision-episode";
 // Decision Objects — the unit Hiloomy's home screen is built from.
 //
 // A Decision is not an alert and not a KPI. It is a management question with
@@ -183,6 +184,9 @@ export interface Decision {
   // context): not a recommendation — the missing context and the resolve
   // action. The card and the receipt render this instead of "recommends".
   blocked?: { line: Localized; missing: Localized; cta: Localized; href: string } | null;
+  // Plan decisions with a complete context: diagnosis → decision space →
+  // recommendation → episode, for the receipt's briefing sections.
+  brief?: (DecisionBrief & { sheetId: string }) | null;
 }
 
 export interface WatchItem {

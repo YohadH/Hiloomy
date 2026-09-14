@@ -1,6 +1,7 @@
 // /plan/initiative/[id] — one commercial initiative.
 //   Before setup: "צריך ממך דקה" — the numbered questions and nothing else.
-//   After setup: Plan · Reality · What changed · Does it require a decision?
+//   After setup: Plan · Reality · Diagnosis · Decision space · Recommendation ·
+//   What would change · Details/Audit.
 // Everything technical (mapping rules, confidence sources, per-product
 // rows, decision history) lives under "Details / Audit".
 
@@ -10,10 +11,11 @@ import { AppShell } from "@/components/layout/app-shell";
 import { InitiativeRealityPanel } from "@/components/plan/initiative-reality-panel";
 import { ContextResolution } from "@/components/plan/context-resolution";
 import { EntityLinkButton } from "@/components/plan/entity-link-controls";
+import { DiagnosisBlock, RecommendationBlock, AlternativesBlock, QuestionsBlock } from "@/components/plan/decision-brief";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
-import { buildInitiativeReality, loadRealityInputs, summarizeReality } from "@/lib/services/initiative-reality-service";
+import { buildInitiativeBrief, loadRealityInputs } from "@/lib/services/initiative-reality-service";
 import { BASIS_LABEL, MAPPING_KIND_LABEL, type MappingKind } from "@/lib/domain/initiative-reality";
 import { INITIATIVE_STATUS_LABEL } from "@/lib/domain/plan";
 import { displayDecisionId } from "@/lib/domain/decision";
@@ -40,8 +42,9 @@ export default async function InitiativePage({ params, searchParams }: { params:
   const initiative = plan?.initiatives.find((i) => i.id === id);
   if (!plan || !initiative) notFound();
   const inputs = await loadRealityInputs(storeId, sheetId, now);
-  const reality = await buildInitiativeReality(storeId, initiative, inputs, now);
-  const summary = summarizeReality(reality, initiative.offer);
+  const activeHook = initiative.decisionHooks.find((h) => h.windowStart <= now.toISOString().slice(0, 10) && h.windowEnd >= now.toISOString().slice(0, 10)) ?? null;
+  const brief = await buildInitiativeBrief(storeId, initiative, inputs, now, activeHook?.question ?? null);
+  const { reality, summary } = brief;
   const fmt = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(isHe ? "he-IL" : "en-US", { day: "numeric", month: "long", timeZone: "UTC" });
   const setupMode = reality.status === "needs_context";
   const toConfirm = reality.context.rows.filter((r) => r.action === "confirm");
@@ -80,6 +83,46 @@ export default async function InitiativePage({ params, searchParams }: { params:
               <section id="context" className="space-y-3">
                 <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} locale={locale} compact />
               </section>
+            ) : null}
+            {brief.diagnosis && brief.recommendation ? (
+              <>
+                <section id="diagnosis" className="space-y-3">
+                  <h2 className="text-xl font-semibold tracking-tight">{t("אבחון עסקי", "Business diagnosis")}</h2>
+                  <p className="text-sm text-muted-foreground">{t("לפני המלצה: האם זו בעיית ערוץ או בעיית עסק? כל ממד לפי הראיות של היוזמה הזו בלבד.", "Before a recommendation: a channel problem or a business problem? Each dimension from this initiative's evidence only.")}</p>
+                  <DiagnosisBlock d={brief.diagnosis} locale={locale} />
+                </section>
+                {brief.recommendation.questions.length ? (
+                  <section id="questions" className="space-y-3">
+                    <h2 className="text-xl font-semibold tracking-tight">{t("שאלה שמשנה את ההמלצה", "A question that changes the recommendation")}</h2>
+                    <QuestionsBlock rec={brief.recommendation} locale={locale} sheetId={sheetId} initiativeId={initiative.id} coverDays={summary.inventory.worst?.coverDays ?? null} />
+                  </section>
+                ) : null}
+                <section id="recommendation" className="space-y-3">
+                  <h2 className="text-xl font-semibold tracking-tight">{activeHook ? activeHook.question[locale] : t("המלצה", "Recommendation")}</h2>
+                  <RecommendationBlock rec={brief.recommendation} locale={locale} />
+                </section>
+                {brief.recommendation.alternatives.length ? (
+                  <section id="decision-space" className="space-y-3">
+                    <h2 className="text-xl font-semibold tracking-tight">{t("מרחב ההחלטה", "Decision space")}</h2>
+                    <p className="text-sm text-muted-foreground">{t("החלופות שבאמת זמינות, ומתי כל אחת עדיפה על ההמלצה.", "The alternatives actually available, and when each beats the recommendation.")}</p>
+                    <AlternativesBlock rec={brief.recommendation} locale={locale} />
+                  </section>
+                ) : null}
+                <section id="would-change" className="space-y-2">
+                  <h2 className="text-xl font-semibold tracking-tight">{t("מה ישנה את ההמלצה", "What would change the recommendation")}</h2>
+                  <ul className="space-y-1 text-sm">
+                    {brief.recommendation.wouldChange.map((w, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/60" />
+                        <span>{w[locale]}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {initiative.relatedDecisions.length ? null : (
+                    <p className="text-xs text-muted-foreground">{t("ההמלצה כאן היא ניתוח של היוזמה. היא נפתחת ב'היום' רק כשחלון החלטה מגיע או כשממצא עובר את סף הדירוג.", "This is the initiative's analysis. It opens on Today only when a decision window arrives or a finding passes the ranking threshold.")}</p>
+                  )}
+                </section>
+              </>
             ) : null}
           </>
         )}

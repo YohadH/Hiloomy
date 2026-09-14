@@ -707,6 +707,88 @@ confident, misleading answer.**
   "map this initiative" flow that lists candidate products beyond exact
   title matches.
 
+## 0f. Decision Layer — Diagnosis → Decision Space → Recommendation → Episode (2026-09-14)
+
+The owner's question: "if Hiloomy sees the same data Triple Whale, Polar,
+Meta, Shopify or Google can see, where does the value come from?" The
+answer built here: from connecting that data to the brand's declared monthly
+intent, the specific initiative, the omnichannel reality, the realistic
+option set, the manager's actual choice and the measured result.
+
+    Plan (Gantt) → Initiative Reality → Business Diagnosis → Decision Space
+      → Recommendation (+ what would change) → Decision Episode → Today
+
+- **Business Diagnosis** (`lib/domain/business-diagnosis.ts`, pure). Nine
+  dimensions, each `state + evidence + basis`: demand (initiative-scoped
+  sales pace vs the pre-window baseline), offline (share of the initiative's
+  orders from POS), paid (Meta ROAS on the mapped campaign), creators
+  (affiliate-attributed revenue on the initiative's orders), inventory,
+  replenishment, margin, offer, time. Headline picks *channel problem vs
+  business problem* in a fixed order: unknown demand → channel (demand ok,
+  paid weak) → stock constraint → unprofitable → conversion-weak → offline
+  or creators carry it → weak everywhere → none. Thresholds are named V0
+  constants (`DEMAND_STRONG 0.1`, `PAID_STRONG_ROAS 2`, `CONV_WEAK 0.005`,
+  `MARGIN_HEALTHY 0.3`, `OFFLINE_STRONG_SHARE 0.25`, `WINDOW_NARROW_DAYS 7`)
+  — not tuned, not learned. Unknown stays unknown; store-wide numbers are
+  never a dimension's evidence (test P).
+- **Sales channel per initiative** (`classifySalesChannel` on
+  `Order.sourceName`): online / pos→offline / manual / unknown. No channel is
+  forced: an order without a source is UNKNOWN. Gap: third-party POS systems
+  that push orders with a generic source are classified online. No tags or
+  metafields are stored, so there is nothing else to classify on today.
+- **Decision Space** (`lib/domain/decision-space.ts`). An `ACTIONS` registry
+  of 18 typed actions (CONTINUE, CONTINUE_MONITOR, SCALE, REPLENISH,
+  TRANSFER_INVENTORY, REPLACE_GIFT, LIMIT_GIFT_TO_STOCK,
+  SWITCH_TO_NON_STOCK_PERK, SHIFT_PRODUCT_FOCUS, SHORTEN_INITIATIVE,
+  REDUCE_DISCOUNT, DEEPEN_DISCOUNT, ADD_BUNDLE, FIX_CONVERSION,
+  TEST_CREATIVE, SHIFT_BUDGET, REDUCE_SPEND, STOP), each with a business
+  decision (continue / change / stop), an operational kind, a feasibility
+  evaluator over the diagnosis, and reversibility. `buildDecisionSpace`
+  drops infeasible actions and ranks the rest **qualitatively** (fulfilment
+  first, profitability second, demand third, then channel scope, conversion,
+  feasibility, reversibility); every score carries its `because[]`. Unknown
+  feasibility (replenishment lead time) is a conditional branch plus one
+  `FeasibilityQuestion`; the answer is stored as a `feasibilityFact`
+  (`set_fact` op on the plan overrides, valid 14 days by default) and the
+  evaluation recomputes.
+- **Recommendation** (`resolveRecommendation`): one primary option per
+  situation, `what` written as "להמשיך/לשנות/לעצור: <concrete action>",
+  `why[]`, alternatives each with `betterIf`, `wouldChange[]`, confidence
+  with reason, and the review-hook answer (continue / change / stop /
+  insufficient). Not a prediction; no lift number is claimed.
+- **Decision Episode** (`lib/domain/decision-episode.ts`, `episode-v1`):
+  intent + reality snapshot + diagnosis + options with scores + unknowns +
+  questions + recommended option. Stored on the plan-decision payload as
+  `brief` so the receipt can show the reasoning as it was at evaluation.
+  Memory *use* (learning from prior episodes) is **not** built — only the
+  record.
+- **Engine** (`upsertPlanDecisions`): builds the brief only for initiatives
+  that carry a decision now (a hook in its window, or a reality finding that
+  passed the shadow ranking); review hooks take recommendation / options /
+  confidence / wouldChange from the brief; `needs_context` stays blocked
+  (the brief is null). Findings still travel Finding → Candidate → ranking →
+  threshold → Today; nothing here bypasses the ledger.
+- **UI**. `/plan` (new): the commercial month — active / upcoming / need
+  context / need attention / decisions due this week, commercial events;
+  links only, the Gantt stays at `/marketing-planner`. `/plan/initiative/[id]`
+  mode B: Plan → Reality → Diagnosis → (question) → Recommendation →
+  Decision space → What would change → Details/Audit. `/today/[id]`: sections
+  Business diagnosis, question, Recommendation, Decision space, What would
+  change. Today card: one "what could change this" line. Feasibility
+  question = a yes / no / unknown control, mobile-first.
+- **Tests** `tests/unit/decision-space.test.ts` A–P + episode (17): each
+  scenario runs the real `evaluateInitiativeReality` with confirmed mappings
+  and then diagnose → space → resolve. Satin Couture is not special-cased —
+  scenarios B/C/D/J/K are gift-stock situations built from generic fixtures.
+- **Not built / honest gaps**: Google Ads and Instagram organic are not
+  wired into the diagnosis (no per-initiative attribution exists);
+  third-party POS classification; replenishment lead times (only the
+  operator's answer); explicit initiative goals (so on_track / off_track
+  are still never emitted); learning from past episodes; any measured
+  outcome for a brief's recommendation. The moat claim ("brand decision
+  memory") is **not** achieved by this pass — the record exists, nothing
+  reads it yet.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

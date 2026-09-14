@@ -52,7 +52,8 @@ import { writeDecisionInboxSummary } from "@/lib/services/command-center-summary
 import { recordCandidateRun, readInitiativeCandidateVerdicts } from "@/lib/services/decision-candidate-audit-service";
 import { getSalesByChannel } from "@/lib/services/sales-channel-service";
 import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
-import { buildPlanRealities, summarizeReality } from "@/lib/services/initiative-reality-service";
+import { buildPlanRealities, summarizeReality, loadRealityInputs, buildInitiativeBrief } from "@/lib/services/initiative-reality-service";
+import type { DecisionBrief } from "@/lib/domain/decision-episode";
 import { findingSignals } from "@/lib/domain/initiative-reality";
 import { composeReviewRecommendation, reviewWhyNow, scopedPaceSentence } from "@/lib/domain/plan-decision-copy";
 import type { InitiativeRealitySummary } from "@/lib/domain/initiative-reality";
@@ -1435,6 +1436,14 @@ async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> 
   const pulse = await buildPulse(storeId, now).catch(() => null);
   const realities = await buildPlanRealities(storeId, plan, now, pulse ? { sales7: pulse.sales7, velocityChangePct: pulse.velocityChangePct, marginRate: pulse.marginRate } : null).catch(() => new Map());
   const verdicts = await readInitiativeCandidateVerdicts(storeId).catch(() => []);
+  const inputs = await loadRealityInputs(storeId, sheetId, now, pulse ? { sales7: pulse.sales7, velocityChangePct: pulse.velocityChangePct, marginRate: pulse.marginRate } : null).catch(() => null);
+  // Diagnosis → decision space → recommendation, only for initiatives that
+  // carry a decision now (a hook in window, or a surfaced candidate).
+  const briefFor = async (i: PlanView["initiatives"][number], hookQuestion: Localized | null): Promise<(DecisionBrief & { sheetId: string }) | null> => {
+    if (!inputs) return null;
+    const b = await buildInitiativeBrief(storeId, i, inputs, now, hookQuestion).catch(() => null);
+    return b && b.diagnosis && b.recommendation && b.episode ? { sheetId, diagnosis: b.diagnosis, space: b.space.slice(0, 6), recommendation: b.recommendation, episode: b.episode } : null;
+  };
   for (const i of plan.initiatives) {
     if (i.status === "completed" || i.excludedFromEngine) continue;
     const reality = realities.get(i.id) ?? null;
@@ -1478,6 +1487,7 @@ async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> 
           evidenceBasis: cf.finding.basis,
           evidenceRefreshedAt: now.toISOString(),
           triggerRule: `initiative reality finding ${cf.kind} (${cf.finding.basis} mapping) → candidate ${cf.candidateKind} → shadow rank ${verdict.rank} ≤ threshold`,
+          brief: await briefFor(i, cf.question),
           start: i.start,
           end: i.end,
           discountPct: i.offer.discountPct,
@@ -1531,7 +1541,8 @@ async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> 
           products: i.products.map((p) => ({ title: p.title, units14d: p.units14d, unitsPrior14d: p.unitsPrior14d, coverDays: p.coverDays, inventory: p.inventory, hasRealCost: p.hasRealCost, liveCampaigns: p.liveCampaigns })),
           // Initiative Reality at this evaluation — initiative-specific
           // evidence first; store-wide numbers only as labelled context.
-          reality: realitySummary
+          reality: realitySummary,
+          brief: await briefFor(i, hook.question)
         },
         periodLabel: `${hook.windowStart} → ${hook.windowEnd}`
       }).catch(() => null);
@@ -1642,8 +1653,12 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
   // continue / change / stop — or say the evidence is not enough. Decision
   // first, scoped evidence second. needs_context is a blocked evaluation.
   const review = kind === "review" ? composeReviewRecommendation(reality, v) : null;
+  const brief = (p.brief && typeof p.brief === "object" && (p.brief as { recommendation?: unknown }).recommendation ? (p.brief as DecisionBrief & { sheetId: string }) : null) ?? null;
+  const briefRec = brief?.recommendation ?? null;
   const paceScope = scopedPaceSentence(reality, v);
-  const recommendation = review
+  const recommendation = briefRec && kind === "review" && briefRec.primary
+    ? L(`${briefRec.what.he} ${briefRec.why[0]?.he ?? ""}`, `${briefRec.what.en} ${briefRec.why[0]?.en ?? ""}`)
+    : review
     ? L(`${review.decision.he} ${review.evidence.he}`, `${review.decision.en} ${review.evidence.en}`)
     : kind === "conditional"
       ? demandUp && thin.length > 0
@@ -1684,15 +1699,19 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
             { key: "shallower", label: L("להפעיל בהנחה רדודה יותר", "Activate with a shallower discount"), recommended: demandUp && thin.length === 0 },
             { key: "hold", label: L("לא להפעיל עכשיו", "Do not activate now"), recommended: demandUp && thin.length > 0 }
           ]
-        : [
-            { key: "keep", label: L("להמשיך כמתוכנן", "Continue as planned"), recommended: review?.recommendedOption === "keep" },
-            { key: "change", label: L("לשנות את ההצעה", "Change the offer"), recommended: review?.recommendedOption === "change" },
-            { key: "stop", label: L("לעצור", "Stop"), recommended: review?.recommendedOption === "stop" }
-          ],
+        : briefRec && briefRec.primary
+          ? [briefRec.primary, ...briefRec.alternatives.map((a) => a.option)].slice(0, 5).map((o, idx) => ({ key: o.type.toLowerCase(), label: o.label, recommended: idx === 0 }))
+          : [
+              { key: "keep", label: L("להמשיך כמתוכנן", "Continue as planned"), recommended: review?.recommendedOption === "keep" },
+              { key: "change", label: L("לשנות את ההצעה", "Change the offer"), recommended: review?.recommendedOption === "change" },
+              { key: "stop", label: L("לעצור", "Stop"), recommended: review?.recommendedOption === "stop" }
+            ],
     recommendation,
     reason: null,
-    confidence: reality ? reality.confidence : v === null ? "low" : realCost ? "medium" : "medium",
-    confidenceReason: reality
+    confidence: briefRec ? briefRec.confidence : reality ? reality.confidence : v === null ? "low" : realCost ? "medium" : "medium",
+    confidenceReason: briefRec
+      ? briefRec.confidenceReason
+      : reality
       ? reality.confidenceReason
       : v === null
       ? L("אין מספיק מכירות בשני חלונות של 7 ימים כדי למדוד קצב. הטריגר מבוסס כלל V0.", "Not enough sales in two 7-day windows to measure pace. The trigger is a V0 rule.")
@@ -1702,7 +1721,7 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     missingEvidence: reality
       ? reality.missingEvidence.map((m) => m.label)
       : [...(products.length === 0 ? [L("מוצרים שהתוכנית מתייחסת אליהם", "Which products the plan refers to")] : []), ...(realCost ? [] : [L("עלות אמיתית לכל המוצרים", "A real cost on every product")])],
-    wouldChange: [L("קצב המכירות משתנה ביותר מ־10%.", "Sales velocity moves more than 10%."), L("כיסוי המלאי יורד מתחת ל־14 יום.", "Stock cover drops under 14 days."), L("החלטה קודמת על אותה יוזמה.", "A prior decision on the same initiative.")],
+    wouldChange: briefRec && briefRec.wouldChange.length ? briefRec.wouldChange : [L("קצב המכירות משתנה ביותר מ־10%.", "Sales velocity moves more than 10%."), L("כיסוי המלאי יורד מתחת ל־14 יום.", "Stock cover drops under 14 days."), L("החלטה קודמת על אותה יוזמה.", "A prior decision on the same initiative.")],
     unknown: reality && (reality.status === "insufficient_data" || reality.status === "needs_context")
       ? L(`הילומי עדיין לא יכולה לענות: ${reality.missingEvidence.map((m) => m.label.he).join(" · ")}. הסיבה: הישויות של היוזמה לא ממופות. היעד המסחרי לא מצוין בגאנט.`, `Hiloomy cannot yet answer: ${reality.missingEvidence.map((m) => m.label.en).join(" · ")}. Reason: the initiative's entities are not mapped. The commercial target is not stated in the Gantt.`)
       : L("הילומי לא יודעת מה היעד המסחרי של היוזמה — הגאנט לא מציין אותו.", "Hiloomy does not know the initiative's commercial target — the Gantt does not state one."),
@@ -1710,6 +1729,7 @@ function planDecision(alert: AlertRow, ctx: DecisionContext): Decision {
     rank: ctx.pulse.sales7 ?? 0,
     entity: { type: "plan_initiative", id: String(p.initiativeId ?? ""), label: title },
     initiative: reality,
+    brief: brief && reality && reality.status !== "needs_context" ? brief : null,
     blocked:
       review?.blocked && reality
         ? { line: review.decision, missing: review.evidence, cta: review.blocked.cta, href: `/plan/initiative/${reality.initiativeId}#context` }

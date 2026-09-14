@@ -17,6 +17,7 @@ import {
 import { StatusPill, ConfidenceTag } from "./status-pill";
 import { EvidenceGroups, QualityTag } from "./evidence";
 import { InitiativeRealityPanel } from "@/components/plan/initiative-reality-panel";
+import { DiagnosisBlock, AlternativesBlock, QuestionsBlock } from "@/components/plan/decision-brief";
 import { formatWhen } from "./decision-card";
 
 type Locale = "he" | "en";
@@ -132,6 +133,12 @@ export function DecisionReceipt({
         <p className="text-lg font-semibold leading-7">{d.question[locale]}</p>
       </Section>
 
+      {d.brief ? (
+        <Section title={t("אבחון עסקי", "Business diagnosis")}>
+          <DiagnosisBlock d={d.brief.diagnosis} locale={locale} />
+        </Section>
+      ) : null}
+
       <Section title={t("טריגר", "Trigger")}>
         <p className="text-sm leading-6 text-muted-foreground">{d.trigger[locale]}</p>
       </Section>
@@ -203,6 +210,12 @@ export function DecisionReceipt({
         </ol>
       </Section>
 
+      {d.brief && d.brief.recommendation.questions.length ? (
+        <Section title={t("שאלה שמשנה את ההמלצה", "A question that changes the recommendation")}>
+          <QuestionsBlock rec={d.brief.recommendation} locale={locale} sheetId={d.brief.sheetId} initiativeId={d.brief.episode.intent.initiativeId} coverDays={d.initiative?.inventory.worst?.coverDays ?? null} />
+        </Section>
+      ) : null}
+
       <Section title={d.blocked ? t("ההערכה חסומה", "Evaluation blocked") : t("המלצה", "Recommendation")}>
         {d.blocked ? (
           <div className="rounded-xl border border-warning/40 bg-warning/5 p-4">
@@ -273,6 +286,13 @@ export function DecisionReceipt({
           </ul>
         )}
       </Section>
+
+      {d.brief && d.brief.recommendation.alternatives.length ? (
+        <Section title={t("מרחב ההחלטה — החלופות ומתי כל אחת עדיפה", "Decision space — the alternatives and when each is better")}>
+          <AlternativesBlock rec={d.brief.recommendation} locale={locale} />
+          <p className="mt-2 text-xs text-muted-foreground">{t("דירוג איכותי: זמינות קודם, רווחיות שנייה, ביקוש שלישי, ואז ערוץ, המרה, ישימות והפיכות. לא ציון חזוי.", "Qualitative ranking: fulfilment first, profitability second, demand third, then channel, conversion, feasibility and reversibility. Not a predicted score.")}</p>
+        </Section>
+      ) : null}
 
       <Section title={t("מה ישנה את ההחלטה?", "What would change this decision?")}>
         <ul className="space-y-1.5">

@@ -125,6 +125,11 @@ export function DecisionCard({
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground">{t("הילומי ממליצה", "Hiloomy recommends")}</p>
             <p className={cn("leading-6", prominent ? "text-base font-medium" : "text-sm")}>{d.recommendation[locale]}</p>
+            {d.brief && d.wouldChange[0] ? (
+              <p className="text-xs text-muted-foreground">
+                {t("מה ישנה את זה", "What could change this")}: {d.wouldChange[0][locale]}
+              </p>
+            ) : null}
           </div>
         )}
 

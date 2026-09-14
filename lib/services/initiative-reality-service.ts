@@ -27,6 +27,11 @@ import {
   type ProductEvidence
 } from "@/lib/domain/initiative-reality";
 import { buildPlanView, readPlanOverrides } from "@/lib/services/plan-service";
+import { classifySalesChannel } from "@/lib/domain/sales-channel";
+import { diagnose, type AlternativeProduct, type ChannelEvidence, type CreatorEvidence, type DiagnosisInput, type FeasibilityFacts, type LocationStock, type PaidEvidence, type BusinessDiagnosis } from "@/lib/domain/business-diagnosis";
+import { buildDecisionSpace, resolveRecommendation, type DecisionOption, type Recommendation } from "@/lib/domain/decision-space";
+import { buildEpisode, type DecisionEpisode } from "@/lib/domain/decision-episode";
+import type { PlanOverrides } from "@/lib/domain/plan";
 
 const DAY_MS = 86_400_000;
 const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
@@ -38,6 +43,7 @@ export interface RealityInputs {
   confirmed: ConfirmedEntityLink[];
   freshness: InitiativeFreshness;
   store: InitiativeEvidence["store"];
+  facts: PlanOverrides["feasibilityFacts"];
 }
 
 // Everything that is the same for every initiative of a sheet: the
@@ -85,6 +91,7 @@ export async function loadRealityInputs(storeId: string, sheetId: string, now: D
       discountUsage: [...usageByCode.entries()].map(([code, u]) => ({ code, orders: u.orders.size, firstUsed: u.first, lastUsed: u.last }))
     },
     confirmed: overrides.entityLinks,
+    facts: overrides.feasibilityFacts.filter((f) => f.validUntil >= now.toISOString()),
     freshness: {
       shopify: shopify?.lastSyncAt?.toISOString() ?? null,
       inventory: shopify?.lastProductsSyncAt?.toISOString() ?? shopify?.lastSyncAt?.toISOString() ?? null,
@@ -99,21 +106,32 @@ export async function loadRealityInputs(storeId: string, sheetId: string, now: D
 // discounts and refunds; cancelled and test orders excluded.
 async function productSalesViaPrisma(storeId: string, productIds: string[], start: string, endExclusive: string) {
   const db = getDb() as any;
-  if (!productIds.length) return new Map<string, { revenue: number; units: number; cost: number; dailyUnits: number[] }>();
+  type Agg = { revenue: number; units: number; cost: number; dailyUnits: number[]; orderIds: Set<string>; byChannel: Record<"online" | "offline" | "manual" | "unknown", { revenue: number; units: number }> };
+  if (!productIds.length) return new Map<string, Agg>();
   const days = Math.max(1, Math.round((Date.parse(`${endExclusive}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / DAY_MS));
   const lines = (await db.orderLineItem.findMany({
     where: { storeId, productId: { in: productIds }, order: { createdAt: { gte: dayStart(start), lt: dayStart(endExclusive) }, cancelledAt: null, test: false } },
-    select: { productId: true, lineSubtotal: true, lineDiscountAmount: true, refundedSubtotal: true, quantity: true, refundedQuantity: true, estimatedCostAmount: true, order: { select: { createdAt: true } } }
-  })) as Array<{ productId: string; lineSubtotal: unknown; lineDiscountAmount: unknown; refundedSubtotal: unknown; quantity: number; refundedQuantity: number; estimatedCostAmount: unknown; order: { createdAt: Date } }>;
-  const out = new Map<string, { revenue: number; units: number; cost: number; dailyUnits: number[] }>();
+    select: { productId: true, orderId: true, lineSubtotal: true, lineDiscountAmount: true, refundedSubtotal: true, quantity: true, refundedQuantity: true, estimatedCostAmount: true, order: { select: { createdAt: true, sourceName: true } } }
+  })) as Array<{ productId: string; orderId: string; lineSubtotal: unknown; lineDiscountAmount: unknown; refundedSubtotal: unknown; quantity: number; refundedQuantity: number; estimatedCostAmount: unknown; order: { createdAt: Date; sourceName: string | null } }>;
+  const out = new Map<string, Agg>();
   for (const l of lines) {
-    const cur = out.get(l.productId) ?? { revenue: 0, units: 0, cost: 0, dailyUnits: Array.from({ length: days }, () => 0) };
+    const cur = out.get(l.productId) ?? { revenue: 0, units: 0, cost: 0, dailyUnits: Array.from({ length: days }, () => 0), orderIds: new Set<string>(), byChannel: { online: { revenue: 0, units: 0 }, offline: { revenue: 0, units: 0 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 } } };
     const units = l.quantity - l.refundedQuantity;
-    cur.revenue += num(l.lineSubtotal) - num(l.lineDiscountAmount) - num(l.refundedSubtotal);
+    const rev = num(l.lineSubtotal) - num(l.lineDiscountAmount) - num(l.refundedSubtotal);
+    cur.revenue += rev;
     cur.units += units;
     cur.cost += num(l.estimatedCostAmount);
     const dayIdx = Math.min(days - 1, Math.max(0, Math.floor((l.order.createdAt.getTime() - dayStart(start).getTime()) / DAY_MS)));
     cur.dailyUnits[dayIdx] += units;
+    cur.orderIds.add(l.orderId);
+    // Where the order was taken. Shopify POS is the only offline signal the
+    // store carries today (Order.sourceName); third-party POS that writes
+    // Shopify orders identified by tags / metafields is NOT stored, so those
+    // classify as online — a documented gap, never forced.
+    const ch = classifySalesChannel(l.order.sourceName);
+    const bucket = ch === "pos" ? "offline" : ch;
+    cur.byChannel[bucket].revenue += rev;
+    cur.byChannel[bucket].units += units;
     out.set(l.productId, cur);
   }
   return out;
@@ -190,6 +208,140 @@ export async function gatherInitiativeEvidence(storeId: string, initiative: Init
   }
 
   return { products, discount, campaigns, store: inputs.store, freshness: inputs.freshness };
+}
+
+// The layers the diagnosis needs beyond the reality: channel split,
+// creators, inventory by location, alternative products, facts, paid clicks.
+export interface DiagnosisLayers {
+  channels: ChannelEvidence | null;
+  creators: CreatorEvidence | null;
+  paid: PaidEvidence | null;
+  locations: LocationStock[];
+  alternatives: DiagnosisInput["alternatives"];
+  facts: FeasibilityFacts;
+}
+
+export async function gatherDiagnosisLayers(storeId: string, initiative: Initiative, mappings: InitiativeMappings, inputs: RealityInputs, reality: InitiativeReality, now: Date): Promise<DiagnosisLayers> {
+  const db = getDb() as any;
+  const today = now.toISOString().slice(0, 10);
+  const windowStart = initiative.start;
+  const windowEndExclusive = addDays(initiative.end < today ? initiative.end : today, 1);
+  const usable = usableLinks(mappings);
+  const mainIds = usable.filter((l) => l.kind === "product").map((l) => l.id);
+  const allIds = usable.filter((l) => l.kind === "product" || l.kind === "gift_product").map((l) => l.id);
+  const basis = mainIds.length ? (usable.filter((l) => l.kind === "product").every((l) => l.state === "confirmed") ? "confirmed" : "provisional") : null;
+
+  const sales = await productSalesViaPrisma(storeId, mainIds, windowStart, windowEndExclusive);
+  // Channels: sum over the main products' lines.
+  let channels: ChannelEvidence | null = null;
+  if (basis) {
+    const agg = { online: { revenue: 0, units: 0 }, offline: { revenue: 0, units: 0 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 } };
+    for (const s of sales.values()) for (const k of ["online", "offline", "manual", "unknown"] as const) { agg[k].revenue += s.byChannel[k].revenue; agg[k].units += s.byChannel[k].units; }
+    const total = agg.online.revenue + agg.offline.revenue + agg.manual.revenue + agg.unknown.revenue;
+    channels = { ...agg, classifiedShare: total > 0 ? (total - agg.unknown.revenue) / total : 1, basis };
+  }
+  // Creators: affiliate attributions on the initiative's orders.
+  let creators: CreatorEvidence | null = null;
+  if (basis) {
+    const orderIds = [...new Set([...sales.values()].flatMap((s) => [...s.orderIds]))];
+    const rows = orderIds.length
+      ? ((await db.affiliateAttribution.findMany({ where: { storeId, orderId: { in: orderIds } }, select: { orderId: true, affiliateMemberId: true, salesAmount: true, commissionAmount: true } }).catch(() => [])) as Array<{ orderId: string; affiliateMemberId: string; salesAmount: unknown; commissionAmount: unknown }>)
+      : [];
+    creators = { orders: new Set(rows.map((r) => r.orderId)).size, revenue: rows.reduce((n, r) => n + num(r.salesAmount), 0), commission: rows.reduce((n, r) => n + num(r.commissionAmount), 0), creators: new Set(rows.map((r) => r.affiliateMemberId)).size, basis };
+  }
+  // Paid: spend, purchases, clicks for the mapped campaigns.
+  const campaignLinks = usable.filter((l) => l.kind === "meta_campaign");
+  let paid: PaidEvidence | null = null;
+  if (campaignLinks.length) {
+    const rows = (await db.metaAdsCampaignInsight
+      .findMany({ where: { storeId, level: "campaign", campaignId: { in: campaignLinks.map((l) => l.id) }, dateStart: { gte: dayStart(windowStart), lt: dayStart(windowEndExclusive) } }, select: { spend: true, purchases: true, clicks: true, purchaseRoas: true } })
+      .catch(() => [])) as Array<{ spend: unknown; purchases: number; clicks: number; purchaseRoas: unknown }>;
+    const spend = rows.reduce((n, r) => n + num(r.spend), 0);
+    const withRoas = rows.filter((r) => r.purchaseRoas !== null && r.purchaseRoas !== undefined);
+    paid = { spend, purchases: rows.reduce((n, r) => n + r.purchases, 0), clicks: rows.reduce((n, r) => n + (r.clicks ?? 0), 0), attributedRevenue: rows.length && withRoas.length === rows.length ? withRoas.reduce((n, r) => n + num(r.spend) * num(r.purchaseRoas), 0) : null, basis: campaignLinks.every((l) => l.state === "confirmed") ? "confirmed" : "provisional" };
+  }
+  // Inventory by location for the mapped products.
+  let locations: LocationStock[] = [];
+  if (allIds.length) {
+    const variants = (await db.productVariant.findMany({ where: { storeId, productId: { in: allIds } }, select: { productId: true, shopifyVariantId: true } }).catch(() => [])) as Array<{ productId: string; shopifyVariantId: string }>;
+    const levels = variants.length
+      ? ((await db.variantInventoryLevel.findMany({ where: { storeId, shopifyVariantId: { in: variants.map((v) => v.shopifyVariantId) } }, select: { shopifyVariantId: true, locationName: true, available: true } }).catch(() => [])) as Array<{ shopifyVariantId: string; locationName: string; available: number }>)
+      : [];
+    const byVariant = new Map(variants.map((v) => [v.shopifyVariantId, v.productId]));
+    const byProduct = new Map<string, Map<string, number>>();
+    for (const lv of levels) {
+      const pid = byVariant.get(lv.shopifyVariantId);
+      if (!pid) continue;
+      const m = byProduct.get(pid) ?? new Map<string, number>();
+      m.set(lv.locationName, (m.get(lv.locationName) ?? 0) + lv.available);
+      byProduct.set(pid, m);
+    }
+    locations = [...byProduct.entries()].map(([productId, m]) => {
+      const link = usable.find((l) => l.id === productId)!;
+      return { productId, title: link.label, role: link.kind === "gift_product" ? "gift" : "product", locations: [...m.entries()].map(([name, available]) => ({ name, available })) };
+    });
+  }
+  // Alternatives: same productType as the constrained product, with stock.
+  const constrained = reality.findings.find((f) => f.kind === "gift_inventory_short" || f.kind === "inventory_short_of_window")?.product ?? null;
+  const alternatives: DiagnosisInput["alternatives"] = { gift: [], product: [] };
+  if (constrained) {
+    const base = (await db.product.findUnique({ where: { id: constrained.id }, select: { productType: true } }).catch(() => null)) as { productType: string | null } | null;
+    if (base?.productType) {
+      const rows = (await db.product
+        .findMany({ where: { storeId, productType: base.productType, id: { not: constrained.id } }, select: { id: true, title: true, variants: { select: { inventoryQuantity: true } } }, take: 40 })
+        .catch(() => [])) as Array<{ id: string; title: string; variants: Array<{ inventoryQuantity: number | null }> }>;
+      const d14 = new Date(now.getTime() - 14 * DAY_MS);
+      const units = (await db.orderLineItem.groupBy({ by: ["productId"], where: { storeId, productId: { in: rows.map((r) => r.id) }, order: { createdAt: { gte: d14 }, cancelledAt: null, test: false } }, _sum: { quantity: true } }).catch(() => [])) as Array<{ productId: string; _sum: { quantity: number | null } }>;
+      const u = new Map(units.map((x) => [x.productId, x._sum.quantity ?? 0]));
+      const alts: AlternativeProduct[] = rows
+        .map((r) => {
+          const inventory = r.variants.reduce((n, v) => n + (v.inventoryQuantity ?? 0), 0);
+          const perDay = (u.get(r.id) ?? 0) / 14;
+          return { id: r.id, title: r.title, inventory, coverDays: perDay > 0 ? Math.round(inventory / perDay) : null, sameFamily: true };
+        })
+        .filter((a) => a.inventory > 0 && (a.coverDays === null || a.coverDays >= reality.period.daysRemaining))
+        .sort((a, b) => b.inventory - a.inventory)
+        .slice(0, 5);
+      if (constrained.role === "gift") alternatives.gift = alts;
+      else alternatives.product = alts;
+    }
+  }
+  // Facts the operator answered (still valid).
+  const mine = inputs.facts.filter((f) => f.initiativeId === initiative.id && (!constrained || !f.productId || f.productId === constrained.id));
+  const fact = (k: string) => mine.find((f) => f.key === k)?.value ?? null;
+  const days = fact("replenishment_days");
+  const possible = fact("replenishment_possible");
+  const facts: FeasibilityFacts = {
+    replenishmentWithinDays: days !== null && Number.isFinite(Number(days)) ? Number(days) : null,
+    replenishmentPossible: possible === "yes" ? true : possible === "no" ? false : null,
+    giftOptional: fact("gift_optional") === "yes" ? true : fact("gift_optional") === "no" ? false : null,
+    alternativeGiftProductId: fact("alternative_gift")
+  };
+  return { channels, creators, paid, locations, alternatives, facts };
+}
+
+// The full brief: reality → diagnosis → decision space → recommendation → episode.
+export interface InitiativeBrief {
+  reality: InitiativeReality;
+  summary: InitiativeRealitySummary;
+  diagnosis: BusinessDiagnosis | null; // null while context is missing
+  space: DecisionOption[];
+  recommendation: Recommendation | null;
+  episode: DecisionEpisode | null;
+}
+
+export async function buildInitiativeBrief(storeId: string, initiative: Initiative, inputs: RealityInputs, now: Date, hookQuestion: { he: string; en: string } | null = null): Promise<InitiativeBrief> {
+  const mappings = resolveMappings(initiative, inputs.candidates, inputs.confirmed);
+  const evidence = await gatherInitiativeEvidence(storeId, initiative, mappings, inputs, now);
+  const reality = evaluateInitiativeReality(initiative, mappings, evidence, now);
+  const summary = summarizeReality(reality, initiative.offer);
+  if (reality.status === "needs_context") return { reality, summary, diagnosis: null, space: [], recommendation: null, episode: null };
+  const layers = await gatherDiagnosisLayers(storeId, initiative, mappings, inputs, reality, now);
+  const diagnosis = diagnose({ reality, ...layers });
+  const space = buildDecisionSpace(diagnosis);
+  const recommendation = resolveRecommendation(diagnosis, space, { basis: reality.evidenceBasis, stale: reality.stale });
+  const episode = buildEpisode(summary, diagnosis, space, recommendation, { initiativeId: initiative.id, title: initiative.title, kind: reality.context.initiativeKind, start: initiative.start, end: initiative.end, offer: initiative.offer, hookQuestion }, now);
+  return { reality, summary, diagnosis, space, recommendation, episode };
 }
 
 export async function buildInitiativeReality(storeId: string, initiative: Initiative, inputs: RealityInputs, now: Date): Promise<InitiativeReality> {

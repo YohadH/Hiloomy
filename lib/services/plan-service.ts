@@ -196,7 +196,8 @@ export function executionKey(r: { task: string; category: string | null; s: stri
   return `${norm(r.task)}|${norm(r.category)}|${r.s}`;
 }
 
-const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [], entityLinks: [] };
+const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [], entityLinks: [], feasibilityFacts: [] };
+const FACT_KEYS = new Set(["replenishment_days", "replenishment_possible", "gift_optional", "alternative_gift"]);
 const ENTITY_KINDS = new Set(["product", "gift_product", "discount", "meta_campaign"]);
 
 export async function readPlanOverrides(sheetId: string): Promise<PlanOverrides> {
@@ -210,7 +211,8 @@ export async function readPlanOverrides(sheetId: string): Promise<PlanOverrides>
       merges: Array.isArray(parsed.merges) ? parsed.merges : [],
       excludedFromEngine: Array.isArray(parsed.excludedFromEngine) ? parsed.excludedFromEngine : [],
       calendarLinks: Array.isArray(parsed.calendarLinks) ? parsed.calendarLinks.filter((l) => l && typeof l.initiativeId === "string" && typeof l.eventId === "string") : [],
-      entityLinks: Array.isArray(parsed.entityLinks) ? parsed.entityLinks.filter((l) => l && typeof l.initiativeId === "string" && ENTITY_KINDS.has(l.kind) && typeof l.id === "string" && typeof l.label === "string") : []
+      entityLinks: Array.isArray(parsed.entityLinks) ? parsed.entityLinks.filter((l) => l && typeof l.initiativeId === "string" && ENTITY_KINDS.has(l.kind) && typeof l.id === "string" && typeof l.label === "string") : [],
+      feasibilityFacts: Array.isArray(parsed.feasibilityFacts) ? parsed.feasibilityFacts.filter((f) => f && typeof f.initiativeId === "string" && FACT_KEYS.has(f.key) && typeof f.value === "string") : []
     };
   } catch {
     return EMPTY_OVERRIDES;
@@ -228,11 +230,12 @@ export type PlanOverrideOp =
   | { op: "link_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string; label: string; via?: string | null }
   | { op: "unlink_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string }
   | { op: "unlink_kind"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"] }
+  | { op: "set_fact"; initiativeId: string; productId: string | null; key: PlanOverrides["feasibilityFacts"][number]["key"]; value: string; validDays?: number }
   | { op: "reset" };
 
 export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Promise<PlanOverrides> {
   const cur = await readPlanOverrides(sheetId);
-  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine], calendarLinks: [...cur.calendarLinks], entityLinks: [...cur.entityLinks] };
+  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine], calendarLinks: [...cur.calendarLinks], entityLinks: [...cur.entityLinks], feasibilityFacts: [...cur.feasibilityFacts] };
   switch (op.op) {
     case "move":
       next.moves = [...next.moves.filter((m) => m.executionKey !== op.executionKey), { executionKey: op.executionKey, toInitiativeId: op.toInitiativeId }];
@@ -268,6 +271,13 @@ export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Pro
     case "unlink_kind":
       next.entityLinks = next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind));
       break;
+    case "set_fact": {
+      if (!FACT_KEYS.has(op.key)) break;
+      const now = new Date();
+      const validUntil = new Date(now.getTime() + Math.max(1, Math.min(60, op.validDays ?? 14)) * 86_400_000).toISOString();
+      next.feasibilityFacts = [...next.feasibilityFacts.filter((f) => !(f.initiativeId === op.initiativeId && f.key === op.key && (f.productId ?? null) === (op.productId ?? null))), { initiativeId: op.initiativeId, productId: op.productId ?? null, key: op.key, value: String(op.value).slice(0, 200), answeredAt: now.toISOString(), validUntil }];
+      break;
+    }
     case "reset":
       next = { ...EMPTY_OVERRIDES };
       break;

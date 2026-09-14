@@ -113,6 +113,12 @@ function getNavigation(
       },
       { href: "/market", label: isHe ? "שוק - מתחרים" : "Market · Competitors", short: isHe ? "שוק" : "Market", icon: Radar, module: "competitors" },
       {
+        href: "/plan",
+        label: isHe ? "החודש" : "Month",
+        icon: CalendarRange,
+        module: "marketing-planner"
+      },
+      {
         href: "/marketing-planner",
         label: isHe ? "תוכנית" : "Plan",
         icon: CalendarRange,
