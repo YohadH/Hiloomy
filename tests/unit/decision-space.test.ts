@@ -75,7 +75,9 @@ function run(s: Scenario = {}) {
     freshness
   };
   const reality = evaluateInitiativeReality(initiative(), m, ev, NOW);
-  const paid: PaidEvidence = { spend: s.spend ?? 3095, purchases: s.purchases ?? 30, clicks: s.clicks === undefined ? null : s.clicks, attributedRevenue: s.attributed === undefined ? 9800 : s.attributed, basis: "confirmed", baseline: s.paidBaseline ?? null };
+  // Funnel stages default to null (absent) so these scenarios keep testing
+  // the dimension logic; funnel behaviour is covered in funnel-diagnosis.test.
+  const paid: PaidEvidence = { spend: s.spend ?? 3095, purchases: s.purchases ?? 30, clicks: s.clicks === undefined ? null : s.clicks, attributedRevenue: s.attributed === undefined ? 9800 : s.attributed, impressions: null, linkClicks: null, lpv: null, atc: null, ic: null, benchmark: null, basis: "confirmed", baseline: s.paidBaseline ?? null };
   const input: DiagnosisInput = {
     reality,
     channels: s.channels === undefined ? { online: { revenue: revenue * 0.56, units: 24 }, offline: { revenue: revenue * 0.44, units: 17 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 }, classifiedShare: 1, basis: "confirmed" } : s.channels,
