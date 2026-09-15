@@ -71,13 +71,22 @@ export type MappingRule =
   | "product_title_token" // weak: a token of the initiative name in a product title
   | "gift_clause_token" // weak: a token of the gift clause in a product title
   | "coupon_window_usage" // weak: a code used on orders inside the initiative window
-  | "coupon_name_token"; // weak: a token of the initiative name in a code
+  | "coupon_name_token" // weak: a token of the initiative name in a code
+  | "operator_bulk"; // an operator confirmation that came in a batch from a token rule — treated as a suggestion
 
 // The operator's "not a Shopify product / no coupon" answer.
 export const NONE_ENTITY_ID = "__none__";
 
 // Which rules are strong enough to be used without confirmation.
 export const PROVISIONAL_RULES: readonly MappingRule[] = ["exact_product_title", "campaign_product_link"];
+// Rules that only ever produce SUGGESTIONS. When an operator confirmation
+// carries one of these as its origin and more than EXACT_MATCH_MAX such
+// confirmations exist for the same kind, the batch is a family word
+// ("סאטן") confirmed wholesale, not a mapping. Read-time guard: those
+// links are downgraded to suggestions and never enter a number.
+export const TOKEN_RULES: readonly string[] = ["product_title_token", "gift_clause_token", "campaign_name_token", "coupon_name_token"];
+// Shopify ids arrive as "gid://shopify/Product/123" or "123"; one entity.
+export const normalizeEntityId = (id: string): string => id.trim().replace(/^gid:\/\/shopify\/\w+\//i, "");
 
 export interface LinkProvenance {
   rule: MappingRule; // the rule that produced the link (or "operator")
@@ -123,6 +132,9 @@ export interface InitiativeMappings {
   // are shown. A token that hits dozens of products is proof the query is
   // too broad — the shortlist is offered, never the whole set.
   discovery: Partial<Record<MappingKind, { token: string | null; total: number; shown: number; note: Localized | null }>>;
+  // Operator links that were set aside at read time: batches confirmed from a
+  // token rule (too broad to trust) and duplicates of the same Shopify id.
+  hygiene: { bulk: Array<{ kind: MappingKind; count: number; via: string }>; duplicates: number };
 }
 
 // At most this many candidates are offered per kind before "search".
@@ -225,8 +237,28 @@ export function resolveMappings(
   confirmed: ConfirmedEntityLink[]
 ): InitiativeMappings {
   const links: EntityLink[] = [];
-  const mine = confirmed.filter((c) => c.initiativeId === initiative.id);
-  const find = (kind: MappingKind, id: string) => links.find((l) => l.kind === kind && l.id === id);
+  // Hygiene on the operator's links: one entity per Shopify id, and a batch
+  // confirmed from a token rule is a suggestion, not a confirmation.
+  const seen = new Set<string>();
+  let duplicates = 0;
+  const mine = confirmed
+    .filter((c) => c.initiativeId === initiative.id)
+    .filter((c) => {
+      const key = `${c.kind}:${normalizeEntityId(c.id)}`;
+      if (seen.has(key)) {
+        duplicates += 1;
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  const bulkKinds = new Map<MappingKind, { count: number; via: string }>();
+  for (const kind of ["product", "gift_product", "discount", "meta_campaign"] as MappingKind[]) {
+    const tokenLinks = mine.filter((c) => c.kind === kind && c.id !== NONE_ENTITY_ID && TOKEN_RULES.includes(c.via ?? ""));
+    if (tokenLinks.length > EXACT_MATCH_MAX) bulkKinds.set(kind, { count: tokenLinks.length, via: tokenLinks[0].via! });
+  }
+  const isBulk = (c: ConfirmedEntityLink) => bulkKinds.has(c.kind) && TOKEN_RULES.includes(c.via ?? "");
+  const find = (kind: MappingKind, id: string) => links.find((l) => l.kind === kind && normalizeEntityId(l.id) === normalizeEntityId(id));
 
   // 1. Automatic links, each with its rule. An exact FULL title in the plan
   // text is provisional — unless the plan "names" more than EXACT_MATCH_MAX
@@ -319,6 +351,17 @@ export function resolveMappings(
       continue;
     }
     const existing = find(c.kind, c.id);
+    if (isBulk(c)) {
+      const b = bulkKinds.get(c.kind)!;
+      const reason = L(`אושר בבת אחת יחד עם ${b.count} מוצרים מכלל המילה "${c.via}" — רחב מדי; לא בשימוש עד אישור פרטני`, `Confirmed in one batch with ${b.count} products from the "${c.via}" word rule — too broad; unused until confirmed individually`);
+      if (existing) {
+        existing.state = "suggested";
+        existing.confidence = "low";
+        existing.reason = reason;
+        existing.provenance = { rule: "operator_bulk", matchedOn: existing.provenance.matchedOn, auto: existing.provenance.rule };
+      } else links.push({ kind: c.kind, id: c.id, label: c.label, state: "suggested", confidence: "low", reason, provenance: { rule: "operator_bulk", matchedOn: c.label, auto: (c.via as MappingRule | null | undefined) ?? null } });
+      continue;
+    }
     if (existing) {
       existing.state = "confirmed";
       existing.confidence = null;
@@ -349,7 +392,7 @@ export function resolveMappings(
               : L("אין התאמה בטוחה — חיפוש", "No confident match — search");
     byKind[kind] = { state, count: of.length, detail };
   }
-  return { initiativeId: initiative.id, links, byKind, discovery };
+  return { initiativeId: initiative.id, links, byKind, discovery, hygiene: { bulk: [...bulkKinds.entries()].map(([kind, b]) => ({ kind, count: b.count, via: b.via })), duplicates } };
 }
 
 // Inventory language a manager can read. Never "runs out in −154 days".

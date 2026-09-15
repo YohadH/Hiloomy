@@ -16,7 +16,7 @@
 // Pure; tested in tests/unit/decision-space.test.ts.
 
 import type { Localized } from "@/lib/domain/decision";
-import type { BusinessDiagnosis } from "@/lib/domain/business-diagnosis";
+import { MARGIN_HEALTHY, type BusinessDiagnosis } from "@/lib/domain/business-diagnosis";
 
 const L = (he: string, en: string): Localized => ({ he, en });
 
@@ -56,6 +56,7 @@ export interface ActionDefinition {
   expectedEffect: Localized;
   risks: Localized;
   reversibility: Reversibility;
+  target?: (d: BusinessDiagnosis) => string | null;
 }
 
 export interface DecisionOption {
@@ -71,7 +72,11 @@ export interface DecisionOption {
   risks: Localized;
   reversibility: Reversibility;
   score: number; // qualitative 0..100, explained in `because`
-  because: string[];
+  because: Array<{ delta: number; reason: Localized }>;
+  // The entity this action moves demand/stock TO (alternative product,
+  // other location). Never the constrained product itself — enforced in
+  // buildDecisionSpace.
+  targetId: string | null;
 }
 
 export interface FeasibilityQuestion {
@@ -89,6 +94,9 @@ export interface Recommendation {
   what: Localized; // decision first
   why: Localized[]; // scoped evidence
   alternatives: Array<{ option: DecisionOption; betterIf: Localized }>;
+  // Why the primary beats each alternative NOW — taken from the ranking
+  // reasons, not written by hand.
+  versus: Array<{ type: ActionType; label: Localized; reason: Localized }>;
   wouldChange: Localized[];
   questions: FeasibilityQuestion[];
   confidence: "high" | "medium" | "low";
@@ -96,7 +104,27 @@ export interface Recommendation {
 }
 
 const giftName = (d: BusinessDiagnosis) => d.constraint?.title ?? "";
-const altGift = (d: BusinessDiagnosis) => d.constraint?.alternatives.find((a) => a.coverDays === null || a.coverDays >= (d.constraint?.daysRemaining ?? 0)) ?? d.constraint?.alternatives[0] ?? null;
+// A verified alternative: same family, stock, cover for the window, and a
+// different entity from the constrained product (the diagnosis already
+// filters by id and title; the check here is the hard invariant).
+const verifiedAlt = (d: BusinessDiagnosis) => {
+  const c = d.constraint;
+  if (!c) return null;
+  const pool = c.alternatives.filter((a) => a.id !== c.productId && a.title.trim().toLowerCase() !== c.title.trim().toLowerCase() && a.inventory > 0);
+  return pool.find((a) => a.coverDays === null || a.coverDays >= c.daysRemaining) ?? pool[0] ?? null;
+};
+const altGift = verifiedAlt;
+// When new stock must arrive. Once stock is already out there is no
+// countdown left — the deadline is "as soon as possible", bounded by the
+// days the initiative still runs.
+const deadline = (d: BusinessDiagnosis): Localized => {
+  const c = d.constraint;
+  if (!c) return L("", "");
+  if (c.alreadyOut) return L(`בהקדם — המלאי כבר אזל והיוזמה נמשכת עוד ${c.daysRemaining} ימים`, `as soon as possible — stock is already out and the initiative runs ${c.daysRemaining} more days`);
+  return L(`תוך ${c.coverDays ?? c.daysRemaining} ימים`, `within ${c.coverDays ?? c.daysRemaining} days`);
+};
+const whenExhausted = (d: BusinessDiagnosis): Localized => (d.constraint?.alreadyOut ? L("עכשיו — המלאי כבר אזל", "now — stock is already out") : L(`כשהמלאי הנוכחי נגמר (בעוד ~${d.constraint?.coverDays ?? 0} ימים)`, `once current stock is exhausted (in ~${d.constraint?.coverDays ?? 0} days)`));
+const NO_TARGET = L("אין כרגע מוצר חלופי מאומת להעברת הביקוש.", "There is currently no verified alternative product to shift demand to.");
 
 // ─── Action registry ─────────────────────────────────────────────────
 export const ACTIONS: ActionDefinition[] = [
@@ -106,7 +134,7 @@ export const ACTIONS: ActionDefinition[] = [
     answer: "continue",
     label: L("להמשיך ללא שינוי", "Continue unchanged"),
     applicableWhen: () => true,
-    feasibility: (d) => (d.constraint ? { state: "conditional", condition: d.replenishment.state === "possible_in_time" ? L("חידוש המלאי מגיע לפני שהמלאי נגמר", "replenishment arrives before stock runs out") : L(`מלאי חדש של "${giftName(d)}" מגיע תוך ${d.constraint.coverDays ?? 0} ימים`, `new stock of "${giftName(d)}" arrives within ${d.constraint.coverDays ?? 0} days`), note: null } : { state: "feasible", condition: null, note: null }),
+    feasibility: (d) => (d.constraint ? { state: "conditional", condition: d.replenishment.state === "possible_in_time" ? L("חידוש המלאי מגיע לפני שהמלאי נגמר", "replenishment arrives before stock runs out") : d.replenishment.state === "transfer_possible" ? L("ההעברה בין הלוקיישנים מתבצעת", "the transfer between locations is carried out") : L(`מלאי חדש של "${giftName(d)}" מגיע ${deadline(d).he}`, `new stock of "${giftName(d)}" arrives ${deadline(d).en}`), note: null } : { state: "feasible", condition: null, note: null }),
     concrete: (d) => (d.constraint ? L(`להמשיך את היוזמה ללא שינוי בהצעה`, `Continue the initiative with the offer unchanged`) : L("להמשיך את היוזמה כמתוכנן", "Continue the initiative as planned")),
     expectedEffect: L("שומר על הביקוש הקיים", "Keeps current demand"),
     risks: L("אם אילוץ מתממש, ההצעה לא תקוים", "If a constraint bites, the offer cannot be honoured"),
@@ -129,8 +157,8 @@ export const ACTIONS: ActionDefinition[] = [
     family: "scale",
     answer: "continue",
     label: L("להגדיל חשיפה", "Increase exposure"),
-    applicableWhen: (d) => d.demand.state === "strong" && d.inventory.state === "healthy" && d.margin.state === "healthy",
-    feasibility: (d) => ({ state: d.paid.state === "strong" ? "feasible" : d.paid.state === "unknown" || d.paid.state === "not_running" ? "unknown" : "conditional", condition: d.paid.state === "strong" ? null : L("היעילות של הקמפיין נשמרת בהגדלה", "campaign efficiency holds when scaled"), note: null }),
+    applicableWhen: (d) => d.demand.state === "strong" && d.inventory.state === "healthy" && d.margin.state === "measured" && (d.marginRate ?? 0) >= MARGIN_HEALTHY,
+    feasibility: (d) => ({ state: d.paid.state === "unknown" || d.paid.state === "not_running" ? "unknown" : "conditional", condition: L(`המרווח (${Math.round((d.marginRate ?? 0) * 100)}%) עומד ביעד המותג והיעילות של הקמפיין נשמרת בהגדלה`, `the margin (${Math.round((d.marginRate ?? 0) * 100)}%) meets the brand's target and campaign efficiency holds when scaled`), note: L(`סף V0: מרווח ≥ ${Math.round(MARGIN_HEALTHY * 100)}%; Hiloomy לא יודעת את יעד המרווח של המותג`, `V0 gate: margin ≥ ${Math.round(MARGIN_HEALTHY * 100)}%; Hiloomy does not know the brand's margin target`) }),
     concrete: () => L("להגדיל בהדרגה את ההשקעה בערוצים שמביאים את הביקוש, כל עוד המלאי והמרווח מחזיקים", "Gradually increase investment in the channels that bring the demand, while stock and margin hold"),
     expectedEffect: L("יותר מכירות מהיוזמה", "More sales from the initiative"),
     risks: L("יעילות יורדת בהגדלה; לחץ על המלאי", "Efficiency falls when scaled; pressure on stock"),
@@ -142,8 +170,8 @@ export const ACTIONS: ActionDefinition[] = [
     answer: "continue",
     label: L("לחדש מלאי", "Replenish"),
     applicableWhen: (d) => !!d.constraint,
-    feasibility: (d) => (d.replenishment.state === "possible_in_time" ? { state: "feasible", condition: null, note: null } : d.replenishment.state === "impossible_in_time" ? { state: "infeasible", condition: null, note: L("לא ניתן לחדש בזמן", "cannot be replenished in time") } : { state: "unknown", condition: L(`מלאי חדש של "${giftName(d)}" יכול להגיע תוך ${d.constraint?.coverDays ?? 0} ימים`, `new stock of "${giftName(d)}" can arrive within ${d.constraint?.coverDays ?? 0} days`), note: L("אין ל-Hiloomy מידע על זמן האספקה", "Hiloomy has no lead-time information") }),
-    concrete: (d) => L(`לחדש את המלאי של "${giftName(d)}" לפני שהוא נגמר`, `Replenish "${giftName(d)}" before it runs out`),
+    feasibility: (d) => (d.replenishment.state === "possible_in_time" ? { state: "feasible", condition: null, note: null } : d.replenishment.state === "impossible_in_time" ? { state: "infeasible", condition: null, note: L("לא ניתן לחדש בזמן", "cannot be replenished in time") } : { state: "unknown", condition: L(`מלאי חדש של "${giftName(d)}" יכול להגיע ${deadline(d).he}`, `new stock of "${giftName(d)}" can arrive ${deadline(d).en}`), note: L("אין ל-Hiloomy מידע על זמן האספקה", "Hiloomy has no lead-time information") }),
+    concrete: (d) => (d.constraint?.alreadyOut ? L(`לחדש את המלאי של "${giftName(d)}" בהקדם — הוא כבר אזל`, `Replenish "${giftName(d)}" as soon as possible — it is already out`) : L(`לחדש את המלאי של "${giftName(d)}" לפני שהוא נגמר`, `Replenish "${giftName(d)}" before it runs out`)),
     expectedEffect: L("ההצעה נמשכת עד סוף החלון", "The offer lasts to the end of the window"),
     risks: L("עלות; זמן אספקה לא ודאי", "Cost; uncertain lead time"),
     reversibility: "hard"
@@ -153,9 +181,10 @@ export const ACTIONS: ActionDefinition[] = [
     family: "inventory",
     answer: "continue",
     label: L("להעביר מלאי בין לוקיישנים", "Transfer inventory between locations"),
-    applicableWhen: (d) => !!d.constraint && d.constraint.otherLocationStock > 0,
-    feasibility: () => ({ state: "feasible", condition: null, note: null }),
-    concrete: (d) => L(`להעביר ${d.constraint?.otherLocationStock ?? 0} יחידות של "${giftName(d)}" מהלוקיישן השני לפני חידוש או החלפה`, `Transfer ${d.constraint?.otherLocationStock ?? 0} units of "${giftName(d)}" from the other location before replenishing or replacing`),
+    applicableWhen: (d) => !!d.constraint && d.constraint.transferable.length > 0,
+    feasibility: () => ({ state: "feasible", condition: null, note: L("מלאי שהמותג כבר מחזיק; אין ייצור חדש", "Stock the brand already holds; no new production") }),
+    concrete: (d) => L(`לבדוק העברת ${d.constraint?.otherLocationStock ?? 0} יחידות של "${giftName(d)}" מ-${d.constraint?.transferable.map((x) => x.name).join(", ")} ל-${d.constraint?.depletedLocations.join(", ")} לפני שינוי הקמפיין, חידוש או החלפה`, `Check a transfer of ${d.constraint?.otherLocationStock ?? 0} units of "${giftName(d)}" from ${d.constraint?.transferable.map((x) => x.name).join(", ")} to ${d.constraint?.depletedLocations.join(", ")} before changing the campaign, replenishing or replacing`),
+    target: (d) => d.constraint?.transferable[0]?.name ?? null,
     expectedEffect: L("מאריך את כיסוי המלאי בלי ייצור חדש", "Extends cover without new production"),
     risks: L("מרוקן את הלוקיישן השני", "Empties the other location"),
     reversibility: "moderate"
@@ -167,7 +196,8 @@ export const ACTIONS: ActionDefinition[] = [
     label: L("להחליף את המתנה", "Replace the gift"),
     applicableWhen: (d) => d.constraint?.role === "gift",
     feasibility: (d) => (altGift(d) ? { state: "feasible", condition: null, note: L(`חלופה עם מלאי: "${altGift(d)!.title}" (${altGift(d)!.inventory} יח׳)`, `Alternative with stock: "${altGift(d)!.title}" (${altGift(d)!.inventory} u)`) } : { state: "unknown", condition: L("קיים מוצר חלופי עם מלאי מספיק", "an alternative product with enough stock exists"), note: L("לא נמצאה חלופה אוטומטית מאותה משפחה", "no alternative from the same family was found automatically") }),
-    concrete: (d) => (altGift(d) ? L(`להמשיך את היוזמה ולהחליף את המתנה "${giftName(d)}" ב-"${altGift(d)!.title}" כשהמלאי הנוכחי נגמר (בעוד ~${d.constraint?.coverDays ?? 0} ימים)`, `Continue the initiative and replace the "${giftName(d)}" gift with "${altGift(d)!.title}" once current stock is exhausted (in ~${d.constraint?.coverDays ?? 0} days)`) : L(`להמשיך את היוזמה ולהחליף את המתנה "${giftName(d)}" במוצר עם מלאי מספיק כשהמלאי הנוכחי נגמר`, `Continue the initiative and replace the "${giftName(d)}" gift with a product that has enough stock once current stock is exhausted`)),
+    concrete: (d) => (altGift(d) ? L(`להמשיך את היוזמה ולהחליף את המתנה "${giftName(d)}" ב-"${altGift(d)!.title}" ${whenExhausted(d).he}`, `Continue the initiative and replace the "${giftName(d)}" gift with "${altGift(d)!.title}" ${whenExhausted(d).en}`) : L(`להמשיך את היוזמה ולהחליף את המתנה "${giftName(d)}" במוצר עם מלאי מספיק ${whenExhausted(d).he}`, `Continue the initiative and replace the "${giftName(d)}" gift with a product that has enough stock ${whenExhausted(d).en}`)),
+    target: (d) => altGift(d)?.id ?? null,
     expectedEffect: L("הביקוש נשמר, ההצעה ניתנת לקיום", "Demand kept, the offer can be honoured"),
     risks: L("החלופה עשויה למשוך פחות", "The alternative may pull less"),
     reversibility: "easy"
@@ -202,8 +232,9 @@ export const ACTIONS: ActionDefinition[] = [
     answer: "change",
     label: L("להעביר את הביקוש למוצר עם מלאי עמוק", "Shift demand to a deeper-stock product"),
     applicableWhen: (d) => d.constraint?.role === "product",
-    feasibility: (d) => (d.constraint?.alternatives.length ? { state: "feasible", condition: null, note: L(`מוצרים מאותה משפחה עם מלאי: ${d.constraint.alternatives.slice(0, 3).map((a) => a.title).join(", ")}`, `Same-family products with stock: ${d.constraint.alternatives.slice(0, 3).map((a) => a.title).join(", ")}`) } : { state: "unknown", condition: L("קיים מוצר חלופי מאותה משפחה עם מלאי", "a same-family product with stock exists"), note: null }),
-    concrete: (d) => L(`לא להמשיך להזרים תקציב ל"${giftName(d)}" שעומד להיגמר; להעביר את הקמפיין ל${d.constraint?.alternatives[0] ? `"${d.constraint.alternatives[0].title}"` : "מוצרי היוזמה עם מלאי עמוק יותר"}`, `Stop pushing budget at "${giftName(d)}", which is about to run out; move the campaign to ${d.constraint?.alternatives[0] ? `"${d.constraint.alternatives[0].title}"` : "the initiative's deeper-stock products"}`),
+    feasibility: (d) => (verifiedAlt(d) ? { state: "feasible", condition: null, note: L(`מוצרים מאותה משפחה עם מלאי: ${d.constraint!.alternatives.slice(0, 3).map((a) => a.title).join(", ")}`, `Same-family products with stock: ${d.constraint!.alternatives.slice(0, 3).map((a) => a.title).join(", ")}`) } : { state: "infeasible", condition: null, note: NO_TARGET }),
+    concrete: (d) => L(`לא להמשיך להזרים תקציב ל"${giftName(d)}" ש${d.constraint?.alreadyOut ? "כבר אזל" : "עומד להיגמר"}; להעביר את הקמפיין ל"${verifiedAlt(d)?.title ?? "—"}"`, `Stop pushing budget at "${giftName(d)}", which ${d.constraint?.alreadyOut ? "is already out" : "is about to run out"}; move the campaign to "${verifiedAlt(d)?.title ?? "—"}"`),
+    target: (d) => verifiedAlt(d)?.id ?? null,
     expectedEffect: L("הביקוש נשמר על מוצר שאפשר לספק", "Demand is kept on a product that can be supplied"),
     risks: L("החלופה מוכרת פחות", "The alternative sells less"),
     reversibility: "easy"
@@ -225,9 +256,9 @@ export const ACTIONS: ActionDefinition[] = [
     family: "reallocate",
     answer: "change",
     label: L("להעביר תקציב לערוץ יעיל יותר", "Shift budget to a more efficient channel"),
-    applicableWhen: (d) => (d.paid.state === "weak" || d.paid.state === "mixed") && (d.creators.state === "strong" || d.offline.state === "strong" || d.demand.state === "strong"),
+    applicableWhen: (d) => d.paid.state === "weak" && (d.offline.state === "strong" || d.demand.state === "strong"),
     feasibility: () => ({ state: "feasible", condition: null, note: null }),
-    concrete: (d) => (d.creators.state === "strong" ? L("להעביר חלק מתקציב Meta לערוץ הקריאייטורים, שמייצר כרגע תרומה חזקה יותר ליוזמה", "Move part of the Meta budget to the creator channel, which currently produces stronger contribution for the initiative") : L("לבדוק העברת תקציב מהקמפיין החלש לערוץ שמביא את הביקוש, לפני הגדלת ההוצאה הכוללת", "Test moving budget from the weak campaign to the channel that brings the demand, before increasing total spend")),
+    concrete: (d) => (d.creators.state === "measured" ? L("לבדוק העברת חלק מתקציב Meta לערוץ הקריאייטורים, שכבר מייצר הזמנות ליוזמה, לפני הגדלת ההוצאה הכוללת", "Test moving part of the Meta budget to the creator channel, which already produces orders for the initiative, before increasing total spend") : L("לבדוק העברת תקציב מהקמפיין החלש לערוץ שמביא את הביקוש, לפני הגדלת ההוצאה הכוללת", "Test moving budget from the weak campaign to the channel that brings the demand, before increasing total spend")),
     expectedEffect: L("אותו ביקוש בעלות נמוכה יותר", "The same demand at lower cost"),
     risks: L("הערוץ המקבל לא בהכרח מתרחב", "The receiving channel may not scale"),
     reversibility: "easy"
@@ -237,7 +268,7 @@ export const ACTIONS: ActionDefinition[] = [
     family: "creative",
     answer: "change",
     label: L("לבדוק קריאייטיב / מסר חדש", "Test new creative / message"),
-    applicableWhen: (d) => d.paid.state === "weak" || d.paid.state === "mixed" || d.conversion.state === "weak",
+    applicableWhen: (d) => d.paid.state === "weak" || d.conversion.state === "weak",
     feasibility: () => ({ state: "feasible", condition: null, note: null }),
     concrete: () => L("לבדוק קריאייטיב או מסר חדש בקמפיין (למשל תוכן קריאייטורים) לפני הגדלת ההוצאה", "Test a new creative or message in the campaign (for example creator content) before increasing spend"),
     expectedEffect: L("שיפור יעילות בלי תקציב נוסף", "Better efficiency without extra budget"),
@@ -261,7 +292,7 @@ export const ACTIONS: ActionDefinition[] = [
     family: "offer",
     answer: "change",
     label: L("לצמצם את ההנחה", "Reduce the discount"),
-    applicableWhen: (d) => d.margin.state === "unprofitable" || d.margin.state === "constrained" || d.offer.state === "possibly_unnecessary",
+    applicableWhen: (d) => d.margin.state === "unprofitable" || d.offer.state === "possibly_unnecessary",
     feasibility: (d) => ({ state: d.offer.state === "none" || d.offer.state === "unknown" ? "infeasible" : "feasible", condition: null, note: d.offer.state === "none" ? L("אין הנחה ביוזמה", "no discount in the initiative") : null }),
     concrete: (d) => (d.margin.state === "unprofitable" ? L("לצמצם או לבטל את ההנחה: היוזמה מוכרת אבל בהפסד", "Reduce or remove the discount: the initiative sells but at a loss") : L("לשקול הנחה רדודה יותר: הביקוש חזק גם בלי לחץ מבצעי", "Consider a shallower discount: demand is strong without promotional pressure")),
     expectedEffect: L("שיפור מרווח", "Better margin"),
@@ -273,8 +304,8 @@ export const ACTIONS: ActionDefinition[] = [
     family: "offer",
     answer: "change",
     label: L("להעמיק את ההנחה", "Deepen the discount"),
-    applicableWhen: (d) => d.demand.state === "weak" && d.inventory.state === "healthy" && d.margin.state === "healthy",
-    feasibility: () => ({ state: "feasible", condition: null, note: null }),
+    applicableWhen: (d) => d.demand.state === "weak" && d.inventory.state === "healthy" && d.margin.state === "measured" && (d.marginRate ?? 0) >= MARGIN_HEALTHY,
+    feasibility: (d) => ({ state: "conditional", condition: L(`המרווח (${Math.round((d.marginRate ?? 0) * 100)}%) סופג הנחה עמוקה יותר לפי יעד המותג`, `the margin (${Math.round((d.marginRate ?? 0) * 100)}%) absorbs a deeper discount under the brand's target`), note: null }),
     concrete: () => L("להעמיק את ההנחה או להוסיף הטבה כדי להזיז מלאי, כל עוד המרווח מחזיק", "Deepen the discount or add a perk to move stock, while margin holds"),
     expectedEffect: L("יותר יחידות", "More units"),
     risks: L("מרווח; הרגלת לקוחות למבצעים", "Margin; training customers to wait for promotions"),
@@ -299,7 +330,7 @@ export const ACTIONS: ActionDefinition[] = [
     label: L("לקצר את היוזמה", "Shorten the initiative"),
     applicableWhen: (d) => !!d.constraint && d.constraint.role === "product",
     feasibility: () => ({ state: "feasible", condition: null, note: null }),
-    concrete: (d) => L(`לסיים את היוזמה כשהמלאי של "${giftName(d)}" נגמר במקום להמשיך לפרסם מוצר שאין`, `End the initiative when "${giftName(d)}" runs out instead of advertising a product that is not there`),
+    concrete: (d) => (d.constraint?.alreadyOut ? L(`לסיים את היוזמה עכשיו — המלאי של "${giftName(d)}" כבר אזל — במקום להמשיך לפרסם מוצר שאין`, `End the initiative now — "${giftName(d)}" is already out — instead of advertising a product that is not there`) : L(`לסיים את היוזמה כשהמלאי של "${giftName(d)}" נגמר במקום להמשיך לפרסם מוצר שאין`, `End the initiative when "${giftName(d)}" runs out instead of advertising a product that is not there`)),
     expectedEffect: L("אין ביקוש שאי אפשר לספק", "No demand that cannot be served"),
     risks: L("מוותר על החלון שנותר", "Gives up the remaining window"),
     reversibility: "moderate"
@@ -322,59 +353,61 @@ export const ACTIONS: ActionDefinition[] = [
 // Objective order: never generate demand for an offer the brand cannot
 // fulfil → protect margin → keep demand. Feasibility and reversibility
 // adjust; every point is explained in `because`.
-function rank(def: ActionDefinition, feas: Feasibility, d: BusinessDiagnosis): { score: number; because: string[] } {
-  const because: string[] = [];
+function rank(def: ActionDefinition, feas: Feasibility, d: BusinessDiagnosis): { score: number; because: Array<{ delta: number; reason: Localized }> } {
+  const because: Array<{ delta: number; reason: Localized }> = [];
   let s = 50;
   const demandOk = d.demand.state === "strong" || d.demand.state === "healthy";
-  const add = (n: number, why: string) => {
+  const add = (n: number, he: string, en: string) => {
     s += n;
-    because.push(`${n >= 0 ? "+" : ""}${n} ${why}`);
+    because.push({ delta: n, reason: L(he, en) });
   };
-  // Fulfilment first.
+  const t = def.type;
+  // Fulfilment first. Under a stock constraint the prior is explicit:
+  //   transfer existing stock > fast replenishment > substitute product >
+  //   reduce demand > stop. It is a V0 prior, not a learned weight.
   if (d.constraint) {
-    if (def.type === "CONTINUE") add(-30, "constraint: the offer cannot be honoured unchanged");
-    if (def.type === "REPLACE_GIFT" || def.type === "LIMIT_GIFT_TO_STOCK" || def.type === "SWITCH_TO_NON_STOCK_PERK" || def.type === "SHIFT_PRODUCT_FOCUS" || def.type === "TRANSFER_INVENTORY") add(25, "resolves the fulfilment constraint");
-    if (def.type === "REPLENISH" && feas === "feasible") add(30, "replenishment confirmed in time");
-    if (def.type === "REPLENISH" && feas === "unknown") add(-10, "replenishment lead time unknown");
-    if (def.type === "TRANSFER_INVENTORY") add(10, "uses stock the brand already owns");
-    if (def.type === "SHIFT_PRODUCT_FOCUS" && d.constraint.role === "product") add(10, "keeps demand on a product that can ship");
-    if (def.type === "LIMIT_GIFT_TO_STOCK") add(-5, "some customers miss the gift");
-    if (def.type === "SWITCH_TO_NON_STOCK_PERK") add(-8, "a weaker perk than the planned gift");
+    if (t === "CONTINUE") add(-30, "אילוץ מלאי: ההצעה לא ניתנת לקיום ללא שינוי", "stock constraint: the offer cannot be honoured unchanged");
+    if (t === "TRANSFER_INVENTORY") add(45, "משתמש במלאי שהמותג כבר מחזיק — בלי ייצור, בלי לוותר על ביקוש", "uses stock the brand already holds — no production, no demand given up");
+    if (t === "REPLENISH" && feas === "feasible") add(38, "חידוש מלאי אושר בזמן — ההצעה נשמרת כפי שתוכננה", "replenishment confirmed in time — the offer stays as planned");
+    if (t === "REPLENISH" && feas === "unknown") add(15, "חידוש מלאי היה שומר על ההצעה, אבל זמן האספקה לא ידוע", "replenishment would keep the offer, but the lead time is unknown");
+    if (t === "REPLACE_GIFT" || t === "SHIFT_PRODUCT_FOCUS") add(feas === "feasible" ? 25 : 12, feas === "feasible" ? "מעביר את הביקוש למוצר מאומת עם מלאי" : "מעביר את הביקוש למוצר חלופי — טרם אומת", feas === "feasible" ? "moves demand to a verified product with stock" : "moves demand to an alternative product — not yet verified");
+    if (t === "LIMIT_GIFT_TO_STOCK") add(15, "ההצעה מקוימת עד גמר המלאי; חלק מהלקוחות לא יקבלו את המתנה", "the offer is honoured while stock lasts; some customers miss the gift");
+    if (t === "SWITCH_TO_NON_STOCK_PERK") add(12, "פותר את אילוץ המלאי בהטבה חלשה יותר מהמתנה שתוכננה", "solves the stock constraint with a weaker perk than the planned gift");
+    if (t === "REDUCE_SPEND" || t === "SHORTEN_INITIATIVE") add(8, "מצמצם ביקוש במקום לספק אותו", "reduces demand instead of serving it");
   }
   // Margin second.
   if (d.margin.state === "unprofitable") {
-    if (def.type === "REDUCE_DISCOUNT") add(25, "margin negative: fix economics first");
-    if (def.type === "SCALE" || def.type === "DEEPEN_DISCOUNT") add(-40, "never scale a loss");
-    if (def.type === "CONTINUE") add(-20, "continuing at a loss");
+    if (t === "REDUCE_DISCOUNT") add(25, "המרווח שלילי: לתקן את הכלכלה לפני הכול", "margin below zero: fix the economics first");
+    if (t === "SCALE" || t === "DEEPEN_DISCOUNT") add(-40, "לא מגדילים הפסד", "never scale a loss");
+    if (t === "CONTINUE") add(-20, "ממשיך בהפסד", "continues at a loss");
   }
-  if (d.margin.state === "constrained" && (def.type === "SCALE" || def.type === "DEEPEN_DISCOUNT")) add(-15, "margin constrained");
   // Demand third.
   if (demandOk) {
-    if (def.type === "STOP") add(-40, "demand is healthy: stopping gives it up");
-    if (def.type === "SHORTEN_INITIATIVE") add(-15, "demand is healthy");
-    if (def.answer === "continue" && !d.constraint && d.margin.state !== "unprofitable") add(20, "demand healthy, no constraint");
-    if (def.type === "DEEPEN_DISCOUNT") add(-20, "demand strong: no need for promotional pressure");
+    if (t === "STOP") add(-40, "הביקוש בריא: עצירה מוותרת עליו", "demand is healthy: stopping gives it up");
+    if (t === "SHORTEN_INITIATIVE") add(-15, "הביקוש בריא: קיצור מוותר על החלון שנותר", "demand is healthy: shortening gives up the remaining window");
+    if (def.answer === "continue" && !d.constraint && d.margin.state !== "unprofitable") add(20, "ביקוש בריא ללא אילוץ", "demand healthy, no constraint");
+    if (t === "DEEPEN_DISCOUNT") add(-20, "הביקוש חזק: אין צורך בלחץ מבצעי", "demand strong: no need for promotional pressure");
   }
   if (d.demand.state === "weak") {
-    if (def.type === "CONTINUE" || def.type === "CONTINUE_MONITOR") add(-15, "demand weak: unchanged is unlikely to work");
-    if (def.type === "STOP" && d.inventory.state === "healthy") add(-10, "stock is healthy: change before stopping");
-    if (def.type === "DEEPEN_DISCOUNT" || def.type === "ADD_BUNDLE") add(10, "moves stock");
+    if (t === "CONTINUE" || t === "CONTINUE_MONITOR") add(-15, "הביקוש ירד: ללא שינוי לא סביר שיעבוד", "demand fell: unchanged is unlikely to work");
+    if (t === "STOP" && d.inventory.state === "healthy") add(-10, "המלאי בריא: לשנות לפני שעוצרים", "stock is healthy: change before stopping");
+    if (t === "DEEPEN_DISCOUNT" || t === "ADD_BUNDLE") add(10, "מזיז מלאי", "moves stock");
   }
   // Channel problem: fix the channel, not the initiative.
   if (d.scope === "channel") {
-    if (def.type === "SHIFT_BUDGET" || def.type === "TEST_CREATIVE") add(20, "channel problem: adjust the channel");
-    if (def.type === "REDUCE_SPEND" && d.paid.state === "weak") add(10, "the weak channel spends without return");
-    if (def.type === "STOP") add(-20, "the business is healthy; only a channel is weak");
-    if (def.type === "CONTINUE") add(-10, "unchanged keeps paying for the weak channel");
+    if (t === "SHIFT_BUDGET" || t === "TEST_CREATIVE") add(20, "בעיית ערוץ: מתקנים את הערוץ", "channel problem: adjust the channel");
+    if (t === "REDUCE_SPEND" && d.paid.state === "weak") add(10, "הערוץ החלש מוציא בלי תמורה", "the weak channel spends without return");
+    if (t === "STOP") add(-20, "העסק בריא; רק ערוץ אחד חלש", "the business is healthy; only a channel is weak");
+    if (t === "CONTINUE") add(-10, "ללא שינוי ממשיך לשלם על הערוץ החלש", "unchanged keeps paying for the weak channel");
   }
-  if (d.conversion.state === "weak" && def.type === "FIX_CONVERSION") add(20, "interest exists; conversion is the gap");
-  if (d.conversion.state === "weak" && def.type === "SCALE") add(-25, "do not buy more traffic into weak conversion");
+  if (d.conversion.state === "weak" && t === "FIX_CONVERSION") add(20, "יש עניין; ההמרה היא הפער", "interest exists; conversion is the gap");
+  if (d.conversion.state === "weak" && t === "SCALE") add(-25, "לא קונים עוד תנועה לתוך המרה חלשה", "do not buy more traffic into weak conversion");
   // Feasibility and reversibility.
-  if (feas === "infeasible") add(-100, "infeasible");
-  if (feas === "unknown") add(-12, "feasibility unknown");
-  if (feas === "conditional") add(-8, "depends on a condition");
-  if (def.reversibility === "easy") add(5, "easily reversible");
-  if (def.reversibility === "hard") add(-5, "hard to reverse");
+  if (feas === "infeasible") add(-100, "לא ישים", "infeasible");
+  if (feas === "unknown") add(-12, "ישימות לא ידועה", "feasibility unknown");
+  if (feas === "conditional") add(-8, "תלוי בתנאי", "depends on a condition");
+  if (def.reversibility === "easy") add(5, "הפיך בקלות", "easily reversible");
+  if (def.reversibility === "hard") add(-5, "קשה להפוך", "hard to reverse");
   return { score: Math.max(0, Math.min(100, s)), because };
 }
 
@@ -383,9 +416,13 @@ export function buildDecisionSpace(d: BusinessDiagnosis): DecisionOption[] {
     .map((a) => {
       const f = a.feasibility(d);
       const { score, because } = rank(a, f.state, d);
-      return { type: a.type, family: a.family, answer: a.answer, label: a.label, what: a.concrete(d), feasibility: f.state, condition: f.condition, note: f.note, expectedEffect: a.expectedEffect, risks: a.risks, reversibility: a.reversibility, score, because };
+      const targetId = a.target ? a.target(d) : null;
+      return { type: a.type, family: a.family, answer: a.answer, label: a.label, what: a.concrete(d), feasibility: f.state, condition: f.condition, note: f.note, expectedEffect: a.expectedEffect, risks: a.risks, reversibility: a.reversibility, score, because, targetId };
     })
     .filter((o) => o.feasibility !== "infeasible")
+    // Hard invariant: an action never moves demand or stock to the entity
+    // it is moving them away from.
+    .filter((o) => !(o.targetId && d.constraint && o.targetId === d.constraint.productId))
     .sort((a, b) => b.score - a.score);
 }
 
@@ -396,7 +433,9 @@ export function resolveRecommendation(d: BusinessDiagnosis, space: DecisionOptio
     questions.push({
       key: "replenishment",
       productId: d.constraint.productId,
-      question: L(`אפשר לחדש את "${d.constraint.title}" בתוך ${d.constraint.coverDays ?? 0} ימים?`, `Can "${d.constraint.title}" be replenished within ${d.constraint.coverDays ?? 0} days?`),
+      question: d.constraint.alreadyOut
+        ? L(`"${d.constraint.title}" כבר אזל. אפשר לחדש אותו בימים הקרובים? (היוזמה נמשכת עוד ${d.constraint.daysRemaining} ימים)`, `"${d.constraint.title}" is already out. Can it be replenished in the next few days? (the initiative runs ${d.constraint.daysRemaining} more days)`)
+        : L(`אפשר לחדש את "${d.constraint.title}" בתוך ${d.constraint.coverDays ?? d.constraint.daysRemaining} ימים?`, `Can "${d.constraint.title}" be replenished within ${d.constraint.coverDays ?? d.constraint.daysRemaining} days?`),
       ifYes: L("להמשיך ללא שינוי ולחדש מלאי", "Continue unchanged and replenish"),
       ifNo: L(d.constraint.role === "gift" ? "להחליף או להגביל את המתנה" : "להעביר את הביקוש למוצר אחר או לקצר", d.constraint.role === "gift" ? "Replace or limit the gift" : "Shift demand to another product or shorten")
     });
@@ -420,6 +459,7 @@ export function resolveRecommendation(d: BusinessDiagnosis, space: DecisionOptio
       what: L("עדיין אין מספיק ראיות כדי לבחור בין להמשיך, לשנות או לעצור.", "There is not yet enough evidence to choose between continue, change or stop."),
       why: [d.demand.evidence, d.inventory.evidence].filter((x) => x.en),
       alternatives: [],
+      versus: [],
       wouldChange: [L("מכירות מדודות של המוצרים המקושרים", "Measured sales of the linked products")],
       questions,
       confidence: "low",
@@ -434,7 +474,9 @@ export function resolveRecommendation(d: BusinessDiagnosis, space: DecisionOptio
       option: o,
       betterIf:
         o.condition ??
-        (o.type === "STOP"
+        (o.type === "TRANSFER_INVENTORY"
+          ? L("ההעברה בין הלוקיישנים אפשרית בזמן", "the transfer between locations is possible in time")
+          : o.type === "STOP"
           ? L("הביקוש נחלש או הרווחיות שלילית — לא מועדף כל עוד הביקוש נמשך", "demand weakens or profitability turns negative — not preferred while demand holds")
           : o.type === "REDUCE_SPEND"
             ? L("אין מתנה חלופית ואי אפשר להגביל את ההטבה", "no replacement gift exists and the perk cannot be limited")
@@ -454,15 +496,25 @@ export function resolveRecommendation(d: BusinessDiagnosis, space: DecisionOptio
   if (d.replenishment.state !== "not_needed") why.push(d.replenishment.evidence);
   if (d.paid.state !== "unknown") why.push(d.paid.evidence);
   if (d.margin.state !== "unknown") why.push(d.margin.evidence);
-  if (d.creators.state === "strong" || d.creators.state === "mixed") why.push(d.creators.evidence);
+  if (d.creators.state === "measured") why.push(d.creators.evidence);
+  // Why this action and not the others — from the ranking itself.
+  const versus = alternatives.map((a) => {
+    const altReasons = new Set(a.option.because.map((b) => b.reason.en));
+    const edge = primary.because.filter((b) => b.delta > 0 && !altReasons.has(b.reason.en)).sort((x, y) => y.delta - x.delta)[0];
+    const drag = a.option.because.filter((b) => b.delta < 0).sort((x, y) => x.delta - y.delta)[0];
+    const reason = edge ? edge.reason : drag ? drag.reason : a.betterIf;
+    return { type: a.option.type, label: a.option.label, reason };
+  });
+  if (versus.length) why.push(L(`נבחר לפני ${versus.slice(0, 2).map((v) => `"${v.label.he}"`).join(" ו-")}: ${versus[0].reason.he}`, `Chosen over ${versus.slice(0, 2).map((v) => `"${v.label.en}"`).join(" and ")}: ${versus[0].reason.en}`));
 
   const wouldChange: Localized[] = [];
-  if (d.constraint && d.replenishment.state === "unknown") wouldChange.push(L(`מלאי חדש של "${d.constraint.title}" מגיע לפני שהמלאי הקיים נגמר (~${d.constraint.coverDays ?? 0} ימים)`, `New stock of "${d.constraint.title}" arrives before current stock runs out (~${d.constraint.coverDays ?? 0} days)`));
+  if (d.constraint && d.replenishment.state === "unknown") wouldChange.push(d.constraint.alreadyOut ? L(`מלאי חדש של "${d.constraint.title}" מגיע בימים הקרובים`, `New stock of "${d.constraint.title}" arrives in the next few days`) : L(`מלאי חדש של "${d.constraint.title}" מגיע לפני שהמלאי הקיים נגמר (~${d.constraint.coverDays ?? 0} ימים)`, `New stock of "${d.constraint.title}" arrives before current stock runs out (~${d.constraint.coverDays ?? 0} days)`));
+  if (d.constraint && d.replenishment.state === "transfer_possible") wouldChange.push(L("ההעברה בין הלוקיישנים לא אפשרית — אז חידוש מלאי או מוצר חלופי", "The transfer between locations is not possible — then replenishment or an alternative product"));
   wouldChange.push(L("קצב המכירות של המוצרים המקושרים משתנה ביותר מ-10%", "Sales pace of the linked products moves more than 10%"));
   if (d.margin.state === "unknown") wouldChange.push(L("עלות אמיתית למוצרי היוזמה (הרווחיות עלולה להפוך את ההמלצה)", "A real cost on the initiative's products (profitability could flip the recommendation)"));
   if (d.paid.state === "unknown") wouldChange.push(L("קישור הקמפיין (יעילות Meta עשויה לשנות את התמהיל)", "Linking the campaign (Meta efficiency may change the mix)"));
 
   const answer: BusinessAnswer = primary.answer;
   const what = L(`${answer === "continue" ? "להמשיך" : answer === "stop" ? "לעצור" : "לשנות"}: ${primary.what.he}`, `${answer === "continue" ? "Continue" : answer === "stop" ? "Stop" : "Change"}: ${primary.what.en}`);
-  return { answer, primary, what, why, alternatives, wouldChange, questions, confidence, confidenceReason };
+  return { answer, primary, what, why, alternatives, versus, wouldChange, questions, confidence, confidenceReason };
 }

@@ -780,6 +780,52 @@ option set, the manager's actual choice and the measured result.
   scenario runs the real `evaluateInitiativeReality` with confirmed mappings
   and then diagnose → space → resolve. Satin Couture is not special-cased —
   scenarios B/C/D/J/K are gift-stock situations built from generic fixtures.
+- **0f.1 Owner review of the first live receipt (2026-09-15) — five logic
+  faults, fixed at the source, not in the UI.**
+  1. *37 "confirmed" satin products.* Stored state from before the precision
+     fix: every shortlist row confirmed at once, one product twice. Read-time
+     guard in `resolveMappings`: operator links whose origin is a token rule
+     (`TOKEN_RULES`) and that exceed `EXACT_MATCH_MAX` per kind are
+     `operator_bulk` → suggested, never in a number; ids are normalised
+     (`gid://…/123` = `123`) and deduplicated; `mappings.hygiene` reports the
+     batch. One-click `unlink_bulk` op clears the batch (context resolution
+     and the initiative page). Up to five picks from a shortlist stay a real
+     choice. The reality drops back to `needs_context` until real picks exist.
+  2. *Source = target.* "Stop pushing budget at X; move the campaign to X."
+     Hard invariant in `buildDecisionSpace`: an option whose `targetId` is the
+     constrained product is dropped; `SHIFT_PRODUCT_FOCUS` is infeasible
+     without a verified alternative ("אין כרגע מוצר חלופי מאומת להעברת
+     הביקוש"); the service excludes the constrained product by id AND title
+     from the alternatives query.
+  3. *Labels without a benchmark.* "stores: strong" from stores > online is
+     not a diagnosis. Now: `strong`/`weak` only against the initiative's OWN
+     pre-window period (±10%, `DELTA_STRONG`/`DELTA_WEAK`; channel split and
+     the same Meta campaign, both gathered by the service as `baseline`) or an
+     objective floor (Meta ROAS < 1 = spend above attributed revenue; margin
+     < 0). Otherwise the state is `measured` and the evidence is the numbers
+     ("חנויות ₪39,208 (129 יח׳) · אונליין ₪14,714 (58 יח׳) · אין תקופה
+     קודמת להשוואה לפי ערוץ"). Creators are numbers only. Margin is a number
+     (`marginRate`); `MARGIN_HEALTHY` is a stated V0 gate on SCALE /
+     DEEPEN_DISCOUNT (conditional: "meets the brand's target"), not a label.
+  4. *Transfer not first.* Stock at another location while the selling
+     location is at/below zero is now `transferable`; the V0 prior under a
+     constraint is explicit in `rank()`: transfer existing stock (+45) > fast
+     replenishment confirmed (+38) > verified substitute (+25) > limit /
+     non-stock perk (+15/+12) > reduce demand (+8) > stop (−40 while demand
+     holds). Low stock spread thin across locations, none at zero, is NOT a
+     transfer case.
+  5. *"within 0 days".* `constraint.alreadyOut` (stock ≤ 0 or cover 0) makes
+     the deadline "as soon as possible — the initiative runs N more days";
+     the question becomes "X is already out. Can it be replenished in the
+     next few days?"; replenishment "in time" is bounded by the days left,
+     not by a countdown that already ended. Test J asserts no text contains
+     "within 0 days".
+  Also: every ranking reason is Localized (`because: {delta, reason}`) and the
+  recommendation carries `versus` — why the primary beats each alternative,
+  taken from the ranking, rendered as "למה לא …" on the receipt and the
+  initiative page. Tests: J/J2/J3 (transfer first; already-out product with no
+  target; source ≠ target), F and I now prove `measured` without a baseline,
+  and `hygiene:` in initiative-context.test.ts covers the 37-product batch.
 - **Not built / honest gaps**: Google Ads and Instagram organic are not
   wired into the diagnosis (no per-initiative attribution exists);
   third-party POS classification; replenishment lead times (only the

@@ -35,7 +35,7 @@ export interface OptionSnapshot {
   answer: DecisionOption["answer"];
   feasibility: DecisionOption["feasibility"];
   score: number;
-  because: string[];
+  because: Array<{ delta: number; reason: Localized }>;
   condition: Localized | null;
 }
 

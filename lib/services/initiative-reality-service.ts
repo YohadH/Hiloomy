@@ -231,14 +231,22 @@ export async function gatherDiagnosisLayers(storeId: string, initiative: Initiat
   const allIds = usable.filter((l) => l.kind === "product" || l.kind === "gift_product").map((l) => l.id);
   const basis = mainIds.length ? (usable.filter((l) => l.kind === "product").every((l) => l.state === "confirmed") ? "confirmed" : "provisional") : null;
 
-  const sales = await productSalesViaPrisma(storeId, mainIds, windowStart, windowEndExclusive);
+  // The comparable period before the window (same length) is the only
+  // benchmark that lets a channel be called strong or weak.
+  const windowDays = Math.max(1, Math.round((dayStart(windowEndExclusive).getTime() - dayStart(windowStart).getTime()) / DAY_MS));
+  const baselineStart = addDays(windowStart, -windowDays);
+  const [sales, baseSales] = await Promise.all([productSalesViaPrisma(storeId, mainIds, windowStart, windowEndExclusive), productSalesViaPrisma(storeId, mainIds, baselineStart, windowStart)]);
+  const splitOf = (m: typeof sales) => {
+    const agg = { online: { revenue: 0, units: 0 }, offline: { revenue: 0, units: 0 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 } };
+    for (const s of m.values()) for (const k of ["online", "offline", "manual", "unknown"] as const) { agg[k].revenue += s.byChannel[k].revenue; agg[k].units += s.byChannel[k].units; }
+    return agg;
+  };
   // Channels: sum over the main products' lines.
   let channels: ChannelEvidence | null = null;
   if (basis) {
-    const agg = { online: { revenue: 0, units: 0 }, offline: { revenue: 0, units: 0 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 } };
-    for (const s of sales.values()) for (const k of ["online", "offline", "manual", "unknown"] as const) { agg[k].revenue += s.byChannel[k].revenue; agg[k].units += s.byChannel[k].units; }
+    const agg = splitOf(sales);
     const total = agg.online.revenue + agg.offline.revenue + agg.manual.revenue + agg.unknown.revenue;
-    channels = { ...agg, classifiedShare: total > 0 ? (total - agg.unknown.revenue) / total : 1, basis };
+    channels = { ...agg, classifiedShare: total > 0 ? (total - agg.unknown.revenue) / total : 1, basis, baseline: baseSales.size ? splitOf(baseSales) : null };
   }
   // Creators: affiliate attributions on the initiative's orders.
   let creators: CreatorEvidence | null = null;
@@ -253,12 +261,18 @@ export async function gatherDiagnosisLayers(storeId: string, initiative: Initiat
   const campaignLinks = usable.filter((l) => l.kind === "meta_campaign");
   let paid: PaidEvidence | null = null;
   if (campaignLinks.length) {
-    const rows = (await db.metaAdsCampaignInsight
-      .findMany({ where: { storeId, level: "campaign", campaignId: { in: campaignLinks.map((l) => l.id) }, dateStart: { gte: dayStart(windowStart), lt: dayStart(windowEndExclusive) } }, select: { spend: true, purchases: true, clicks: true, purchaseRoas: true } })
-      .catch(() => [])) as Array<{ spend: unknown; purchases: number; clicks: number; purchaseRoas: unknown }>;
-    const spend = rows.reduce((n, r) => n + num(r.spend), 0);
-    const withRoas = rows.filter((r) => r.purchaseRoas !== null && r.purchaseRoas !== undefined);
-    paid = { spend, purchases: rows.reduce((n, r) => n + r.purchases, 0), clicks: rows.reduce((n, r) => n + (r.clicks ?? 0), 0), attributedRevenue: rows.length && withRoas.length === rows.length ? withRoas.reduce((n, r) => n + num(r.spend) * num(r.purchaseRoas), 0) : null, basis: campaignLinks.every((l) => l.state === "confirmed") ? "confirmed" : "provisional" };
+    type InsightRow = { spend: unknown; purchases: number; clicks: number; purchaseRoas: unknown };
+    const fetchRows = (from: string, to: string) =>
+      db.metaAdsCampaignInsight
+        .findMany({ where: { storeId, level: "campaign", campaignId: { in: campaignLinks.map((l) => l.id) }, dateStart: { gte: dayStart(from), lt: dayStart(to) } }, select: { spend: true, purchases: true, clicks: true, purchaseRoas: true } })
+        .catch(() => []) as Promise<InsightRow[]>;
+    const [rows, baseRows] = await Promise.all([fetchRows(windowStart, windowEndExclusive), fetchRows(baselineStart, windowStart)]);
+    const sum = (rs: InsightRow[]) => {
+      const spend = rs.reduce((n, r) => n + num(r.spend), 0);
+      const withRoas = rs.filter((r) => r.purchaseRoas !== null && r.purchaseRoas !== undefined);
+      return { spend, purchases: rs.reduce((n, r) => n + r.purchases, 0), clicks: rs.reduce((n, r) => n + (r.clicks ?? 0), 0), attributedRevenue: rs.length && withRoas.length === rs.length ? withRoas.reduce((n, r) => n + num(r.spend) * num(r.purchaseRoas), 0) : null };
+    };
+    paid = { ...sum(rows), basis: campaignLinks.every((l) => l.state === "confirmed") ? "confirmed" : "provisional", baseline: baseRows.length ? sum(baseRows) : null };
   }
   // Inventory by location for the mapped products.
   let locations: LocationStock[] = [];
@@ -287,9 +301,12 @@ export async function gatherDiagnosisLayers(storeId: string, initiative: Initiat
   if (constrained) {
     const base = (await db.product.findUnique({ where: { id: constrained.id }, select: { productType: true } }).catch(() => null)) as { productType: string | null } | null;
     if (base?.productType) {
-      const rows = (await db.product
+      // Never the constrained product itself — by id, and by title, since the
+      // same product can exist twice in a catalogue (source ≠ target).
+      const sameTitle = (a: string, b: string) => a.trim().toLowerCase().replace(/\s+/g, " ") === b.trim().toLowerCase().replace(/\s+/g, " ");
+      const rows = ((await db.product
         .findMany({ where: { storeId, productType: base.productType, id: { not: constrained.id } }, select: { id: true, title: true, variants: { select: { inventoryQuantity: true } } }, take: 40 })
-        .catch(() => [])) as Array<{ id: string; title: string; variants: Array<{ inventoryQuantity: number | null }> }>;
+        .catch(() => [])) as Array<{ id: string; title: string; variants: Array<{ inventoryQuantity: number | null }> }>).filter((r) => r.id !== constrained.id && !sameTitle(r.title, constrained.title));
       const d14 = new Date(now.getTime() - 14 * DAY_MS);
       const units = (await db.orderLineItem.groupBy({ by: ["productId"], where: { storeId, productId: { in: rows.map((r) => r.id) }, order: { createdAt: { gte: d14 }, cancelledAt: null, test: false } }, _sum: { quantity: true } }).catch(() => [])) as Array<{ productId: string; _sum: { quantity: number | null } }>;
       const u = new Map(units.map((x) => [x.productId, x._sum.quantity ?? 0]));

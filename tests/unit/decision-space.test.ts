@@ -57,6 +57,7 @@ interface Scenario {
   altGift?: boolean;
   altProduct?: boolean;
   noGift?: boolean;
+  paidBaseline?: PaidEvidence["baseline"];
 }
 
 function run(s: Scenario = {}) {
@@ -74,7 +75,7 @@ function run(s: Scenario = {}) {
     freshness
   };
   const reality = evaluateInitiativeReality(initiative(), m, ev, NOW);
-  const paid: PaidEvidence = { spend: s.spend ?? 3095, purchases: s.purchases ?? 30, clicks: s.clicks === undefined ? null : s.clicks, attributedRevenue: s.attributed === undefined ? 9800 : s.attributed, basis: "confirmed" };
+  const paid: PaidEvidence = { spend: s.spend ?? 3095, purchases: s.purchases ?? 30, clicks: s.clicks === undefined ? null : s.clicks, attributedRevenue: s.attributed === undefined ? 9800 : s.attributed, basis: "confirmed", baseline: s.paidBaseline ?? null };
   const input: DiagnosisInput = {
     reality,
     channels: s.channels === undefined ? { online: { revenue: revenue * 0.56, units: 24 }, offline: { revenue: revenue * 0.44, units: 17 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 }, classifiedShare: 1, basis: "confirmed" } : s.channels,
@@ -95,7 +96,8 @@ test("A. strong demand, healthy inventory, healthy margin → continue (possibly
   const { diagnosis, space, rec } = run({ giftCover: 40, giftInventory: 300 });
   assert.equal(diagnosis.demand.state, "strong");
   assert.equal(diagnosis.inventory.state, "healthy");
-  assert.equal(diagnosis.margin.state, "healthy");
+  assert.equal(diagnosis.margin.state, "measured");
+  assert.equal(diagnosis.marginRate, 0.48);
   assert.equal(diagnosis.scope, "none");
   assert.equal(rec.answer, "continue");
   assert.ok(rec.primary && (rec.primary.type === "CONTINUE_MONITOR" || rec.primary.type === "CONTINUE" || rec.primary.type === "SCALE"));
@@ -135,15 +137,21 @@ test("E. weak Meta, strong Shopify, strong offline, strong creators → initiati
   assert.equal(diagnosis.paid.state, "weak");
   assert.equal(diagnosis.demand.state, "strong");
   assert.equal(diagnosis.scope, "channel");
-  assert.match(diagnosis.headline.en, /Demand is strong in stores too and through creators, but Meta is currently the weakest acquisition layer/);
+  assert.equal(diagnosis.offline.state, "measured"); // no channel baseline → no verdict on stores
+  assert.equal(diagnosis.creators.state, "measured");
+  assert.match(diagnosis.headline.en, /^Demand is strong, but Meta spends more than the revenue attributed to it\.$/);
+  assert.match(diagnosis.paid.evidence.en, /spend exceeds the revenue attributed to it/);
   assert.notEqual(rec.answer, "stop");
   assert.ok(["SHIFT_BUDGET", "TEST_CREATIVE", "REDUCE_SPEND"].includes(rec.primary!.type));
   assert.match(rec.primary!.what.he, /קריאייטורים|קריאייטיב|לצמצם/);
 });
 
 test("F. strong traffic, weak conversion → offer / page / price diagnosis, not 'buy more traffic'", () => {
-  const { diagnosis, rec, space } = run({ revenue: 6000, prior: 9000, units: 8, giftCover: 40, giftInventory: 300, clicks: 4000, purchases: 8, attributed: 2500, channels: null });
+  const { diagnosis, rec, space } = run({ revenue: 6000, prior: 9000, units: 8, giftCover: 40, giftInventory: 300, clicks: 4000, purchases: 8, attributed: 2500, channels: null, paidBaseline: { spend: 3000, purchases: 45, clicks: 3000, attributedRevenue: 9000 } });
   assert.equal(diagnosis.conversion.state, "weak");
+  assert.match(diagnosis.conversion.evidence.en, /8 purchases from 4000 campaign clicks \(0\.2%\), -87% vs 1\.5% in the 14 days before the initiative/);
+  // Without the campaign's own baseline the same numbers are only "measured".
+  assert.equal(run({ revenue: 6000, prior: 9000, units: 8, giftCover: 40, giftInventory: 300, clicks: 4000, purchases: 8, attributed: 2500, channels: null }).diagnosis.conversion.state, "measured");
   assert.match(diagnosis.headline.en, /Interest exists \(traffic\), but conversion is weak/);
   assert.equal(rec.primary!.type, "FIX_CONVERSION");
   assert.ok(!types(space).includes("SCALE"));
@@ -165,19 +173,52 @@ test("H. high inventory, weak demand → offer / bundle / creative options, stop
 });
 
 test("I. online weak, offline strong → total demand is not called weak; channel mix is the question", () => {
-  const { diagnosis } = run({ revenue: 30000, prior: 27000, giftCover: 40, giftInventory: 300, channels: { online: { revenue: 6000, units: 8 }, offline: { revenue: 24000, units: 30 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 }, classifiedShare: 1, basis: "confirmed" } });
+  const { diagnosis } = run({ revenue: 30000, prior: 27000, giftCover: 40, giftInventory: 300, channels: { online: { revenue: 6000, units: 8 }, offline: { revenue: 24000, units: 30 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 }, classifiedShare: 1, basis: "confirmed", baseline: { online: { revenue: 12000, units: 16 }, offline: { revenue: 15000, units: 20 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 } } } });
   assert.equal(diagnosis.demand.state, "strong");
   assert.equal(diagnosis.offline.state, "strong");
+  assert.match(diagnosis.offline.evidence.en, /stores \+60% vs the 14 days before the initiative/);
+  // The same split with no baseline is a fact, not a verdict.
+  const noBase = run({ revenue: 30000, prior: 27000, giftCover: 40, giftInventory: 300, channels: { online: { revenue: 6000, units: 8 }, offline: { revenue: 24000, units: 30 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 }, classifiedShare: 1, basis: "confirmed" } }).diagnosis;
+  assert.equal(noBase.offline.state, "measured");
+  assert.match(noBase.offline.evidence.en, /^Stores ₪24,000 \(30 u\) · online ₪6,000 \(8 u\) · no prior period to compare by channel$/);
   assert.doesNotMatch(diagnosis.headline.en, /weak across every measured channel/);
 });
 
-test("J. gift out at the warehouse, stock in another store → transfer becomes an option before replenishment", () => {
-  const { diagnosis, space } = run({ giftInventory: 4, giftCover: 2, otherLocation: 40 });
+test("J. gift out at the warehouse, stock in another store → transfer is checked BEFORE replenishment, substitution or demand suppression", () => {
+  const { diagnosis, space, rec } = run({ giftInventory: 0, giftCover: 0, otherLocation: 21, altGift: true });
+  assert.equal(diagnosis.constraint?.alreadyOut, true);
+  assert.equal(diagnosis.inventory.state, "out_of_stock");
   assert.equal(diagnosis.replenishment.state, "transfer_possible");
+  assert.match(diagnosis.headline.en, /gift stock for "Travel Pillow" is already out — 21 units exist at Store TLV/);
   const t = space.find((o) => o.type === "TRANSFER_INVENTORY")!;
-  assert.ok(t);
   assert.equal(t.feasibility, "feasible");
-  assert.match(t.what.he, /להעביר 40 יחידות של "Travel Pillow"/);
+  assert.match(t.what.he, /לבדוק העברת 21 יחידות של "Travel Pillow" מ-Store TLV ל-Warehouse/);
+  assert.equal(rec.primary!.type, "TRANSFER_INVENTORY");
+  assert.equal(rec.answer, "continue");
+  assert.ok(rec.versus.length >= 2);
+  assert.match(rec.why.at(-1)!.en, /^Chosen over ".+" and ".+": uses stock the brand already holds/);
+  // Nothing says "runs out in 0 days" or "within 0 days".
+  const text = [rec.what, ...rec.why, ...rec.wouldChange, ...rec.alternatives.map((a) => a.betterIf), ...space.map((o) => o.what), ...space.map((o) => o.condition ?? { he: "", en: "" })].map((x) => `${x.he} ${x.en}`).join(" ");
+  assert.doesNotMatch(text, /תוך 0 ימים|within 0 days|בעוד ~0 ימים|in ~0 days/);
+  // Low stock split across locations, none at zero, is NOT a transfer case.
+  assert.equal(run({ giftInventory: 4, giftCover: 2, otherLocation: 40 }).diagnosis.replenishment.state, "unknown");
+});
+
+test("J2. main product already out, no other location, no verified alternative → no 'shift the campaign to itself'; demand is reduced, not stopped", () => {
+  const { diagnosis, space, rec } = run({ noGift: true, inventory: -3, cover: 0, altProduct: false });
+  assert.equal(diagnosis.constraint?.alreadyOut, true);
+  assert.ok(!types(space).includes("SHIFT_PRODUCT_FOCUS")); // infeasible without a verified target
+  assert.ok(space.every((o) => o.targetId !== "p_full"));
+  assert.ok(["REDUCE_SPEND", "SHORTEN_INITIATIVE", "REPLENISH"].includes(rec.primary!.type));
+  assert.match(rec.questions[0].question.he, /"Satin Couture Full Set" כבר אזל\. אפשר לחדש אותו בימים הקרובים\?/);
+  assert.notEqual(rec.answer, "stop");
+});
+
+test("J3. source ≠ target: an alternative that is the constrained product itself (same id or same title) is never a target", () => {
+  const { space } = run({ noGift: true, inventory: 30, cover: 6, altProduct: true });
+  const shift = space.find((o) => o.type === "SHIFT_PRODUCT_FOCUS")!;
+  assert.equal(shift.targetId, "p_duvet");
+  assert.match(shift.what.he, /להעביר את הקמפיין ל"Satin Couture Duvet"/);
 });
 
 test("K. replenishment unknown → conditional branches and one question that flips the answer", () => {
@@ -189,6 +230,7 @@ test("K. replenishment unknown → conditional branches and one question that fl
   assert.ok(cont && /new stock of "Travel Pillow" arrives within 8 days/.test(cont.betterIf.en));
   assert.ok(rec.wouldChange.some((w) => /arrives before current stock runs out/.test(w.en)));
   assert.equal(rec.confidence, "medium");
+  assert.ok(rec.versus.every((v) => v.reason.he.length > 0));
 });
 
 test("L. needs_context → no business recommendation from the resolver path (the builder blocks earlier)", () => {

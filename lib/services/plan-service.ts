@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { getDb } from "@/lib/server/db";
+import { TOKEN_RULES, normalizeEntityId } from "@/lib/domain/initiative-reality";
 import { AppError } from "@/lib/server/errors";
 import { extractCouponCode, extractDiscountPct } from "@/lib/services/gantt-brief-generator-service";
 import { getActiveCampaignsByProduct } from "@/lib/services/campaign-product-link-service";
@@ -230,6 +231,7 @@ export type PlanOverrideOp =
   | { op: "link_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string; label: string; via?: string | null }
   | { op: "unlink_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string }
   | { op: "unlink_kind"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"] }
+  | { op: "unlink_bulk"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"] }
   | { op: "set_fact"; initiativeId: string; productId: string | null; key: PlanOverrides["feasibilityFacts"][number]["key"]; value: string; validDays?: number }
   | { op: "reset" };
 
@@ -263,7 +265,12 @@ export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Pro
       break;
     case "link_entity":
       if (!ENTITY_KINDS.has(op.kind) || !op.id || !op.label) break;
-      next.entityLinks = [...next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && l.id === op.id)), { initiativeId: op.initiativeId, kind: op.kind, id: String(op.id).slice(0, 200), label: String(op.label).slice(0, 200), via: typeof op.via === "string" ? op.via.slice(0, 40) : null }];
+      next.entityLinks = [...next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && normalizeEntityId(l.id) === normalizeEntityId(String(op.id)))), { initiativeId: op.initiativeId, kind: op.kind, id: String(op.id).slice(0, 200), label: String(op.label).slice(0, 200), via: typeof op.via === "string" ? op.via.slice(0, 40) : null }];
+      break;
+    case "unlink_bulk":
+      // Remove every link of this kind that came from a token rule — the
+      // "37 satin products" batch — and leave individually chosen ones.
+      next.entityLinks = next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && TOKEN_RULES.includes(l.via ?? "")));
       break;
     case "unlink_entity":
       next.entityLinks = next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && l.id === op.id));

@@ -257,6 +257,34 @@ test("precision: a family name that matches 37 catalogue titles never becomes pr
   assert.match(m2.discovery.product!.note!.en, /the 5 most likely are shown/);
 });
 
+test("hygiene: 37 operator links confirmed in one batch from the 'סאטן' word rule are NOT confirmations — downgraded to suggestions, deduplicated by Shopify id, and the reality is needs_context again", () => {
+  const many = Array.from({ length: 37 }, (_, i) => ({ productId: `s${i}`, title: `סאטן ${["ציפית", "סדין", "ציפה", "סט מצעים", "שמיכה"][i % 5]} ${i}`, inventory: 10, units14d: 1, unitsPrior14d: 0, coverDays: 30, hasRealCost: true, liveCampaigns: 0 }));
+  const init = satin({ title: "השקת סאטן קוטור", anchor: { kind: "launch", label: "סאטן קוטור" }, products: [], text: "השקת סאטן קוטור — לבדוק סטטוס קמפיין" } as Partial<Initiative>);
+  const cat: MappingCandidates = { ...catalogue, products: many.map((p) => ({ id: p.productId, title: p.title })) };
+  // The stored state from before the precision fix: every shortlist row confirmed at once, one of them twice (gid form).
+  const batch: ConfirmedEntityLink[] = [
+    ...many.map((p) => ({ initiativeId: "satin", kind: "product" as const, id: p.productId, label: p.title, via: "product_title_token" })),
+    { initiativeId: "satin", kind: "product", id: "gid://shopify/Product/s3", label: "סאטן סט מצעים 3", via: "product_title_token" }
+  ];
+  const m = resolveMappings(init, cat, batch);
+  const prods = m.links.filter((l) => l.kind === "product");
+  assert.equal(prods.length, 37); // the gid duplicate collapsed onto s3
+  assert.ok(prods.every((l) => l.state === "suggested" && l.provenance.rule === "operator_bulk" && l.provenance.auto === "product_title_token"));
+  assert.match(prods[0].reason.he, /אושר בבת אחת יחד עם 37 מוצרים מכלל המילה "product_title_token"/);
+  assert.deepEqual(m.hygiene, { bulk: [{ kind: "product", count: 37, via: "product_title_token" }], duplicates: 1 });
+  assert.equal(m.byKind.product.state, "suggested");
+  assert.equal(usableLinks(m).filter((l) => l.kind === "product").length, 0);
+  const r = evaluateInitiativeReality(init, m, evidenceFor(m), NOW);
+  assert.equal(r.status, "needs_context");
+  assert.equal(r.metrics.find((x) => x.key === "revenue")!.value, null); // no ₪55K on 37 satin products
+  // Up to EXACT_MATCH_MAX products picked from a token shortlist are a real choice and stay confirmed.
+  const few = resolveMappings(init, cat, batch.slice(0, 3));
+  assert.equal(few.links.filter((l) => l.kind === "product" && l.state === "confirmed").length, 3);
+  assert.ok(few.links.filter((l) => l.kind === "product").every((l) => l.provenance.rule !== "operator_bulk"));
+  assert.equal(few.byKind.product.state, "confirmed");
+  assert.deepEqual(few.hygiene, { bulk: [], duplicates: 0 });
+});
+
 test("inventory language: zero and negative inventory never read as 'runs out in −N days'", () => {
   const confirmed: ConfirmedEntityLink[] = [...confirmedCampaign, { initiativeId: "satin", kind: "product", id: "p_full", label: "Satin Couture Full Set — Stone" }, { initiativeId: "satin", kind: "gift_product", id: "p_pillow", label: "Travel Pillow" }, { initiativeId: "satin", kind: "discount", id: "SATIN20", label: "SATIN20" }];
   const m = resolveMappings(satin(), catalogue, confirmed);

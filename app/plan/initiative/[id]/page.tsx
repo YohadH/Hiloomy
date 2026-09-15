@@ -48,6 +48,7 @@ export default async function InitiativePage({ params, searchParams }: { params:
   const fmt = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(isHe ? "he-IL" : "en-US", { day: "numeric", month: "long", timeZone: "UTC" });
   const setupMode = reality.status === "needs_context";
   const toConfirm = reality.context.rows.filter((r) => r.action === "confirm");
+  const bulk = reality.mappings.hygiene.bulk;
 
   return (
     <AppShell store={chrome.store}>
@@ -71,7 +72,7 @@ export default async function InitiativePage({ params, searchParams }: { params:
         {setupMode ? (
           /* Mode A — only the setup. Nothing is concluded yet. */
           <section id="context" className="space-y-3">
-            <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} locale={locale} />
+            <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} hygiene={reality.mappings.hygiene} locale={locale} />
           </section>
         ) : (
           /* Mode B — the initiative's reality. */
@@ -79,9 +80,19 @@ export default async function InitiativePage({ params, searchParams }: { params:
             <section className="space-y-3">
               <InitiativeRealityPanel r={summary} locale={locale} now={now} showPlan />
             </section>
+            {!toConfirm.length && bulk.length ? (
+              <section id="context" className="space-y-2 rounded-md border border-danger/40 bg-danger/5 p-4 text-sm">
+                {bulk.map((b) => (
+                  <div key={b.kind} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>{t(`${b.count} ${MAPPING_KIND_LABEL[b.kind].he} אושרו בבת אחת מכלל המילה "${b.via}" — לא בשימוש במספרים.`, `${b.count} ${MAPPING_KIND_LABEL[b.kind].en} were confirmed in one batch from the "${b.via}" word rule — not used in the numbers.`)}</span>
+                    <EntityLinkButton sheetId={sheetId} initiativeId={initiative.id} kind={b.kind} id="*" label="*" mode="unlink_bulk" text={t(`נקה את ${b.count} המיפויים`, `Clear the ${b.count} mappings`)} />
+                  </div>
+                ))}
+              </section>
+            ) : null}
             {toConfirm.length ? (
               <section id="context" className="space-y-3">
-                <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} locale={locale} compact />
+                <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} hygiene={reality.mappings.hygiene} locale={locale} compact />
               </section>
             ) : null}
             {brief.diagnosis && brief.recommendation ? (

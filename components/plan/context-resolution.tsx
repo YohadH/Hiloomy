@@ -26,7 +26,7 @@ const QUESTION: Record<MappingKind, { he: (title: string) => string; en: (title:
   meta_campaign: { he: () => "איזה קמפיין Meta מריץ את היוזמה?", en: () => "Which Meta campaign runs the initiative?" }
 };
 
-export function ContextResolution({ sheetId, initiativeId, initiativeTitle, context, links, discovery, locale, compact = false }: { sheetId: string; initiativeId: string; initiativeTitle: string; context: ContextTask; links: EntityLink[]; discovery: InitiativeMappings["discovery"]; locale: Locale; compact?: boolean }) {
+export function ContextResolution({ sheetId, initiativeId, initiativeTitle, context, links, discovery, hygiene, locale, compact = false }: { sheetId: string; initiativeId: string; initiativeTitle: string; context: ContextTask; links: EntityLink[]; discovery: InitiativeMappings["discovery"]; hygiene?: InitiativeMappings["hygiene"]; locale: Locale; compact?: boolean }) {
   const isHe = locale === "he";
   const t = (he: string, en: string) => (isHe ? he : en);
   const fwd = isHe ? "←" : "→";
@@ -78,7 +78,8 @@ export function ContextResolution({ sheetId, initiativeId, initiativeTitle, cont
 
   const rows = context.rows.filter((r) => r.action !== "none");
   const resolved = context.rows.filter((r) => r.action === "none");
-  const candidatesOf = useMemo(() => (kind: MappingKind) => links.filter((l) => l.kind === kind && l.state !== "confirmed"), [links]);
+  const candidatesOf = useMemo(() => (kind: MappingKind) => links.filter((l) => l.kind === kind && l.state !== "confirmed" && l.provenance.rule !== "operator_bulk"), [links]);
+  const bulk = hygiene?.bulk ?? [];
   if (!rows.length) return null;
   const critical = rows.filter((r) => r.critical);
 
@@ -92,6 +93,20 @@ export function ContextResolution({ sheetId, initiativeId, initiativeTitle, cont
             : t(`כדי שאוכל לעקוב אחרי המכירות, המלאי והקמפיין, חסרים לי ${critical.length} דברים:`, `To follow sales, inventory and the campaign, ${critical.length} thing${critical.length === 1 ? " is" : "s are"} missing:`)}
         </p>
       </div>
+
+      {bulk.length ? (
+        <ul className="space-y-2">
+          {bulk.map((b) => (
+            <li key={b.kind} className="rounded-md border border-danger/40 bg-danger/5 px-3 py-2.5 text-sm">
+              <p className="font-medium">{t(`${b.count} ${MAPPING_KIND_LABEL[b.kind].he} אושרו בבת אחת מכלל המילה "${b.via}" — זה רחב מדי, ולכן הם לא בשימוש.`, `${b.count} ${MAPPING_KIND_LABEL[b.kind].en} were confirmed in one batch from the "${b.via}" word rule — too broad, so they are not used.`)}</p>
+              <p className="text-xs text-muted-foreground">{t("נקו את הקבוצה ובחרו רק את המוצרים שבאמת שייכים ליוזמה.", "Clear the batch and pick only the products that really belong to the initiative.")}</p>
+              <button type="button" disabled={pending} onClick={() => start(async () => { setErr(null); try { await post([{ op: "unlink_bulk", initiativeId, kind: b.kind }]); router.refresh(); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } })} className="mt-2 rounded-md border border-foreground px-3 py-1 text-xs font-semibold hover:bg-foreground hover:text-background disabled:opacity-50">
+                {t(`נקה את ${b.count} המיפויים`, `Clear the ${b.count} mappings`)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <ol className="space-y-2">
         {rows.map((r, idx) => {

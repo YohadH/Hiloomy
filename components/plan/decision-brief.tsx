@@ -26,6 +26,9 @@ const TONE: Record<string, string> = {
   unprofitable: "bg-danger/10 text-danger",
   impossible_in_time: "bg-danger/10 text-danger",
   decision_required_now: "bg-danger/10 text-danger",
+  measured: "bg-muted text-foreground",
+  in_use: "bg-muted text-foreground",
+  unused: "bg-warning/15 text-warning",
   unknown: "bg-muted text-muted-foreground",
   none: "bg-muted text-muted-foreground",
   not_running: "bg-muted text-muted-foreground",
@@ -37,6 +40,9 @@ const STATE_LABEL: Record<string, { he: string; en: string }> = {
   healthy: { he: "בריא", en: "healthy" },
   weak: { he: "חלש", en: "weak" },
   mixed: { he: "מעורב", en: "mixed" },
+  measured: { he: "נמדד", en: "measured" },
+  in_use: { he: "בשימוש", en: "in use" },
+  unused: { he: "לא בשימוש", en: "unused" },
   unknown: { he: "לא ידוע", en: "unknown" },
   none: { he: "אין", en: "none" },
   not_running: { he: "לא רץ", en: "not running" },
@@ -117,6 +123,15 @@ export function RecommendationBlock({ rec, locale }: { rec: Recommendation; loca
       <p className="text-xs text-muted-foreground">
         {t("ביטחון", "Confidence")}: {rec.confidence === "high" ? t("גבוה", "high") : rec.confidence === "medium" ? t("בינוני", "medium") : t("נמוך", "low")} · {rec.confidenceReason[locale]}
       </p>
+      {rec.versus.length ? (
+        <ul className="space-y-0.5 text-xs text-muted-foreground">
+          {rec.versus.map((v) => (
+            <li key={v.type}>
+              <span className="text-foreground">{t("למה לא", "Why not")} "{v.label[locale]}":</span> {v.reason[locale]}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -137,6 +152,11 @@ export function AlternativesBlock({ rec, locale }: { rec: Recommendation; locale
           <p className="mt-1 text-xs">
             <span className="font-medium">{t("עדיף אם", "Better if")}:</span> {a.betterIf[locale]}
           </p>
+          {rec.versus.find((v) => v.type === a.option.type) ? (
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium">{t("למה לא עכשיו", "Why not now")}:</span> {rec.versus.find((v) => v.type === a.option.type)!.reason[locale]}
+            </p>
+          ) : null}
           {a.option.note ? <p className="text-[11px] text-muted-foreground">{a.option.note[locale]}</p> : null}
         </li>
       ))}
