@@ -31,6 +31,9 @@ export type ActionType =
   | "SWITCH_TO_NON_STOCK_PERK"
   | "SHIFT_PRODUCT_FOCUS"
   | "REDUCE_SPEND"
+  | "PAUSE_CAMPAIGN"
+  | "FIX_MAPPING"
+  | "VERIFY_TRACKING"
   | "SHIFT_BUDGET"
   | "TEST_CREATIVE"
   | "REDUCE_DISCOUNT"
@@ -41,7 +44,7 @@ export type ActionType =
   | "SHORTEN_INITIATIVE"
   | "STOP";
 
-export type ActionFamily = "continue" | "scale" | "reduce_demand" | "reallocate" | "offer" | "product" | "creative" | "inventory" | "timing" | "stop";
+export type ActionFamily = "continue" | "scale" | "reduce_demand" | "reallocate" | "offer" | "product" | "creative" | "inventory" | "timing" | "measurement" | "stop";
 export type BusinessAnswer = "continue" | "change" | "stop";
 export type Feasibility = "feasible" | "conditional" | "infeasible" | "unknown";
 export type Reversibility = "easy" | "moderate" | "hard";
@@ -102,6 +105,17 @@ export interface Recommendation {
   questions: FeasibilityQuestion[];
   confidence: "high" | "medium" | "low";
   confidenceReason: Localized;
+  // ── The paid campaign and the initiative are TWO different questions ──
+  // (owner, 2026-09-15). "Pause the campaign" never implies "cancel the
+  // launch"; the lanes are answered separately.
+  paidCampaign: { verdict: "pause" | "fix_mapping" | "verify_tracking" | "reduce" | "none"; line: Localized } | null;
+  initiativeLine: Localized | null; // e.g. "do not cancel the launch itself yet"
+  // ── Confidence split: performance vs profit. Missing COGS must never
+  // silence "the campaign is not producing purchases".
+  performanceConfidence: "high" | "medium" | "low";
+  performanceReason: Localized;
+  profitConfidence: "high" | "medium" | "low";
+  profitReason: Localized;
 }
 
 const giftName = (d: BusinessDiagnosis) => d.constraint?.title ?? "";
@@ -270,6 +284,53 @@ export const ACTIONS: ActionDefinition[] = [
     reversibility: "easy"
   },
   {
+    type: "PAUSE_CAMPAIGN",
+    family: "reduce_demand",
+    answer: "change",
+    label: L("להשהות את הקמפיין הממומן", "Pause the paid campaign"),
+    // Material exposure, zero purchases, measurement believable — the paid
+    // execution failed; the initiative itself is judged separately.
+    applicableWhen: (d) => d.funnel?.purchaseDemand === "no_observed_purchase_demand",
+    feasibility: (d) => ({ state: d.paid.state === "not_running" ? "infeasible" : "feasible", condition: null, note: d.paid.state === "not_running" ? L("הקמפיין ממילא לא רץ", "the campaign is not running anyway") : null }),
+    concrete: (d) => {
+      const stage = d.funnel?.stages.find((s) => s.key === d.funnel?.breakStage) ?? null;
+      return stage
+        ? L(`להשהות את הקמפיין ולאבחן את השלב שנשבר (${stage.label.he}) לפני עוד הוצאה — קריאייטיב, קהל, דף מוצר, הצעה או טראקינג`, `Pause the campaign and diagnose the failing stage (${stage.label.en}) before spending more — creative, audience, product page, offer or tracking`)
+        : L("להשהות את הקמפיין ולאבחן איפה המשפך נשבר לפני עוד הוצאה — קריאייטיב, קהל, דף מוצר, הצעה וטראקינג", "Pause the campaign and diagnose where the funnel breaks before spending more — creative, audience, product page, offer and tracking");
+    },
+    expectedEffect: L("עוצר הוצאה שלא מייצרת רכישות; שומר את היוזמה לשיפוט נפרד", "Stops spend that produces no purchases; the initiative is judged separately"),
+    risks: L("מאבד למידה של הקמפיין; מאט את ההשקה", "Loses campaign learning; slows the launch"),
+    reversibility: "easy"
+  },
+  {
+    type: "FIX_MAPPING",
+    family: "measurement",
+    answer: "change",
+    label: L("לתקן את המיפוי לפני כל החלטה", "Fix the mapping before any decision"),
+    applicableWhen: (d) => d.funnel?.verdict === "attribution_mismatch",
+    feasibility: () => ({ state: "feasible", condition: null, note: null }),
+    concrete: (d) =>
+      L(
+        `להרחיב את מיפוי המוצרים למה שהקמפיין מוכר בפועל${d.funnel?.mismatchReasons[0] ? ` — ${d.funnel.mismatchReasons[0].he}` : ""}; רק אחרי שהמדידה מכסה את המכירות אפשר לשפוט את היוזמה`,
+        `Extend the product mapping to what the campaign actually sells${d.funnel?.mismatchReasons[0] ? ` — ${d.funnel.mismatchReasons[0].en}` : ""}; only once the measurement covers the sales can the initiative be judged`
+      ),
+    expectedEffect: L("המספרים מודדים את מה שנמכר; ההחלטה הבאה עומדת על אמת", "The numbers measure what sells; the next decision stands on truth"),
+    risks: L("נמוך — פעולת מדידה, לא פעולה מסחרית", "Low — a measurement action, not a commercial one"),
+    reversibility: "easy"
+  },
+  {
+    type: "VERIFY_TRACKING",
+    family: "measurement",
+    answer: "change",
+    label: L("לאמת את המדידה", "Verify the measurement"),
+    applicableWhen: (d) => d.funnel?.verdict === "measurement_suspected",
+    feasibility: () => ({ state: "feasible", condition: null, note: null }),
+    concrete: () => L("לאמת פיקסל, יעדי מודעות וחיבור נתונים לפני כל מסקנה עסקית — יש הוצאה בלי שלבי משפך אמינים", "Verify the pixel, ad destinations and the data connection before any business conclusion — spend exists without believable funnel stages"),
+    expectedEffect: L("מפריד כשל מדידה מכשל עסקי", "Separates a measurement failure from a business failure"),
+    risks: L("נמוך", "Low"),
+    reversibility: "easy"
+  },
+  {
     type: "SHIFT_BUDGET",
     family: "reallocate",
     answer: "change",
@@ -415,6 +476,28 @@ function rank(def: ActionDefinition, feas: Feasibility, d: BusinessDiagnosis): {
     because.push({ delta: n, reason: L(he, en) });
   };
   const t = def.type;
+  // Measurement outranks everything: no budget/stop decision stands on
+  // numbers that measure the wrong thing (owner, 2026-09-15).
+  const fv = d.funnel?.verdict ?? null;
+  if (fv === "attribution_mismatch") {
+    if (t === "FIX_MAPPING") add(50, "המדידה לא מכסה את מה שהקמפיין מוכר — קודם מתקנים אותה", "the measurement does not cover what the campaign sells — fix it first");
+    if (t === "STOP" || t === "SHORTEN_INITIATIVE") add(-45, "אי אפשר לעצור יוזמה על סמך מדידה שלא מכסה את המכירות", "never stop an initiative on numbers that miss its sales");
+    if (t === "PAUSE_CAMPAIGN" || t === "REDUCE_SPEND") add(-30, "הקמפיין ממיר לפי מטא — עצירת הוצאה לפני תיקון המדידה זורקת ביקוש", "the campaign converts by Meta — cutting spend before fixing the measurement throws demand away");
+    if (t === "SCALE") add(-25, "לא מגדילים על מדידה שבורה", "never scale on broken measurement");
+  }
+  if (fv === "measurement_suspected") {
+    if (t === "VERIFY_TRACKING") add(50, "יש הוצאה בלי שלבי משפך אמינים — קודם מאמתים את המדידה", "spend exists without believable funnel stages — verify the measurement first");
+    if (t === "STOP" || t === "SCALE" || t === "PAUSE_CAMPAIGN") add(-40, "כשל מדידה חשוד אינו כשל עסקי — אין החלטה עסקית עד האימות", "a suspected measurement failure is not a business failure — no business decision until verified");
+  }
+  // Negative evidence: material exposure, zero purchases, believable data.
+  if (d.funnel?.purchaseDemand === "no_observed_purchase_demand" && fv !== "attribution_mismatch" && fv !== "measurement_suspected") {
+    if (t === "PAUSE_CAMPAIGN") add(45, "חשיפה מהותית ואפס רכישות: עוצרים את ההוצאה ומאבחנים את השלב שנשבר", "material exposure with zero purchases: stop the spend and diagnose the failing stage");
+    if (t === "SCALE") add(-50, "לא קונים עוד חשיפה לתוך אפס רכישות", "never buy more exposure into zero purchases");
+    if (t === "CONTINUE" || t === "CONTINUE_MONITOR") add(-25, "להמשיך ללא שינוי = עוד הוצאה בלי רכישות", "unchanged means more spend with no purchases");
+    if (t === "STOP") add(-25, "כשל בביצוע הממומן עוד לא גוזר ביטול היוזמה עצמה", "a paid-execution failure does not yet cancel the initiative itself");
+    if (t === "TEST_CREATIVE" && d.funnel?.breakStage === "clicks") add(12, "השבירה בשלב הקריאייטיב/קהל", "the break is at the creative/audience stage");
+    if (t === "FIX_CONVERSION" && (d.funnel?.breakStage === "atc" || d.funnel?.breakStage === "ic" || d.funnel?.breakStage === "meta_purchases")) add(12, "השבירה בדף/בהצעה/בצ'קאאוט", "the break is at the page/offer/checkout");
+  }
   // Fulfilment first. Under a stock constraint the prior is explicit:
   //   transfer existing stock > fast replenishment > substitute product >
   //   reduce demand > stop. It is a V0 prior, not a learned weight.
@@ -507,6 +590,27 @@ export function resolveRecommendation(d: BusinessDiagnosis, space: DecisionOptio
     questions.push({ key: "alternative_gift", productId: d.constraint.productId, question: L("יש מוצר חלופי שיכול לשמש כמתנה?", "Is there an alternative product that can serve as the gift?"), ifYes: L("להחליף את המתנה", "Replace the gift"), ifNo: L("להגביל את המתנה למלאי או לעבור להטבה אחרת", "Limit the gift to stock or switch perk") });
   }
 
+  // Confidence split (owner, 2026-09-15): PERFORMANCE (spend + purchase
+  // outcome, both verified sources) apart from PROFIT (costs). Missing COGS
+  // lowers only the profit lane — it never silences "this is not selling".
+  const performanceConfidence: Recommendation["performanceConfidence"] = evidenceQuality.basis === "none" ? "low" : evidenceQuality.basis === "provisional" || evidenceQuality.stale ? "medium" : "high";
+  const performanceReason =
+    evidenceQuality.basis === "none"
+      ? L("אין ישויות ממופות למדידה", "No mapped entities to measure")
+      : evidenceQuality.basis === "provisional"
+        ? L("הוצאה ורכישות נמדדות, אבל על התאמות אוטומטיות שטרם אושרו", "Spend and purchases are measured, but on automatic matches not yet confirmed")
+        : evidenceQuality.stale
+          ? L("הוצאה ורכישות נמדדות ממטא ושופיפיי, אך הנתונים לא טריים", "Spend and purchases measured from Meta and Shopify, but the data is stale")
+          : L("הוצאה ותוצאת הרכישות מאומתות ממטא ושופיפיי, והמיפוי מאושר", "Spend and the purchase outcome are verified from Meta and Shopify, and the mapping is confirmed");
+  const marginEstimated = d.margin.state === "measured" && d.margin.evidence.he.includes("אומדן");
+  const profitConfidence: Recommendation["profitConfidence"] = d.margin.state === "unknown" ? "low" : marginEstimated ? "medium" : "high";
+  const profitReason =
+    d.margin.state === "unknown"
+      ? L("עלויות מוצר חסרות — אי אפשר לתרגם את הביצוע לרווח מדויק", "Product costs are missing — the performance cannot be priced precisely")
+      : marginEstimated
+        ? L("המרווח מבוסס חלקית על אומדן עלויות", "The margin partly rests on estimated costs")
+        : L("המרווח מחושב מעלויות אמיתיות", "The margin is computed from real costs");
+
   const unknownsCount = d.unknowns.length;
   const confidence: Recommendation["confidence"] = evidenceQuality.basis === "none" ? "low" : evidenceQuality.basis === "provisional" || evidenceQuality.stale || unknownsCount >= 2 ? "medium" : unknownsCount === 1 ? "medium" : "high";
   const confidenceReason = L(
@@ -514,19 +618,35 @@ export function resolveRecommendation(d: BusinessDiagnosis, space: DecisionOptio
     `Known: ${[d.demand.state !== "unknown" ? "demand" : null, d.inventory.state !== "unknown" ? "inventory" : null, d.paid.state !== "unknown" ? "Meta" : null, d.margin.state !== "unknown" ? "margin" : null, d.offline.state !== "unknown" && d.offline.state !== "none" ? "stores" : null].filter(Boolean).join(", ") || "little"}${d.unknowns.length ? ` · Unknown: ${d.unknowns.map((u) => u.en).join(", ")}` : ""}${evidenceQuality.basis === "provisional" ? " · based on automatic matches not yet confirmed" : ""}${evidenceQuality.stale ? " · stale data" : ""}`
   );
 
-  // Not enough evidence to choose: demand unknown, or nothing usable.
-  if (d.demand.state === "unknown" || evidenceQuality.basis === "none" || space.length === 0) {
+  // A definitive funnel verdict IS evidence: material exposure with zero
+  // purchases, a mapping/attribution mismatch, or a measurement suspicion
+  // each pick an action — the insufficient gate is only for genuinely
+  // unjudgeable cases (Case E: not enough exposure; or nothing usable).
+  const funnelDefinitive = d.funnel ? d.funnel.verdict === "attribution_mismatch" || d.funnel.verdict === "measurement_suspected" || d.funnel.purchaseDemand === "no_observed_purchase_demand" : false;
+  if ((d.demand.state === "unknown" && !funnelDefinitive) || evidenceQuality.basis === "none" || space.length === 0) {
+    const underExposed = d.funnel?.purchaseDemand === "insufficient_exposure" && d.funnel.verdict !== "measurement_suspected";
     return {
       answer: "insufficient",
       primary: null,
-      what: L("עדיין אין מספיק ראיות כדי לבחור בין להמשיך, לשנות או לעצור.", "There is not yet enough evidence to choose between continue, change or stop."),
-      why: [d.demand.evidence, d.inventory.evidence].filter((x) => x.en),
+      what: underExposed
+        ? L(`עדיין אין מספיק ראיות: ${d.funnel!.headline.he}`, `There is not yet enough evidence: ${d.funnel!.headline.en}`)
+        : L("עדיין אין מספיק ראיות כדי לבחור בין להמשיך, לשנות או לעצור.", "There is not yet enough evidence to choose between continue, change or stop."),
+      why: [underExposed ? d.funnel!.detail : null, d.demand.evidence, d.inventory.evidence].filter((x): x is Localized => !!x && !!x.en),
       alternatives: [],
       versus: [],
-      wouldChange: [L("מכירות מדודות של המוצרים המקושרים", "Measured sales of the linked products")],
+      wouldChange: [
+        L("מכירות מדודות של המוצרים המקושרים", "Measured sales of the linked products"),
+        ...(underExposed ? [L("החשיפה חוצה את רף המהותיות (ואז אפס רכישות הופך לראיה)", "Exposure crosses the materiality bar (then zero purchases becomes evidence)")] : [])
+      ],
       questions,
       confidence: "low",
-      confidenceReason
+      confidenceReason,
+      paidCampaign: null,
+      initiativeLine: null,
+      performanceConfidence,
+      performanceReason,
+      profitConfidence,
+      profitReason
     };
   }
 
@@ -583,5 +703,24 @@ export function resolveRecommendation(d: BusinessDiagnosis, space: DecisionOptio
 
   const answer: BusinessAnswer = primary.answer;
   const what = L(`${answer === "continue" ? "להמשיך" : answer === "stop" ? "לעצור" : "לשנות"}: ${primary.what.he}`, `${answer === "continue" ? "Continue" : answer === "stop" ? "Stop" : "Change"}: ${primary.what.en}`);
-  return { answer, primary, what, why, alternatives, versus, wouldChange, questions, confidence, confidenceReason };
+
+  // The paid-campaign lane, separate from the initiative's fate.
+  const paidCampaign: Recommendation["paidCampaign"] =
+    primary.type === "PAUSE_CAMPAIGN"
+      ? { verdict: "pause", line: L("להשהות את הקמפיין הממומן הנוכחי", "Pause the current paid campaign") }
+      : primary.type === "FIX_MAPPING"
+        ? { verdict: "fix_mapping", line: L("לא לגעת בקמפיין עד שהמיפוי מתוקן — לפי מטא הוא ממיר", "Do not touch the campaign until the mapping is fixed — by Meta it converts") }
+        : primary.type === "VERIFY_TRACKING"
+          ? { verdict: "verify_tracking", line: L("לא לקבל החלטת תקציב עד שהמדידה מאומתת", "No budget decision until the measurement is verified") }
+          : primary.type === "REDUCE_SPEND"
+            ? { verdict: "reduce", line: L("לצמצם את ההוצאה על הקמפיין", "Reduce the campaign's spend") }
+            : null;
+  const initiativeLine: Recommendation["initiativeLine"] =
+    primary.type === "PAUSE_CAMPAIGN" || primary.type === "REDUCE_SPEND"
+      ? L("לא לבטל את היוזמה עצמה בשלב הזה — הכשל הוא בביצוע הממומן, וההשקה נשפטת בנפרד.", "Do not cancel the initiative itself yet — the failure is in the paid execution; the launch is judged separately.")
+      : primary.type === "FIX_MAPPING" || primary.type === "VERIFY_TRACKING"
+        ? L("לא לבטל ולא להרחיב את היוזמה עד שהמדידה מתוקנת.", "Neither cancel nor scale the initiative until the measurement is fixed.")
+        : null;
+
+  return { answer, primary, what, why, alternatives, versus, wouldChange, questions, confidence, confidenceReason, paidCampaign, initiativeLine, performanceConfidence, performanceReason, profitConfidence, profitReason };
 }

@@ -22,7 +22,11 @@
 
 import type { Localized } from "@/lib/domain/decision";
 import type { InitiativeReality, LinkBasis } from "@/lib/domain/initiative-reality";
+<<<<<<< HEAD
 import type { FulfillmentState, IntentFulfillment } from "@/lib/domain/intent-fulfillment";
+=======
+import { diagnoseFunnel, type FunnelBenchmark, type FunnelDiagnosis, type LinkedProductHealth } from "@/lib/domain/funnel-diagnosis";
+>>>>>>> 9ecd84c8c07b691719231bde1c8403c570181a35
 
 const L = (he: string, en: string): Localized => ({ he, en });
 const ils = (n: number) => `₪${Math.round(n).toLocaleString("en-US")}`;
@@ -66,6 +70,16 @@ export interface PaidEvidence {
   clicks: number | null;
   attributedRevenue: number | null;
   basis: Exclude<LinkBasis, "suggested"> | null;
+  // Full Meta funnel for the mapped campaign(s). Synced per day by the Meta
+  // sync; null = the sync carries no such stage for this campaign.
+  impressions: number | null;
+  linkClicks: number | null;
+  lpv: number | null; // landing page views (Meta pixel)
+  atc: number | null; // add to cart (Meta pixel)
+  ic: number | null; // initiate checkout (Meta pixel)
+  // Store-level trailing benchmark (all campaigns): CPA + stage rates, with
+  // its purchase sample so the guard can reject a noisy benchmark.
+  benchmark: FunnelBenchmark | null;
   // The same campaign over the comparable period before the window.
   baseline?: { spend: number; purchases: number; clicks: number | null; attributedRevenue: number | null } | null;
 }
@@ -95,9 +109,15 @@ export interface DiagnosisInput {
   locations: LocationStock[];
   facts: FeasibilityFacts;
   alternatives: { gift: AlternativeProduct[]; product: AlternativeProduct[] };
+<<<<<<< HEAD
   // Intent Fulfillment — what the initiative meant to sell / where / to whom
   // vs what actually happened. Optional until the service passes it.
   fulfillment?: IntentFulfillment | null;
+=======
+  // Health of the LINKED products (status + all-time units) — the evidence
+  // that separates "no demand" from "the mapping points at non-sellers".
+  linkedProducts?: LinkedProductHealth[];
+>>>>>>> 9ecd84c8c07b691719231bde1c8403c570181a35
 }
 
 // ---------------------------------------------------------------------------
@@ -161,10 +181,12 @@ export interface BusinessDiagnosis {
   fulfillment: IntentFulfillment | null;
   // The constraint (if any) the decision revolves around.
   constraint: ConstrainedItem | null;
+  // Deterministic paid-funnel diagnosis (null when no campaign is linked).
+  funnel: FunnelDiagnosis | null;
   // "Demand is healthy, but Meta is the weakest acquisition layer."
   headline: Localized;
-  // channel problem vs business problem
-  scope: "business" | "channel" | "none" | "unknown";
+  // channel problem vs business problem vs a measurement problem
+  scope: "business" | "channel" | "measurement" | "none" | "unknown";
   unknowns: Localized[];
 }
 
@@ -193,9 +215,51 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
   const nProducts = revM?.provenance.length ?? 0;
   const beforeLabel = L(`${period.dayIndex} הימים שלפני היוזמה`, `the ${period.dayIndex} days before the initiative`);
 
+  // ── Paid funnel — diagnosed FIRST because zero sales reads differently
+  // depending on what the funnel says (negative evidence vs mismatch vs
+  // not-enough-exposure). Shopify truth = the linked products' window sales.
+  const pm0 = input.paid;
+  const shopifyUnits = unitsM && unitsM.value !== null ? Number(unitsM.value) : null;
+  const shopifyRevenue = revM && revM.value !== null ? Number(revM.value.replace(/[^\d.-]/g, "")) : null;
+  const funnel: FunnelDiagnosis | null =
+    pm0 && pm0.basis !== null
+      ? diagnoseFunnel({
+          spend: pm0.spend,
+          daysElapsed: period.dayIndex,
+          impressions: pm0.impressions,
+          clicks: pm0.clicks,
+          linkClicks: pm0.linkClicks,
+          lpv: pm0.lpv,
+          atc: pm0.atc,
+          ic: pm0.ic,
+          metaPurchases: pm0.purchases,
+          metaAttributedRevenue: pm0.attributedRevenue,
+          shopifyUnits,
+          shopifyRevenue,
+          linkedProducts: input.linkedProducts ?? [],
+          benchmark: pm0.benchmark
+        })
+      : null;
+
   // ── Demand: TOTAL initiative sales (all channels) vs the comparable period ──
   let demand: Dimension<DemandState>;
-  if (!revM || revM.value === null) {
+  if (funnel?.verdict === "attribution_mismatch") {
+    // Zero linked-product sales next to Meta purchases is a MEASUREMENT
+    // question, not "demand unknown" and not "no demand".
+    demand = { state: "unknown", evidence: funnel.detail, basis: salesBasis };
+    unknowns.push(L("אילו מוצרים הקמפיין מוכר בפועל (המיפוי לא מכסה אותם)", "Which products the campaign actually sells (the mapping does not cover them)"));
+  } else if (funnel?.purchaseDemand === "no_observed_purchase_demand" && (shopifyUnits ?? 0) === 0) {
+    // Material exposure with zero purchases IS evidence — about the current
+    // commercial execution, not necessarily about the product itself.
+    demand = {
+      state: "weak",
+      evidence: L(
+        `לא הופיע ביקוש רכישה נמדד במהלך היוזמה (${funnel.detail.he}) — עדות על הביצוע הנוכחי, לא בהכרח על המוצר`,
+        `No measured purchase demand has appeared during the initiative (${funnel.detail.en}) — evidence about the current execution, not necessarily the product`
+      ),
+      basis: pm0?.basis ?? salesBasis
+    };
+  } else if (!revM || revM.value === null) {
     demand = { state: "unknown", evidence: L("אין מכירות מדודות של מוצרי היוזמה", "No measured sales of the initiative's products"), basis: null };
     unknowns.push(L("מכירות היוזמה", "Initiative sales"));
   } else if (vs === null) {
@@ -380,8 +444,19 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
   const storesToo = offline.state === "strong" ? L(" גם בחנויות", " in stores too") : L("", "");
   let scope: BusinessDiagnosis["scope"];
   let headline: Localized;
-  if (demand.state === "unknown") {
+  if (funnel && (funnel.verdict === "attribution_mismatch" || funnel.verdict === "measurement_suspected")) {
+    // A measurement problem outranks every business reading: nothing about
+    // demand can be asserted until the numbers measure the right thing.
+    scope = "measurement";
+    headline = funnel.headline;
+  } else if (funnel && funnel.purchaseDemand === "no_observed_purchase_demand" && !demandOk) {
+    // Negative evidence with a located (or explicitly unlocatable) break —
+    // a paid-execution problem first; the initiative itself is judged apart.
+    scope = "channel";
+    headline = funnel.headline;
+  } else if (demand.state === "unknown") {
     scope = "unknown";
+<<<<<<< HEAD
     headline = L("אין עדיין מספיק מכירות מדודות כדי לאבחן את היוזמה.", "Not enough measured sales yet to diagnose the initiative.");
   } else if (demandOk && intentDiverging && fulfillment) {
     // The offer is not selling as planned. That is a BUSINESS finding and it
@@ -399,6 +474,11 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
           : L(" יעילות Meta לא ידועה — הקמפיין מקושר אבל Meta לא מדווח ערך רכישה.", " Meta effectiveness is unknown — the campaign is linked but Meta reports no purchase value.")
         : L("", "");
     headline = L(`הביקוש ${demandWord.he}${storesToo.he}, אבל היוזמה לא מתבצעת כפי שתוכננה: ${first?.he ?? fulfillment.headline.he}${constraintNote.he}${metaNote.he}`, `Demand is ${demandWord.en}${storesToo.en}, but the initiative is not unfolding as planned: ${first?.en ?? fulfillment.headline.en}${constraintNote.en}${metaNote.en}`);
+=======
+    // With a linked campaign the honest "unknown" names the exposure bar
+    // (Case E) instead of a bare "not enough sales".
+    headline = funnel && funnel.purchaseDemand === "insufficient_exposure" ? funnel.headline : L("אין עדיין מספיק מכירות מדודות כדי לאבחן את היוזמה.", "Not enough measured sales yet to diagnose the initiative.");
+>>>>>>> 9ecd84c8c07b691719231bde1c8403c570181a35
   } else if (demandOk && paid.state === "weak") {
     scope = "channel";
     const metaWhy = /spend exceeds/.test(paid.evidence.en) ? L("מוציא יותר מההכנסה המיוחסת לו", "spends more than the revenue attributed to it") : L(`נחלש מול ${beforeLabel.he}`, `weakened vs ${beforeLabel.en}`);
@@ -426,5 +506,9 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
     headline = L(`הביקוש ${demandWord.he} ולא נמצא אילוץ מהותי.`, `Demand is ${demandWord.en} and no material constraint was found.`);
   }
 
+<<<<<<< HEAD
   return { demand, conversion, paid, creators, offline, inventory, replenishment, margin, marginRate, offer, time, intent, fulfillment, constraint, headline, scope, unknowns };
+=======
+  return { demand, conversion, paid, creators, offline, inventory, replenishment, margin, marginRate, offer, time, constraint, funnel, headline, scope, unknowns };
+>>>>>>> 9ecd84c8c07b691719231bde1c8403c570181a35
 }

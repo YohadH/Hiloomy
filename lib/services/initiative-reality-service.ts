@@ -29,6 +29,7 @@ import {
 import { buildPlanView, readPlanOverrides } from "@/lib/services/plan-service";
 import { classifySalesChannel } from "@/lib/domain/sales-channel";
 import { diagnose, type AlternativeProduct, type ChannelEvidence, type CreatorEvidence, type DiagnosisInput, type FeasibilityFacts, type LocationStock, type PaidEvidence, type BusinessDiagnosis } from "@/lib/domain/business-diagnosis";
+import { BENCHMARK_MIN_PURCHASES, type FunnelBenchmark, type LinkedProductHealth } from "@/lib/domain/funnel-diagnosis";
 import { buildDecisionSpace, resolveRecommendation, type DecisionOption, type Recommendation } from "@/lib/domain/decision-space";
 import { buildEpisode, type DecisionEpisode } from "@/lib/domain/decision-episode";
 import { evaluateIntentFulfillment, type InitiativeIntent, type IntentFulfillment, type IntentOrder } from "@/lib/domain/intent-fulfillment";
@@ -308,6 +309,9 @@ export interface DiagnosisLayers {
   locations: LocationStock[];
   alternatives: DiagnosisInput["alternatives"];
   facts: FeasibilityFacts;
+  // Status + all-time sales of the linked products — the fact that tells a
+  // mapping-too-narrow mismatch apart from a real demand failure.
+  linkedProducts: LinkedProductHealth[];
 }
 
 export async function gatherDiagnosisLayers(storeId: string, initiative: Initiative, mappings: InitiativeMappings, inputs: RealityInputs, reality: InitiativeReality, now: Date): Promise<DiagnosisLayers> {
@@ -346,22 +350,88 @@ export async function gatherDiagnosisLayers(storeId: string, initiative: Initiat
       : [];
     creators = { orders: new Set(rows.map((r) => r.orderId)).size, revenue: rows.reduce((n, r) => n + num(r.salesAmount), 0), commission: rows.reduce((n, r) => n + num(r.commissionAmount), 0), creators: new Set(rows.map((r) => r.affiliateMemberId)).size, basis };
   }
-  // Paid: spend, purchases, clicks for the mapped campaigns.
+  // Paid: the FULL Meta funnel for the mapped campaigns (impressions →
+  // clicks → LPV → ATC → IC → purchases), plus a store-level trailing-90d
+  // benchmark (all campaigns) so a stage can be judged against the store's
+  // own rates instead of absolute counts. The funnel fields have been synced
+  // all along — they were just never read here (owner, 2026-09-15).
   const campaignLinks = usable.filter((l) => l.kind === "meta_campaign");
   let paid: PaidEvidence | null = null;
   if (campaignLinks.length) {
-    type InsightRow = { spend: unknown; purchases: number; clicks: number; purchaseRoas: unknown };
+    type InsightRow = { spend: unknown; purchases: number; clicks: number; purchaseRoas: unknown; impressions: number; linkClicks: number; landingPageViews: number; addToCart: number; initiateCheckout: number };
+    const funnelSelect = { spend: true, purchases: true, clicks: true, purchaseRoas: true, impressions: true, linkClicks: true, landingPageViews: true, addToCart: true, initiateCheckout: true };
     const fetchRows = (from: string, to: string) =>
       db.metaAdsCampaignInsight
-        .findMany({ where: { storeId, level: "campaign", campaignId: { in: campaignLinks.map((l) => l.id) }, dateStart: { gte: dayStart(from), lt: dayStart(to) } }, select: { spend: true, purchases: true, clicks: true, purchaseRoas: true } })
+        .findMany({ where: { storeId, level: "campaign", campaignId: { in: campaignLinks.map((l) => l.id) }, dateStart: { gte: dayStart(from), lt: dayStart(to) } }, select: funnelSelect })
         .catch(() => []) as Promise<InsightRow[]>;
-    const [rows, baseRows] = await Promise.all([fetchRows(windowStart, windowEndExclusive), fetchRows(baselineStart, windowStart)]);
+    const benchmarkStart = new Date(now.getTime() - 90 * DAY_MS).toISOString().slice(0, 10);
+    const [rows, baseRows, benchRows] = await Promise.all([
+      fetchRows(windowStart, windowEndExclusive),
+      fetchRows(baselineStart, windowStart),
+      db.metaAdsCampaignInsight
+        .findMany({ where: { storeId, level: "campaign", dateStart: { gte: dayStart(benchmarkStart) } }, select: funnelSelect })
+        .catch(() => []) as Promise<InsightRow[]>
+    ]);
     const sum = (rs: InsightRow[]) => {
       const spend = rs.reduce((n, r) => n + num(r.spend), 0);
       const withRoas = rs.filter((r) => r.purchaseRoas !== null && r.purchaseRoas !== undefined);
-      return { spend, purchases: rs.reduce((n, r) => n + r.purchases, 0), clicks: rs.reduce((n, r) => n + (r.clicks ?? 0), 0), attributedRevenue: rs.length && withRoas.length === rs.length ? withRoas.reduce((n, r) => n + num(r.spend) * num(r.purchaseRoas), 0) : null };
+      return {
+        spend,
+        purchases: rs.reduce((n, r) => n + r.purchases, 0),
+        clicks: rs.reduce((n, r) => n + (r.clicks ?? 0), 0),
+        impressions: rs.reduce((n, r) => n + (r.impressions ?? 0), 0),
+        linkClicks: rs.reduce((n, r) => n + (r.linkClicks ?? 0), 0),
+        lpv: rs.reduce((n, r) => n + (r.landingPageViews ?? 0), 0),
+        atc: rs.reduce((n, r) => n + (r.addToCart ?? 0), 0),
+        ic: rs.reduce((n, r) => n + (r.initiateCheckout ?? 0), 0),
+        attributedRevenue: rs.length && withRoas.length === rs.length ? withRoas.reduce((n, r) => n + num(r.spend) * num(r.purchaseRoas), 0) : null
+      };
     };
-    paid = { ...sum(rows), basis: campaignLinks.every((l) => l.state === "confirmed") ? "confirmed" : "provisional", baseline: baseRows.length ? sum(baseRows) : null };
+    const w = sum(rows);
+    const b = sum(benchRows);
+    const rate = (a: number, of: number) => (of > 0 ? a / of : null);
+    const benchmark: FunnelBenchmark | null = benchRows.length
+      ? {
+          window: { he: "90 הימים האחרונים, כל הקמפיינים", en: "trailing 90 days, all campaigns" },
+          spend: b.spend,
+          purchases: b.purchases,
+          cpa: b.purchases >= BENCHMARK_MIN_PURCHASES ? b.spend / b.purchases : b.purchases > 0 ? b.spend / b.purchases : null,
+          ctr: rate(b.clicks, b.impressions),
+          clickToLpv: rate(b.lpv, b.linkClicks),
+          lpvToAtc: rate(b.atc, b.lpv),
+          atcToIc: rate(b.ic, b.atc),
+          icToPurchase: rate(b.purchases, b.ic)
+        }
+      : null;
+    const baseSum = baseRows.length ? sum(baseRows) : null;
+    paid = {
+      spend: w.spend,
+      purchases: w.purchases,
+      clicks: w.clicks,
+      attributedRevenue: w.attributedRevenue,
+      impressions: w.impressions,
+      linkClicks: w.linkClicks,
+      lpv: w.lpv,
+      atc: w.atc,
+      ic: w.ic,
+      benchmark,
+      basis: campaignLinks.every((l) => l.state === "confirmed") ? "confirmed" : "provisional",
+      baseline: baseSum ? { spend: baseSum.spend, purchases: baseSum.purchases, clicks: baseSum.clicks, attributedRevenue: baseSum.attributedRevenue } : null
+    };
+  }
+  // Linked-product health: publish status + all-time units. Zero-ever units
+  // on every linked product turns "Meta converts, Shopify shows 0" into a
+  // mapping-too-narrow diagnosis instead of a tracking accusation.
+  let linkedProducts: LinkedProductHealth[] = [];
+  if (mainIds.length) {
+    const [prodRows, allTime] = await Promise.all([
+      db.product.findMany({ where: { id: { in: mainIds } }, select: { id: true, title: true, status: true } }).catch(() => []) as Promise<Array<{ id: string; title: string; status: string | null }>>,
+      db.orderLineItem
+        .groupBy({ by: ["productId"], where: { storeId, productId: { in: mainIds }, order: { cancelledAt: null, test: false } }, _sum: { quantity: true } })
+        .catch(() => []) as Promise<Array<{ productId: string; _sum: { quantity: number | null } }>>
+    ]);
+    const unitsById = new Map(allTime.map((x) => [x.productId, x._sum.quantity ?? 0]));
+    linkedProducts = prodRows.map((p) => ({ id: p.id, title: p.title, status: p.status, allTimeUnits: unitsById.get(p.id) ?? 0 }));
   }
   // Inventory by location for the mapped products.
   let locations: LocationStock[] = [];
@@ -423,7 +493,7 @@ export async function gatherDiagnosisLayers(storeId: string, initiative: Initiat
     giftOptional: fact("gift_optional") === "yes" ? true : fact("gift_optional") === "no" ? false : null,
     alternativeGiftProductId: fact("alternative_gift")
   };
-  return { channels, creators, paid, locations, alternatives, facts };
+  return { channels, creators, paid, locations, alternatives, facts, linkedProducts };
 }
 
 // The full brief: reality → diagnosis → decision space → recommendation → episode.
