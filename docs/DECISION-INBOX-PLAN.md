@@ -985,6 +985,102 @@ intent block sits above the diagnosis on the initiative page only.
   non-plan decisions (competitor, ROAS) renders blocks 1 and 4 and the
   evidence details, with no campaign / intent block.
 
+## 0h. Entity Resolution + Context Inference — connect before asking (2026-09-16)
+
+**Owner's failure statement:** Hiloomy had enough connected data to infer
+most initiative relationships, but treated a missing CONFIRMED mapping as
+missing knowledge and asked the manager to "complete setup". New behaviour:
+missing mapping → search connected evidence → score candidates → use
+high-confidence candidates provisionally → keep reasoning → ask only when
+ambiguity materially blocks the decision. "I investigated this for you",
+not "please configure my data".
+
+**Built (on top of 9ecd84c's funnel diagnosis and the §0g intent layer; the
+merge conflicts between the two were resolved in this pass):**
+
+- `lib/domain/entity-resolution.ts` — the vocabulary (EntityRef,
+  Relationship {source, target, confidence, status CONFIRMED / PROVISIONAL /
+  SUGGESTED / REJECTED, evidence[], reason, createdAt, lastValidatedAt},
+  EvidenceKind incl. EVENT_MATCH / EVENT_CONFLICT / NO_ACTIVITY), the bands
+  (high ≥0.70, medium ≥0.45; internal score numeric, UI shows the band), the
+  **question policy** `decide()` — accept at ≥0.70, or a lone ≥0.60 leader
+  with no rival ≥0.45; ask ONLY when two candidates ≥0.45 sit within 0.10
+  (0.83 vs 0.79 asks; 0.94 vs 0.31 does not) — and **launch detection**
+  `assessLaunch()`: unknown (no data source) ≠ not detected ≠ not yet live,
+  by timing (far >10d: expected; approaching ≤10d: attention; imminent ≤3d:
+  attention; live: risk). Products are never "launch activity" — a missing
+  product mapping is a mapping gap, not "the launch has not happened".
+- **Event semantics** — `eventMentions()` in calendar-events reads the
+  canonical calendar aliases (now incl. "rosh hasana / hasna", "sukot") in
+  campaign names and ad copy. The Campaign Resolver REJECTS a campaign that
+  names another holiday, with the reason ("rejected as a Sukkot candidate
+  because its name ("rosh hasana") indicates Rosh Hashanah"), whatever the
+  dates say; a campaign naming the initiative's own holiday gets +0.30; a
+  holiday initiative owns EVERY sibling campaign ≥0.70 (no question between
+  siblings). `CampaignResolution.rejected[]` — absence is information.
+- **Coupon Resolver** (initiative-reality `discount` section): a code used
+  in the window is scored by orders that also carry the initiative's
+  products (1 → 0.55, +0.08 each, cap 0.85), a name token (+0.15), the
+  holiday in the code (+0.20); a code used mostly on other products
+  (<30% overlap share) is halved — EXTRANAP on 7% satin orders is a
+  store-wide code. ≥0.70 → provisional (`coupon_resolver`); manager-resolved
+  kinds (incl. "no coupon") are never re-asked; candidates still computed so
+  provenance keeps the system's rule.
+- **Product resolution from traffic**: a likely / confirmed campaign whose
+  ads land on `/products/<handle>` links that product provisionally
+  (`landing_page_product`); a `/collections/…` destination is matched through
+  orders that landed on that path in the window (≥3 orders → suggestion,
+  never auto-confirmed). Broad token matching still never auto-confirms.
+- **Manager rejections**: plan-override op `reject_entity` / `unreject_entity`
+  (`rejectedLinks`); the resolver never proposes a rejected entity; the UI
+  shows it struck through with its reason ("Not this one" / "Undo").
+- **Mappings now carry** `checked` (per-kind "I checked" lines), `question`
+  (the ONE question, or null), `rejectedLinks`; `ContextTask` carries
+  `checked[]`, `launch` and `question`. Finding `launch_activity_missing`
+  when live/imminent and execution is not detected.
+- **Status**: the machine status `needs_context` is KEPT for "critical
+  entity unresolved" (it gates every downstream number/decision — the hard
+  rule stands), but its copy is "Hiloomy checked the initiative. <launch
+  insight>. Without X, Y cannot be evaluated yet." A question exists only
+  when two candidates tie. Plan pages label it "Checked · awaiting data";
+  the receipt's blocked verdict says what was checked, never "complete N
+  connections".
+- **Entity graph store** (`lib/services/entity-graph-service.ts`, SystemConfig
+  `entity_graph:<sheetId>`): every relationship the brief computes is
+  recorded with first-seen `createdAt` and `lastValidatedAt`; rejections
+  included. Resolution itself is stateless and reruns on every read, so a
+  campaign that appears on Sep 19 is linked on the next load / cron without
+  manager action.
+- Data: `loadRealityInputs` now also gathers per-code product overlap and
+  60 days of orders by landing path.
+- UI: `ContextCompletion` is the "Hiloomy checked the initiative" panel
+  (per-kind ✓/○/⚠/? lines, launch insight, excluded candidates with reasons,
+  one question with a Choose button); the initiative page keeps the
+  conclusion-first hero + funnel + the campaign block (confirmed / auto-linked
+  / ranking + rejections) + intent block + two-lane recommendation.
+- Tests: `tests/unit/entity-resolution.test.ts` (policy, event semantics,
+  Sukkot vs Rosh Hashanah, Sukkot Sale auto-accept, manager rejection,
+  launch states, coupon resolver, landing products, sibling holiday
+  campaigns, clear-medium); old context tests re-worded to the new copy.
+
+**Sukkot validation (Take a Nap, read-only, 2026-09-16, 6 days before):**
+28 campaigns checked, 0 considered, 8 rejected as Rosh Hashanah (by name,
+one by ad copy); 0 window codes; products not inferred. Verdict B — not yet
+live: "עדיין לא זוהתה פעילות סוכות (קמפיין, קופון). זה צפוי — היוזמה מתחילה
+בעוד 6 ימים — אבל חלון ההשקה מתקרב." No question asked. Same run: ראש השנה
+auto-linked 2 sibling campaigns (85%, 75%; 61%/60% as suggestions);
+Back in stock auto-linked "קמפיין Back in stock" (65%, clear leader);
+Satin: no bogus coupon question (manager had said "no coupon").
+
+**Honest gaps:** no session/UTM attribution exists for these stores (0 UTMs
+on orders), so "campaign → order → coupon" is approximated by product
+overlap, not sessions; ad-set / ad / variant / customer / creator /
+location relationships are not resolved yet (the vocabulary covers them);
+GA4 is not connected; destination-URL signals fill only after the next Meta
+sync; the brief still stops (no diagnosis) while products are unresolved —
+the campaign funnel could be diagnosed alone in a later pass; the entity
+graph is written but nothing reads it yet.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

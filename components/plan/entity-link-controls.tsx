@@ -1,13 +1,15 @@
 "use client";
 
-// Confirm / remove an initiative → entity link. Stored as a plan override
-// (`link_entity` / `unlink_entity`) next to the operator's other corrections.
+// Confirm / remove / reject an initiative → entity link. Stored as a plan
+// override (`link_entity` / `unlink_entity` / `reject_entity`) next to the
+// operator's other corrections. A rejection is a fact the resolver keeps:
+// the entity is never proposed again until the manager undoes it.
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { MappingKind } from "@/lib/domain/initiative-reality";
 
-export function EntityLinkButton({ sheetId, initiativeId, kind, id, label, mode, text, via }: { sheetId: string; initiativeId: string; kind: MappingKind; id: string; label: string; mode: "link" | "unlink" | "unlink_kind" | "unlink_bulk"; text: string; via?: string | null }) {
+export function EntityLinkButton({ sheetId, initiativeId, kind, id, label, mode, text, via }: { sheetId: string; initiativeId: string; kind: MappingKind; id: string; label: string; mode: "link" | "unlink" | "unlink_kind" | "unlink_bulk" | "reject" | "unreject"; text: string; via?: string | null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -23,7 +25,19 @@ export function EntityLinkButton({ sheetId, initiativeId, kind, id, label, mode,
               const res = await fetch(`/api/gantt/${sheetId}/plan/overrides`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(mode === "link" ? { op: "link_entity", initiativeId, kind, id, label, via: via ?? null } : mode === "unlink_kind" ? { op: "unlink_kind", initiativeId, kind } : mode === "unlink_bulk" ? { op: "unlink_bulk", initiativeId, kind } : { op: "unlink_entity", initiativeId, kind, id })
+                body: JSON.stringify(
+                  mode === "link"
+                    ? { op: "link_entity", initiativeId, kind, id, label, via: via ?? null }
+                    : mode === "unlink_kind"
+                      ? { op: "unlink_kind", initiativeId, kind }
+                      : mode === "unlink_bulk"
+                        ? { op: "unlink_bulk", initiativeId, kind }
+                        : mode === "reject"
+                          ? { op: "reject_entity", initiativeId, kind, id, label }
+                          : mode === "unreject"
+                            ? { op: "unreject_entity", initiativeId, kind, id }
+                            : { op: "unlink_entity", initiativeId, kind, id }
+                )
               });
               const body = await res.json().catch(() => ({}));
               if (!res.ok || !body.ok) throw new Error(body?.error ?? "failed");

@@ -17,9 +17,9 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 const STATUS: Record<InitiativeRealityStatus, { he: string; en: string; cls: string; order: number }> = {
-  needs_context: { he: "דורש השלמה", en: "Needs context", cls: "bg-warning/15 text-warning", order: 0 },
+  needs_context: { he: "נבדק · ממתין לנתונים", en: "Checked · awaiting data", cls: "bg-muted text-muted-foreground", order: 2 },
   needs_attention: { he: "דורש תשומת לב", en: "Needs attention", cls: "bg-warning/15 text-warning", order: 1 },
-  insufficient_data: { he: "אין מספיק מידע", en: "Insufficient data", cls: "bg-muted text-muted-foreground", order: 2 },
+  insufficient_data: { he: "אין מספיק מידע", en: "Insufficient data", cls: "bg-muted text-muted-foreground", order: 3 },
   off_track: { he: "מחוץ למסלול", en: "Off track", cls: "bg-danger/10 text-danger", order: 3 },
   no_issue_detected: { he: "לא נמצאה בעיה", en: "No issue detected", cls: "bg-success/15 text-success", order: 4 },
   on_track: { he: "במסלול", en: "On track", cls: "bg-success/15 text-success", order: 5 }
@@ -57,7 +57,7 @@ export default async function InitiativesIndex({ searchParams }: { searchParams:
 
         {needs.length ? (
           <section className="space-y-2 rounded-lg border border-warning/40 bg-warning/5 p-4">
-            <p className="text-base font-semibold">{t(`${needs.length} יוזמות צריכות השלמה`, `${needs.length} initiative${needs.length === 1 ? "" : "s"} need context`)}</p>
+            <p className="text-base font-semibold">{t(`${needs.length} יוזמות נבדקו — ממתינות לנתונים או לתשובה אחת`, `${needs.length} initiative${needs.length === 1 ? "" : "s"} checked — awaiting data or one answer`)}</p>
             <p className="text-sm text-muted-foreground">{t("חיבורים חסרים חוסמים את ההערכה. זו הגדרה קצרה, לא החלטה.", "Missing connections block the evaluation. A short setup, not a decision.")}</p>
             <ul className="divide-y divide-border/60 text-sm">
               {needs.map(({ i, r }) => (

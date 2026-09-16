@@ -22,11 +22,8 @@
 
 import type { Localized } from "@/lib/domain/decision";
 import type { InitiativeReality, LinkBasis } from "@/lib/domain/initiative-reality";
-<<<<<<< HEAD
 import type { FulfillmentState, IntentFulfillment } from "@/lib/domain/intent-fulfillment";
-=======
 import { diagnoseFunnel, type FunnelBenchmark, type FunnelDiagnosis, type LinkedProductHealth } from "@/lib/domain/funnel-diagnosis";
->>>>>>> 9ecd84c8c07b691719231bde1c8403c570181a35
 
 const L = (he: string, en: string): Localized => ({ he, en });
 const ils = (n: number) => `₪${Math.round(n).toLocaleString("en-US")}`;
@@ -109,15 +106,12 @@ export interface DiagnosisInput {
   locations: LocationStock[];
   facts: FeasibilityFacts;
   alternatives: { gift: AlternativeProduct[]; product: AlternativeProduct[] };
-<<<<<<< HEAD
   // Intent Fulfillment — what the initiative meant to sell / where / to whom
   // vs what actually happened. Optional until the service passes it.
   fulfillment?: IntentFulfillment | null;
-=======
   // Health of the LINKED products (status + all-time units) — the evidence
   // that separates "no demand" from "the mapping points at non-sellers".
   linkedProducts?: LinkedProductHealth[];
->>>>>>> 9ecd84c8c07b691719231bde1c8403c570181a35
 }
 
 // ---------------------------------------------------------------------------
@@ -456,7 +450,6 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
     headline = funnel.headline;
   } else if (demand.state === "unknown") {
     scope = "unknown";
-<<<<<<< HEAD
     headline = L("אין עדיין מספיק מכירות מדודות כדי לאבחן את היוזמה.", "Not enough measured sales yet to diagnose the initiative.");
   } else if (demandOk && intentDiverging && fulfillment) {
     // The offer is not selling as planned. That is a BUSINESS finding and it
@@ -474,11 +467,6 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
           : L(" יעילות Meta לא ידועה — הקמפיין מקושר אבל Meta לא מדווח ערך רכישה.", " Meta effectiveness is unknown — the campaign is linked but Meta reports no purchase value.")
         : L("", "");
     headline = L(`הביקוש ${demandWord.he}${storesToo.he}, אבל היוזמה לא מתבצעת כפי שתוכננה: ${first?.he ?? fulfillment.headline.he}${constraintNote.he}${metaNote.he}`, `Demand is ${demandWord.en}${storesToo.en}, but the initiative is not unfolding as planned: ${first?.en ?? fulfillment.headline.en}${constraintNote.en}${metaNote.en}`);
-=======
-    // With a linked campaign the honest "unknown" names the exposure bar
-    // (Case E) instead of a bare "not enough sales".
-    headline = funnel && funnel.purchaseDemand === "insufficient_exposure" ? funnel.headline : L("אין עדיין מספיק מכירות מדודות כדי לאבחן את היוזמה.", "Not enough measured sales yet to diagnose the initiative.");
->>>>>>> 9ecd84c8c07b691719231bde1c8403c570181a35
   } else if (demandOk && paid.state === "weak") {
     scope = "channel";
     const metaWhy = /spend exceeds/.test(paid.evidence.en) ? L("מוציא יותר מההכנסה המיוחסת לו", "spends more than the revenue attributed to it") : L(`נחלש מול ${beforeLabel.he}`, `weakened vs ${beforeLabel.en}`);
@@ -506,9 +494,5 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
     headline = L(`הביקוש ${demandWord.he} ולא נמצא אילוץ מהותי.`, `Demand is ${demandWord.en} and no material constraint was found.`);
   }
 
-<<<<<<< HEAD
-  return { demand, conversion, paid, creators, offline, inventory, replenishment, margin, marginRate, offer, time, intent, fulfillment, constraint, headline, scope, unknowns };
-=======
-  return { demand, conversion, paid, creators, offline, inventory, replenishment, margin, marginRate, offer, time, constraint, funnel, headline, scope, unknowns };
->>>>>>> 9ecd84c8c07b691719231bde1c8403c570181a35
+  return { demand, conversion, paid, creators, offline, inventory, replenishment, margin, marginRate, offer, time, intent, fulfillment, constraint, funnel, headline, scope, unknowns };
 }

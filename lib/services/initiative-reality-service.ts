@@ -24,8 +24,10 @@ import {
   type InitiativeReality,
   type InitiativeRealitySummary,
   type MappingCandidates,
-  type ProductEvidence
+  type ProductEvidence,
+  type RejectedEntityLink
 } from "@/lib/domain/initiative-reality";
+import { recordRelationships, relationshipsFromMappings } from "@/lib/services/entity-graph-service";
 import { buildPlanView, readPlanOverrides } from "@/lib/services/plan-service";
 import { classifySalesChannel } from "@/lib/domain/sales-channel";
 import { diagnose, type AlternativeProduct, type ChannelEvidence, type CreatorEvidence, type DiagnosisInput, type FeasibilityFacts, type LocationStock, type PaidEvidence, type BusinessDiagnosis } from "@/lib/domain/business-diagnosis";
@@ -41,6 +43,7 @@ const dayStart = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 
 export interface RealityInputs {
+  sheetId?: string;
   candidates: MappingCandidates;
   confirmed: ConfirmedEntityLink[];
   freshness: InitiativeFreshness;
@@ -48,6 +51,8 @@ export interface RealityInputs {
   facts: PlanOverrides["feasibilityFacts"];
   // What each initiative was meant to achieve (manager-stated).
   intents: InitiativeIntent[];
+  // Entities the manager rejected per initiative — never proposed again.
+  rejected: RejectedEntityLink[];
 }
 
 // Everything that is the same for every initiative of a sheet: the
@@ -56,7 +61,7 @@ export interface RealityInputs {
 export async function loadRealityInputs(storeId: string, sheetId: string, now: Date, store: InitiativeEvidence["store"] = null): Promise<RealityInputs> {
   const db = getDb() as any;
   const since60 = new Date(now.getTime() - 60 * DAY_MS);
-  const [products, usedCodes, affiliateCodes, campaignDaily, creativeRows, links, overrides, shopify, meta, sheet, usageRows] = await Promise.all([
+  const [products, usedCodes, affiliateCodes, campaignDaily, creativeRows, links, overrides, shopify, meta, sheet, usageRows, landingRows] = await Promise.all([
     db.product.findMany({ where: { storeId }, select: { id: true, title: true, handle: true } }) as Promise<Array<{ id: string; title: string; handle: string | null }>>,
     db.discountUsage.findMany({ where: { storeId }, distinct: ["code"], select: { code: true } }).catch(() => []) as Promise<Array<{ code: string }>>,
     (db.affiliateCoupon ? db.affiliateCoupon.findMany({ where: { storeId }, select: { code: true } }) : Promise.resolve([])).catch(() => []) as Promise<Array<{ code: string | null }>>,
@@ -82,20 +87,42 @@ export async function loadRealityInputs(storeId: string, sheetId: string, now: D
     // Codes used on orders in the last 120 days, with dates — coupon candidates
     // for initiatives whose plan names no code.
     db.discountUsage
-      .findMany({ where: { storeId, order: { createdAt: { gte: new Date(now.getTime() - 120 * DAY_MS) }, cancelledAt: null, test: false } }, select: { code: true, orderId: true, order: { select: { createdAt: true } } } })
-      .catch(() => []) as Promise<Array<{ code: string; orderId: string; order: { createdAt: Date } }>>
+      .findMany({ where: { storeId, order: { createdAt: { gte: new Date(now.getTime() - 120 * DAY_MS) }, cancelledAt: null, test: false } }, select: { code: true, orderId: true, order: { select: { createdAt: true, lineItems: { select: { productId: true } } } } }, take: 20000 })
+      .catch(() => []) as Promise<Array<{ code: string; orderId: string; order: { createdAt: Date; lineItems: Array<{ productId: string | null }> } }>>,
+    // Orders by landing path (60 days) — aggregate traffic evidence for the
+    // product resolver when a campaign lands on a collection page.
+    db.order
+      .findMany({ where: { storeId, createdAt: { gte: since60 }, cancelledAt: null, test: false, landingSiteRef: { not: null } }, select: { createdAt: true, landingSiteRef: true, lineItems: { select: { productId: true } } }, take: 6000, orderBy: { createdAt: "desc" } })
+      .catch(() => []) as Promise<Array<{ createdAt: Date; landingSiteRef: string | null; lineItems: Array<{ productId: string | null }> }>>
   ]);
-  const usageByCode = new Map<string, { orders: Set<string>; first: string; last: string }>();
+  const usageByCode = new Map<string, { orders: Set<string>; first: string; last: string; productOrders: Map<string, Set<string>> }>();
   for (const u of usageRows) {
     const code = u.code.trim().toUpperCase();
     if (!code) continue;
     const d = u.order.createdAt.toISOString().slice(0, 10);
-    const cur = usageByCode.get(code) ?? { orders: new Set<string>(), first: d, last: d };
+    const cur = usageByCode.get(code) ?? { orders: new Set<string>(), first: d, last: d, productOrders: new Map<string, Set<string>>() };
     cur.orders.add(u.orderId);
     if (d < cur.first) cur.first = d;
     if (d > cur.last) cur.last = d;
+    for (const li of u.order.lineItems) {
+      if (!li.productId) continue;
+      const set = cur.productOrders.get(li.productId) ?? new Set<string>();
+      set.add(u.orderId);
+      cur.productOrders.set(li.productId, set);
+    }
     usageByCode.set(code, cur);
   }
+  const landingOrders = landingRows
+    .map((o) => {
+      let path = o.landingSiteRef ?? "";
+      try {
+        path = new URL(path).pathname;
+      } catch {
+        path = path.split("?")[0];
+      }
+      return { path, date: o.createdAt.toISOString().slice(0, 10), productIds: o.lineItems.map((l) => l.productId).filter((x): x is string => !!x) };
+    })
+    .filter((o) => o.path && o.path !== "/" && o.productIds.length);
   const linkedByCampaign = new Map<string, string[]>();
   for (const l of links) linkedByCampaign.set(l.campaignId, [...(linkedByCampaign.get(l.campaignId) ?? []), l.productId]);
   // Fold the daily rows into one candidate per campaign (latest name wins;
@@ -114,13 +141,16 @@ export async function loadRealityInputs(storeId: string, sheetId: string, now: D
     if (t && cur.text.length < 40) cur.text.push(t);
   }
   return {
+    sheetId,
     candidates: {
       products,
       knownDiscountCodes: [...usedCodes.map((c) => c.code), ...affiliateCodes.map((c) => c.code ?? "")].filter(Boolean),
       metaCampaigns: [...byCampaign.values()].map((c) => ({ id: c.id, name: c.name, linkedProductIds: linkedByCampaign.get(c.id) ?? [], signals: { daily: c.daily, destinationUrls: [...c.urls].slice(0, 20), creativeText: c.text.join(" \n ").slice(0, 8000) } })),
-      discountUsage: [...usageByCode.entries()].map(([code, u]) => ({ code, orders: u.orders.size, firstUsed: u.first, lastUsed: u.last }))
+      discountUsage: [...usageByCode.entries()].map(([code, u]) => ({ code, orders: u.orders.size, firstUsed: u.first, lastUsed: u.last, productOrders: [...u.productOrders.entries()].map(([productId, set]) => ({ productId, orders: set.size })) })),
+      landingOrders
     },
     confirmed: overrides.entityLinks,
+    rejected: overrides.rejectedLinks,
     facts: overrides.feasibilityFacts.filter((f) => f.validUntil >= now.toISOString()),
     intents: overrides.intents,
     freshness: {
@@ -513,7 +543,10 @@ export interface InitiativeBrief {
 const goalOf = (intent: InitiativeIntent | null) => (intent?.goal ? { kind: intent.goal.kind, value: intent.goal.value } : null);
 
 export async function buildInitiativeBrief(storeId: string, initiative: Initiative, inputs: RealityInputs, now: Date, hookQuestion: { he: string; en: string } | null = null): Promise<InitiativeBrief> {
-  const mappings = resolveMappings(initiative, inputs.candidates, inputs.confirmed);
+  const mappings = resolveMappings(initiative, inputs.candidates, inputs.confirmed, inputs.rejected);
+  // Continuous resolution leaves a record: first seen / last validated per
+  // relationship. Best effort; never blocks the brief.
+  void recordRelationships(inputs.sheetId ?? "", initiative.id, relationshipsFromMappings(initiative, mappings, now), now);
   const intent = inputs.intents.find((i) => i.initiativeId === initiative.id) ?? null;
   const evidence = await gatherInitiativeEvidence(storeId, initiative, mappings, inputs, now);
   const reality = evaluateInitiativeReality(initiative, mappings, evidence, now, goalOf(intent));
@@ -528,7 +561,7 @@ export async function buildInitiativeBrief(storeId: string, initiative: Initiati
 }
 
 export async function buildInitiativeReality(storeId: string, initiative: Initiative, inputs: RealityInputs, now: Date): Promise<InitiativeReality> {
-  const mappings = resolveMappings(initiative, inputs.candidates, inputs.confirmed);
+  const mappings = resolveMappings(initiative, inputs.candidates, inputs.confirmed, inputs.rejected);
   const evidence = await gatherInitiativeEvidence(storeId, initiative, mappings, inputs, now);
   return evaluateInitiativeReality(initiative, mappings, evidence, now, goalOf(inputs.intents.find((i) => i.initiativeId === initiative.id) ?? null));
 }

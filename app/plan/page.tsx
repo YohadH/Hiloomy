@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 const STATUS: Record<InitiativeReality["status"], { he: string; en: string; cls: string }> = {
-  needs_context: { he: "דורש השלמה", en: "Needs context", cls: "bg-warning/15 text-warning" },
+  needs_context: { he: "נבדק · ממתין לנתונים", en: "Checked · awaiting data", cls: "bg-muted text-muted-foreground" },
   needs_attention: { he: "דורש תשומת לב", en: "Needs attention", cls: "bg-warning/15 text-warning" },
   insufficient_data: { he: "אין מספיק מידע", en: "Insufficient data", cls: "bg-muted text-muted-foreground" },
   off_track: { he: "מחוץ למסלול", en: "Off track", cls: "bg-danger/10 text-danger" },
@@ -66,7 +66,7 @@ export default async function PlanMonthPage({ searchParams }: { searchParams: Pr
             {fmt(i.start)} – {fmt(i.end)}
             {i.offer.couponCode ? ` · ${i.offer.couponCode}` : ""}
           </span>
-          {r && r.status === "needs_context" ? <span className="block text-xs text-muted-foreground">{t("חסר", "Missing")}: {r.context.missingCritical.map((k) => MAPPING_KIND_LABEL[k][locale]).join(", ")}</span> : null}
+          {r && r.status === "needs_context" ? <span className="block text-xs text-muted-foreground">{r.context.question ? t("שאלה אחת ממתינה", "One question waiting") : (r.context.launch.insight?.[locale] ?? `${t("נבדק — טרם זוהו", "checked — not detected yet")}: ${r.context.missingCritical.map((k) => MAPPING_KIND_LABEL[k][locale]).join(", ")}`)}</span> : null}
           {r && r.status === "needs_attention" ? <span className="block text-xs text-warning">{r.statusReason[locale]}</span> : null}
         </span>
         {st ? <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", st.cls)}>{isHe ? st.he : st.en}</span> : null}

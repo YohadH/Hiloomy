@@ -98,7 +98,9 @@ test("1. missing product mapping → needs_context (not no_issue_detected), with
   const m = resolveMappings(satin(), catalogue, confirmedCampaign);
   const r = evaluateInitiativeReality(satin(), m, evidenceFor(m), NOW);
   assert.equal(r.status, "needs_context");
-  assert.match(r.statusReason.en, /cannot evaluate sales, inventory or profitability until these are connected: products, gift product, coupon/);
+  assert.match(r.statusReason.en, /^Hiloomy checked the initiative/);
+  assert.match(r.statusReason.en, /sales, inventory or profitability cannot be evaluated yet/);
+  assert.equal(r.context.question, null); // nothing ties → no question, no form
   assert.deepEqual(r.context.missingCritical, ["product", "gift_product", "discount"]);
   assert.equal(r.context.required, 3);
   assert.ok(r.context.known.some((k) => /Meta campaign: Satin August 2026/.test(k.en)));
@@ -179,16 +181,19 @@ test("6b. 'not a Shopify product' resolves the gift requirement without inventin
   assert.notEqual(r.status, "needs_context");
 });
 
-test("coupon candidates come from codes used inside the initiative window, most used first, name tokens named", () => {
+test("coupon resolver: codes used inside the window are scored — a name token alone is a low suggestion, an unrelated code stays low, nothing is auto-confirmed without product overlap", () => {
   const m = resolveMappings(satin(), catalogue, []);
   const coupons = m.links.filter((l) => l.kind === "discount");
-  assert.deepEqual(coupons.map((l) => [l.id, l.state, l.provenance.rule]), [
-    ["SATIN20", "suggested", "coupon_name_token"],
-    ["SEPTEMBER15", "suggested", "coupon_window_usage"]
+  assert.deepEqual(coupons.map((l) => [l.id, l.state]), [
+    ["SATIN20", "suggested"],
+    ["SEPTEMBER15", "suggested"]
   ]);
-  assert.match(coupons[0].reason.en, /contains "satin" and was used on 42 orders/);
+  assert.match(coupons[0].reason.en, /^15% · the code contains "satin" · 42 orders in the window/);
+  assert.equal(coupons[0].provenance.rule, "coupon_name_token");
+  assert.match(coupons[1].reason.en, /no proven link to the initiative/);
   assert.equal(m.byKind.discount.state, "suggested");
   assert.ok(!usableLinks(m).some((l) => l.kind === "discount")); // never auto-confirmed
+  assert.match(m.checked.discount!.en, /codes used in the window — none tied to the initiative's products or name/);
 });
 
 test("8. no candidates found → the row says search; the operator's manual pick is stored like any confirmation", () => {

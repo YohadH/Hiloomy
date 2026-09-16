@@ -118,9 +118,12 @@ test("3. needs_context → blocked, no recommendation: what is missing and the r
   assert.equal(rec.verdict, "blocked");
   assert.equal(rec.recommendedOption, null);
   assert.equal(rec.decision.he, "אי אפשר עדיין להעריך אם להמשיך, לשנות או לעצור.");
-  assert.equal(rec.evidence.he, "חסרים: מוצרים, מוצר מתנה, קופון.");
-  assert.deepEqual(rec.blocked, { missing: ["product", "gift_product", "discount"], required: 3, cta: { he: "השלם 3 חיבורים", en: "Complete 3 connections" } });
+  assert.match(rec.evidence.en, /^Hiloomy checked|activity detected|live for/); // what was checked, never "missing: …"
+  assert.deepEqual(rec.blocked!.missing, ["product", "gift_product", "discount"]);
+  assert.equal(rec.blocked!.required, 0); // nothing ties → no question to answer
+  assert.equal(rec.blocked!.cta.en, "See what Hiloomy checked");
   assert.doesNotMatch(rec.decision.he, /מפה|למפות/); // never "map the products" under "recommends"
+  assert.doesNotMatch(rec.blocked!.cta.en, /Complete \d+ connection/);
 });
 
 test("4. conditional hook keeps discount language but its pace clause carries the scope", () => {
@@ -148,5 +151,5 @@ test("5. every evidence sentence carries its scope; provisional mappings are nam
   const why = reviewWhyNow(stop, "2026-09-01", "review");
   assert.match(why.he, /^בדיקה שהתוכנית קבעה ל-2026-09-01 · יום 14 מתוך 30 · מכירות 1 המוצרים המקושרים/);
   const blocked = reviewWhyNow(summary([]), "2026-09-01", "review");
-  assert.match(blocked.he, /חסרים \d חיבורים$/);
+  assert.match(blocked.he, /נבדק — טרם זוהו: /);
 });

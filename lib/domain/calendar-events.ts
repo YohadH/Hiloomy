@@ -152,9 +152,9 @@ export interface LinkSuggestion {
 // phrases that usually mean it (medium). Generic holiday words (low) only
 // point at the nearest event. Every match ALSO requires date proximity.
 const ALIASES: Record<HolidayKey, { strong: string[]; weak: string[] }> = {
-  rosh_hashanah: { strong: ["ראש השנה", "ראש-השנה", "rosh hashanah", "rosh hashana", "rosh hashona"], weak: ["שנה טובה", "חגי תשרי", "תשרי", "shana tova", "tishrei"] },
+  rosh_hashanah: { strong: ["ראש השנה", "ראש-השנה", "ראש שנה", "rosh hashanah", "rosh hashana", "rosh hashona", "rosh hasana", "rosh hasna", "rosh hashanna", "rosh ha shana", "rosh hashanah"], weak: ["שנה טובה", "חגי תשרי", "תשרי", "shana tova", "tishrei"] },
   yom_kippur: { strong: ["יום כיפור", "יום הכיפורים", "yom kippur"], weak: [] },
-  sukkot: { strong: ["סוכות", "sukkot", "succot", "sukkos"], weak: ["חול המועד", "chol hamoed"] },
+  sukkot: { strong: ["סוכות", "sukkot", "succot", "sukkos", "sukot", "succos", "sukkoth"], weak: ["חול המועד", "chol hamoed"] },
   shemini_atzeret: { strong: ["שמחת תורה", "שמיני עצרת", "simchat torah", "shemini atzeret"], weak: [] },
   hanukkah: { strong: ["חנוכה", "hanukkah", "chanukah", "hanukah", "hannukah"], weak: ["סופגניות", "נרות", "candles"] },
   purim: { strong: ["פורים", "purim"], weak: ["תחפושות", "משלוח מנות", "costume"] },
@@ -186,6 +186,34 @@ export function isNearEvent(window: { start: string; end: string }, e: Pick<Cale
 }
 
 const RANK: Record<LinkConfidence, number> = { high: 3, medium: 2, low: 1 };
+
+// Which calendar events a free text names — by their own name (strong) or a
+// phrase that usually means them (weak). Date proximity is NOT applied here:
+// this is the semantic reading of a campaign name, used by the Campaign
+// Resolver to accept "Sukkot Sale 2026" for a Sukkot initiative and to
+// REJECT "rosh Hasana 2026 - 15% off" for it, whatever the dates say.
+export interface EventMention {
+  key: HolidayKey;
+  name: Localized;
+  alias: string;
+  strength: "strong" | "weak";
+}
+export function eventMentions(text: string, keys: readonly HolidayKey[] = Object.keys(ALIASES) as HolidayKey[]): EventMention[] {
+  const t = normalizeLabel(text);
+  if (!t) return [];
+  const out: EventMention[] = [];
+  for (const key of keys) {
+    const a = ALIASES[key];
+    const strong = a.strong.find((s) => t.includes(normalizeLabel(s)));
+    if (strong) {
+      out.push({ key, name: HOLIDAY_NAME[key], alias: strong, strength: "strong" });
+      continue;
+    }
+    const weak = a.weak.find((s) => t.includes(normalizeLabel(s)));
+    if (weak) out.push({ key, name: HOLIDAY_NAME[key], alias: weak, strength: "weak" });
+  }
+  return out;
+}
 
 export function suggestEventLink(label: string, window: { start: string; end: string }, events: CalendarEvent[]): LinkSuggestion | null {
   const text = normalizeLabel(label);

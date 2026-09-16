@@ -128,12 +128,16 @@ export function composeReviewRecommendation(r: InitiativeRealitySummary | null, 
     };
   }
   if (r.status === "needs_context") {
+    // Hiloomy checked first. The evidence line is what it found (or did not);
+    // the CTA answers the ONE question when there is one, else shows what
+    // was checked — never "complete N connections".
     const missing = r.context.missingCritical;
+    const q = r.context.question;
     return {
       verdict: "blocked",
       decision: L("אי אפשר עדיין להעריך אם להמשיך, לשנות או לעצור.", "It is not yet possible to evaluate whether to continue, change or stop."),
-      evidence: L(`חסרים: ${kinds(missing, "he")}.`, `Missing: ${kinds(missing, "en")}.`),
-      blocked: { missing, required: r.context.required, cta: L(`השלם ${r.context.required} חיבורים`, `Complete ${r.context.required} connection${r.context.required === 1 ? "" : "s"}`) },
+      evidence: r.context.launch?.insight ?? L(`Hiloomy בדקה — לא זוהו עדיין: ${kinds(missing, "he")}.`, `Hiloomy checked — not detected yet: ${kinds(missing, "en")}.`),
+      blocked: { missing, required: q ? 1 : 0, cta: q ? L("תשובה אחת תשפר את ההערכה", "One answer would improve this evaluation") : L("לראות מה Hiloomy בדקה", "See what Hiloomy checked") },
       recommendedOption: null
     };
   }
@@ -188,6 +192,6 @@ export function reviewWhyNow(r: InitiativeRealitySummary | null, windowStart: st
   const head = kind === "review" ? L(`בדיקה שהתוכנית קבעה ל-${windowStart}`, `Review scheduled by the plan for ${windowStart}`) : L(`הפעלה שהתוכנית קבעה ל-${windowStart}`, `Activation scheduled by the plan for ${windowStart}`);
   if (!r) return head;
   const day = r.period.start <= r.period.today && r.period.end >= r.period.today ? L(`יום ${r.period.dayIndex} מתוך ${r.period.totalDays}`, `day ${r.period.dayIndex} of ${r.period.totalDays}`) : null;
-  const tail = r.status === "needs_context" ? L(`חסרים ${r.context.required} חיבורים`, `${r.context.required} connection${r.context.required === 1 ? "" : "s"} missing`) : (scopedSalesSentence(r) ?? null);
+  const tail = r.status === "needs_context" ? L(`נבדק — טרם זוהו: ${kinds(r.context.missingCritical, "he")}`, `checked — not detected yet: ${kinds(r.context.missingCritical, "en")}`) : (scopedSalesSentence(r) ?? null);
   return join([head, day, tail]);
 }

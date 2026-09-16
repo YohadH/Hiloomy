@@ -158,6 +158,10 @@ export interface PlanOverrides {
   // product, discount code, Meta campaign). Suggested links are computed on
   // read (lib/domain/initiative-reality.ts) and never stored as confirmed.
   entityLinks: Array<{ initiativeId: string; kind: "product" | "gift_product" | "discount" | "meta_campaign"; id: string; label: string; via?: string | null }>;
+  // Manager rejections: "this campaign / product / code is NOT part of the
+  // initiative". The resolver never proposes a rejected entity again; the
+  // rejection is shown with its reason like any other relationship.
+  rejectedLinks: Array<{ initiativeId: string; kind: "product" | "gift_product" | "discount" | "meta_campaign"; id: string; label: string; rejectedAt: string }>;
   // Operator answers to feasibility questions Hiloomy asked ("can X be
   // replenished within 8 days?"). Facts, not mappings; each has a validity.
   feasibilityFacts: Array<{ initiativeId: string; productId: string | null; key: "replenishment_days" | "replenishment_possible" | "gift_optional" | "alternative_gift"; value: string; answeredAt: string; validUntil: string }>;

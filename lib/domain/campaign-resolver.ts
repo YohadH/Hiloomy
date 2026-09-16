@@ -21,6 +21,7 @@
 // named — not tuned, not learned.
 
 import type { Localized } from "@/lib/domain/decision";
+import { eventMentions, type HolidayKey } from "@/lib/domain/calendar-events";
 
 const L = (he: string, en: string): Localized => ({ he, en });
 const ils = (n: number) => `₪${Math.round(n).toLocaleString("en-US")}`;
@@ -56,6 +57,13 @@ export interface ResolverInitiative {
   couponCode: string | null;
   // The initiative's mapped products (usable links): ids, titles, handles.
   products: Array<{ id: string; title: string; handle?: string | null }>;
+  // The canonical calendar event this initiative is about (Sukkot), when
+  // known. A campaign that names a DIFFERENT event is rejected outright —
+  // "rosh Hasana 2026 - 15% off" is never a Sukkot candidate, whatever the
+  // dates say. Detected from the anchor / title when not given.
+  event?: { key: HolidayKey; name: Localized } | null;
+  // Campaign ids the manager rejected for this initiative.
+  rejectedIds?: string[];
 }
 
 export type ResolverConfidence = "high" | "medium" | "low";
@@ -72,13 +80,27 @@ export interface CampaignCandidate {
   firstDay: string | null;
   lastDay: string | null;
   contentSignals: number; // how many content signals fired
+  // The campaign names the initiative's own calendar event — several such
+  // campaigns can all belong to one holiday initiative.
+  eventMatch: boolean;
+}
+
+export interface RejectedCampaign {
+  id: string;
+  name: string;
+  reason: Localized; // "its name indicates Rosh Hashanah"
+  by: "event_conflict" | "manager";
 }
 
 export interface CampaignResolution {
   likely: CampaignCandidate | null;
   alternatives: CampaignCandidate[]; // ranked, excluding `likely`
+  // Candidates excluded WITH a reason — absence is information.
+  rejected: RejectedCampaign[];
   considered: number; // campaigns that had any content signal
   total: number; // campaigns seen
+  // The initiative's event, when the resolver reasoned about one.
+  event: { key: HolidayKey; name: Localized } | null;
 }
 
 // ── V0 weights (named, not tuned) ────────────────────────────────────
@@ -86,6 +108,7 @@ export const W_PRODUCT_LINK = 0.35; // a real campaign–product link to a mappe
 export const W_NAME_ANCHOR = 0.3; // the initiative's anchor label appears in the campaign name
 export const W_NAME_TOKEN = 0.2; // a specific token of the initiative name appears in the campaign name
 export const W_NAME_TOKEN_EXTRA = 0.05; // a second token
+export const W_EVENT_MATCH = 0.3; // the campaign names the initiative's own calendar event
 export const W_DESTINATION = 0.25; // the ad's destination page names a mapped product or the initiative
 export const W_COUPON = 0.2; // the initiative's coupon appears in the creative text
 export const W_CREATIVE_TEXT = 0.1; // the creative text names the initiative / a mapped product
@@ -158,14 +181,53 @@ export function resolveCampaigns(initiative: ResolverInitiative, campaigns: Reso
   const productTokens = [...new Set(initiative.products.flatMap((p) => tokensOf(p.title)))];
   const handles = initiative.products.map((p) => (p.handle ?? "").toLowerCase()).filter((h) => h.length >= 3);
   const coupon = initiative.couponCode ? normalize(initiative.couponCode) : null;
+  // Event semantics: the initiative's own event (given, or read from its
+  // anchor / title), and the events each campaign name mentions.
+  const ownEvent = initiative.event ?? (() => {
+    const m = eventMentions(`${initiative.anchorLabel} ${initiative.title}`).find((x) => x.strength === "strong");
+    return m ? { key: m.key, name: m.name } : null;
+  })();
+  const rejectedIds = new Set(initiative.rejectedIds ?? []);
+  const rejected: RejectedCampaign[] = [];
 
   type Scored = CampaignCandidate & { spendShareBase: number };
   const scored: Scored[] = [];
   for (const c of campaigns) {
+    if (rejectedIds.has(c.id)) {
+      rejected.push({ id: c.id, name: c.name, reason: L("נדחה על ידי המנהל", "rejected by the manager"), by: "manager" });
+      continue;
+    }
     const reasons: Localized[] = [];
     let s = 0;
     let content = 0;
     const name = normalize(c.name);
+    // A campaign that names ANOTHER calendar event is not this initiative's
+    // campaign, however close the dates. Rejected, with the reason.
+    const mentions = eventMentions(`${c.name} ${c.signals?.creativeText?.slice(0, 400) ?? ""}`);
+    const strongMentions = mentions.filter((m) => m.strength === "strong");
+    const nameMentions = eventMentions(c.name).filter((m) => m.strength === "strong");
+    let eventMatch = false;
+    if (ownEvent) {
+      const other = strongMentions.find((m) => m.key !== ownEvent.key);
+      const own = strongMentions.find((m) => m.key === ownEvent.key);
+      if (other && !own) {
+        rejected.push({
+          id: c.id,
+          name: c.name,
+          reason: nameMentions.some((m) => m.key === other.key)
+            ? L(`נדחה כמועמד ל${ownEvent.name.he}: השם ("${other.alias}") מצביע על ${other.name.he}`, `rejected as a ${ownEvent.name.en} candidate because its name ("${other.alias}") indicates ${other.name.en}`)
+            : L(`נדחה כמועמד ל${ownEvent.name.he}: טקסט המודעות ("${other.alias}") מצביע על ${other.name.he}`, `rejected as a ${ownEvent.name.en} candidate because its ad copy ("${other.alias}") indicates ${other.name.en}`),
+          by: "event_conflict"
+        });
+        continue;
+      }
+      if (own) {
+        s += W_EVENT_MATCH;
+        content += 1;
+        eventMatch = true;
+        reasons.push(L(`שם הקמפיין מציין ${ownEvent.name.he} ("${own.alias}")`, `the campaign name names ${ownEvent.name.en} ("${own.alias}")`));
+      }
+    }
 
     // ── Content signals ─────────────────────────────────────────────
     const viaLink = c.linkedProductIds.find((id) => mapped.has(id));
@@ -256,7 +318,7 @@ export function resolveCampaigns(initiative: ResolverInitiative, campaigns: Reso
         }
       }
     }
-    scored.push({ id: c.id, name: c.name, score: s, confidence: "low", reasons, spendInWindow, clicksInWindow, firstDay, lastDay, contentSignals: content, spendShareBase: spendInWindow });
+    scored.push({ id: c.id, name: c.name, score: s, confidence: "low", reasons, spendInWindow, clicksInWindow, firstDay, lastDay, contentSignals: content, eventMatch, spendShareBase: spendInWindow });
   }
 
   // Spend share is relative to the largest listed candidate — ₪19,950 vs ₪731
@@ -278,7 +340,7 @@ export function resolveCampaigns(initiative: ResolverInitiative, campaigns: Reso
   const second = ranked[1] ?? null;
   const clear = !!top && top.score >= MEDIUM && (top.score >= HIGH || !second || top.score - second.score >= CLEAR_MARGIN);
   const likely = clear ? top : null;
-  return { likely, alternatives: (likely ? ranked.slice(1) : ranked).slice(0, 3), considered: ranked.length, total: campaigns.length };
+  return { likely, alternatives: (likely ? ranked.slice(1) : ranked).slice(0, 3), rejected, considered: ranked.length, total: campaigns.length, event: ownEvent };
 }
 
 export const pct = (score: number) => `${Math.round(score * 100)}%`;

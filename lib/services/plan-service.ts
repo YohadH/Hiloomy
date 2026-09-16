@@ -198,7 +198,7 @@ export function executionKey(r: { task: string; category: string | null; s: stri
   return `${norm(r.task)}|${norm(r.category)}|${r.s}`;
 }
 
-const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [], entityLinks: [], feasibilityFacts: [], intents: [] };
+const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [], entityLinks: [], feasibilityFacts: [], intents: [], rejectedLinks: [] };
 const FACT_KEYS = new Set(["replenishment_days", "replenishment_possible", "gift_optional", "alternative_gift"]);
 const ENTITY_KINDS = new Set(["product", "gift_product", "discount", "meta_campaign"]);
 
@@ -215,7 +215,8 @@ export async function readPlanOverrides(sheetId: string): Promise<PlanOverrides>
       calendarLinks: Array.isArray(parsed.calendarLinks) ? parsed.calendarLinks.filter((l) => l && typeof l.initiativeId === "string" && typeof l.eventId === "string") : [],
       entityLinks: Array.isArray(parsed.entityLinks) ? parsed.entityLinks.filter((l) => l && typeof l.initiativeId === "string" && ENTITY_KINDS.has(l.kind) && typeof l.id === "string" && typeof l.label === "string") : [],
       feasibilityFacts: Array.isArray(parsed.feasibilityFacts) ? parsed.feasibilityFacts.filter((f) => f && typeof f.initiativeId === "string" && FACT_KEYS.has(f.key) && typeof f.value === "string") : [],
-      intents: Array.isArray(parsed.intents) ? parsed.intents.map((i) => normalizeIntent(i)).filter((i): i is InitiativeIntent => i !== null) : []
+      intents: Array.isArray(parsed.intents) ? parsed.intents.map((i) => normalizeIntent(i)).filter((i): i is InitiativeIntent => i !== null) : [],
+      rejectedLinks: Array.isArray(parsed.rejectedLinks) ? parsed.rejectedLinks.filter((l) => l && typeof l.initiativeId === "string" && ENTITY_KINDS.has(l.kind) && typeof l.id === "string" && typeof l.label === "string") : []
     };
   } catch {
     return EMPTY_OVERRIDES;
@@ -239,11 +240,15 @@ export type PlanOverrideOp =
   // any earlier intent for the initiative; validated by normalizeIntent.
   | { op: "set_intent"; initiativeId: string; intent: Omit<InitiativeIntent, "initiativeId" | "setAt"> }
   | { op: "clear_intent"; initiativeId: string }
+  // "This entity is NOT part of the initiative" — stored so the resolver
+  // never proposes it again; unreject removes the mark.
+  | { op: "reject_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string; label: string }
+  | { op: "unreject_entity"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"]; id: string }
   | { op: "reset" };
 
 export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Promise<PlanOverrides> {
   const cur = await readPlanOverrides(sheetId);
-  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine], calendarLinks: [...cur.calendarLinks], entityLinks: [...cur.entityLinks], feasibilityFacts: [...cur.feasibilityFacts], intents: [...cur.intents] };
+  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine], calendarLinks: [...cur.calendarLinks], entityLinks: [...cur.entityLinks], feasibilityFacts: [...cur.feasibilityFacts], intents: [...cur.intents], rejectedLinks: [...cur.rejectedLinks] };
   switch (op.op) {
     case "set_intent": {
       const intent = normalizeIntent({ ...(op.intent as object), initiativeId: op.initiativeId, setAt: new Date().toISOString() });
@@ -253,6 +258,15 @@ export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Pro
     }
     case "clear_intent":
       next.intents = next.intents.filter((i) => i.initiativeId !== op.initiativeId);
+      break;
+    case "reject_entity":
+      if (!ENTITY_KINDS.has(op.kind) || !op.id) break;
+      next.rejectedLinks = [...next.rejectedLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && l.id === op.id)), { initiativeId: op.initiativeId, kind: op.kind, id: String(op.id).slice(0, 200), label: String(op.label ?? op.id).slice(0, 200), rejectedAt: new Date().toISOString() }];
+      // A rejection also removes any confirmation of the same entity.
+      next.entityLinks = next.entityLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && normalizeEntityId(l.id) === normalizeEntityId(String(op.id))));
+      break;
+    case "unreject_entity":
+      next.rejectedLinks = next.rejectedLinks.filter((l) => !(l.initiativeId === op.initiativeId && l.kind === op.kind && l.id === op.id));
       break;
     case "move":
       next.moves = [...next.moves.filter((m) => m.executionKey !== op.executionKey), { executionKey: op.executionKey, toInitiativeId: op.toInitiativeId }];

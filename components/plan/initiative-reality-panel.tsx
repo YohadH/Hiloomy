@@ -18,7 +18,7 @@ const STATUS: Record<InitiativeRealitySummary["status"], { he: string; en: strin
   off_track: { he: "מחוץ למסלול", en: "Off track", cls: "bg-danger/10 text-danger" },
   no_issue_detected: { he: "לא נמצאה בעיה", en: "No issue detected", cls: "bg-success/15 text-success" },
   needs_attention: { he: "דורש תשומת לב", en: "Needs attention", cls: "bg-warning/15 text-warning" },
-  needs_context: { he: "דורש השלמה", en: "Needs context", cls: "bg-warning/15 text-warning" },
+  needs_context: { he: "נבדק · ממתין לנתונים", en: "Checked · awaiting data", cls: "bg-muted text-muted-foreground" },
   insufficient_data: { he: "אין מספיק מידע", en: "Insufficient data", cls: "bg-muted text-muted-foreground" }
 };
 const QUALITY: Record<InitiativeMetric["quality"], { he: string; en: string }> = {
