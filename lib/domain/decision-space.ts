@@ -36,6 +36,7 @@ export type ActionType =
   | "REDUCE_DISCOUNT"
   | "DEEPEN_DISCOUNT"
   | "ADD_BUNDLE"
+  | "FIX_OFFER"
   | "FIX_CONVERSION"
   | "SHORTEN_INITIATIVE"
   | "STOP";
@@ -233,7 +234,24 @@ export const ACTIONS: ActionDefinition[] = [
     label: L("להעביר את הביקוש למוצר עם מלאי עמוק", "Shift demand to a deeper-stock product"),
     applicableWhen: (d) => d.constraint?.role === "product",
     feasibility: (d) => (verifiedAlt(d) ? { state: "feasible", condition: null, note: L(`מוצרים מאותה משפחה עם מלאי: ${d.constraint!.alternatives.slice(0, 3).map((a) => a.title).join(", ")}`, `Same-family products with stock: ${d.constraint!.alternatives.slice(0, 3).map((a) => a.title).join(", ")}`) } : { state: "infeasible", condition: null, note: NO_TARGET }),
-    concrete: (d) => L(`לא להמשיך להזרים תקציב ל"${giftName(d)}" ש${d.constraint?.alreadyOut ? "כבר אזל" : "עומד להיגמר"}; להעביר את הקמפיין ל"${verifiedAlt(d)?.title ?? "—"}"`, `Stop pushing budget at "${giftName(d)}", which ${d.constraint?.alreadyOut ? "is already out" : "is about to run out"}; move the campaign to "${verifiedAlt(d)?.title ?? "—"}"`),
+    // The sentence names a campaign only when the initiative's campaign is
+    // actually linked. Without it Hiloomy does not know that the campaign is
+    // the demand engine (15 Sep 2026: "move the campaign to bamboo" was said
+    // while Meta was "unknown") — so the shift is about pages and promotion.
+    concrete: (d) => {
+      const out = d.constraint?.alreadyOut ? L("כבר אזל", "is already out") : L("עומד להיגמר", "is about to run out");
+      const alt = verifiedAlt(d)?.title ?? "—";
+      if (d.paid.state === "unknown" || d.paid.state === "not_running") {
+        const why =
+          d.paid.basis === null
+            ? L("הקמפיין לא מקושר, ולכן לא ידוע אם הוא מנוע הביקוש", "the campaign is not linked, so whether it drives the demand is unknown")
+            : d.paid.state === "not_running"
+              ? L("הקמפיין המקושר לא הוציא תקציב בחלון היוזמה", "the linked campaign spent nothing in the initiative window")
+              : L("הקמפיין מקושר אבל Meta לא מדווח ערך רכישה, ולכן לא ידוע אם הוא מנוע הביקוש", "the campaign is linked but Meta reports no purchase value, so whether it drives the demand is unknown");
+        return L(`להפנות את הביקוש מ"${giftName(d)}" ש${out.he} ל"${alt}" בדף הבית, בקולקציה ובקידום; ${why.he}`, `Point demand from "${giftName(d)}", which ${out.en}, to "${alt}" on the homepage, the collection and promotion; ${why.en}`);
+      }
+      return L(`לא להמשיך להזרים תקציב ל"${giftName(d)}" ש${out.he}; להעביר את הקמפיין ל"${alt}"`, `Stop pushing budget at "${giftName(d)}", which ${out.en}; move the campaign to "${alt}"`);
+    },
     target: (d) => verifiedAlt(d)?.id ?? null,
     expectedEffect: L("הביקוש נשמר על מוצר שאפשר לספק", "Demand is kept on a product that can be supplied"),
     risks: L("החלופה מוכרת פחות", "The alternative sells less"),
@@ -274,6 +292,41 @@ export const ACTIONS: ActionDefinition[] = [
     expectedEffect: L("שיפור יעילות בלי תקציב נוסף", "Better efficiency without extra budget"),
     risks: L("לוקח זמן ללמידה", "Takes time to learn"),
     reversibility: "easy"
+  },
+  {
+    type: "FIX_OFFER",
+    family: "offer",
+    answer: "change",
+    label: L("לשנות את האופן שבו ההצעה נמכרת", "Change how the offer is sold"),
+    applicableWhen: (d) => d.intent.state === "diverging" || d.intent.state === "partial",
+    feasibility: () => ({ state: "feasible", condition: null, note: null }),
+    concrete: (d) => {
+      const f = d.fulfillment;
+      const p = f?.purchase ?? null;
+      const label = p?.intendedLabel ?? "";
+      if (p && p.mode === "together" && (p.orderShare ?? 1) < 0.6) {
+        const missing = p.targetsNeverSold.length ? L(` לוודא שכל רכיבי הסט במלאי ובדף (${p.targetsNeverSold.join(", ")} לא נמכרו כלל).`, ` Make sure every part of the set is in stock and on the page (${p.targetsNeverSold.join(", ")} never sold).`) : L("", "");
+        return L(`להמשיך את היוזמה, אבל לפני הגדלת תקציב לשנות את האופן שבו "${label}" נמכר: להפנות את הקידום לדף שבו הסט בנוי מראש כחבילה אחת, לבדוק אם מחיר הסט אטרקטיבי מול סכום החלקים, ולעדכן את מוצר ההירו.${missing.he}`, `Continue the initiative, but before adding budget change how "${label}" is sold: send promotion to a page where the set is pre-built as one bundle, check whether the set price beats the sum of the parts, and update the hero product.${missing.en}`);
+      }
+      if (p && (p.orderShare ?? 1) < 0.6) {
+        const top = p.mix.find((m) => !m.intended && m.initiativeProduct);
+        return L(`להמשיך את היוזמה, אבל לפני הגדלת תקציב ליישר את ההצעה עם מה שנקנה בפועל: ${top ? `"${top.title}" מוביל את הרכישות — ` : ""}לבחור אם "${label}" נשאר ההירו (ואז לתקן דף, מחיר והצגה) או שההצלחה נמדדת מחדש לפי מה שהלקוחות באמת קונים`, `Continue the initiative, but before adding budget align the offer with what is actually bought: ${top ? `"${top.title}" leads purchases — ` : ""}decide whether "${label}" stays the hero (then fix page, price and presentation) or whether success is re-measured by what customers really buy`);
+      }
+      if (f?.channel?.state === "diverges") {
+        return f.channel.intended === "online"
+          ? L("להמשיך את היוזמה, אבל הצמיחה מגיעה מהחנויות: לפני הגדלת תקציב אונליין לבדוק את דף הנחיתה, ההצעה והמחיר באונליין מול מה שעובד בחנות", "Continue the initiative, but the growth comes from stores: before adding online budget, check the online landing page, offer and price against what works in-store")
+          : L("להמשיך את היוזמה, אבל הצמיחה מגיעה מאונליין: לבדוק את הצגת ההצעה בחנויות לפני שמסיקים על הביקוש", "Continue the initiative, but the growth comes from online: check how the offer is presented in stores before concluding on demand");
+      }
+      if (f?.audience?.state === "diverges") {
+        return f.audience.intended === "new"
+          ? L("להמשיך את היוזמה, אבל הקונים הם לקוחות קיימים: לפני הגדלת תקציב לבדוק את הקהלים והמסר — היוזמה כרגע לא מביאה לקוחות חדשים", "Continue the initiative, but the buyers are existing customers: before adding budget, check audiences and message — the initiative is not bringing new customers yet")
+          : L("להמשיך את היוזמה, אבל הקונים הם לקוחות חדשים: לבדוק את הפנייה ללקוחות הקיימים (CRM, ניוזלטר) לפני שמסיקים", "Continue the initiative, but the buyers are new customers: check the outreach to existing customers (CRM, newsletter) before concluding");
+      }
+      return L("להמשיך את היוזמה ולתקן את ההצעה לפני הגדלת תקציב", "Continue the initiative and fix the offer before adding budget");
+    },
+    expectedEffect: L("הביקוש הקיים מומר להצעה שהמותג התכוון למכור", "Existing demand converts into the offer the brand meant to sell"),
+    risks: L("דורש עבודה על דף / חבילה / מחיר; הלקוחות אולי מעדיפים את החלקים", "Requires page / bundle / price work; customers may simply prefer the parts"),
+    reversibility: "moderate"
   },
   {
     type: "FIX_CONVERSION",
@@ -402,6 +455,16 @@ function rank(def: ActionDefinition, feas: Feasibility, d: BusinessDiagnosis): {
   }
   if (d.conversion.state === "weak" && t === "FIX_CONVERSION") add(20, "יש עניין; ההמרה היא הפער", "interest exists; conversion is the gap");
   if (d.conversion.state === "weak" && t === "SCALE") add(-25, "לא קונים עוד תנועה לתוך המרה חלשה", "do not buy more traffic into weak conversion");
+  // Intent vs reality: an offer that does not sell as planned is fixed
+  // before anyone buys more traffic into it or moves a campaign onto it.
+  if (d.intent.state === "diverging") {
+    if (t === "FIX_OFFER") add(30, "יש ביקוש, אבל ההצעה לא נמכרת כמתוכנן — מתקנים את ההצעה לפני תקציב", "demand exists, but the offer does not sell as planned — fix the offer before budget");
+    if (t === "SCALE" || t === "DEEPEN_DISCOUNT") add(-25, "לא מגדילים הצעה שלא נמכרת כמתוכנן", "do not scale an offer that does not sell as planned");
+    if (t === "CONTINUE" || t === "CONTINUE_MONITOR") add(-12, "ללא שינוי ממשיך למכור לא את מה שתוכנן", "unchanged keeps selling something other than what was planned");
+  }
+  if (d.intent.state === "partial" && t === "FIX_OFFER") add(12, "חלק מהרכישות לא תואמות את ההצעה שתוכננה", "part of the purchases do not match the planned offer");
+  // Meta effectiveness unknown: a campaign move or budget shift is a guess.
+  if ((d.paid.state === "unknown" || d.paid.state === "not_running") && (t === "SHIFT_PRODUCT_FOCUS" || t === "SHIFT_BUDGET")) add(-10, "יעילות Meta לא ידועה — שינוי קמפיין הוא ניחוש", "Meta effectiveness unknown — a campaign change is a guess");
   // Feasibility and reversibility.
   if (feas === "infeasible") add(-100, "לא ישים", "infeasible");
   if (feas === "unknown") add(-12, "ישימות לא ידועה", "feasibility unknown");
@@ -491,6 +554,7 @@ export function resolveRecommendation(d: BusinessDiagnosis, space: DecisionOptio
 
   // Why: the diagnosis facts that drove the primary option.
   const why: Localized[] = [d.demand.evidence];
+  if (d.intent.state === "diverging" || d.intent.state === "partial") why.push(d.intent.evidence);
   if (d.offline.state !== "unknown" && d.offline.state !== "none") why.push(d.offline.evidence);
   if (d.constraint) why.push(d.inventory.evidence);
   if (d.replenishment.state !== "not_needed") why.push(d.replenishment.evidence);
@@ -513,6 +577,9 @@ export function resolveRecommendation(d: BusinessDiagnosis, space: DecisionOptio
   wouldChange.push(L("קצב המכירות של המוצרים המקושרים משתנה ביותר מ-10%", "Sales pace of the linked products moves more than 10%"));
   if (d.margin.state === "unknown") wouldChange.push(L("עלות אמיתית למוצרי היוזמה (הרווחיות עלולה להפוך את ההמלצה)", "A real cost on the initiative's products (profitability could flip the recommendation)"));
   if (d.paid.state === "unknown") wouldChange.push(L("קישור הקמפיין (יעילות Meta עשויה לשנות את התמהיל)", "Linking the campaign (Meta efficiency may change the mix)"));
+  if (d.intent.state === "not_set") wouldChange.push(L("הגדרת הכוונה — מה היוזמה נועדה למכול, לאיזה ערוץ ולמי (ההצלחה נמדדת אחרת)", "Stating the intent — what the initiative was meant to sell, where and to whom (success is measured differently)"));
+  if (d.intent.state === "diverging" && d.fulfillment?.purchase) wouldChange.push(L(`הסט/ההצעה עצמם מתחילים להימכר (מעל ${Math.round(0.6 * 100)}% מההזמנות) — אז להמשיך או להגדיל`, `The set/offer itself starts selling (above ${Math.round(0.6 * 100)}% of orders) — then continue or scale`));
+  if (d.intent.state === "insufficient") wouldChange.push(L("עוד הזמנות של היוזמה — כדי לומר אם ההצעה נמכרת כמתוכנן", "More initiative orders — to say whether the offer sells as planned"));
 
   const answer: BusinessAnswer = primary.answer;
   const what = L(`${answer === "continue" ? "להמשיך" : answer === "stop" ? "לעצור" : "לשנות"}: ${primary.what.he}`, `${answer === "continue" ? "Continue" : answer === "stop" ? "Stop" : "Change"}: ${primary.what.en}`);

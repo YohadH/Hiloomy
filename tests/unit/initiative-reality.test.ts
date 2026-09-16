@@ -246,3 +246,33 @@ test("gaps on confirmed mappings: coupon unused, campaign without spend, no sale
   assert.equal(r.status, "needs_attention");
   assert.equal(r.candidateFinding, null);
 });
+
+// ─── Goal from the intent (16 Sep 2026) ───────────────────────────────
+// on_track / off_track exist only once the manager states a target.
+test("a stated revenue goal makes on_track / off_track reachable; without one the status stays 'no issue detected'", () => {
+  const m = resolveMappings(initiative(), candidates(), [
+    { initiativeId: "satin", kind: "product", id: "p_satin", label: "Satin Couture" },
+    { initiativeId: "satin", kind: "gift_product", id: "p_pillow", label: "Travel Pillow" },
+    { initiativeId: "satin", kind: "discount", id: "SATIN15", label: "SATIN15" },
+    { initiativeId: "satin", kind: "meta_campaign", id: "c1", label: "Satin Launch September" }
+  ]);
+  // Healthy evidence: gift stock covers the window, so no risk finding.
+  const ev = evidence(m);
+  ev.products = ev.products.map((p) => (p.role === "gift" ? { ...p, inventory: 400, coverDays: 60 } : p));
+  const none = evaluateInitiativeReality(initiative(), m, ev, NOW);
+  assert.equal(none.status, "no_issue_detected");
+  assert.equal(none.goal.defined, false);
+  // ₪32,480 in 14 of 30 days: a ₪60,000 goal expects ₪28,000 by now → on track.
+  const onTrack = evaluateInitiativeReality(initiative(), m, ev, NOW, { kind: "revenue", value: 60000 });
+  assert.equal(onTrack.goal.defined, true);
+  assert.equal(onTrack.status, "on_track");
+  assert.match(onTrack.goal.note.en, /Goal: ₪60,000 revenue; so far ₪32,480 \(54% of goal, 47% of the window gone\)/);
+  // A ₪120,000 goal expects ₪56,000 by now → off track.
+  const offTrack = evaluateInitiativeReality(initiative(), m, ev, NOW, { kind: "revenue", value: 120000 });
+  assert.equal(offTrack.status, "off_track");
+  assert.match(offTrack.statusReason.en, /^Behind the goal/);
+  // An orders goal is measured by Intent Fulfillment, not here.
+  const orders = evaluateInitiativeReality(initiative(), m, ev, NOW, { kind: "orders", value: 100 });
+  assert.equal(orders.goal.defined, false);
+  assert.match(orders.goal.note.en, /measured under intent/);
+});

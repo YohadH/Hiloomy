@@ -31,6 +31,7 @@ import { classifySalesChannel } from "@/lib/domain/sales-channel";
 import { diagnose, type AlternativeProduct, type ChannelEvidence, type CreatorEvidence, type DiagnosisInput, type FeasibilityFacts, type LocationStock, type PaidEvidence, type BusinessDiagnosis } from "@/lib/domain/business-diagnosis";
 import { buildDecisionSpace, resolveRecommendation, type DecisionOption, type Recommendation } from "@/lib/domain/decision-space";
 import { buildEpisode, type DecisionEpisode } from "@/lib/domain/decision-episode";
+import { evaluateIntentFulfillment, type InitiativeIntent, type IntentFulfillment, type IntentOrder } from "@/lib/domain/intent-fulfillment";
 import type { PlanOverrides } from "@/lib/domain/plan";
 
 const DAY_MS = 86_400_000;
@@ -44,6 +45,8 @@ export interface RealityInputs {
   freshness: InitiativeFreshness;
   store: InitiativeEvidence["store"];
   facts: PlanOverrides["feasibilityFacts"];
+  // What each initiative was meant to achieve (manager-stated).
+  intents: InitiativeIntent[];
 }
 
 // Everything that is the same for every initiative of a sheet: the
@@ -52,13 +55,24 @@ export interface RealityInputs {
 export async function loadRealityInputs(storeId: string, sheetId: string, now: Date, store: InitiativeEvidence["store"] = null): Promise<RealityInputs> {
   const db = getDb() as any;
   const since60 = new Date(now.getTime() - 60 * DAY_MS);
-  const [products, usedCodes, affiliateCodes, campaignRows, links, overrides, shopify, meta, sheet, usageRows] = await Promise.all([
-    db.product.findMany({ where: { storeId }, select: { id: true, title: true } }) as Promise<Array<{ id: string; title: string }>>,
+  const [products, usedCodes, affiliateCodes, campaignDaily, creativeRows, links, overrides, shopify, meta, sheet, usageRows] = await Promise.all([
+    db.product.findMany({ where: { storeId }, select: { id: true, title: true, handle: true } }) as Promise<Array<{ id: string; title: string; handle: string | null }>>,
     db.discountUsage.findMany({ where: { storeId }, distinct: ["code"], select: { code: true } }).catch(() => []) as Promise<Array<{ code: string }>>,
     (db.affiliateCoupon ? db.affiliateCoupon.findMany({ where: { storeId }, select: { code: true } }) : Promise.resolve([])).catch(() => []) as Promise<Array<{ code: string | null }>>,
+    // Campaign-level daily rows (60 days): names + the spend/click signals
+    // the Campaign Resolver scores timing and spend share from.
     db.metaAdsCampaignInsight
-      .findMany({ where: { storeId, level: "campaign", dateStart: { gte: since60 } }, distinct: ["campaignId"], select: { campaignId: true, campaignName: true }, orderBy: { dateStart: "desc" } })
-      .catch(() => []) as Promise<Array<{ campaignId: string; campaignName: string }>>,
+      .findMany({ where: { storeId, level: "campaign", dateStart: { gte: since60 } }, select: { campaignId: true, campaignName: true, dateStart: true, spend: true, clicks: true }, orderBy: { dateStart: "desc" }, take: 20000 })
+      .catch(() => []) as Promise<Array<{ campaignId: string; campaignName: string; dateStart: Date; spend: unknown; clicks: number }>>,
+    // Ad-level creatives (60 days): destination pages + copy per campaign.
+    db.metaAdsCampaignInsight
+      .findMany({
+        where: { storeId, level: "ad", dateStart: { gte: since60 }, OR: [{ creativeObjectUrl: { not: null } }, { creativeTitle: { not: null } }, { creativeBody: { not: null } }] },
+        distinct: ["creativeId"],
+        select: { campaignId: true, creativeObjectUrl: true, creativeTitle: true, creativeBody: true },
+        take: 2000
+      })
+      .catch(() => []) as Promise<Array<{ campaignId: string; creativeObjectUrl: string | null; creativeTitle: string | null; creativeBody: string | null }>>,
     db.campaignProductLink.findMany({ where: { storeId }, select: { campaignId: true, productId: true } }).catch(() => []) as Promise<Array<{ campaignId: string; productId: string }>>,
     readPlanOverrides(sheetId),
     db.shopifyConnection.findFirst({ where: { storeId }, select: { lastSyncAt: true, lastProductsSyncAt: true } }).catch(() => null) as Promise<{ lastSyncAt: Date | null; lastProductsSyncAt: Date | null } | null>,
@@ -83,15 +97,31 @@ export async function loadRealityInputs(storeId: string, sheetId: string, now: D
   }
   const linkedByCampaign = new Map<string, string[]>();
   for (const l of links) linkedByCampaign.set(l.campaignId, [...(linkedByCampaign.get(l.campaignId) ?? []), l.productId]);
+  // Fold the daily rows into one candidate per campaign (latest name wins;
+  // rows arrive newest first) with its resolver signals.
+  const byCampaign = new Map<string, { id: string; name: string; daily: Array<{ date: string; spend: number; clicks: number }>; urls: Set<string>; text: string[] }>();
+  for (const r of campaignDaily) {
+    const cur = byCampaign.get(r.campaignId) ?? { id: r.campaignId, name: r.campaignName, daily: [], urls: new Set<string>(), text: [] };
+    cur.daily.push({ date: r.dateStart.toISOString().slice(0, 10), spend: num(r.spend), clicks: r.clicks ?? 0 });
+    byCampaign.set(r.campaignId, cur);
+  }
+  for (const c of creativeRows) {
+    const cur = byCampaign.get(c.campaignId);
+    if (!cur) continue;
+    if (c.creativeObjectUrl) cur.urls.add(c.creativeObjectUrl);
+    const t = [c.creativeTitle, c.creativeBody].filter(Boolean).join(" ");
+    if (t && cur.text.length < 40) cur.text.push(t);
+  }
   return {
     candidates: {
       products,
       knownDiscountCodes: [...usedCodes.map((c) => c.code), ...affiliateCodes.map((c) => c.code ?? "")].filter(Boolean),
-      metaCampaigns: campaignRows.map((c) => ({ id: c.campaignId, name: c.campaignName, linkedProductIds: linkedByCampaign.get(c.campaignId) ?? [] })),
+      metaCampaigns: [...byCampaign.values()].map((c) => ({ id: c.id, name: c.name, linkedProductIds: linkedByCampaign.get(c.id) ?? [], signals: { daily: c.daily, destinationUrls: [...c.urls].slice(0, 20), creativeText: c.text.join(" \n ").slice(0, 8000) } })),
       discountUsage: [...usageByCode.entries()].map(([code, u]) => ({ code, orders: u.orders.size, firstUsed: u.first, lastUsed: u.last }))
     },
     confirmed: overrides.entityLinks,
     facts: overrides.feasibilityFacts.filter((f) => f.validUntil >= now.toISOString()),
+    intents: overrides.intents,
     freshness: {
       shopify: shopify?.lastSyncAt?.toISOString() ?? null,
       inventory: shopify?.lastProductsSyncAt?.toISOString() ?? shopify?.lastSyncAt?.toISOString() ?? null,
@@ -208,6 +238,65 @@ export async function gatherInitiativeEvidence(storeId: string, initiative: Init
   }
 
   return { products, discount, campaigns, store: inputs.store, freshness: inputs.freshness };
+}
+
+// The initiative's orders, WHOLE: every order in the window that contains a
+// mapped product, with every line (so the purchase mix is visible), where
+// it was taken, and whether the customer's first order falls in the window.
+// Intent Fulfillment reads this; nothing else does.
+export async function gatherIntentOrders(storeId: string, mainProductIds: string[], start: string, endExclusive: string): Promise<IntentOrder[]> {
+  if (!mainProductIds.length) return [];
+  const db = getDb() as any;
+  const startAt = dayStart(start);
+  const rows = (await db.order
+    .findMany({
+      where: { storeId, createdAt: { gte: startAt, lt: dayStart(endExclusive) }, cancelledAt: null, test: false, lineItems: { some: { productId: { in: mainProductIds } } } },
+      select: {
+        id: true,
+        sourceName: true,
+        customer: { select: { firstOrderDate: true, createdAt: true } },
+        lineItems: { select: { productId: true, title: true, quantity: true, refundedQuantity: true, lineSubtotal: true, lineDiscountAmount: true, refundedSubtotal: true } }
+      },
+      take: 5000
+    })
+    .catch(() => [])) as Array<{
+    id: string;
+    sourceName: string | null;
+    customer: { firstOrderDate: Date | null; createdAt: Date } | null;
+    lineItems: Array<{ productId: string | null; title: string; quantity: number; refundedQuantity: number; lineSubtotal: unknown; lineDiscountAmount: unknown; refundedSubtotal: unknown }>;
+  }>;
+  const mapped = new Set(mainProductIds);
+  return rows.map((o) => {
+    const ch = classifySalesChannel(o.sourceName);
+    const first = o.customer ? (o.customer.firstOrderDate ?? o.customer.createdAt) : null;
+    return {
+      orderId: o.id,
+      channel: ch === "pos" ? "offline" : ch,
+      isNewCustomer: first ? first.getTime() >= startAt.getTime() : null,
+      lines: o.lineItems.map((l) => ({
+        productId: l.productId,
+        title: l.title,
+        units: l.quantity - l.refundedQuantity,
+        revenue: num(l.lineSubtotal) - num(l.lineDiscountAmount) - num(l.refundedSubtotal),
+        initiativeProduct: !!l.productId && mapped.has(l.productId)
+      }))
+    };
+  });
+}
+
+// Intent Fulfillment for one initiative: the manager's intent (if any)
+// against the initiative's whole orders in the window to date.
+export async function buildIntentFulfillment(storeId: string, initiative: Initiative, mappings: InitiativeMappings, inputs: RealityInputs, reality: InitiativeReality): Promise<IntentFulfillment> {
+  const intent = inputs.intents.find((i) => i.initiativeId === initiative.id) ?? null;
+  const usable = usableLinks(mappings);
+  const mainIds = usable.filter((l) => l.kind === "product").map((l) => l.id);
+  const titles = new Map(usable.filter((l) => l.kind === "product" || l.kind === "gift_product").map((l) => [l.id, l.label] as const));
+  for (const p of inputs.candidates.products) if (!titles.has(p.id)) titles.set(p.id, p.title);
+  const period = { live: reality.period.start <= reality.period.today && reality.period.end >= reality.period.today, dayIndex: reality.period.dayIndex, elapsedShare: reality.period.elapsedShare };
+  if (!intent) return evaluateIntentFulfillment(null, [], period, titles);
+  const endExclusive = addDays(initiative.end < reality.period.today ? initiative.end : reality.period.today, 1);
+  const orders = await gatherIntentOrders(storeId, mainIds, initiative.start, endExclusive);
+  return evaluateIntentFulfillment(intent, orders, period, titles);
 }
 
 // The layers the diagnosis needs beyond the reality: channel split,
@@ -345,26 +434,33 @@ export interface InitiativeBrief {
   space: DecisionOption[];
   recommendation: Recommendation | null;
   episode: DecisionEpisode | null;
+  // The manager's intent for this initiative and how reality measures
+  // against it. Present whenever the context is complete.
+  intent: InitiativeIntent | null;
+  fulfillment: IntentFulfillment | null;
 }
+
+const goalOf = (intent: InitiativeIntent | null) => (intent?.goal ? { kind: intent.goal.kind, value: intent.goal.value } : null);
 
 export async function buildInitiativeBrief(storeId: string, initiative: Initiative, inputs: RealityInputs, now: Date, hookQuestion: { he: string; en: string } | null = null): Promise<InitiativeBrief> {
   const mappings = resolveMappings(initiative, inputs.candidates, inputs.confirmed);
+  const intent = inputs.intents.find((i) => i.initiativeId === initiative.id) ?? null;
   const evidence = await gatherInitiativeEvidence(storeId, initiative, mappings, inputs, now);
-  const reality = evaluateInitiativeReality(initiative, mappings, evidence, now);
+  const reality = evaluateInitiativeReality(initiative, mappings, evidence, now, goalOf(intent));
   const summary = summarizeReality(reality, initiative.offer);
-  if (reality.status === "needs_context") return { reality, summary, diagnosis: null, space: [], recommendation: null, episode: null };
-  const layers = await gatherDiagnosisLayers(storeId, initiative, mappings, inputs, reality, now);
-  const diagnosis = diagnose({ reality, ...layers });
+  if (reality.status === "needs_context") return { reality, summary, diagnosis: null, space: [], recommendation: null, episode: null, intent, fulfillment: null };
+  const [layers, fulfillment] = await Promise.all([gatherDiagnosisLayers(storeId, initiative, mappings, inputs, reality, now), buildIntentFulfillment(storeId, initiative, mappings, inputs, reality).catch(() => null)]);
+  const diagnosis = diagnose({ reality, ...layers, fulfillment });
   const space = buildDecisionSpace(diagnosis);
   const recommendation = resolveRecommendation(diagnosis, space, { basis: reality.evidenceBasis, stale: reality.stale });
   const episode = buildEpisode(summary, diagnosis, space, recommendation, { initiativeId: initiative.id, title: initiative.title, kind: reality.context.initiativeKind, start: initiative.start, end: initiative.end, offer: initiative.offer, hookQuestion }, now);
-  return { reality, summary, diagnosis, space, recommendation, episode };
+  return { reality, summary, diagnosis, space, recommendation, episode, intent, fulfillment };
 }
 
 export async function buildInitiativeReality(storeId: string, initiative: Initiative, inputs: RealityInputs, now: Date): Promise<InitiativeReality> {
   const mappings = resolveMappings(initiative, inputs.candidates, inputs.confirmed);
   const evidence = await gatherInitiativeEvidence(storeId, initiative, mappings, inputs, now);
-  return evaluateInitiativeReality(initiative, mappings, evidence, now);
+  return evaluateInitiativeReality(initiative, mappings, evidence, now, goalOf(inputs.intents.find((i) => i.initiativeId === initiative.id) ?? null));
 }
 
 // All live (or about-to-start) initiatives of a plan, evaluated once.

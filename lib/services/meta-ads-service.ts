@@ -77,11 +77,38 @@ type MetaCreativePayload = {
   title?: string;
   body?: string;
   thumbnail_url?: string;
+  // Empty for link ads — the destination lives in the story spec below.
   object_url?: string;
   object_story_id?: string;
   effective_object_story_id?: string;
   instagram_permalink_url?: string;
+  object_story_spec?: {
+    link_data?: { link?: string; call_to_action?: { value?: { link?: string } } };
+    video_data?: { call_to_action?: { value?: { link?: string } } };
+  };
+  asset_feed_spec?: { link_urls?: Array<{ website_url?: string }> };
 };
+
+// The page an ad sends people to. `object_url` is set only for a few ad
+// formats; link ads carry it in object_story_spec.link_data.link, video ads
+// in the call-to-action, dynamic creatives in asset_feed_spec.link_urls.
+// This is the landing-page signal the Campaign Resolver matches against
+// initiatives (16 Sep 2026: creativeObjectUrl was NULL on every row).
+export function creativeDestinationUrl(creative: MetaCreativePayload | null | undefined): string | null {
+  if (!creative) return null;
+  const candidates = [
+    creative.object_url,
+    creative.object_story_spec?.link_data?.link,
+    creative.object_story_spec?.link_data?.call_to_action?.value?.link,
+    creative.object_story_spec?.video_data?.call_to_action?.value?.link,
+    ...(creative.asset_feed_spec?.link_urls ?? []).map((l) => l.website_url)
+  ];
+  for (const c of candidates) {
+    const s = typeof c === "string" ? c.trim() : "";
+    if (/^https?:\/\//i.test(s)) return s.slice(0, 2000);
+  }
+  return null;
+}
 
 type MetaAdPayload = {
   id?: string;
@@ -338,7 +365,7 @@ async function fetchAllInsights(
 async function fetchCreativeByAdId(accessToken: string, adId: string, appSecret?: string | null): Promise<MetaCreativePayload | null> {
   try {
     const payload = await fetchMetaGraph<MetaAdPayload>(adId, accessToken, {
-      fields: "id,name,creative{id,name,title,body,thumbnail_url,object_url,object_story_id,effective_object_story_id,instagram_permalink_url}"
+      fields: "id,name,creative{id,name,title,body,thumbnail_url,object_url,object_story_id,effective_object_story_id,instagram_permalink_url,object_story_spec{link_data{link,call_to_action},video_data{call_to_action}},asset_feed_spec{link_urls}}"
     }, { appSecret });
     return payload.creative ?? null;
   } catch {
@@ -703,7 +730,7 @@ export async function syncMetaAdsCampaignInsights(input: SyncMetaAdsInput = {}) 
           creativeThumbnailUrl: creative?.thumbnail_url ?? null,
           creativePreviewUrl: buildAdsManagerAdUrl(connection.adAccountId, adId),
           creativePermalinkUrl: creative?.instagram_permalink_url ?? null,
-          creativeObjectUrl: creative?.object_url ?? null,
+          creativeObjectUrl: creativeDestinationUrl(creative),
           objectStoryId: creative?.object_story_id ?? null,
           effectiveObjectStoryId: creative?.effective_object_story_id ?? null,
           level: insight.level,
@@ -742,7 +769,7 @@ export async function syncMetaAdsCampaignInsights(input: SyncMetaAdsInput = {}) 
           creativeThumbnailUrl: creative?.thumbnail_url ?? null,
           creativePreviewUrl: buildAdsManagerAdUrl(connection.adAccountId, adId),
           creativePermalinkUrl: creative?.instagram_permalink_url ?? null,
-          creativeObjectUrl: creative?.object_url ?? null,
+          creativeObjectUrl: creativeDestinationUrl(creative),
           objectStoryId: creative?.object_story_id ?? null,
           effectiveObjectStoryId: creative?.effective_object_story_id ?? null,
           level: insight.level,

@@ -22,6 +22,7 @@
 
 import type { Localized } from "@/lib/domain/decision";
 import type { InitiativeReality, LinkBasis } from "@/lib/domain/initiative-reality";
+import type { FulfillmentState, IntentFulfillment } from "@/lib/domain/intent-fulfillment";
 
 const L = (he: string, en: string): Localized => ({ he, en });
 const ils = (n: number) => `₪${Math.round(n).toLocaleString("en-US")}`;
@@ -94,6 +95,9 @@ export interface DiagnosisInput {
   locations: LocationStock[];
   facts: FeasibilityFacts;
   alternatives: { gift: AlternativeProduct[]; product: AlternativeProduct[] };
+  // Intent Fulfillment — what the initiative meant to sell / where / to whom
+  // vs what actually happened. Optional until the service passes it.
+  fulfillment?: IntentFulfillment | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +113,7 @@ export type ReplenishmentState = "possible_in_time" | "impossible_in_time" | "tr
 export type MarginState = "measured" | "unprofitable" | "unknown";
 export type OfferState = "in_use" | "unused" | "possibly_unnecessary" | "unknown" | "none";
 export type TimeState = "enough_time" | "window_narrowing" | "decision_required_now" | "ended";
+export type IntentState = FulfillmentState;
 
 export interface Dimension<S extends string> {
   state: S;
@@ -148,6 +153,12 @@ export interface BusinessDiagnosis {
   marginRate: number | null; // the number the actions reason on
   offer: Dimension<OfferState>;
   time: Dimension<TimeState>;
+  // Intent vs reality: is the initiative selling what it was meant to sell,
+  // where and to whom it was meant to? "not_set" until the manager states
+  // the intent; "diverging" is a business finding that outranks channel
+  // moves — fix the offer before buying more traffic into it.
+  intent: Dimension<IntentState>;
+  fulfillment: IntentFulfillment | null;
   // The constraint (if any) the decision revolves around.
   constraint: ConstrainedItem | null;
   // "Demand is healthy, but Meta is the weakest acquisition layer."
@@ -351,6 +362,18 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
   else if (period.daysRemaining <= WINDOW_NARROW_DAYS) time = { state: "window_narrowing", evidence: L(`${period.daysRemaining} ימים נותרו ליוזמה`, `${period.daysRemaining} initiative days remain`), basis: null };
   else time = { state: "enough_time", evidence: L(`יום ${period.dayIndex} מתוך ${period.totalDays}, ${period.daysRemaining} ימים נותרו`, `Day ${period.dayIndex} of ${period.totalDays}, ${period.daysRemaining} days remain`), basis: null };
 
+  // ── Intent vs reality ────────────────────────────────────────────────
+  const fulfillment = input.fulfillment ?? null;
+  let intent: Dimension<IntentState>;
+  if (!fulfillment || !fulfillment.defined) {
+    intent = { state: "not_set", evidence: L("לא הוגדר מה היוזמה נועדה למכור, לאיזה ערוץ ולמי — Hiloomy לא יכולה לומר אם ההצלחה היא ההצלחה שתוכננה", "What the initiative was meant to sell, where and to whom is not defined — Hiloomy cannot say whether the success is the planned one"), basis: null };
+    unknowns.push(L("מה היוזמה נועדה להשיג (כוונה)", "What the initiative was meant to achieve (intent)"));
+  } else {
+    intent = { state: fulfillment.state, evidence: fulfillment.findings.length ? L(fulfillment.findings.map((f) => f.he).join(" · "), fulfillment.findings.map((f) => f.en).join(" · ")) : fulfillment.headline, basis: salesBasis };
+    if (fulfillment.state === "insufficient") unknowns.push(L("האם ההצעה נמכרת כמתוכנן (מעט הזמנות)", "Whether the offer sells as planned (few orders)"));
+  }
+  const intentDiverging = intent.state === "diverging";
+
   // ── Channel problem vs business problem ──────────────────────────────
   const demandOk = demand.state === "strong" || demand.state === "healthy";
   const demandWord = L(demand.state === "strong" ? "חזק" : "בריא", demand.state);
@@ -360,6 +383,22 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
   if (demand.state === "unknown") {
     scope = "unknown";
     headline = L("אין עדיין מספיק מכירות מדודות כדי לאבחן את היוזמה.", "Not enough measured sales yet to diagnose the initiative.");
+  } else if (demandOk && intentDiverging && fulfillment) {
+    // The offer is not selling as planned. That is a BUSINESS finding and it
+    // comes before any channel move: nobody moves a campaign onto an offer
+    // that does not convert the way it was meant to.
+    scope = "business";
+    const first = fulfillment.findings[0];
+    const constraintNote = constraint ? L(` בנוסף, ${constraint.role === "gift" ? `מלאי המתנה "${constraint.title}"` : `המלאי של "${constraint.title}"`} ${constraint.alreadyOut ? "כבר אזל" : "לא יספיק לחלון"}.`, ` Also, ${constraint.role === "gift" ? `gift stock for "${constraint.title}"` : `stock of "${constraint.title}"`} ${constraint.alreadyOut ? "is already out" : "will not last the window"}.`) : L("", "");
+    // "Unknown" has two very different causes: no campaign linked, or a linked
+    // campaign whose purchase value Meta does not report (Take a Nap, 16 Sep).
+    const metaNote =
+      paid.state === "unknown"
+        ? paid.basis === null
+          ? L(" יעילות Meta לא ידועה — הקמפיין לא מקושר.", " Meta effectiveness is unknown — the campaign is not linked.")
+          : L(" יעילות Meta לא ידועה — הקמפיין מקושר אבל Meta לא מדווח ערך רכישה.", " Meta effectiveness is unknown — the campaign is linked but Meta reports no purchase value.")
+        : L("", "");
+    headline = L(`הביקוש ${demandWord.he}${storesToo.he}, אבל היוזמה לא מתבצעת כפי שתוכננה: ${first?.he ?? fulfillment.headline.he}${constraintNote.he}${metaNote.he}`, `Demand is ${demandWord.en}${storesToo.en}, but the initiative is not unfolding as planned: ${first?.en ?? fulfillment.headline.en}${constraintNote.en}${metaNote.en}`);
   } else if (demandOk && paid.state === "weak") {
     scope = "channel";
     const metaWhy = /spend exceeds/.test(paid.evidence.en) ? L("מוציא יותר מההכנסה המיוחסת לו", "spends more than the revenue attributed to it") : L(`נחלש מול ${beforeLabel.he}`, `weakened vs ${beforeLabel.en}`);
@@ -387,5 +426,5 @@ export function diagnose(input: DiagnosisInput): BusinessDiagnosis {
     headline = L(`הביקוש ${demandWord.he} ולא נמצא אילוץ מהותי.`, `Demand is ${demandWord.en} and no material constraint was found.`);
   }
 
-  return { demand, conversion, paid, creators, offline, inventory, replenishment, margin, marginRate, offer, time, constraint, headline, scope, unknowns };
+  return { demand, conversion, paid, creators, offline, inventory, replenishment, margin, marginRate, offer, time, intent, fulfillment, constraint, headline, scope, unknowns };
 }

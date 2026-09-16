@@ -798,7 +798,15 @@ function competitorDecision(alert: AlertRow, ctx: DecisionContext): Decision {
   const competitorId = String(p.competitorId ?? "");
   const name = ctx.competitorNames.get(competitorId) ?? String(p.domain ?? alert.title);
   const discount = alert.currentValue == null ? null : num(alert.currentValue);
-  const startedDays = Math.max(0, Math.round((ctx.now.getTime() - alert.createdAt.getTime()) / DAY_MS));
+  // Age of the promotion = first day it was observed (payload), not the day
+  // this card row was created — the two diverged while the fingerprint
+  // rotated daily (Sacara, Sep 2026).
+  // The payload's date is the first promo day inside the latest rolling
+  // window and slides with it; the row's creation is the first detection.
+  // The earlier of the two is the honest start.
+  const payloadStart = typeof p.promoStartDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.promoStartDate) ? Date.parse(`${p.promoStartDate}T00:00:00Z`) : Number.POSITIVE_INFINITY;
+  const promoStart = Math.min(payloadStart, alert.createdAt.getTime());
+  const startedDays = Math.max(0, Math.round((ctx.now.getTime() - promoStart) / DAY_MS));
   const v = ctx.pulse.velocityChangePct;
   const demandHit = v !== null && v <= -0.12;
   const status: DecisionStatus = demandHit ? "act" : "watch";
@@ -1442,7 +1450,18 @@ async function upsertPlanDecisions(storeId: string, now: Date): Promise<number> 
   const briefFor = async (i: PlanView["initiatives"][number], hookQuestion: Localized | null): Promise<(DecisionBrief & { sheetId: string }) | null> => {
     if (!inputs) return null;
     const b = await buildInitiativeBrief(storeId, i, inputs, now, hookQuestion).catch(() => null);
-    return b && b.diagnosis && b.recommendation && b.episode ? { sheetId, diagnosis: b.diagnosis, space: b.space.slice(0, 6), recommendation: b.recommendation, episode: b.episode } : null;
+    if (!(b && b.diagnosis && b.recommendation && b.episode)) return null;
+    // The campaign block: confirmed campaigns, else the resolver's ranking.
+    const res = b.reality.mappings.campaignResolution ?? null;
+    const compact = (c: { id: string; name: string; score: number; reasons: Localized[] }) => ({ id: c.id, name: c.name, score: c.score, reasons: c.reasons.slice(0, 4) });
+    const campaign = {
+      confirmed: b.reality.mappings.links.filter((l) => l.kind === "meta_campaign" && l.state === "confirmed" && l.id !== "__none__").map((l) => ({ id: l.id, name: l.label })),
+      likely: res?.likely ? compact(res.likely) : null,
+      alternatives: (res?.alternatives ?? []).slice(0, 2).map(compact),
+      considered: res?.considered ?? 0,
+      total: res?.total ?? 0
+    };
+    return { sheetId, diagnosis: b.diagnosis, space: b.space.slice(0, 6), recommendation: b.recommendation, episode: b.episode, campaign };
   };
   for (const i of plan.initiatives) {
     if (i.status === "completed" || i.excludedFromEngine) continue;

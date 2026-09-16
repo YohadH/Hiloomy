@@ -14,7 +14,7 @@ import { refreshInitiativeAfterMapping } from "@/lib/services/initiative-reality
 
 export const dynamic = "force-dynamic";
 
-const OPS = new Set(["move", "split", "merge", "exclude", "include", "link_event", "unlink_event", "link_entity", "unlink_entity", "unlink_kind", "unlink_bulk", "set_fact", "reset"]);
+const OPS = new Set(["move", "split", "merge", "exclude", "include", "link_event", "unlink_event", "link_entity", "unlink_entity", "unlink_kind", "unlink_bulk", "set_fact", "set_intent", "clear_intent", "reset"]);
 
 export async function POST(request: Request, context: { params: Promise<{ sheetId: string }> }) {
   try {
@@ -30,7 +30,7 @@ export async function POST(request: Request, context: { params: Promise<{ sheetI
     // A mapping change re-evaluates the initiative now (metrics, confidence,
     // findings) and refreshes any open plan decision that shows it.
     let reality: { status: string; updatedDecisions: number } | null = null;
-    if ((body.op === "link_entity" || body.op === "unlink_entity" || body.op === "unlink_kind" || body.op === "unlink_bulk" || body.op === "set_fact") && typeof (body as { initiativeId?: string }).initiativeId === "string") {
+    if ((body.op === "link_entity" || body.op === "unlink_entity" || body.op === "unlink_kind" || body.op === "unlink_bulk" || body.op === "set_fact" || body.op === "set_intent" || body.op === "clear_intent") && typeof (body as { initiativeId?: string }).initiativeId === "string") {
       reality = await refreshInitiativeAfterMapping(storeId, sheetId, (body as { initiativeId: string }).initiativeId).catch(() => null);
     }
     return NextResponse.json({ ok: true, overrides, reality });

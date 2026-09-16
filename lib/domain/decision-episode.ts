@@ -25,6 +25,10 @@ export interface DiagnosisSnapshot {
   margin: string;
   offer: string;
   time: string;
+  intent?: string;
+  // Intent vs reality at decision time — so a later pass can ask "did the
+  // offer sell as planned after the change?".
+  fulfillment?: { orderShare: number | null; revenueShare: number | null; channel: string | null; audience: string | null; goalPace: string | null } | null;
   scope: BusinessDiagnosis["scope"];
   headline: Localized;
   constraint: { productId: string; title: string; role: "product" | "gift"; coverDays: number | null; daysRemaining: number } | null;
@@ -74,6 +78,10 @@ export function buildEpisode(reality: InitiativeRealitySummary, diagnosis: Busin
       margin: diagnosis.margin.state,
       offer: diagnosis.offer.state,
       time: diagnosis.time.state,
+      intent: diagnosis.intent?.state ?? "not_set",
+      fulfillment: diagnosis.fulfillment?.defined
+        ? { orderShare: diagnosis.fulfillment.purchase?.orderShare ?? null, revenueShare: diagnosis.fulfillment.purchase?.revenueShare ?? null, channel: diagnosis.fulfillment.channel?.state ?? null, audience: diagnosis.fulfillment.audience?.state ?? null, goalPace: diagnosis.fulfillment.goal?.pace ?? null }
+        : null,
       scope: diagnosis.scope,
       headline: diagnosis.headline,
       constraint: diagnosis.constraint ? { productId: diagnosis.constraint.productId, title: diagnosis.constraint.title, role: diagnosis.constraint.role, coverDays: diagnosis.constraint.coverDays, daysRemaining: diagnosis.constraint.daysRemaining } : null
@@ -85,10 +93,21 @@ export function buildEpisode(reality: InitiativeRealitySummary, diagnosis: Busin
   };
 }
 
+// The campaign block of the receipt: the confirmed campaign, or the
+// resolver's likely pick with its confidence and alternatives.
+export interface BriefCampaign {
+  confirmed: Array<{ id: string; name: string }>;
+  likely: { id: string; name: string; score: number; reasons: Localized[] } | null;
+  alternatives: Array<{ id: string; name: string; score: number; reasons: Localized[] }>;
+  considered: number;
+  total: number;
+}
+
 // The compact brief a decision carries for the receipt and the card.
 export interface DecisionBrief {
   diagnosis: BusinessDiagnosis;
   space: DecisionOption[];
   recommendation: Recommendation;
   episode: DecisionEpisode;
+  campaign?: BriefCampaign | null;
 }

@@ -19,9 +19,14 @@
 import type { Localized } from "@/lib/domain/decision";
 import type { Initiative } from "@/lib/domain/plan";
 
-export type CalendarEventSourceId = "hebrew_calendar"; // future: "retail_calendar" | "national_holidays" | "custom"
-export type CalendarEventCategory = "holiday";
-export type HolidayKey = "rosh_hashanah" | "yom_kippur" | "sukkot" | "shemini_atzeret" | "hanukkah" | "purim" | "passover" | "shavuot";
+export type CalendarEventSourceId = "hebrew_calendar" | "retail_calendar"; // future: "national_holidays" | "custom"
+export type CalendarEventCategory = "holiday" | "retail";
+export type HebrewHolidayKey = "rosh_hashanah" | "yom_kippur" | "sukkot" | "shemini_atzeret" | "hanukkah" | "purim" | "passover" | "shavuot";
+// Retail moments with arithmetic dates (lib/domain/retail-calendar-source.ts).
+// Shopping IL and other ANNOUNCED dates are deliberately absent: they are
+// not computable and must come from a brand-confirmed source.
+export type RetailEventKey = "black_friday" | "cyber_monday" | "singles_day" | "christmas" | "valentines_day";
+export type HolidayKey = HebrewHolidayKey | RetailEventKey;
 
 export interface CalendarEvent {
   id: string; // `${key}_${gregorian year of the first day}`, e.g. rosh_hashanah_2026
@@ -33,7 +38,8 @@ export interface CalendarEvent {
   endDate: string; // last full day (inclusive)
   source: CalendarEventSourceId;
   sourceLabel: Localized;
-  // The rule that produced the dates, for the audit trail: "1–2 Tishrei 5787".
+  // The rule that produced the dates, for the audit trail: "1–2 Tishrei 5787"
+  // or "day after the 4th Thursday of November".
   hebrewDate: string;
   precision: "date";
 }
@@ -46,7 +52,8 @@ export interface CalendarEventSource {
 }
 
 export const CALENDAR_SOURCE_LABEL: Record<CalendarEventSourceId, Localized> = {
-  hebrew_calendar: { he: "לוח עברי", en: "Hebrew calendar" }
+  hebrew_calendar: { he: "לוח עברי", en: "Hebrew calendar" },
+  retail_calendar: { he: "לוח קמעונאי", en: "Retail calendar" }
 };
 
 export const HOLIDAY_NAME: Record<HolidayKey, Localized> = {
@@ -57,7 +64,12 @@ export const HOLIDAY_NAME: Record<HolidayKey, Localized> = {
   hanukkah: { he: "חנוכה", en: "Hanukkah" },
   purim: { he: "פורים", en: "Purim" },
   passover: { he: "פסח", en: "Passover" },
-  shavuot: { he: "שבועות", en: "Shavuot" }
+  shavuot: { he: "שבועות", en: "Shavuot" },
+  black_friday: { he: "בלאק פריידי", en: "Black Friday" },
+  cyber_monday: { he: "סייבר מאנדיי", en: "Cyber Monday" },
+  singles_day: { he: "יום הרווקים 11.11", en: "Singles Day 11.11" },
+  christmas: { he: "כריסמס", en: "Christmas" },
+  valentines_day: { he: "ולנטיין", en: "Valentine's Day" }
 };
 
 // ---------------------------------------------------------------------------
@@ -147,7 +159,12 @@ const ALIASES: Record<HolidayKey, { strong: string[]; weak: string[] }> = {
   hanukkah: { strong: ["חנוכה", "hanukkah", "chanukah", "hanukah", "hannukah"], weak: ["סופגניות", "נרות", "candles"] },
   purim: { strong: ["פורים", "purim"], weak: ["תחפושות", "משלוח מנות", "costume"] },
   passover: { strong: ["פסח", "passover", "pesach"], weak: ["חג האביב", "חג החירות", "חול המועד", "chol hamoed", "seder", "סדר"] },
-  shavuot: { strong: ["שבועות", "shavuot", "shavuos"], weak: ["חג הביכורים", "גבינות", "cheesecake"] }
+  shavuot: { strong: ["שבועות", "shavuot", "shavuos"], weak: ["חג הביכורים", "גבינות", "cheesecake"] },
+  black_friday: { strong: ["בלאק פריידי", "בלאק-פריידי", "בלק פריידי", "black friday", "blackfriday"], weak: ["שישי השחור", "november sale", "מבצעי נובמבר"] },
+  cyber_monday: { strong: ["סייבר מאנדיי", "סייבר מנדיי", "cyber monday", "cybermonday"], weak: ["cyber week"] },
+  singles_day: { strong: ["יום הרווקים", "singles day", "11.11", "11/11"], weak: ["double 11"] },
+  christmas: { strong: ["כריסמס", "חג המולד", "christmas", "xmas"], weak: ["holiday season", "gift guide", "מדריך מתנות"] },
+  valentines_day: { strong: ["ולנטיין", "ולנטיינס", "יום האהבה", "יום אהבה", "valentine", "valentines"], weak: [] }
 };
 const GENERIC_HOLIDAY_WORDS = ["חגים", "חגי", "חג", "holidays", "holiday", "festive"];
 

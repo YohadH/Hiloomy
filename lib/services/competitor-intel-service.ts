@@ -23,7 +23,7 @@ import {
   type CompetitorActivityEntry,
   type ReportDateRange
 } from "@/lib/clients/rivalsweeper-client";
-import { upsertAlert, type AlertSeverity } from "@/lib/services/alert-writer-service";
+import { resolveAlertByFingerprint, upsertAlert, type AlertSeverity } from "@/lib/services/alert-writer-service";
 
 export const MAX_ACTIVE_COMPETITORS = 5;
 
@@ -82,6 +82,8 @@ export interface CompetitorWeekEntry {
     maxDiscountPct: number | null;
     freeShippingThreshold: number | null;
     homepageMessage: string | null;
+    // First day a promo was seen inside the window (null when no promo).
+    promoStartDate: string | null;
     // Markdowns / out-of-stock / price index / ad presence from the latest
     // snapshot in the window (see CompetitorMarketSignals). null on old rows.
     market: CompetitorMarketSignals | null;
@@ -544,6 +546,7 @@ export async function buildCompetitorWeekSection(input: {
         maxDiscountPct: current?.maxDiscountPct ?? null,
         freeShippingThreshold: current?.latestFreeShippingThreshold ?? null,
         homepageMessage: current?.latestMessage ?? null,
+        promoStartDate: current?.promoStartDate ?? null,
         market: marketByCompetitor.get(competitor.id) ?? null
       },
       change: computeCompetitorChange(current, prior)
@@ -634,8 +637,19 @@ export async function upsertCompetitorResponseAlerts(input: {
 
   let upserted = 0;
   for (const entry of section.competitors) {
-    const actionable =
-      entry.change.kind === "opened_promo" || entry.change.kind === "deepened_discount";
+    // One open alert per competitor promotion. The fingerprint used to carry
+    // the rolling window's start date, so the nightly cron opened a NEW card
+    // for the same promotion every day (7 open Sacara cards, 10–16 Sep
+    // 2026). Now: stable per competitor; refreshed while the promotion runs;
+    // resolved when it closes.
+    const fingerprint = `competitor_promo:${entry.competitorId}`;
+    if (entry.change.kind === "closed_promo" || (entry.current.activePromoCount === 0 && entry.change.kind !== "no_data")) {
+      await resolveAlertByFingerprint({ storeId: input.storeId, fingerprint, resolvedBy: "system:competitor-intel" }).catch(() => null);
+      continue;
+    }
+    // A running promotion keeps its card fresh; the card opens on
+    // opened_promo / deepened_discount and stays while the promo is active.
+    const actionable = entry.current.activePromoCount > 0 && (entry.change.kind === "opened_promo" || entry.change.kind === "deepened_discount" || entry.change.kind === "unchanged" || entry.change.kind === "reduced_discount");
     if (!actionable) continue;
 
     const discount = entry.current.maxDiscountPct;
@@ -645,7 +659,7 @@ export async function upsertCompetitorResponseAlerts(input: {
     await upsertAlert({
       storeId: input.storeId,
       type: "competitor_promo",
-      fingerprint: `competitor_promo:${entry.competitorId}:${section.periodStart}`,
+      fingerprint,
       severity,
       source: "Calculated",
       detectedBy: "competitor-intel-service",
@@ -671,6 +685,9 @@ export async function upsertCompetitorResponseAlerts(input: {
         changeKind: entry.change.kind,
         periodStart: section.periodStart,
         periodEnd: section.periodEnd,
+        // When the promotion was first seen — the card's age is measured
+        // from here, not from the row's creation time.
+        promoStartDate: entry.current.promoStartDate,
         market: entry.current.market
       },
       periodLabel: `${section.periodStart} → ${section.periodEnd}`

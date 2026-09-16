@@ -18,6 +18,7 @@
 // approvals do not exist in the sheet and are not represented.
 
 import type { Localized } from "@/lib/domain/decision";
+import type { InitiativeIntent } from "@/lib/domain/intent-fulfillment";
 
 export type InitiativeStatus = "planned" | "ready" | "watch" | "needs_decision" | "blocked" | "live" | "review" | "completed";
 
@@ -160,6 +161,11 @@ export interface PlanOverrides {
   // Operator answers to feasibility questions Hiloomy asked ("can X be
   // replenished within 8 days?"). Facts, not mappings; each has a validity.
   feasibilityFacts: Array<{ initiativeId: string; productId: string | null; key: "replenishment_days" | "replenishment_possible" | "gift_optional" | "alternative_gift"; value: string; answeredAt: string; validUntil: string }>;
+  // What each initiative was MEANT to achieve — the purchase (hero product
+  // or a set built from components), the channel, the audience, one goal.
+  // Set by the manager; Intent Fulfillment (lib/domain/intent-fulfillment.ts)
+  // measures reality against it. One per initiative.
+  intents: InitiativeIntent[];
 }
 
 export interface PlanView {

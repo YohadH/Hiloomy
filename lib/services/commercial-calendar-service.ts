@@ -8,15 +8,17 @@
 
 import { buildCommercialContext, isoDay, addDays, type CalendarEvent, type CalendarEventSource, type CommercialContextEvent } from "@/lib/domain/calendar-events";
 import { hebrewCalendarSource } from "@/lib/domain/hebrew-calendar-source";
+import { retailCalendarSource } from "@/lib/domain/retail-calendar-source";
 import type { PlanView } from "@/lib/domain/plan";
 import { readPlanOverrides } from "@/lib/services/plan-service";
 
-export const CALENDAR_SOURCES: readonly CalendarEventSource[] = [hebrewCalendarSource];
+export const CALENDAR_SOURCES: readonly CalendarEventSource[] = [hebrewCalendarSource, retailCalendarSource];
 
 // How far ahead the context looks for calendar events. Campaigns run up to
-// a holiday for weeks, so the event is shown before the plan's 14-day
-// initiative horizon.
-export const EVENT_HORIZON_DAYS = 30;
+// a holiday for weeks and Black Friday prep starts in October, so the
+// horizon is a quarter — the plan's 14-day initiative horizon stays what it
+// is; the calendar simply shows what is coming (owner, 16 Sep 2026).
+export const EVENT_HORIZON_DAYS = 90;
 // Longest supported event is 9 days incl. the eve (Hanukkah); look back far
 // enough to keep an active event on the page.
 const LOOKBACK_DAYS = 10;

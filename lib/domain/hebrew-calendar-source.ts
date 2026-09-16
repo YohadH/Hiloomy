@@ -13,7 +13,7 @@
 // location are not modelled (future enhancement).
 
 import { HEBREW_MONTH, gregorianFromHebrew, hebrewFromRd, hebrewMonthName, isHebrewLeapYear, rdFromHebrew } from "@/lib/domain/hebrew-calendar";
-import { CALENDAR_SOURCE_LABEL, HOLIDAY_NAME, addDays, type CalendarEvent, type CalendarEventSource, type HolidayKey } from "@/lib/domain/calendar-events";
+import { CALENDAR_SOURCE_LABEL, HOLIDAY_NAME, addDays, type CalendarEvent, type CalendarEventSource, type HebrewHolidayKey as HolidayKey } from "@/lib/domain/calendar-events";
 
 // Fixed Hebrew dates. Purim falls in Adar II in a leap year.
 const DEFINITIONS: Array<{ key: HolidayKey; month: (hebrewYear: number) => number; day: number; days: number }> = [

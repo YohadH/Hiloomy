@@ -835,6 +835,156 @@ option set, the manager's actual choice and the measured result.
   memory") is **not** achieved by this pass — the record exists, nothing
   reads it yet.
 
+## 0g. Intent Fulfillment — Plan intent × Purchase reality (2026-09-16)
+
+**Owner's critique (16 Sep, the Satin Couture receipt):** "demand strong →
+product out → move the campaign to bamboo" skipped two steps. Nobody proved
+which Meta campaign drove the initiative, and nobody asked what the people
+who came actually bought. "Satin sales +43%" is a number; "we meant to sell
+the set and 0 of 60 orders contain one" is a finding. Rule: Hiloomy has
+enough evidence — what it lacked was attribution + interpretation against
+the commercial intent. No more Decision Rules until this layer exists.
+
+**Built (pass 1 — intent + purchase reality; the Campaign Resolver is pass 2):**
+
+- `lib/domain/intent-fulfillment.ts` — `InitiativeIntent` (target products
+  as hero `any` or set `together`, channel, audience, one goal) and
+  `evaluateIntentFulfillment(intent, orders, period, titles)`. Orders are
+  the initiative's WHOLE orders (every line, not only mapped products) so
+  the purchase mix is visible. Outputs per dimension (purchase / channel /
+  audience / goal) and an overall state: `fulfilled` (≥60% of orders match
+  the intent), `partial`, `diverging` (<35%, or channel/audience majority
+  elsewhere), `insufficient` (<5 orders), `not_set`. Thresholds are named
+  V0 constants, not tuned. Duplicate catalogue rows (same title, two
+  Shopify ids) are ONE target: a set needs one of them; "never sold" is
+  judged per title.
+- Stored in plan overrides `intents` (ops `set_intent` / `clear_intent`,
+  validated by `normalizeIntent`); the manager sets it in
+  `components/plan/intent-form.tsx` on the initiative page ("מה רצינו
+  להשיג — ומה קרה"), one option per product title.
+- Reality: `evaluateInitiativeReality(…, goal)` — with a stated revenue or
+  units goal, `on_track` / `off_track` are reachable for the first time
+  (linear pace ±10%); `goal.note` carries the numbers. Orders goals are
+  measured under intent only.
+- Diagnosis: new dimension `intent` + `fulfillment` on `BusinessDiagnosis`.
+  Demand ok + intent diverging → scope `business`, headline "הביקוש חזק,
+  אבל היוזמה לא מתבצעת כפי שתוכננה: …" with the constraint and "Meta
+  unknown" as trailing clauses. `not_set` is an unknown the recommendation
+  names.
+- Decision space: `FIX_OFFER` (change how the offer is sold — pre-built
+  bundle page, set price vs parts, hero product, components in stock; or
+  the channel/audience variant). Rank: diverging → FIX_OFFER +30, SCALE /
+  DEEPEN −25, CONTINUE −12; partial → +12. `SHIFT_PRODUCT_FOCUS` says "move
+  the campaign" ONLY when the campaign is linked; with Meta unknown it
+  speaks of pages and promotion and is penalised (−10 "a campaign change is
+  a guess"). `wouldChange` asks for the intent when not set.
+- Episode snapshot carries `intent` state + fulfillment shares.
+- Service: `gatherIntentOrders` (orders in window containing any mapped
+  product, all lines, channel, first-order-in-window = new customer),
+  `buildIntentFulfillment`; `InitiativeBrief` now has `intent` +
+  `fulfillment`.
+- Meta sync: creative fields request `object_story_spec{link_data,
+  video_data}` and `asset_feed_spec{link_urls}`; `creativeDestinationUrl`
+  fills `creativeObjectUrl`, which was NULL on every row. Prerequisite for
+  landing-page matching in the resolver.
+- Tests: `tests/unit/intent-fulfillment.test.ts` (set→components, never-sold
+  component, hero any, channel, audience, goal pace, duplicate ids,
+  normalizeIntent), decision-space Q–V, initiative-reality goal test.
+
+**First receipt (Take a Nap, "השקת סאטן קוטור", read-only, 2026-09-16):**
+intent = any of the four mapped "סט מצעים מלא סאטן" SKUs, online, new
+customers, ₪60,000. Result: 0 of 60 orders include a set; "סדין סאטן 600 -
+לבן" leads (58 orders); online 26% / stores 74% → channel diverges;
+audience 50% new → matches; ₪17,640 of ₪60,000 with 53% of the window gone
+→ behind. Headline names the offer first, then the sheet stock-out, then
+"Meta unknown". Recommendation: FIX_OFFER (80) over SHIFT_PRODUCT_FOCUS (70).
+Without an intent the same brief now says "point demand … the campaign is
+not linked, so whether it drives the demand is unknown" instead of "move
+the campaign to bamboo".
+
+**Honest gaps:** (1) Campaign Resolver not built — paid stays "unknown"
+until the manager links a campaign; the spend/date/destination scoring is
+pass 2. (2) Take a Nap's orders carry no UTM/fbclid (0 of 1,889 in 30 days)
+— order→campaign matching needs UTM templates on the Meta ads
+(operational). (3) The Satin initiative's product mapping misses the
+Tailored/Oxford duvet-cover sets (~₪30K in the same orders, shown as "other
+product, same order") — a mapping choice for the owner, not a code fix.
+(4) The decision screen is not yet reordered into the four blocks; the
+intent block sits above the diagnosis on the initiative page only.
+(5) Nothing learns from fulfillment yet; the episode only records it.
+
+**Pass 2 (same day) — Campaign Resolver, wording, calendar, duplicates:**
+
+- `lib/domain/campaign-resolver.ts` — `resolveCampaigns(initiative,
+  campaigns)`: every campaign with a CONTENT signal (campaign–product link
+  0.35, anchor in name 0.30 / token 0.20, destination page names a mapped
+  product or the initiative 0.25, coupon in ad copy 0.20, ad copy token
+  0.10) is scored; timing and spend corroborate (started within ±10 days
+  0.10, ≥½ of recent spend inside the window 0.05, click spike 0.05, spend
+  share × 0.15 relative to the largest listed candidate; no spend in the
+  window −0.30). Timing + spend alone never qualify (always-on retargeting
+  is not "the initiative's campaign"). Hebrew↔English family aliases
+  (סאטן↔satin/sateen, במבוק↔bamboo …) so bilingual names match. Output:
+  ranked candidates with a percentage and reasons; `likely` only when
+  ≥45% and clear of the runner-up by 10 points (or ≥70%). high ≥70% →
+  provisional link (rule `campaign_resolver`, in PROVISIONAL_RULES);
+  otherwise suggestions carrying "NN% · reasons".
+- Wired into `resolveMappings` when `MappingCandidates.metaCampaigns[].signals`
+  are present (daily spend/clicks 60d, distinct destination URLs, ad copy),
+  gathered in `loadRealityInputs`; `InitiativeMappings.campaignResolution`
+  carries the ranking; the initiative page shows "הקמפיין שככל הנראה
+  קשור" with % + reasons + a confirm button (hidden once a campaign is
+  confirmed). Products now carry `handle` for URL matching.
+- Receipt (Take a Nap, read-only): 28 campaigns, 3 considered; קמפיין סאטן
+  אוגוסט 2026 45% medium (name, ad copy, ₪3,347 in the window — largest),
+  Sateen v2 31% low, v1 0% (no spend in window). The manager had already
+  CONFIRMED the August campaign; `paid` was "unknown" because Meta reports
+  no purchase value for it — not because it was unlinked. Destination URLs
+  are still empty until the next Meta sync.
+- Wording split for "Meta unknown": headline and `SHIFT_PRODUCT_FOCUS` now
+  distinguish "campaign not linked" (basis null) from "linked but Meta
+  reports no purchase value" / "linked campaign spent nothing". Test W.
+- Competitor cards: fingerprint is now `competitor_promo:<competitorId>`
+  (was `…:<window start>`, a new open card every night — 7 Sacara cards
+  10–16 Sep). The card refreshes while the promotion runs, resolves on
+  `closed_promo` / no promo, and its age comes from `payload.promoStartDate`.
+  Production cleanup of the 6 stale duplicates is a manual write (resolve
+  all but the newest).
+- Retail calendar source (`lib/domain/retail-calendar-source.ts`): Black
+  Friday (day after the 4th Thursday of November: 27 Nov 2026), Cyber
+  Monday (+3), Singles Day 11.11, Christmas, Valentine's — arithmetic only;
+  Shopping IL and other announced dates are deliberately absent. Registered
+  in CALENDAR_SOURCES; aliases added so "מבצעי בלאק פריידי" suggests
+  `black_friday_2026`; `EVENT_HORIZON_DAYS` 30 → 90 so Black Friday is in
+  view from late August and Hanukkah from mid-September.
+- Tests: campaign-resolver (6), retail-calendar-source (5), decision-space W.
+
+**Pass 3 (same day) — the four-block decision screen:**
+
+- Both surfaces now open with the four blocks the owner asked for, in this
+  order: (1) what Hiloomy thinks happened — the diagnosis headline, which
+  already carries intent, constraint and the Meta caveat; (2) the campaign
+  behind the initiative — confirmed campaign + Meta evidence, else the
+  resolver's ranking with % and reasons (confirm button on the initiative
+  page, link to it from the receipt); (3) what we meant to sell vs what
+  people bought — IntentBlock with the purchase breakdown behind "details",
+  or the intent form / a link to set it; (4) what to do — recommendation,
+  the question that changes it, the prepared change, what would change it.
+- Everything else moved under one collapsed "ראיות ונימוקים": reality
+  numbers, diagnosis dimension by dimension, trigger, what Hiloomy
+  connected, exposure, evidence groups, options considered, decision space,
+  confidence, missing evidence. The manager's decision and judgment stay
+  where they were, after the four blocks.
+- `DecisionBrief.campaign` (BriefCampaign) is persisted on plan decisions so
+  the receipt can show the campaign block without a DB round trip; older
+  receipts without it fall back to the paid evidence sentence.
+- Files: `app/plan/initiative/[id]/page.tsx`,
+  `components/decisions/decision-receipt.tsx`, `lib/domain/decision-episode.ts`,
+  `lib/services/decision-inbox-service.ts` (briefFor).
+- Not verified in a browser this pass (typecheck only); the receipt for
+  non-plan decisions (competitor, ROAS) renders blocks 1 and 4 and the
+  evidence details, with no campaign / intent block.
+
 ## 1. Principles that shape the build
 
 - **Decision Objects, not dashboards.** Every screen is built from one typed shape

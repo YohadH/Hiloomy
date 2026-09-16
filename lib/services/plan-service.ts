@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { getDb } from "@/lib/server/db";
 import { TOKEN_RULES, normalizeEntityId } from "@/lib/domain/initiative-reality";
+import { normalizeIntent, type InitiativeIntent } from "@/lib/domain/intent-fulfillment";
 import { AppError } from "@/lib/server/errors";
 import { extractCouponCode, extractDiscountPct } from "@/lib/services/gantt-brief-generator-service";
 import { getActiveCampaignsByProduct } from "@/lib/services/campaign-product-link-service";
@@ -197,7 +198,7 @@ export function executionKey(r: { task: string; category: string | null; s: stri
   return `${norm(r.task)}|${norm(r.category)}|${r.s}`;
 }
 
-const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [], entityLinks: [], feasibilityFacts: [] };
+const EMPTY_OVERRIDES: PlanOverrides = { moves: [], splits: [], merges: [], excludedFromEngine: [], calendarLinks: [], entityLinks: [], feasibilityFacts: [], intents: [] };
 const FACT_KEYS = new Set(["replenishment_days", "replenishment_possible", "gift_optional", "alternative_gift"]);
 const ENTITY_KINDS = new Set(["product", "gift_product", "discount", "meta_campaign"]);
 
@@ -213,7 +214,8 @@ export async function readPlanOverrides(sheetId: string): Promise<PlanOverrides>
       excludedFromEngine: Array.isArray(parsed.excludedFromEngine) ? parsed.excludedFromEngine : [],
       calendarLinks: Array.isArray(parsed.calendarLinks) ? parsed.calendarLinks.filter((l) => l && typeof l.initiativeId === "string" && typeof l.eventId === "string") : [],
       entityLinks: Array.isArray(parsed.entityLinks) ? parsed.entityLinks.filter((l) => l && typeof l.initiativeId === "string" && ENTITY_KINDS.has(l.kind) && typeof l.id === "string" && typeof l.label === "string") : [],
-      feasibilityFacts: Array.isArray(parsed.feasibilityFacts) ? parsed.feasibilityFacts.filter((f) => f && typeof f.initiativeId === "string" && FACT_KEYS.has(f.key) && typeof f.value === "string") : []
+      feasibilityFacts: Array.isArray(parsed.feasibilityFacts) ? parsed.feasibilityFacts.filter((f) => f && typeof f.initiativeId === "string" && FACT_KEYS.has(f.key) && typeof f.value === "string") : [],
+      intents: Array.isArray(parsed.intents) ? parsed.intents.map((i) => normalizeIntent(i)).filter((i): i is InitiativeIntent => i !== null) : []
     };
   } catch {
     return EMPTY_OVERRIDES;
@@ -233,12 +235,25 @@ export type PlanOverrideOp =
   | { op: "unlink_kind"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"] }
   | { op: "unlink_bulk"; initiativeId: string; kind: PlanOverrides["entityLinks"][number]["kind"] }
   | { op: "set_fact"; initiativeId: string; productId: string | null; key: PlanOverrides["feasibilityFacts"][number]["key"]; value: string; validDays?: number }
+  // The manager states what the initiative is meant to achieve. Replaces
+  // any earlier intent for the initiative; validated by normalizeIntent.
+  | { op: "set_intent"; initiativeId: string; intent: Omit<InitiativeIntent, "initiativeId" | "setAt"> }
+  | { op: "clear_intent"; initiativeId: string }
   | { op: "reset" };
 
 export async function savePlanOverride(sheetId: string, op: PlanOverrideOp): Promise<PlanOverrides> {
   const cur = await readPlanOverrides(sheetId);
-  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine], calendarLinks: [...cur.calendarLinks], entityLinks: [...cur.entityLinks], feasibilityFacts: [...cur.feasibilityFacts] };
+  let next: PlanOverrides = { ...cur, moves: [...cur.moves], splits: [...cur.splits], merges: [...cur.merges], excludedFromEngine: [...cur.excludedFromEngine], calendarLinks: [...cur.calendarLinks], entityLinks: [...cur.entityLinks], feasibilityFacts: [...cur.feasibilityFacts], intents: [...cur.intents] };
   switch (op.op) {
+    case "set_intent": {
+      const intent = normalizeIntent({ ...(op.intent as object), initiativeId: op.initiativeId, setAt: new Date().toISOString() });
+      next.intents = next.intents.filter((i) => i.initiativeId !== op.initiativeId);
+      if (intent) next.intents = [...next.intents, intent];
+      break;
+    }
+    case "clear_intent":
+      next.intents = next.intents.filter((i) => i.initiativeId !== op.initiativeId);
+      break;
     case "move":
       next.moves = [...next.moves.filter((m) => m.executionKey !== op.executionKey), { executionKey: op.executionKey, toInitiativeId: op.toInitiativeId }];
       next.splits = next.splits.filter((k) => k !== op.executionKey);

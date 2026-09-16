@@ -8,6 +8,7 @@ import { diagnose, type ChannelEvidence, type CreatorEvidence, type DiagnosisInp
 import { buildDecisionSpace, resolveRecommendation, type ActionType } from "@/lib/domain/decision-space";
 import { buildEpisode } from "@/lib/domain/decision-episode";
 import { evaluateInitiativeReality, resolveMappings, summarizeReality, type ConfirmedEntityLink, type InitiativeEvidence, type MappingCandidates } from "@/lib/domain/initiative-reality";
+import { evaluateIntentFulfillment, type IntentFulfillment, type IntentOrder } from "@/lib/domain/intent-fulfillment";
 import type { Initiative } from "@/lib/domain/plan";
 
 const NOW = new Date("2026-09-14T12:00:00.000Z");
@@ -58,6 +59,9 @@ interface Scenario {
   altProduct?: boolean;
   noGift?: boolean;
   paidBaseline?: PaidEvidence["baseline"];
+  // Intent Fulfillment as the service would pass it; paidUnknown = campaign not linked.
+  fulfillment?: IntentFulfillment | null;
+  paidUnknown?: boolean;
 }
 
 function run(s: Scenario = {}) {
@@ -75,9 +79,10 @@ function run(s: Scenario = {}) {
     freshness
   };
   const reality = evaluateInitiativeReality(initiative(), m, ev, NOW);
-  const paid: PaidEvidence = { spend: s.spend ?? 3095, purchases: s.purchases ?? 30, clicks: s.clicks === undefined ? null : s.clicks, attributedRevenue: s.attributed === undefined ? 9800 : s.attributed, basis: "confirmed", baseline: s.paidBaseline ?? null };
+  const paid: PaidEvidence = { spend: s.spend ?? 3095, purchases: s.purchases ?? 30, clicks: s.clicks === undefined ? null : s.clicks, attributedRevenue: s.attributed === undefined ? 9800 : s.attributed, basis: s.paidUnknown ? null : "confirmed", baseline: s.paidBaseline ?? null };
   const input: DiagnosisInput = {
     reality,
+    fulfillment: s.fulfillment ?? null,
     channels: s.channels === undefined ? { online: { revenue: revenue * 0.56, units: 24 }, offline: { revenue: revenue * 0.44, units: 17 }, manual: { revenue: 0, units: 0 }, unknown: { revenue: 0, units: 0 }, classifiedShare: 1, basis: "confirmed" } : s.channels,
     creators: s.creators === undefined ? null : s.creators,
     paid,
@@ -279,4 +284,86 @@ test("episode: the record keeps intent, reality, diagnosis, options with scores,
   assert.ok(ep.options.every((o) => o.because.length > 0));
   assert.equal(ep.recommended.type, rec.primary!.type);
   assert.ok(ep.unknowns.length >= 1);
+});
+
+// ─── Intent vs reality (16 Sep 2026) ──────────────────────────────────
+// "Satin sales +43% → move the campaign to bamboo" skipped two steps: was
+// the offer sold as planned, and is the campaign even the demand engine?
+
+const satinOrders = (fullSets: number, componentsOnly: number): IntentOrder[] => [
+  ...Array.from({ length: fullSets }, (_, i) => ({ orderId: `s${i}`, channel: "online" as const, isNewCustomer: false, lines: [{ productId: "p_full", title: "Satin Couture Full Set", units: 1, revenue: 900, initiativeProduct: true }] })),
+  ...Array.from({ length: componentsOnly }, (_, i) => ({ orderId: `c${i}`, channel: "online" as const, isNewCustomer: false, lines: [{ productId: "p_sheet", title: "Satin Sheet", units: 1, revenue: 320, initiativeProduct: true }] }))
+];
+const intentPeriod = { live: true, dayIndex: 14, elapsedShare: 14 / 30 };
+const heroIntent = { initiativeId: "satin", targetProductIds: ["p_full"], targetMode: "any" as const, targetLabel: "Full Satin Set", channel: null, audience: null, goal: null, note: null, setAt: "2026-09-01T00:00:00.000Z" };
+
+test("Q. no intent → diagnosis says so (not_set), unknowns name it, wouldChange asks for it; nothing else changes", () => {
+  const { diagnosis, rec } = run({ giftCover: 40, giftInventory: 300 });
+  assert.equal(diagnosis.intent.state, "not_set");
+  assert.ok(diagnosis.unknowns.some((u) => /intent/.test(u.en)));
+  assert.ok(rec.wouldChange.some((w) => /Stating the intent/.test(w.en)));
+  assert.ok(!types(buildDecisionSpace(diagnosis)).includes("FIX_OFFER"));
+});
+
+test("R. demand strong, but the offer does not sell as planned → FIX_OFFER outranks SCALE; the headline names it before any channel", () => {
+  const f = evaluateIntentFulfillment(heroIntent, satinOrders(2, 20), intentPeriod, new Map([["p_full", "Satin Couture Full Set"]]));
+  assert.equal(f.state, "diverging");
+  const { diagnosis, rec, space } = run({ giftCover: 40, giftInventory: 300, fulfillment: f });
+  assert.equal(diagnosis.intent.state, "diverging");
+  assert.equal(diagnosis.scope, "business");
+  assert.match(diagnosis.headline.en, /^Demand is strong, but the initiative is not unfolding as planned: We meant to sell "Full Satin Set"; only 9% of orders/);
+  assert.equal(rec.answer, "change");
+  assert.equal(rec.primary!.type, "FIX_OFFER");
+  assert.match(rec.primary!.what.en, /before adding budget align the offer with what is actually bought: "Satin Sheet" leads purchases/);
+  const scale = space.find((o) => o.type === "SCALE");
+  if (scale) assert.ok(scale.score < rec.primary!.score);
+  assert.ok(rec.why.some((w) => /only 9% of orders/.test(w.en)));
+  assert.ok(rec.wouldChange.some((w) => /starts selling/.test(w.en)));
+});
+
+test("S. the offer sells as planned → fulfilled; FIX_OFFER is not offered", () => {
+  const f = evaluateIntentFulfillment(heroIntent, satinOrders(18, 4), intentPeriod, new Map());
+  assert.equal(f.state, "fulfilled");
+  const { diagnosis, space } = run({ giftCover: 40, giftInventory: 300, fulfillment: f });
+  assert.equal(diagnosis.intent.state, "fulfilled");
+  assert.ok(!types(space).includes("FIX_OFFER"));
+});
+
+test("T. campaign not linked: a product shift never says 'move the campaign', and the shift is penalised as a guess", () => {
+  const { diagnosis, space } = run({ noGift: true, inventory: 30, cover: 6, facts: { replenishmentPossible: false }, altProduct: true, paidUnknown: true });
+  assert.equal(diagnosis.paid.state, "unknown");
+  const shift = space.find((o) => o.type === "SHIFT_PRODUCT_FOCUS")!;
+  assert.ok(shift, "shift option exists with a verified alternative");
+  assert.doesNotMatch(shift.what.en, /move the campaign/);
+  assert.match(shift.what.en, /the campaign is not linked, so whether it drives the demand is unknown/);
+  assert.ok(shift.because.some((b) => /campaign change is a guess/.test(b.reason.en)));
+  // With the campaign linked, the sentence may name it.
+  const linked = run({ noGift: true, inventory: 30, cover: 6, facts: { replenishmentPossible: false }, altProduct: true });
+  assert.match(linked.space.find((o) => o.type === "SHIFT_PRODUCT_FOCUS")!.what.en, /move the campaign to "Satin Couture Duvet"/);
+});
+
+test("U. intent diverging AND a stock constraint: the headline carries both, the offer fix is in the space next to the stock options", () => {
+  const f = evaluateIntentFulfillment(heroIntent, satinOrders(1, 15), intentPeriod, new Map());
+  const { diagnosis, space } = run({ noGift: true, inventory: 30, cover: 6, fulfillment: f });
+  assert.match(diagnosis.headline.en, /not unfolding as planned/);
+  assert.match(diagnosis.headline.en, /Also, stock of "Satin Couture Full Set" will not last the window/);
+  assert.ok(types(space).includes("FIX_OFFER"));
+  assert.ok(diagnosis.constraint);
+});
+
+test("V. the episode records intent state and the fulfillment shares", () => {
+  const f = evaluateIntentFulfillment(heroIntent, satinOrders(2, 20), intentPeriod, new Map());
+  const { diagnosis, space, rec, summary } = run({ giftCover: 40, giftInventory: 300, fulfillment: f });
+  const ep = buildEpisode(summary, diagnosis, space, rec, { initiativeId: "satin", title: "x", kind: "launch", start: "2026-09-01", end: "2026-09-30", offer: { discountPct: null, couponCode: null }, hookQuestion: null }, NOW);
+  assert.equal(ep.diagnosis.intent, "diverging");
+  assert.ok(ep.diagnosis.fulfillment && ep.diagnosis.fulfillment.orderShare !== null && ep.diagnosis.fulfillment.orderShare < 0.1);
+});
+
+test("W. campaign linked but Meta reports no purchase value: still no 'move the campaign', and the reason names the missing value, not a missing link", () => {
+  const { diagnosis, space } = run({ noGift: true, inventory: 30, cover: 6, facts: { replenishmentPossible: false }, altProduct: true, attributed: null });
+  assert.equal(diagnosis.paid.state, "unknown");
+  assert.equal(diagnosis.paid.basis, "confirmed");
+  const shift = space.find((o) => o.type === "SHIFT_PRODUCT_FOCUS")!;
+  assert.doesNotMatch(shift.what.en, /move the campaign/);
+  assert.match(shift.what.en, /linked but Meta reports no purchase value/);
 });

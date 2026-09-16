@@ -1,9 +1,10 @@
 // /plan/initiative/[id] — one commercial initiative.
 //   Before setup: "צריך ממך דקה" — the numbered questions and nothing else.
-//   After setup: Plan · Reality · Diagnosis · Decision space · Recommendation ·
-//   What would change · Details/Audit.
-// Everything technical (mapping rules, confidence sources, per-product
-// rows, decision history) lives under "Details / Audit".
+//   After setup, FOUR blocks first (owner, 16 Sep 2026):
+//     1. What Hiloomy thinks happened   2. The campaign probably linked
+//     3. What we meant to sell vs what people bought   4. What to do
+//   Everything else — the reality numbers, the diagnosis dimensions, the
+//   alternatives, the mapping audit — sits under "ראיות ונימוקים".
 
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -11,7 +12,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { InitiativeRealityPanel } from "@/components/plan/initiative-reality-panel";
 import { ContextResolution } from "@/components/plan/context-resolution";
 import { EntityLinkButton } from "@/components/plan/entity-link-controls";
-import { DiagnosisBlock, RecommendationBlock, AlternativesBlock, QuestionsBlock } from "@/components/plan/decision-brief";
+import { DiagnosisBlock, RecommendationBlock, AlternativesBlock, QuestionsBlock, IntentBlock } from "@/components/plan/decision-brief";
+import { IntentForm } from "@/components/plan/intent-form";
 import { getAppChromeData } from "@/lib/services/analytics-service";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { buildPlanView, currentPlanSheetId } from "@/lib/services/plan-service";
@@ -49,6 +51,22 @@ export default async function InitiativePage({ params, searchParams }: { params:
   const setupMode = reality.status === "needs_context";
   const toConfirm = reality.context.rows.filter((r) => r.action === "confirm");
   const bulk = reality.mappings.hygiene.bulk;
+  // One option per title: the same product can sit twice in the catalogue.
+  const intentProducts = (() => {
+    const byTitle = new Map<string, { ids: string[]; title: string; role: "product" | "gift" }>();
+    for (const l of reality.mappings.links) {
+      if (!(l.kind === "product" || l.kind === "gift_product") || l.state === "suggested" || l.id === "__none__") continue;
+      const role = l.kind === "gift_product" ? ("gift" as const) : ("product" as const);
+      const key = `${role}|${l.label.trim().toLowerCase().replace(/\s+/g, " ")}`;
+      const cur = byTitle.get(key) ?? { ids: [], title: l.label, role };
+      if (!cur.ids.includes(l.id)) cur.ids.push(l.id);
+      byTitle.set(key, cur);
+    }
+    return [...byTitle.values()];
+  })();
+  const confirmedCampaigns = reality.mappings.links.filter((l) => l.kind === "meta_campaign" && l.state === "confirmed" && l.id !== "__none__");
+  const res = reality.mappings.campaignResolution ?? null;
+  const resolverRows = [...(res?.likely ? [{ c: res.likely, likely: true }] : []), ...(res?.alternatives ?? []).map((c) => ({ c, likely: false }))];
 
   return (
     <AppShell store={chrome.store}>
@@ -72,14 +90,11 @@ export default async function InitiativePage({ params, searchParams }: { params:
         {setupMode ? (
           /* Mode A — only the setup. Nothing is concluded yet. */
           <section id="context" className="space-y-3">
-            <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} hygiene={reality.mappings.hygiene} locale={locale} />
+            <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} hygiene={reality.mappings.hygiene} locale={locale} compact={false} />
           </section>
         ) : (
-          /* Mode B — the initiative's reality. */
+          /* Mode B — four blocks, then the evidence. */
           <>
-            <section className="space-y-3">
-              <InitiativeRealityPanel r={summary} locale={locale} now={now} showPlan />
-            </section>
             {!toConfirm.length && bulk.length ? (
               <section id="context" className="space-y-2 rounded-md border border-danger/40 bg-danger/5 p-4 text-sm">
                 {bulk.map((b) => (
@@ -95,32 +110,82 @@ export default async function InitiativePage({ params, searchParams }: { params:
                 <ContextResolution sheetId={sheetId} initiativeId={initiative.id} initiativeTitle={initiative.title} context={reality.context} links={reality.mappings.links} discovery={reality.mappings.discovery} hygiene={reality.mappings.hygiene} locale={locale} compact />
               </section>
             ) : null}
+
+            {/* 1. What Hiloomy thinks happened */}
+            <section id="happened" className="space-y-2">
+              <h2 className="text-xl font-semibold tracking-tight">{t("מה הילומי חושבת שקרה", "What Hiloomy thinks happened")}</h2>
+              {brief.diagnosis ? (
+                <p className="text-lg font-semibold leading-snug">{brief.diagnosis.headline[locale]}</p>
+              ) : (
+                <p className="text-lg font-semibold leading-snug">{reality.statusReason[locale]}</p>
+              )}
+              <p className="text-sm text-muted-foreground">
+                {reality.lines.map((l) => `${l.label[locale]}: ${l.text[locale]}`).join(" · ")}
+                {reality.goal.defined ? ` · ${reality.goal.note[locale]}` : ""}
+              </p>
+            </section>
+
+            {/* 2. The campaign probably linked */}
+            <section id="campaign" className="space-y-3">
+              <h2 className="text-xl font-semibold tracking-tight">{t("הקמפיין שקשור ליוזמה", "The campaign behind the initiative")}</h2>
+              {confirmedCampaigns.length ? (
+                <div className="rounded-lg border border-border p-3 text-sm">
+                  <p className="font-semibold">{confirmedCampaigns.map((c) => c.label).join(" · ")}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t("מאושר על ידי המנהל", "Confirmed by the manager")}{brief.diagnosis ? ` · ${brief.diagnosis.paid.evidence[locale]}` : ""}</p>
+                </div>
+              ) : resolverRows.length ? (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    {res?.likely
+                      ? t("Hiloomy דירגה את הקמפיינים לפי שם, תקופה, הוצאה, דף נחיתה וטקסט המודעות. אישור מקשר את ההוצאה וה-ROAS ליוזמה.", "Hiloomy ranked the campaigns by name, period, spend, landing page and ad copy. Confirming links the spend and ROAS to the initiative.")
+                      : t(`אף קמפיין לא בולט מספיק כדי לומר שהוא מנוע הביקוש (נבדקו ${res?.total ?? 0}). המועמדים, לפי הסבירות:`, `No campaign stands out enough to call it the demand engine (${res?.total ?? 0} checked). The candidates, by likelihood:`)}
+                  </p>
+                  <ul className="space-y-2">
+                    {resolverRows.map(({ c, likely }) => (
+                      <li key={c.id} className={cn("rounded-lg border p-3 text-sm", likely ? "border-foreground/40 bg-muted/30" : "border-border")}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-semibold">
+                            <span className="me-2 tabular-nums">{Math.round(c.score * 100)}%</span>
+                            {c.name}
+                            {likely ? <span className="ms-2 rounded-full bg-success/15 px-2 py-0.5 text-[11px] text-success">{t("סביר", "likely")}</span> : null}
+                          </p>
+                          <EntityLinkButton sheetId={sheetId} initiativeId={initiative.id} kind="meta_campaign" id={c.id} label={c.name} mode="link" via="campaign_resolver" text={t("זה הקמפיין — אשר", "This is the campaign — confirm")} />
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{c.reasons.map((r) => r[locale]).join(" · ")}</p>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground">{t("בלי קמפיין מאושר, יעילות Meta נשארת 'לא ידוע' — והמלצות לא מזיזות קמפיין שלא הוכח שהוא מנוע הביקוש.", "Without a confirmed campaign, Meta effectiveness stays 'unknown' — and no recommendation moves a campaign that was not shown to drive the demand.")}</p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">{t("לא נמצא קמפיין Meta שמזכיר את היוזמה בשם, בדף הנחיתה או בטקסט המודעות. אפשר לקשר ידנית בהשלמת ההקשר.", "No Meta campaign names the initiative in its name, landing page or ad copy. It can be linked by hand in the context step.")}</p>
+              )}
+            </section>
+
+            {/* 3. What we meant to sell vs what people bought */}
+            <section id="intent" className="space-y-3">
+              <h2 className="text-xl font-semibold tracking-tight">{t("מה רצינו למכור — ומה אנשים קנו", "What we meant to sell — and what people bought")}</h2>
+              {brief.intent && brief.fulfillment ? (
+                <IntentBlock intent={brief.intent} f={brief.fulfillment} locale={locale} />
+              ) : (
+                <p className="text-sm text-muted-foreground">{t("הכוונה המסחרית של היוזמה (מוצר/סט, ערוץ, קהל, יעד) לא הוגדרה. בלי כוונה, Hiloomy מודדת מכירות — לא הצלחה.", "The initiative's commercial intent (product/set, channel, audience, goal) is not set. Without it, Hiloomy measures sales — not success.")}</p>
+              )}
+              <IntentForm sheetId={sheetId} initiativeId={initiative.id} products={intentProducts} intent={brief.intent} locale={locale} compact={!!brief.intent} />
+            </section>
+
+            {/* 4. What to do */}
             {brief.diagnosis && brief.recommendation ? (
-              <>
-                <section id="diagnosis" className="space-y-3">
-                  <h2 className="text-xl font-semibold tracking-tight">{t("אבחון עסקי", "Business diagnosis")}</h2>
-                  <p className="text-sm text-muted-foreground">{t("לפני המלצה: האם זו בעיית ערוץ או בעיית עסק? כל ממד לפי הראיות של היוזמה הזו בלבד.", "Before a recommendation: a channel problem or a business problem? Each dimension from this initiative's evidence only.")}</p>
-                  <DiagnosisBlock d={brief.diagnosis} locale={locale} />
-                </section>
+              <section id="recommendation" className="space-y-4">
+                <h2 className="text-xl font-semibold tracking-tight">{activeHook ? activeHook.question[locale] : t("מה לעשות", "What to do")}</h2>
+                <RecommendationBlock rec={brief.recommendation} locale={locale} />
                 {brief.recommendation.questions.length ? (
-                  <section id="questions" className="space-y-3">
-                    <h2 className="text-xl font-semibold tracking-tight">{t("שאלה שמשנה את ההמלצה", "A question that changes the recommendation")}</h2>
+                  <div className="space-y-2">
+                    <h3 className="font-semibold">{t("שאלה שמשנה את ההמלצה", "A question that changes the recommendation")}</h3>
                     <QuestionsBlock rec={brief.recommendation} locale={locale} sheetId={sheetId} initiativeId={initiative.id} coverDays={summary.inventory.worst?.coverDays ?? null} />
-                  </section>
+                  </div>
                 ) : null}
-                <section id="recommendation" className="space-y-3">
-                  <h2 className="text-xl font-semibold tracking-tight">{activeHook ? activeHook.question[locale] : t("המלצה", "Recommendation")}</h2>
-                  <RecommendationBlock rec={brief.recommendation} locale={locale} />
-                </section>
-                {brief.recommendation.alternatives.length ? (
-                  <section id="decision-space" className="space-y-3">
-                    <h2 className="text-xl font-semibold tracking-tight">{t("מרחב ההחלטה", "Decision space")}</h2>
-                    <p className="text-sm text-muted-foreground">{t("החלופות שבאמת זמינות, ומתי כל אחת עדיפה על ההמלצה.", "The alternatives actually available, and when each beats the recommendation.")}</p>
-                    <AlternativesBlock rec={brief.recommendation} locale={locale} />
-                  </section>
-                ) : null}
-                <section id="would-change" className="space-y-2">
-                  <h2 className="text-xl font-semibold tracking-tight">{t("מה ישנה את ההמלצה", "What would change the recommendation")}</h2>
+                <div className="space-y-1">
+                  <h3 className="font-semibold">{t("מה ישנה את ההמלצה", "What would change this")}</h3>
                   <ul className="space-y-1 text-sm">
                     {brief.recommendation.wouldChange.map((w, i) => (
                       <li key={i} className="flex items-start gap-2">
@@ -132,9 +197,33 @@ export default async function InitiativePage({ params, searchParams }: { params:
                   {initiative.relatedDecisions.length ? null : (
                     <p className="text-xs text-muted-foreground">{t("ההמלצה כאן היא ניתוח של היוזמה. היא נפתחת ב'היום' רק כשחלון החלטה מגיע או כשממצא עובר את סף הדירוג.", "This is the initiative's analysis. It opens on Today only when a decision window arrives or a finding passes the ranking threshold.")}</p>
                   )}
-                </section>
-              </>
+                </div>
+              </section>
             ) : null}
+
+            {/* Evidence & reasoning — everything the four blocks rest on */}
+            <details id="evidence" className="rounded-lg border border-border p-4">
+              <summary className="cursor-pointer select-none text-base font-semibold">{t("ראיות ונימוקים", "Evidence & reasoning")}</summary>
+              <div className="mt-4 space-y-8">
+                <section className="space-y-3">
+                  <h3 className="font-semibold">{t("מצב היוזמה — המספרים", "Initiative reality — the numbers")}</h3>
+                  <InitiativeRealityPanel r={summary} locale={locale} now={now} showPlan />
+                </section>
+                {brief.diagnosis ? (
+                  <section className="space-y-3">
+                    <h3 className="font-semibold">{t("אבחון עסקי — ממד אחר ממד", "Business diagnosis — dimension by dimension")}</h3>
+                    <p className="text-sm text-muted-foreground">{t("בעיית ערוץ או בעיית עסק? כל ממד לפי הראיות של היוזמה הזו בלבד.", "A channel problem or a business problem? Each dimension from this initiative's evidence only.")}</p>
+                    <DiagnosisBlock d={brief.diagnosis} locale={locale} />
+                  </section>
+                ) : null}
+                {brief.recommendation && brief.recommendation.alternatives.length ? (
+                  <section className="space-y-3">
+                    <h3 className="font-semibold">{t("מרחב ההחלטה — החלופות ומתי כל אחת עדיפה", "Decision space — the alternatives and when each is better")}</h3>
+                    <AlternativesBlock rec={brief.recommendation} locale={locale} />
+                  </section>
+                ) : null}
+              </div>
+            </details>
           </>
         )}
 
@@ -163,7 +252,7 @@ export default async function InitiativePage({ params, searchParams }: { params:
 
             <section className="space-y-2">
               <h3 className="font-semibold">{t("המיפוי וכלליו", "The mapping and its rules")}</h3>
-              <p className="text-xs text-muted-foreground">{t("מאושר = ראיה מלאה. זוהה אוטומטית = שם מוצר מדויק או קמפיין מקושר למוצר — משמש כאומדן. הצעה = התאמת מילה, לא משמשת. מזהה מוצר או URL בתוכנית → מאושר (עדיין לא נתמך בייבוא).", "Confirmed = full evidence. Auto-matched = exact product title or a campaign linked to the product — used as an estimate. Suggested = a word match, never used. A product id / URL in the plan → confirmed (not yet supported by the import).")}</p>
+              <p className="text-xs text-muted-foreground">{t("מאושר = ראיה מלאה. זוהה אוטומטית = שם מוצר מדויק, קמפיין מקושר למוצר, או קמפיין שכמה סימנים מצביעים עליו — משמש כאומדן. הצעה = התאמת מילה או ציון נמוך, לא משמשת.", "Confirmed = full evidence. Auto-matched = exact product title, a campaign linked to the product, or a campaign several signals point at — used as an estimate. Suggested = a word match or a low score, never used.")}</p>
               <div className="grid gap-3 lg:grid-cols-2">
                 {KINDS.map((kind) => {
                   const links = reality.mappings.links.filter((l) => l.kind === kind);

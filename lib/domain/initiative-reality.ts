@@ -50,6 +50,7 @@
 
 import type { EvidenceQuality, Localized } from "@/lib/domain/decision";
 import type { Initiative } from "@/lib/domain/plan";
+import { resolveCampaigns, pct as resolverPct, type CampaignResolution, type CampaignSignals } from "@/lib/domain/campaign-resolver";
 
 const L = (he: string, en: string): Localized => ({ he, en });
 
@@ -67,6 +68,7 @@ export type MappingRule =
   | "exact_product_title"
   | "campaign_product_link"
   | "campaign_name_token"
+  | "campaign_resolver" // several signals agree (name, destination, spend, timing) — see lib/domain/campaign-resolver.ts
   | "discount_code_used"
   | "product_title_token" // weak: a token of the initiative name in a product title
   | "gift_clause_token" // weak: a token of the gift clause in a product title
@@ -78,7 +80,7 @@ export type MappingRule =
 export const NONE_ENTITY_ID = "__none__";
 
 // Which rules are strong enough to be used without confirmation.
-export const PROVISIONAL_RULES: readonly MappingRule[] = ["exact_product_title", "campaign_product_link"];
+export const PROVISIONAL_RULES: readonly MappingRule[] = ["exact_product_title", "campaign_product_link", "campaign_resolver"];
 // Rules that only ever produce SUGGESTIONS. When an operator confirmation
 // carries one of these as its origin and more than EXACT_MATCH_MAX such
 // confirmations exist for the same kind, the batch is a family word
@@ -116,9 +118,12 @@ export interface ConfirmedEntityLink {
 }
 
 export interface MappingCandidates {
-  products: Array<{ id: string; title: string }>;
+  products: Array<{ id: string; title: string; handle?: string | null }>;
   knownDiscountCodes: string[]; // codes used on Shopify orders (or affiliate coupons)
-  metaCampaigns: Array<{ id: string; name: string; linkedProductIds: string[] }>;
+  // `signals` (daily spend/clicks, destination pages, creative text) let the
+  // Campaign Resolver score the campaign; without them only the name and
+  // campaign–product links are used.
+  metaCampaigns: Array<{ id: string; name: string; linkedProductIds: string[]; signals?: CampaignSignals | null }>;
   // Codes used on orders, with the order dates — so "codes used inside the
   // initiative window" can be offered when the plan names no code.
   discountUsage?: Array<{ code: string; orders: number; firstUsed: string; lastUsed: string }>;
@@ -135,6 +140,9 @@ export interface InitiativeMappings {
   // Operator links that were set aside at read time: batches confirmed from a
   // token rule (too broad to trust) and duplicates of the same Shopify id.
   hygiene: { bulk: Array<{ kind: MappingKind; count: number; via: string }>; duplicates: number };
+  // The Campaign Resolver's ranking (present when campaign signals were
+  // supplied): the likely campaign with its confidence, and the alternatives.
+  campaignResolution?: CampaignResolution | null;
 }
 
 // At most this many candidates are offered per kind before "search".
@@ -232,7 +240,7 @@ export function nameTokens(s: string): string[] {
 }
 
 export function resolveMappings(
-  initiative: Pick<Initiative, "id" | "title" | "products" | "offer" | "anchor"> & { text: string },
+  initiative: Pick<Initiative, "id" | "title" | "products" | "offer" | "anchor"> & { text: string; start?: string; end?: string },
   candidates: MappingCandidates,
   confirmed: ConfirmedEntityLink[]
 ): InitiativeMappings {
@@ -291,16 +299,48 @@ export function resolveMappings(
   }
   const productIds = new Set(links.filter((l) => l.kind === "product" || l.kind === "gift_product").map((l) => l.id));
   const tokens = [...new Set([...nameTokens(initiative.title), ...nameTokens(initiative.anchor.label)])];
-  for (const c of candidates.metaCampaigns) {
-    const viaProduct = c.linkedProductIds.find((id) => productIds.has(id));
-    if (viaProduct) {
-      const label = links.find((l) => l.id === viaProduct)?.label ?? viaProduct;
-      links.push({ kind: "meta_campaign", id: c.id, label: c.name, state: "provisional", confidence: "high", reason: L(`מקושר ל"${label}" בקישורי קמפיין–מוצר`, `Linked to "${label}" through campaign–product links`), provenance: { rule: "campaign_product_link", matchedOn: viaProduct, auto: null } });
-      continue;
+  let campaignResolution: CampaignResolution | null = null;
+  const withSignals = candidates.metaCampaigns.some((c) => c.signals) && initiative.start && initiative.end;
+  if (withSignals) {
+    // Campaign Resolver: several signals, a percentage, alternatives. High
+    // confidence → provisional (an estimate awaiting confirmation); anything
+    // listed below that is a suggestion with its score in the reason.
+    const mappedProducts = links
+      .filter((l) => (l.kind === "product" || l.kind === "gift_product") && l.id !== NONE_ENTITY_ID)
+      .map((l) => ({ id: l.id, title: l.label, handle: candidates.products.find((p) => p.id === l.id)?.handle ?? null }));
+    campaignResolution = resolveCampaigns(
+      { title: initiative.title, anchorLabel: initiative.anchor.label, text: initiative.text, start: initiative.start!, end: initiative.end!, couponCode: initiative.offer.couponCode, products: mappedProducts },
+      candidates.metaCampaigns.map((c) => ({ id: c.id, name: c.name, linkedProductIds: c.linkedProductIds, signals: c.signals ?? null }))
+    );
+    const ranked = [...(campaignResolution.likely ? [campaignResolution.likely] : []), ...campaignResolution.alternatives];
+    for (const cand of ranked) {
+      const why = cand.reasons.map((r) => r.he).join(" · ");
+      const whyEn = cand.reasons.map((r) => r.en).join(" · ");
+      const provisional = cand.confidence === "high" && campaignResolution.likely?.id === cand.id;
+      links.push({
+        kind: "meta_campaign",
+        id: cand.id,
+        label: cand.name,
+        state: provisional ? "provisional" : "suggested",
+        confidence: cand.confidence,
+        reason: provisional
+          ? L(`${resolverPct(cand.score)} · ${why} — זוהה אוטומטית, לאישור`, `${resolverPct(cand.score)} · ${whyEn} — auto-matched, to confirm`)
+          : L(`${resolverPct(cand.score)} · ${why}`, `${resolverPct(cand.score)} · ${whyEn}`),
+        provenance: { rule: "campaign_resolver", matchedOn: `${resolverPct(cand.score)}: ${whyEn}`, auto: null }
+      });
     }
-    const cn = normalizeText(c.name);
-    const tok = tokens.find((tk) => cn.includes(tk));
-    if (tok) links.push({ kind: "meta_campaign", id: c.id, label: c.name, state: "suggested", confidence: "medium", reason: L(`שם הקמפיין מכיל "${tok}" — התאמה חלשה, דורשת אישור`, `The campaign name contains "${tok}" — a weak match, needs confirmation`), provenance: { rule: "campaign_name_token", matchedOn: tok, auto: null } });
+  } else {
+    for (const c of candidates.metaCampaigns) {
+      const viaProduct = c.linkedProductIds.find((id) => productIds.has(id));
+      if (viaProduct) {
+        const label = links.find((l) => l.id === viaProduct)?.label ?? viaProduct;
+        links.push({ kind: "meta_campaign", id: c.id, label: c.name, state: "provisional", confidence: "high", reason: L(`מקושר ל"${label}" בקישורי קמפיין–מוצר`, `Linked to "${label}" through campaign–product links`), provenance: { rule: "campaign_product_link", matchedOn: viaProduct, auto: null } });
+        continue;
+      }
+      const cn = normalizeText(c.name);
+      const tok = tokens.find((tk) => cn.includes(tk));
+      if (tok) links.push({ kind: "meta_campaign", id: c.id, label: c.name, state: "suggested", confidence: "medium", reason: L(`שם הקמפיין מכיל "${tok}" — התאמה חלשה, דורשת אישור`, `The campaign name contains "${tok}" — a weak match, needs confirmation`), provenance: { rule: "campaign_name_token", matchedOn: tok, auto: null } });
+    }
   }
 
   // 1b. Weak discovery — offered to the operator, never used in a number.
@@ -392,7 +432,7 @@ export function resolveMappings(
               : L("אין התאמה בטוחה — חיפוש", "No confident match — search");
     byKind[kind] = { state, count: of.length, detail };
   }
-  return { initiativeId: initiative.id, links, byKind, discovery, hygiene: { bulk: [...bulkKinds.entries()].map(([kind, b]) => ({ kind, count: b.count, via: b.via })), duplicates } };
+  return { initiativeId: initiative.id, links, byKind, discovery, hygiene: { bulk: [...bulkKinds.entries()].map(([kind, b]) => ({ kind, count: b.count, via: b.via })), duplicates }, campaignResolution };
 }
 
 // Inventory language a manager can read. Never "runs out in −154 days".
@@ -612,11 +652,19 @@ export function consumptionProfile(dailyUnits: number[]): ConsumptionProfile {
   return { perDay, trendPct, stability: Math.abs(trendPct) < 0.25 ? "stable" : trendPct > 0 ? "rising" : "falling", daysObserved: n };
 }
 
+// The manager's target for the initiative (from the intent). With it, and
+// only with it, the reality can say on_track / off_track.
+export interface InitiativeGoal {
+  kind: "revenue" | "units" | "orders";
+  value: number;
+}
+
 export function evaluateInitiativeReality(
   initiative: Pick<Initiative, "id" | "title" | "start" | "end" | "offer" | "anchor"> & { text: string },
   mappings: InitiativeMappings,
   ev: InitiativeEvidence,
-  now: Date
+  now: Date,
+  goal: InitiativeGoal | null = null
 ): InitiativeReality {
   const today = now.toISOString().slice(0, 10);
   const totalDays = daysBetween(initiative.start, initiative.end) + 1;
@@ -787,7 +835,20 @@ export function evaluateInitiativeReality(
   const hasEvidence = evidenceBasis !== "none";
   const issues = findings.filter((f) => f.severity !== "info");
   const risks = findings.filter((f) => f.severity === "risk");
-  const goalDefined = false; // the plan model carries no target
+  // A target exists only when the manager stated one (intent). Pace is
+  // linear against the elapsed share of the window; ±10% is "on track".
+  // "orders" cannot be measured here (no order count in the evidence) —
+  // Intent Fulfillment measures it; the reality treats it as undefined.
+  const goalActual = goal ? (goal.kind === "revenue" ? mainProducts.reduce((n, p) => n + (p.revenue ?? 0), 0) : goal.kind === "units" ? mainProducts.reduce((n, p) => n + (p.units ?? 0), 0) : null) : null;
+  const goalDefined = !!goal && goal.value > 0 && goalActual !== null && mainProducts.length > 0;
+  const goalExpected = goalDefined ? goal!.value * elapsedShare : 0;
+  const goalPaceOk = goalDefined && goalExpected > 0 ? goalActual! >= goalExpected * 0.9 : null;
+  const goalFmt = (n: number) => (goal?.kind === "revenue" ? ils(n) : String(Math.round(n)));
+  const goalNote: Localized = goalDefined
+    ? L(`יעד: ${goalFmt(goal!.value)} ${goal!.kind === "revenue" ? "הכנסות" : "יחידות"}; עד היום ${goalFmt(goalActual!)} (${Math.round((goalActual! / goal!.value) * 100)}% מהיעד, ${Math.round(elapsedShare * 100)}% מהזמן עבר).`, `Goal: ${goalFmt(goal!.value)} ${goal!.kind}; so far ${goalFmt(goalActual!)} (${Math.round((goalActual! / goal!.value) * 100)}% of goal, ${Math.round(elapsedShare * 100)}% of the window gone).`)
+    : goal && goal.kind === "orders"
+      ? L("היעד הוגדר בהזמנות — נמדד בממד הכוונה, לא כאן.", "The goal is in orders — measured under intent, not here.")
+      : L("לא הוגדר יעד מסחרי ליוזמה הזו.", "No commercial target was defined for this initiative.");
   const kindLabels = (ks: MappingKind[], loc: "he" | "en") => ks.map((k) => MAPPING_KIND_LABEL[k][loc].toLowerCase()).join(", ");
   const cannot = missingCritical.includes("product") ? L("מכירות, מלאי ורווחיות", "sales, inventory or profitability") : missingCritical.includes("gift_product") ? L("כמה מתנות ניתנו וכמה נשארו", "how many gifts were given and how many remain") : missingCritical.includes("discount") ? L("את השימוש בקופון", "coupon usage") : L("את ביצועי הקמפיין", "campaign performance");
   let status: InitiativeRealityStatus;
@@ -804,9 +865,12 @@ export function evaluateInitiativeReality(
   } else if (issues.length) {
     status = "needs_attention";
     statusReason = (risks[0] ?? issues[0]).statement;
-  } else if (goalDefined) {
-    status = "on_track"; // unreachable today: kept for when a target exists
-    statusReason = L("עומד ביעד.", "Meeting the target.");
+  } else if (goalDefined && live && dayIndex >= 3 && goalPaceOk !== null) {
+    status = goalPaceOk ? "on_track" : "off_track";
+    statusReason = goalPaceOk ? L(`במסלול ליעד. ${goalNote.he}`, `On track for the goal. ${goalNote.en}`) : L(`מאחור מול היעד. ${goalNote.he}`, `Behind the goal. ${goalNote.en}`);
+  } else if (goalDefined && !live && period.end < today) {
+    status = goalActual! >= goal!.value ? "on_track" : "off_track";
+    statusReason = goalActual! >= goal!.value ? L(`היוזמה הסתיימה ועמדה ביעד. ${goalNote.he}`, `The initiative ended and met the goal. ${goalNote.en}`) : L(`היוזמה הסתיימה מתחת ליעד. ${goalNote.he}`, `The initiative ended below the goal. ${goalNote.en}`);
   } else {
     status = "no_issue_detected";
     statusReason = L("נבדק — לא נמצאה בעיה מהותית. אין יעד שמאפשר לקבוע אם היוזמה במסלול.", "Checked — no material issue found. No target exists to say whether it is on track.");
@@ -900,7 +964,7 @@ export function evaluateInitiativeReality(
     metrics,
     findings,
     missingEvidence: missing,
-    goal: { defined: goalDefined, note: L("לא הוגדר יעד מסחרי ליוזמה הזו.", "No commercial target was defined for this initiative.") },
+    goal: { defined: goalDefined, note: goalNote },
     confidence,
     confidenceReason,
     freshness: ev.freshness,

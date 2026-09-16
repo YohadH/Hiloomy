@@ -217,7 +217,10 @@ test("multiple initiatives link to one holiday; confirmed ones come first and on
 test("no initiative: the holiday is still shown from its source; a confirmed link to an event outside the horizon is ignored, not invented", () => {
   const { events } = composeCommercialContext(null, new Map(), NOW);
   const ids = events.map((e) => e.calendarEvent.id);
-  assert.deepEqual(ids, ["rosh_hashanah_2026", "yom_kippur_2026", "sukkot_2026", "shemini_atzeret_2026"]);
+  // 90-day horizon from 11 Sep: Tishrei holidays first, then the retail
+  // moments (Singles Day, Black Friday, Cyber Monday) and Hanukkah.
+  assert.deepEqual(ids.slice(0, 4), ["rosh_hashanah_2026", "yom_kippur_2026", "sukkot_2026", "shemini_atzeret_2026"]);
+  assert.deepEqual(ids.slice(4), ["singles_day_2026", "black_friday_2026", "cyber_monday_2026", "hanukkah_2026"]);
   assert.ok(events.every((e) => e.linkedInitiatives.length === 0));
   const stale = initiative("z", "קמפיין חנוכה", "2026-09-01", "2026-09-30");
   const plan = { sheetId: "s", title: "t", rangeStart: null, rangeEnd: null, today: "2026-09-11", initiatives: [stale] } as unknown as PlanView;
@@ -230,7 +233,7 @@ test("business summary line names the calendar event with event language and the
   const plan = { sheetId: "s", title: "t", rangeStart: null, rangeEnd: null, today: "2026-09-11", initiatives: [camp] } as unknown as PlanView;
   const ctx = buildBusinessContext(plan, [], null, buildCoverage(null, null, {}), NOW, new Map([["i1", "rosh_hashanah_2026"]]));
   assert.equal(ctx.sheetId, "s");
-  assert.deepEqual(ctx.calendarSources.map((s) => s.en), ["Hebrew calendar"]);
+  assert.deepEqual(ctx.calendarSources.map((s) => s.en), ["Hebrew calendar", "Retail calendar"]);
   assert.match(ctx.summaryLine.he, /^ראש השנה מתחיל היום, "קמפיין ראש השנה" — הקמפיין פעיל עד 30 בספטמבר/);
   assert.equal(ctx.windows.length, 0); // linked → not duplicated as a campaign window
 });
