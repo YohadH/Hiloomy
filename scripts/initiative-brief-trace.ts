@@ -40,7 +40,24 @@ const rec = brief.recommendation;
 const out = {
   store: store.domain,
   initiative: { id: initiative.id, title: initiative.title, start: initiative.start, end: initiative.end },
-  status: { reality: brief.reality.status, reason: brief.reality.statusReason.en },
+  status: { reality: brief.reality.status, reason: brief.reality.statusReason.en, reason_he: brief.reality.statusReason.he },
+  // "Hiloomy checked the initiative" — what the resolution layer found before asking anything (§0h).
+  checked: {
+    launch: { phase: brief.reality.context.launch.phase, severity: brief.reality.context.launch.severity, insight: brief.reality.context.launch.insight?.en ?? null, insight_he: brief.reality.context.launch.insight?.he ?? null },
+    checks: brief.reality.context.launch.checks.map((c) => ({ kind: c.kind, state: c.state, line: c.line.en })),
+    question: brief.reality.context.question ? { kind: brief.reality.context.question.kind, options: brief.reality.context.question.options.map((o) => `${o.label} — ${o.reason.en}`) } : null,
+    campaigns: brief.reality.mappings.campaignResolution
+      ? {
+          total: brief.reality.mappings.campaignResolution.total,
+          considered: brief.reality.mappings.campaignResolution.considered,
+          likely: brief.reality.mappings.campaignResolution.likely ? `${Math.round(brief.reality.mappings.campaignResolution.likely.score * 100)}% ${brief.reality.mappings.campaignResolution.likely.name}` : null,
+          alternatives: brief.reality.mappings.campaignResolution.alternatives.map((a) => `${Math.round(a.score * 100)}% ${a.name}`),
+          rejected: brief.reality.mappings.campaignResolution.rejected.map((r) => `${r.name} — ${r.reason.en}`)
+        }
+      : null,
+    usedLinks: brief.reality.mappings.links.filter((l) => l.state !== "suggested").map((l) => `${l.kind}/${l.state} ${l.label} (${l.provenance.rule})`),
+    suggested: brief.reality.mappings.links.filter((l) => l.state === "suggested").map((l) => `${l.kind} ${l.label} — ${l.reason.en}`)
+  },
   funnel: f
     ? {
         stages: f.stages.map((s) => ({ stage: s.label.en, value: s.value, source: s.source, rate: s.rate !== null ? `${(s.rate * 100).toFixed(1)}%` : null, baseline: s.benchmarkRate !== null ? `${(s.benchmarkRate * 100).toFixed(1)}%` : null, materiallyBelow: s.materiallyBelow })),
