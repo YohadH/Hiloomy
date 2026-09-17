@@ -179,7 +179,34 @@ export async function syncInventoryLevels(storeId: string): Promise<{ locations:
 
   await writeConfig(LEVELS_SYNCED_KEY(storeId), now.toISOString());
   await applyInventoryLocationSelection(storeId);
+  await snapshotInventoryLevels(storeId, now).catch((err) => {
+    console.warn("[inventory-levels] snapshot skipped:", err instanceof Error ? err.message : err);
+  });
   return { locations: locations.length, levels };
+}
+
+// ── Daily snapshot (inventory history) ──────────────────────────────────
+// Copies today's levels into InventoryLevelSnapshot keyed by the store's
+// local day; a later sync the same day overwrites (end-of-day wins). Keeps
+// SNAPSHOT_RETENTION_DAYS of history. Shopify has no inventory history API,
+// so the movement view can only look back to the first snapshot.
+export const SNAPSHOT_RETENTION_DAYS = 400;
+
+export async function snapshotInventoryLevels(storeId: string, now = new Date()): Promise<{ date: string; rows: number }> {
+  const db = getDb() as any;
+  const { getStoreTimeZone, formatDateInTimeZone } = await import("@/lib/server/reporting-date-range");
+  const tz = await getStoreTimeZone(storeId);
+  const date = formatDateInTimeZone(now, tz); // YYYY-MM-DD in the store's day
+  const rows: number = await db.$executeRaw`
+    INSERT INTO "InventoryLevelSnapshot" ("id", "storeId", "date", "shopifyVariantId", "shopifyLocationId", "locationName", "available", "capturedAt")
+    SELECT md5(${storeId} || ${date} || l."shopifyVariantId" || l."shopifyLocationId"), l."storeId", ${date}::date, l."shopifyVariantId", l."shopifyLocationId", l."locationName", l."available", now()
+    FROM "VariantInventoryLevel" l
+    WHERE l."storeId" = ${storeId}
+    ON CONFLICT ("storeId", "date", "shopifyVariantId", "shopifyLocationId")
+    DO UPDATE SET "available" = EXCLUDED."available", "locationName" = EXCLUDED."locationName", "capturedAt" = now()
+  `;
+  await db.$executeRaw`DELETE FROM "InventoryLevelSnapshot" WHERE "storeId" = ${storeId} AND "date" < (${date}::date - ${SNAPSHOT_RETENTION_DAYS}::int)`;
+  return { date, rows: Number(rows) };
 }
 
 // ProductVariant.inventoryQuantity := Σ available over the SELECTED locations,

@@ -477,6 +477,8 @@ async function upsertOrderFromMapped(
       sourceName: mapped.order.sourceName,
       landingSiteRef: mapped.order.landingSiteRef ?? null,
       referringSite: mapped.order.referringSite ?? null,
+      shopifyLocationId: mapped.order.shopifyLocationId ?? null,
+      locationName: mapped.order.locationName ?? null,
       updatedAt: mapped.order.updatedAt,
       customerId: customer?.id ?? null
     },
@@ -502,6 +504,8 @@ async function upsertOrderFromMapped(
       sourceName: mapped.order.sourceName,
       landingSiteRef: mapped.order.landingSiteRef ?? null,
       referringSite: mapped.order.referringSite ?? null,
+      shopifyLocationId: mapped.order.shopifyLocationId ?? null,
+      locationName: mapped.order.locationName ?? null,
       updatedAt: mapped.order.updatedAt,
       customerId: customer?.id ?? null
     }

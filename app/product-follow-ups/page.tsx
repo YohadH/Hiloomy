@@ -10,6 +10,8 @@ import { getDb } from "@/lib/server/db";
 import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { getAppLocale } from "@/lib/i18n";
 import { formatNumber } from "@/lib/utils";
+import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
+import { getInventoryMovement, type InventoryMovementReport } from "@/lib/services/inventory-movement-service";
 
 export const metadata = {
   title: "Product follow-ups"
@@ -38,6 +40,13 @@ export default async function ProductFollowUpsPage() {
   const [selectedLocationIds, cachedLocations] = storeId
     ? await Promise.all([getSelectedInventoryLocations(storeId), getCachedShopifyLocations(storeId)])
     : [[], []];
+  // Stock movement by location for the active reporting range (the global
+  // date picker): opening → in / sold / out → now, per product and variant.
+  const selection = await getReportingDateRangeSelection(locale === "he" ? "he" : "en");
+  const movement: InventoryMovementReport | null =
+    storeId && cachedLocations.length
+      ? await getInventoryMovement(storeId, { start: selection.start, end: selection.end }, { productIds: stock.map((r) => r.productId) }).catch(() => null)
+      : null;
   const selectedLocationNames = cachedLocations.filter((l) => selectedLocationIds.includes(l.id)).map((l) => l.name);
   const syncAgeMinutes = lastSyncedAt
     ? Math.max(0, Math.round((Date.now() - lastSyncedAt.getTime()) / 60000))
@@ -152,6 +161,8 @@ export default async function ProductFollowUpsPage() {
           freshnessLabel={freshnessLabel}
           freshnessIsStale={freshnessIsStale}
           lastSyncedAtIso={lastSyncedAt ? lastSyncedAt.toISOString() : null}
+          movement={movement}
+          rangeLabel={selection.label}
         />
       </div>
     </AppShell>

@@ -679,6 +679,11 @@ model Order {
   // Hostname of the previous page the customer was on when they arrived
   // (e.g. "instagram.com", "google.com"). Shopify's `referring_site` field.
   referringSite         String?
+  // Where the order was taken / fulfilled from: Shopify's physicalLocation
+  // for POS orders, else the first fulfillment's location. Lets units sold
+  // be counted per store and warehouse (inventory movement by location).
+  shopifyLocationId     String?
+  locationName          String?
   updatedAt             DateTime
   store                 Store                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
   customer              Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -2020,6 +2025,27 @@ model VariantInventoryLevel {
 
   @@unique([storeId, shopifyVariantId, shopifyLocationId])
   @@index([storeId, shopifyLocationId])
+}
+
+// Daily snapshot of per-location levels — the history VariantInventoryLevel
+// does not keep (it is rewritten on every sync). One row per variant per
+// location per store-local day; the last sync of the day wins. Inventory
+// movement over a period (opening → in / sold / out → closing) is derived
+// from these snapshots plus orders by location. Shopify exposes no
+// inventory history API, so the series starts the day this shipped.
+model InventoryLevelSnapshot {
+  id                String   @id @default(cuid())
+  storeId           String
+  date              DateTime @db.Date
+  shopifyVariantId  String
+  shopifyLocationId String
+  locationName      String
+  available         Int      @default(0)
+  capturedAt        DateTime @default(now())
+
+  @@unique([storeId, date, shopifyVariantId, shopifyLocationId])
+  @@index([storeId, date])
+  @@index([storeId, shopifyVariantId])
 }
 
 // Google Ads daily campaign metrics (google-ads-service.ts). Connection +

@@ -41,6 +41,8 @@ export const ORDERS_QUERY = /* GraphQL */ `
           displayFinancialStatus
           displayFulfillmentStatus
           sourceName
+          physicalLocation { id name }
+          fulfillments(first: 3) { location { id name } }
           customerJourneySummary {
             firstVisit {
               landingPage

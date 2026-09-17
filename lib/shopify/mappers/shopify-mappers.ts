@@ -183,6 +183,10 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
     // The downstream channel-performance engine treats null as "unknown".
     landingSiteRef: order.customerJourneySummary?.firstVisit?.landingPage ?? null,
     referringSite: order.customerJourneySummary?.firstVisit?.referrerUrl ?? null,
+    // Where the order was taken (POS physicalLocation) or, for online orders,
+    // fulfilled from (first fulfillment's location). Null = not located yet.
+    shopifyLocationId: stripGid(order.physicalLocation?.id ?? order.fulfillments?.[0]?.location?.id ?? null),
+    locationName: order.physicalLocation?.name ?? order.fulfillments?.[0]?.location?.name ?? null,
     updatedAt: new Date(order.updatedAt),
     shopifyCustomerId: stripGid(order.customer?.id)
   };
