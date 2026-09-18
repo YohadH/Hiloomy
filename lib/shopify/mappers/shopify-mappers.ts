@@ -187,6 +187,7 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
     // fulfilled from (first fulfillment's location). Null = not located yet.
     shopifyLocationId: stripGid(order.physicalLocation?.id ?? order.fulfillments?.[0]?.location?.id ?? null),
     locationName: order.physicalLocation?.name ?? order.fulfillments?.[0]?.location?.name ?? null,
+    locationSource: order.physicalLocation?.id ? "pos" : order.fulfillments?.[0]?.location?.id ? "fulfillment" : null,
     updatedAt: new Date(order.updatedAt),
     shopifyCustomerId: stripGid(order.customer?.id)
   };

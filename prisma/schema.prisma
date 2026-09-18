@@ -684,6 +684,10 @@ model Order {
   // be counted per store and warehouse (inventory movement by location).
   shopifyLocationId     String?
   locationName          String?
+  // "pos" = taken at that store's till (a store sale); "fulfillment" = an
+  // online order shipped from that location. Both reduce the location's
+  // stock; only the first is a store sale.
+  locationSource        String?
   updatedAt             DateTime
   store                 Store                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
   customer              Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -2046,6 +2050,38 @@ model InventoryLevelSnapshot {
   @@unique([storeId, date, shopifyVariantId, shopifyLocationId])
   @@index([storeId, date])
   @@index([storeId, shopifyVariantId])
+}
+
+// One inventory movement with a KNOWN cause: a Shopify inventory transfer
+// leg (out of the origin, in to the destination), a purchase-order receipt
+// the manager recorded in Hiloomy, an inventory-history adjustment when a
+// source exists. Sales are NOT stored here (they are read from orders);
+// snapshot-derived residuals are computed at read time and never stored.
+// Every row says whether it is exact or derived and where it came from.
+model InventoryMovementEvent {
+  id               String   @id @default(cuid())
+  storeId          String
+  shopifyVariantId String
+  productId        String?
+  variantId        String?
+  locationId       String
+  locationName     String?
+  // PO_RECEIPT | TRANSFER_IN | TRANSFER_OUT | RETURN | POSITIVE_ADJUSTMENT | NEGATIVE_ADJUSTMENT | DAMAGE
+  type             String
+  quantity         Int
+  occurredAt       DateTime
+  // SHOPIFY_TRANSFER | SHOPIFY_INVENTORY_HISTORY | HILOOMY_PO
+  sourceType       String
+  sourceId         String
+  precision        String   @default("exact") // exact | derived
+  reference        String? // PO number, transfer name
+  note             String?
+  createdAt        DateTime @default(now())
+
+  @@unique([storeId, sourceType, sourceId])
+  @@index([storeId, occurredAt])
+  @@index([storeId, shopifyVariantId, occurredAt])
+  @@index([storeId, locationId, occurredAt])
 }
 
 // Google Ads daily campaign metrics (google-ads-service.ts). Connection +

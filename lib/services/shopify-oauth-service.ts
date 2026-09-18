@@ -57,6 +57,10 @@ const DEFAULT_SCOPES = [
   "read_customers",
   "read_inventory",
   "read_locations",
+  // Inventory transfers (warehouse → store legs) — Admin API 2026-07+. Stores
+  // installed before 18 Sep 2026 must reconnect Shopify once to grant it;
+  // until then the movement view shows transfers as derived residuals.
+  "read_inventory_transfers",
   "write_discounts"
 ];
 

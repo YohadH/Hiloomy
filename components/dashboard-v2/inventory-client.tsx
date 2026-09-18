@@ -32,8 +32,8 @@ import { StockBadge } from "@/components/dashboard-v2/stock-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HelpTip } from "@/components/ui/help-tip";
 import type { ProductStockRow, StockFlag } from "@/lib/domain/types";
-import type { InventoryMovementReport, ProductMovement } from "@/lib/services/inventory-movement-service";
-import type { LocationMovement } from "@/lib/domain/inventory-movement";
+import type { InventoryMovementReport } from "@/lib/services/inventory-movement-service";
+import { FlowSummaryCards, LocationChips, PoReceiptForm, ProductFlow } from "@/components/dashboard-v2/inventory-flow";
 import type { AppLocale } from "@/lib/i18n";
 import { cn, formatNumber } from "@/lib/utils";
 
@@ -110,7 +110,8 @@ function InventoryTable({
   showActionChips = false,
   emptyMessage,
   movement = null,
-  rangeLabel = null
+  rangeLabel = null,
+  locationFilter = ""
 }: {
   rows: ProductStockRow[];
   locale: AppLocale;
@@ -118,6 +119,7 @@ function InventoryTable({
   emptyMessage?: string;
   movement?: InventoryMovementReport | null;
   rangeLabel?: string | null;
+  locationFilter?: string;
 }) {
   // Pagination + a scrollable body. A brand with 1,000+ products rendered
   // every row of every section at once — the page was a mile of scrolling
@@ -186,33 +188,46 @@ function InventoryTable({
       render: (row) => <StockBadge quantity={row.inventoryQuantity} flag={row.flag} locale={locale} />
     },
     ...(movement
-      ? [
-          {
-            label: locale === "he" ? "לפי מיקום" : "By location",
-            tooltip: locale === "he" ? `המלאי הנוכחי בכל מיקום. לחיצה על המוצר פותחת את תנועת המלאי בתקופה${rangeLabel ? ` (${rangeLabel})` : ""}: פתיחה, נכנס, נמכר, יצא, עכשיו.` : `Current stock per location. Expanding the product opens the period's movement${rangeLabel ? ` (${rangeLabel})` : ""}: opening, in, sold, out, now.`,
-            render: (row: ProductStockRow) => {
-              const pm = movement.products[row.productId];
-              if (!pm) return <span className="text-muted-foreground">—</span>;
-              const locs = pm.locations.filter((l: LocationMovement) => l.closing !== 0 || l.sold > 0).slice(0, 4);
-              return (
-                <button type="button" onClick={() => toggleExpanded(row.productId)} className="flex flex-wrap gap-1 text-start" aria-expanded={expanded.has(row.productId)}>
-                  {locs.length ? (
-                    locs.map((l: LocationMovement) => (
-                      <span key={l.locationId} className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] tabular-nums">
-                        <span className="max-w-[9rem] truncate">{l.locationName}</span>
-                        <span className={cn("font-semibold", l.closing <= 0 ? "text-rose-700" : "")}>{formatNumber(l.closing)}</span>
-                        {l.sold > 0 ? <span className="text-muted-foreground">·−{formatNumber(l.sold)}</span> : null}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-[11px] text-muted-foreground">{locale === "he" ? "0 בכל המיקומים" : "0 everywhere"}</span>
-                  )}
-                  {pm.locations.length > locs.length ? <span className="text-[11px] text-muted-foreground">+{pm.locations.length - locs.length}</span> : null}
-                </button>
-              );
+      ? (() => {
+          // Period movement per product (or per selected location).
+          const pick = (row: ProductStockRow) => {
+            const pm = movement.products[row.productId];
+            if (!pm) return null;
+            if (locationFilter) {
+              const l = pm.locations.find((x) => x.locationId === locationFilter);
+              // At one location "in" = external receipt + transferred in (exact + probable).
+              return l ? { opening: l.opening, received: l.receivedExternal + l.receivedUnclassified + l.transferIn + l.probableTransferIn, unclassified: l.receivedUnclassified, sold: l.sold, returns: l.returns, closing: l.closing, isLocation: true } : { opening: null, received: 0, unclassified: 0, sold: 0, returns: 0, closing: 0, isLocation: true };
             }
-          }
-        ]
+            // For the business: external only — PO receipts plus unidentified increases; transfers never.
+            return { opening: pm.total.opening, received: pm.total.receivedExternal + pm.total.receivedUnclassified, unclassified: pm.total.receivedUnclassified, sold: pm.total.sold, returns: pm.total.returns, closing: pm.total.onHand, isLocation: false };
+          };
+          const num = (v: number | null) => (v === null ? <span className="text-muted-foreground">—</span> : formatNumber(v));
+          return [
+            {
+              label: locale === "he" ? "פתיחה" : "Opening",
+              tooltip: movement.openingDate ? (locale === "he" ? `מלאי לפי תמונת המלאי של ${movement.openingDate}` : `Stock per the ${movement.openingDate} snapshot`) : locale === "he" ? "אין תמונת מלאי לפני תחילת התקופה" : "No snapshot before the period start",
+              render: (row: ProductStockRow) => { const p = pick(row); return p ? <span className="tabular-nums text-muted-foreground">{num(p.opening)}</span> : <span className="text-muted-foreground">—</span>; }
+            },
+            {
+              label: locationFilter ? (locale === "he" ? "נכנס למיקום" : "Into location") : locale === "he" ? "קליטה חדשה" : "External receipt",
+              tooltip: locationFilter ? (locale === "he" ? "קליטה חיצונית + הועבר פנימה (מדויק ו-≈ סביר) למיקום הזה" : "External receipt + transferred in (exact and ≈ probable) at this location") : locale === "he" ? "קבלות PO (מדויק) + עלייה ממקור לא מזוהה (?) — העברות פנימיות לעולם לא נספרות" : "PO receipts (exact) + increases from an unidentified source (?) — internal transfers are never counted",
+              render: (row: ProductStockRow) => { const p = pick(row); return p && p.received > 0 ? <span className={cn("tabular-nums font-semibold", p.unclassified > 0 ? "text-amber-700" : "text-emerald-700")}>+{formatNumber(p.received)}{p.unclassified > 0 ? <span className="ms-0.5 text-[10px]">?</span> : null}</span> : <span className="tabular-nums text-muted-foreground">0</span>; }
+            },
+            {
+              label: locale === "he" ? "נמכר (נטו)" : "Net sold",
+              tooltip: locale === "he" ? "יחידות שנמכרו פחות יחידות שהוחזרו, לפי תאריך ההזמנה" : "Units sold minus units returned, by order date",
+              render: (row: ProductStockRow) => { const p = pick(row); return p && p.sold > 0 ? <span className="tabular-nums font-semibold" title={p.returns > 0 ? (locale === "he" ? `החזרות ${formatNumber(p.returns)}` : `returns ${formatNumber(p.returns)}`) : undefined}>−{formatNumber(p.sold)}</span> : <span className="tabular-nums text-muted-foreground">0</span>; }
+            },
+            {
+              label: locale === "he" ? "לפי מיקום" : "Locations",
+              tooltip: locale === "he" ? "המלאי הנוכחי בכל מיקום. לחיצה פותחת את תנועת המלאי המלאה." : "Current stock per location. Click to open the full movement ledger.",
+              render: (row: ProductStockRow) => {
+                const pm = movement.products[row.productId];
+                return pm ? <LocationChips pm={pm} locale={locale} open={expanded.has(row.productId)} onOpen={() => toggleExpanded(row.productId)} /> : <span className="text-muted-foreground">—</span>;
+              }
+            }
+          ];
+        })()
       : []),
     {
       label: locale === "he" ? "ימים מהמכירה האחרונה" : "Days since last sale",
@@ -314,8 +329,7 @@ function InventoryTable({
                       <td colSpan={columns.length} className="space-y-4 px-5 pb-4 pt-2">
                         {movement && movement.products[row.productId] ? (
                           <div className="mb-4">
-                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{locale === "he" ? `תנועת מלאי לפי מיקום${rangeLabel ? ` · ${rangeLabel}` : ""}` : `Stock movement by location${rangeLabel ? ` · ${rangeLabel}` : ""}`}</p>
-                            <MovementTable row={row} pm={movement.products[row.productId]} report={movement} locale={locale} />
+                            <ProductFlow row={row} pm={movement.products[row.productId]} report={movement} locale={locale} filterLocation={locationFilter || undefined} rangeLabel={rangeLabel} />
                           </div>
                         ) : null}
                         {row.variantCount > 1 ? (
@@ -471,94 +485,6 @@ export interface InventoryClientProps {
   rangeLabel?: string | null;
 }
 
-// ─── Movement ledger (per product on expand) ──────────────────────────────────
-
-const n = (v: number | null) => (v === null ? "—" : formatNumber(v));
-
-function MovementRows({ rows, total, locale, labelTotal }: { rows: LocationMovement[]; total: LocationMovement; locale: AppLocale; labelTotal: string }) {
-  return (
-    <>
-      {rows.map((m) => (
-        <tr key={m.locationId}>
-          <td className="py-1.5 pe-4 font-medium">{m.locationName}</td>
-          <td className="py-1.5 pe-4 text-end tabular-nums text-muted-foreground">{n(m.opening)}</td>
-          <td className={cn("py-1.5 pe-4 text-end tabular-nums", (m.inbound ?? 0) > 0 && "font-semibold text-emerald-700")}>{m.inbound === null ? "—" : m.inbound > 0 ? `+${formatNumber(m.inbound)}` : "0"}</td>
-          <td className={cn("py-1.5 pe-4 text-end tabular-nums", m.sold > 0 && "font-semibold")}>{m.sold > 0 ? `−${formatNumber(m.sold)}` : "0"}</td>
-          <td className={cn("py-1.5 pe-4 text-end tabular-nums", (m.outbound ?? 0) > 0 && "font-semibold text-sky-700")}>{m.outbound === null ? "—" : m.outbound > 0 ? `−${formatNumber(m.outbound)}` : "0"}</td>
-          <td className="py-1.5 text-end tabular-nums font-semibold">{formatNumber(m.closing)}</td>
-        </tr>
-      ))}
-      <tr className="border-t border-border/70 bg-muted/30">
-        <td className="py-1.5 pe-4 font-semibold">{labelTotal}</td>
-        <td className="py-1.5 pe-4 text-end tabular-nums font-semibold">{n(total.opening)}</td>
-        <td className="py-1.5 pe-4 text-end tabular-nums font-semibold text-emerald-700">{total.inbound === null ? "—" : total.inbound > 0 ? `+${formatNumber(total.inbound)}` : "0"}</td>
-        <td className="py-1.5 pe-4 text-end tabular-nums font-semibold">{total.sold > 0 ? `−${formatNumber(total.sold)}` : "0"}</td>
-        <td className="py-1.5 pe-4 text-end tabular-nums font-semibold text-sky-700">{total.outbound === null ? "—" : total.outbound > 0 ? `−${formatNumber(total.outbound)}` : "0"}</td>
-        <td className="py-1.5 text-end tabular-nums font-semibold">{formatNumber(total.closing)}</td>
-      </tr>
-    </>
-  );
-}
-
-function MovementTable({ row, pm, report, locale }: { row: ProductStockRow; pm: ProductMovement; report: InventoryMovementReport; locale: AppLocale }) {
-  const he = locale === "he";
-  const opening = report.openingDate ? (he ? `פתיחה (${report.openingDate})` : `Opening (${report.openingDate})`) : he ? "פתיחה" : "Opening";
-  const closing = report.closingLive ? (he ? "עכשיו" : "Now") : he ? `סגירה (${report.closingDate ?? ""})` : `Closing (${report.closingDate ?? ""})`;
-  const head = (
-    <tr>
-      <th className="py-1.5 pe-4 text-start">{he ? "מיקום" : "Location"}</th>
-      <th className="py-1.5 pe-4 text-end">{opening}</th>
-      <th className="py-1.5 pe-4 text-end">{he ? "נכנס" : "In"}</th>
-      <th className="py-1.5 pe-4 text-end">{he ? "נמכר" : "Sold"}</th>
-      <th className="py-1.5 pe-4 text-end">{he ? "יצא" : "Out"}</th>
-      <th className="py-1.5 text-end">{closing}</th>
-    </tr>
-  );
-  const variants = Object.values(pm.variants);
-  const titleOf = new Map(row.variants.map((v) => [v.variantId, v]));
-  return (
-    <div className="space-y-3">
-      {!report.openingDate ? (
-        <p className="text-[11px] text-amber-700">
-          {he
-            ? `אין תמונת מלאי מלפני תחילת התקופה${report.historyStart ? ` — ההיסטוריה נאספת מ-${report.historyStart}` : " — ההיסטוריה מתחילה להיאסף מהסנכרון הבא"}; "פתיחה", "נכנס" ו"יצא" יופיעו כשתהיה נקודת פתיחה.`
-            : `No stock snapshot before the period start${report.historyStart ? ` — history is collected since ${report.historyStart}` : " — history starts with the next sync"}; opening, in and out appear once an opening point exists.`}
-        </p>
-      ) : null}
-      <table className="w-full max-w-3xl text-xs">
-        <thead className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{head}</thead>
-        <tbody className="divide-y divide-border/50">
-          <MovementRows rows={pm.locations} total={pm.total} locale={locale} labelTotal={he ? "סה״כ המוצר" : "Product total"} />
-        </tbody>
-      </table>
-      {pm.unlocatedSold > 0 ? <p className="text-[11px] text-muted-foreground">{he ? `${formatNumber(pm.unlocatedSold)} יחידות נמכרו בהזמנות ללא מיקום (אונליין שטרם שויך) — נספרות בסה״כ בלבד.` : `${formatNumber(pm.unlocatedSold)} units sold on orders without a location (online, not attributed) — counted in the total only.`}</p> : null}
-      {variants.length > 1 ? (
-        <details className="text-xs">
-          <summary className="cursor-pointer select-none font-semibold text-muted-foreground underline-offset-4 hover:underline">{he ? "לפי וריאציה" : "By variant"}</summary>
-          <div className="mt-2 space-y-4">
-            {variants.map((vm) => (
-              <div key={vm.variantId}>
-                <p className="mb-1 font-medium">
-                  {titleOf.get(vm.variantId)?.title ?? vm.variantId}
-                  {titleOf.get(vm.variantId)?.sku ? <span className="ms-2 text-muted-foreground" dir="ltr">{titleOf.get(vm.variantId)!.sku}</span> : null}
-                </p>
-                <table className="w-full max-w-3xl">
-                  <thead className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{head}</thead>
-                  <tbody className="divide-y divide-border/50">
-                    <MovementRows rows={vm.locations} total={vm.total} locale={locale} labelTotal={he ? "סה״כ הוריאציה" : "Variant total"} />
-                  </tbody>
-                </table>
-              </div>
-            ))}
-          </div>
-        </details>
-      ) : null}
-    </div>
-  );
-}
-
-// ─── Main client component ────────────────────────────────────────────────────
-
 export function InventoryClient({
   stock,
   locale,
@@ -574,6 +500,9 @@ export function InventoryClient({
   // Collection ("category") filter — the same Shopify collections the
   // קטגוריות column shows. One at a time; "all" clears it.
   const [collectionFilter, setCollectionFilter] = useState<string>("");
+  // Location filter (inventory flow): "" = all locations. Rows are kept when
+  // the product has any stock, sales or receipts at that location in the period.
+  const [locationFilter, setLocationFilter] = useState<string>("");
 
   const lastSyncedAt = lastSyncedAtIso ? new Date(lastSyncedAtIso) : null;
 
@@ -608,7 +537,8 @@ export function InventoryClient({
     // Text search
     if (query.trim()) {
       const q = query.trim().toLowerCase();
-      rows = rows.filter((r) => r.productTitle.toLowerCase().includes(q));
+      // Product title, variant title or SKU.
+      rows = rows.filter((r) => r.productTitle.toLowerCase().includes(q) || r.variants.some((v) => v.title.toLowerCase().includes(q) || (v.sku ?? "").toLowerCase().includes(q)));
     }
 
     // Category filter from KPI card click. Each tile is an exclusive band
@@ -621,6 +551,12 @@ export function InventoryClient({
 
     if (collectionFilter) {
       rows = rows.filter((r) => (r.collections?.length ? r.collections : r.collection ? [r.collection] : []).includes(collectionFilter));
+    }
+    if (locationFilter && movement) {
+      rows = rows.filter((r) => {
+        const l = movement.products[r.productId]?.locations.find((x) => x.locationId === locationFilter);
+        return !!l && (l.closing !== 0 || l.sold > 0 || l.receivedExternal > 0 || l.receivedUnclassified > 0 || l.transferIn > 0 || l.probableTransferIn > 0 || l.transferOut > 0 || l.probableTransferOut > 0 || (l.opening ?? 0) !== 0);
+      });
     }
 
     // Sort
@@ -650,12 +586,12 @@ export function InventoryClient({
     });
 
     return rows;
-  }, [stock, query, sortKey, filterFlag, collectionFilter]);
+  }, [stock, query, sortKey, filterFlag, collectionFilter, locationFilter, movement]);
 
   // ── Split filtered rows into sections ─────────────────────────────────────
   // A collection filter shows one flat list with its result count, like a
   // search does, so a collection with no urgent rows is not a blank page.
-  const showSections = !query.trim() && !filterFlag && !collectionFilter;
+  const showSections = !query.trim() && !filterFlag && !collectionFilter && !locationFilter;
 
   const criticalFiltered = useMemo(
     () => filteredRows.filter((r) => r.flag === "critical"),
@@ -717,6 +653,14 @@ export function InventoryClient({
         ) : null}
       </div>
 
+      {/* ── Inventory flow for the period: opening · received · sold · closing ── */}
+      {movement ? (
+        <>
+          <FlowSummaryCards report={movement} locale={locale} locationFilter={locationFilter} />
+          <PoReceiptForm locations={movement.locations} locale={locale} />
+        </>
+      ) : null}
+
       {/* ── KPI summary cards (clickable to filter) ───────────────────────── */}
       <section>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -777,11 +721,31 @@ export function InventoryClient({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={locale === "he" ? "חיפוש מוצר..." : "Search products..."}
+            placeholder={locale === "he" ? "חיפוש מוצר, וריאציה או SKU..." : "Search product, variant or SKU..."}
             className="h-9 w-full rounded-lg border border-input bg-background pe-3 ps-9 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
             dir={locale === "he" ? "rtl" : "ltr"}
           />
         </div>
+
+        {/* Location filter (inventory flow) */}
+        {movement && movement.locations.length ? (
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">{locale === "he" ? "מיקום" : "Location"}</span>
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="h-9 max-w-[14rem] rounded-lg border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              aria-label={locale === "he" ? "סינון לפי מיקום" : "Filter by location"}
+            >
+              <option value="">{locale === "he" ? "כל המיקומים" : "All locations"}</option>
+              {movement.locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
         {/* Collection filter */}
         {collectionOptions.length > 0 ? (
@@ -855,7 +819,7 @@ export function InventoryClient({
                 }
                 accentClass="border-rose-600 bg-rose-50 text-rose-900"
               />
-              <InventoryTable rows={criticalFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} />
+              <InventoryTable rows={criticalFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} locationFilter={locationFilter} />
             </section>
           ) : null}
 
@@ -877,7 +841,7 @@ export function InventoryClient({
                 }
                 accentClass="border-rose-400 bg-rose-50/70 text-rose-800"
               />
-              <InventoryTable rows={redFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} />
+              <InventoryTable rows={redFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} locationFilter={locationFilter} />
             </section>
           ) : null}
 
@@ -899,7 +863,7 @@ export function InventoryClient({
                 }
                 accentClass="border-amber-400 bg-amber-50/70 text-amber-900"
               />
-              <InventoryTable rows={yellowFiltered} locale={locale} showActionChips movement={movement} rangeLabel={rangeLabel} />
+              <InventoryTable rows={yellowFiltered} locale={locale} showActionChips movement={movement} rangeLabel={rangeLabel} locationFilter={locationFilter} />
             </section>
           ) : null}
 
@@ -921,7 +885,7 @@ export function InventoryClient({
                 }
                 accentClass="border-emerald-400 bg-emerald-50/70 text-emerald-900"
               />
-              <InventoryTable rows={greenFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} />
+              <InventoryTable rows={greenFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} locationFilter={locationFilter} />
             </section>
           ) : null}
 
@@ -943,7 +907,7 @@ export function InventoryClient({
                 }
                 accentClass="border-slate-300 bg-slate-50/70 text-slate-800"
               />
-              <InventoryTable rows={unsoldFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} />
+              <InventoryTable rows={unsoldFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} locationFilter={locationFilter} />
             </section>
           ) : null}
 
@@ -965,7 +929,7 @@ export function InventoryClient({
                 }
                 accentClass="border-slate-200 bg-slate-50/50 text-slate-700"
               />
-              <InventoryTable rows={unknownFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} />
+              <InventoryTable rows={unknownFiltered} locale={locale} movement={movement} rangeLabel={rangeLabel} locationFilter={locationFilter} />
             </section>
           ) : null}
         </div>
@@ -984,6 +948,7 @@ export function InventoryClient({
             locale={locale}
             movement={movement}
             rangeLabel={rangeLabel}
+            locationFilter={locationFilter}
             emptyMessage={
               collectionFilter
                 ? locale === "he"

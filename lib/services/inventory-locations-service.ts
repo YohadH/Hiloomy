@@ -182,6 +182,12 @@ export async function syncInventoryLevels(storeId: string): Promise<{ locations:
   await snapshotInventoryLevels(storeId, now).catch((err) => {
     console.warn("[inventory-levels] snapshot skipped:", err instanceof Error ? err.message : err);
   });
+  // Shopify inventory transfers → exact TRANSFER_OUT / TRANSFER_IN events.
+  // Best effort: a store without the scope keeps its levels and snapshots.
+  const { syncInventoryTransfers } = await import("@/lib/services/inventory-transfers-service");
+  await syncInventoryTransfers(storeId).catch((err) => {
+    console.warn("[inventory-transfers] sync skipped:", err instanceof Error ? err.message : err);
+  });
   return { locations: locations.length, levels };
 }
 
