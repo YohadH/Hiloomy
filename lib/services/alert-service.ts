@@ -27,6 +27,7 @@ export async function generateAlerts(): Promise<Alert[]> {
   if (revenueMetric && revenueMetric.change < 0) {
     alerts.push({
       id: "rule-revenue-down",
+      type: "revenue_down",
       severity: "high",
       title: locale === "he" ? "ההכנסות ירדו מול התקופה הקודמת" : "Revenue is down versus the prior period",
       explanation: locale === "he" ? `ההכנסות זזו ב-${Math.abs(revenueMetric.change).toFixed(1)}% מול החלון הקודם.` : `Revenue moved ${revenueMetric.change.toFixed(1)}% against the previous window.`,
@@ -39,6 +40,7 @@ export async function generateAlerts(): Promise<Alert[]> {
   if (discountMetric && discountMetric.change > 0.5) {
     alerts.push({
       id: "rule-discount-spike",
+      type: "discount_spike",
       severity: "medium",
       title: locale === "he" ? "שיעור ההנחות עולה מהר יותר מהתקופה הקודמת" : "Discount rate is rising faster than the prior period",
       explanation: locale === "he" ? `שיעור ההנחות השתנה ב-${discountMetric.change.toFixed(1)} נקודות.` : `Discount rate changed by ${discountMetric.change.toFixed(1)} points.`,
@@ -51,6 +53,7 @@ export async function generateAlerts(): Promise<Alert[]> {
   if ((refundKpi?.value ?? 0) > 3) {
     alerts.push({
       id: "rule-refund-spike",
+      type: "refund_spike",
       severity: "medium",
       title: locale === "he" ? "שיעור ההחזרים גבוה" : "Refund rate is elevated",
       explanation: locale === "he" ? `שיעור ההחזרים עומד כרגע על ${refundKpi?.value.toFixed(1)}%.` : `Refund rate is currently ${refundKpi?.value.toFixed(1)}%.`,
@@ -63,6 +66,7 @@ export async function generateAlerts(): Promise<Alert[]> {
   if (returningMetric && returningMetric.change < 0) {
     alerts.push({
       id: "rule-repeat-rate-drop",
+      type: "repeat_rate_drop",
       severity: "medium",
       title: locale === "he" ? "שיעור הלקוחות החוזרים נחלש מול התקופה הקודמת" : "Returning customer rate slipped versus the prior period",
       explanation: locale === "he" ? `ביצועי הרכישה החוזרת זזו ב-${Math.abs(returningMetric.change).toFixed(1)} נקודות.` : `Repeat performance moved ${returningMetric.change.toFixed(1)} points.`,
@@ -75,6 +79,7 @@ export async function generateAlerts(): Promise<Alert[]> {
   if (topGrowthProduct) {
     alerts.push({
       id: "rule-strong-product-growth",
+      type: "product_growth",
       severity: "low",
       title: locale === "he" ? `${topGrowthProduct.productTitle} הוא מוצר חזק במיוחד` : `${topGrowthProduct.productTitle} is a strong performer`,
       explanation: locale === "he" ? `המוצר מוביל את התקופה עם ${Math.round(topGrowthProduct.revenue).toLocaleString()} בהכנסות.` : `This product is leading the period with ${Math.round(topGrowthProduct.revenue).toLocaleString()} in revenue.`,
@@ -87,6 +92,7 @@ export async function generateAlerts(): Promise<Alert[]> {
   if (!alerts.length) {
     alerts.push({
       id: "rule-no-alerts",
+      type: "no_anomalies",
       severity: "low",
       title: locale === "he" ? "לא זוהו חריגות משמעותיות" : "No major anomalies detected",
       explanation: locale === "he" ? `שיעור הרכישה החוזרת הוא ${retention.snapshot.repeatPurchaseRate.toFixed(1)}% והתקופה נראית יציבה יחסית.` : `Repeat rate is ${retention.snapshot.repeatPurchaseRate.toFixed(1)}% and the current period is relatively stable.`,

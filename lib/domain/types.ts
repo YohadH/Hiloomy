@@ -135,6 +135,11 @@ export interface InsightItem {
 export interface Alert {
   id: string;
   severity: Severity;
+  // Stable type slug written by the engine ("stockout_imminent",
+  // "competitor_promo", "rule-…" for computed alerts). Drives the category
+  // grouping on /alerts; optional so mock/legacy rows still type-check.
+  type?: string;
+  relatedEntityType?: string | null;
   title: string;
   explanation: string;
   suggestedAction: string;

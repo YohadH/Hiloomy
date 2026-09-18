@@ -112,6 +112,8 @@ function mapStoredAlert(alert: any): Alert {
   return {
     id: alert.id,
     severity: alert.severity,
+    type: alert.type ?? "legacy",
+    relatedEntityType: alert.relatedEntityType ?? null,
     title: alert.title,
     explanation,
     suggestedAction,
