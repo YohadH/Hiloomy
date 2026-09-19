@@ -58,7 +58,9 @@ const PUBLIC_PATHS = new Set([
   // with the right `next` if the user isn't signed in. Treat as public.
   "/accept-invite",
   // Public marketing comparison page (Hebrew) — HEB-CONTENT-DEV-01.
-  "/compare-he"
+  "/compare-he",
+  // Hiloomy Creator landing (creator / affiliate management for brands).
+  "/creators"
 ]);
 
 const PUBLIC_PREFIXES = [
@@ -76,6 +78,8 @@ const PUBLIC_PREFIXES = [
   "/my/",
   "/api/join/",
   "/api/my/",
+  // Lead form on the public /creators landing.
+  "/api/creators/",
   // Stripe sends webhooks server-to-server; they're authenticated by
   // signature, not session cookies. Treating this as public lets the
   // signature-verifying handler run.
