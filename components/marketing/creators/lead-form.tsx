@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 
 type State = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string };
 
-const CTA = "בואו נראה איך זה עובד אצלכם";
+const CTA = "בואו נראה איך זה עובד";
 
 // `cta` is the submit label; `note` is a short line shown under the button.
 export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
@@ -37,7 +37,7 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
     return (
       <div className="cr-form-done" role="status">
         <p className="cr-form-done-title">קיבלנו. נחזור אליכם תוך יום עסקים.</p>
-        <p className="cr-form-done-text">נעבור יחד על איך אתם מנהלים היום את המשפיענים, ונראה איך זה נראה בתוך Hiloomy.</p>
+        <p className="cr-form-done-text">נעבור יחד על איך אתם מנהלים היום את היוצרים, ונראה איך זה נראה בתוך Hiloomy.</p>
       </div>
     );
   }
@@ -62,11 +62,11 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
           <input name="email" type="email" autoComplete="email" required maxLength={160} dir="ltr" />
         </label>
         <label className="cr-field">
-          <span>כתובת האתר</span>
+          <span>אתר</span>
           <input name="site" type="text" inputMode="url" autoComplete="url" maxLength={200} dir="ltr" />
         </label>
         <label className="cr-field">
-          <span>כמה משפיענים עובדים איתכם היום?</span>
+          <span>מספר יוצרים</span>
           <select name="creators" required defaultValue="">
             <option value="" disabled>
               בחרו

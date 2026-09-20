@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { HiloomyLogo } from "@/components/ui/logo";
 
 const LINKS = [
-  { href: "#product", label: "המערכת" },
-  { href: "#portal", label: "למשפיענים" },
-  { href: "#how", label: "הטמעה" },
+  { href: "#sides", label: "שני הצדדים" },
+  { href: "#performance", label: "מי באמת מוכר" },
+  { href: "#product", label: "ניהול" },
   { href: "#pricing", label: "מחיר" }
 ];
 
@@ -46,7 +46,7 @@ export function CreatorsNav() {
         </nav>
         <div className="cr-nav-actions">
           <a href="#contact" className="cr-btn cr-btn-primary cr-btn-sm">
-            בואו נראה איך זה עובד אצלכם
+            בואו נראה איך זה עובד
           </a>
           <button
             type="button"
@@ -74,7 +74,7 @@ export function CreatorsNav() {
               </a>
             ))}
             <a href="#contact" className="cr-btn cr-btn-primary cr-btn-lg" onClick={() => setOpen(false)}>
-              בואו נראה איך זה עובד אצלכם
+              בואו נראה איך זה עובד
             </a>
           </nav>
         </div>
