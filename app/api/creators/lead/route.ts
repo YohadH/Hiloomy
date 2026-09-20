@@ -49,7 +49,10 @@ export async function POST(request: Request) {
     createdAt: new Date().toISOString()
   };
   if (!lead.name || !lead.brand) return NextResponse.json({ error: "צריך שם ומותג." }, { status: 400 });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email)) return NextResponse.json({ error: "כתובת האימייל לא נראית תקינה." }, { status: 400 });
+  // The public form asks for a phone, not an email (owner brief, 20 Sep 2026).
+  // An email is still accepted when present and, if given, must look valid.
+  if (lead.phone.replace(/\D/g, "").length < 7) return NextResponse.json({ error: "צריך מספר טלפון כדי שנוכל לחזור אליכם." }, { status: 400 });
+  if (lead.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email)) return NextResponse.json({ error: "כתובת האימייל לא נראית תקינה." }, { status: 400 });
   if (!lead.creators) return NextResponse.json({ error: "ספרו לנו עם כמה יוצרים אתם עובדים." }, { status: 400 });
 
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -63,8 +66,8 @@ export async function POST(request: Request) {
   const lines = [
     `שם: ${lead.name}`,
     `מותג: ${lead.brand}`,
-    `אימייל: ${lead.email}`,
-    lead.phone ? `טלפון: ${lead.phone}` : null,
+    `טלפון: ${lead.phone}`,
+    lead.email ? `אימייל: ${lead.email}` : null,
     lead.site ? `חנות: ${lead.site}` : null,
     `יוצרים: ${lead.creators}`,
     lead.notes ? `איך מתנהל היום: ${lead.notes}` : null
@@ -78,7 +81,7 @@ export async function POST(request: Request) {
       html: `<div dir="rtl" style="font-family:Arial,sans-serif;font-size:15px;line-height:1.7">${lines
         .map((l) => `<p style="margin:0 0 6px">${l.replace(/</g, "&lt;")}</p>`)
         .join("")}<p style="margin-top:14px;color:#666">מזהה: creator_lead:${id}</p></div>`,
-      replyTo: lead.email
+      replyTo: lead.email || undefined
     })
   ]);
 

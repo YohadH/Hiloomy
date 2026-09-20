@@ -6,6 +6,9 @@ type State = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind:
 
 const CTA = "בואו נראה איך זה עובד";
 
+// Five fields only (owner brief, 20 Sep 2026): name, brand, phone, site,
+// creator count. Phone is the contact channel; the API accepts an optional
+// email but the public form no longer asks for one.
 // `cta` is the submit label; `note` is a short line shown under the button.
 export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -55,17 +58,13 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
         </label>
         <label className="cr-field">
           <span>טלפון</span>
-          <input name="phone" type="tel" autoComplete="tel" maxLength={40} dir="ltr" />
+          <input name="phone" type="tel" autoComplete="tel" required maxLength={40} dir="ltr" />
         </label>
         <label className="cr-field">
-          <span>אימייל</span>
-          <input name="email" type="email" autoComplete="email" required maxLength={160} dir="ltr" />
-        </label>
-        <label className="cr-field">
-          <span>אתר</span>
+          <span>כתובת אתר</span>
           <input name="site" type="text" inputMode="url" autoComplete="url" maxLength={200} dir="ltr" />
         </label>
-        <label className="cr-field">
+        <label className="cr-field cr-field-full">
           <span>מספר יוצרים</span>
           <select name="creators" required defaultValue="">
             <option value="" disabled>

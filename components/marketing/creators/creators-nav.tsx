@@ -45,8 +45,12 @@ export function CreatorsNav() {
           ))}
         </nav>
         <div className="cr-nav-actions">
-          <a href="#contact" className="cr-btn cr-btn-primary cr-btn-sm">
+          {/* Wide screens get the full CTA; phones a short one next to the menu. */}
+          <a href="#contact" className="cr-btn cr-btn-primary cr-btn-sm cr-nav-cta-wide">
             בואו נראה איך זה עובד
+          </a>
+          <a href="#contact" className="cr-btn cr-btn-primary cr-btn-sm cr-nav-cta-narrow">
+            דברו איתנו
           </a>
           <button
             type="button"
