@@ -4,9 +4,9 @@ import { CreatorsLanding } from "@/components/marketing/creators/creators-landin
 
 // Public marketing landing for Hiloomy Creator — creator / affiliate
 // management for Israeli e-commerce brands. Hebrew-first, RTL, standalone
-// (listed in middleware PUBLIC_PATHS). Copy and design brief: owner, 19 Sep
-// 2026. Everything shown as a capability exists in the affiliate portal;
-// future items carry a visible "בקרוב" badge.
+// (listed in middleware PUBLIC_PATHS). Copy: owner, 20 Sep 2026 (third
+// pass — "one system, both sides"). Everything shown as a capability exists
+// in the affiliate portal.
 
 const displayFont = Rubik({
   subsets: ["latin", "hebrew"],
@@ -23,13 +23,13 @@ const bodyFont = Heebo({
 });
 
 export const metadata: Metadata = {
-  title: "Hiloomy Creator — כל מערך המשפיענים שלכם במקום אחד, בלי עמלה על המכירות",
+  title: "Hiloomy Creator — מערכת אחת לניהול כל מערך המשפיענים שלכם, משני הצדדים",
   description:
-    "Hiloomy מרכזת למותגי איקומרס את המשפיענים, קודי הקופון, המכירות והעמלות במקום אחד. אנחנו מטמיעים, אתם מנהלים. תשלום קבוע, 0% עמלה על המכירות.",
+    "העסק מנהל את המשפיענים, הקודים, המכירות והעמלות. המשפיענים מקבלים אזור אישי לביצועים שלהם. מתחבר ל־Shopify, ללא הגבלת משפיענים, 0% עמלה על המכירות.",
   alternates: { canonical: "https://hiloomy.com/creators" },
   openGraph: {
-    title: "Hiloomy Creator — המשפיענים שלכם נשארים שלכם",
-    description: "כל מערך המשפיענים שלכם במקום אחד. תשלום קבוע, 0% עמלה על מכירות המשפיענים.",
+    title: "Hiloomy Creator — כל מערך המשפיענים שלכם, משני הצדדים",
+    description: "כל קוד, לינק, הזמנה, מכירה ועמלה — במקום אחד. 0% עמלה על מכירות המשפיענים.",
     url: "https://hiloomy.com/creators",
     locale: "he_IL",
     type: "website"

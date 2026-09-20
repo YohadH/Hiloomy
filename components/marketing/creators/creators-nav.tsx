@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { HiloomyLogo } from "@/components/ui/logo";
 
 const LINKS = [
-  { href: "#product", label: "המוצר" },
-  { href: "#how", label: "איך זה עובד" },
-  { href: "#pricing", label: "מחירים" },
-  { href: "#faq", label: "שאלות נפוצות" }
+  { href: "#product", label: "המערכת" },
+  { href: "#portal", label: "למשפיענים" },
+  { href: "#how", label: "הטמעה" },
+  { href: "#pricing", label: "מחיר" }
 ];
 
 export function CreatorsNav() {
@@ -30,16 +31,11 @@ export function CreatorsNav() {
   return (
     <header className={`cr-nav${stuck ? " is-stuck" : ""}`}>
       <div className="cr-wrap cr-nav-bar">
+        {/* The brand lockup ([mark]iloomy.) comes from the shared logo component
+            so the landing never drifts from the app's logo. */}
         <a href="/creators" className="cr-logo" aria-label="Hiloomy Creator">
-          <svg viewBox="11 9.7 27 27.3" fill="none" aria-hidden="true" width="26" height="26">
-            <rect x="11.5" y="17" width="6.2" height="19.5" rx="2.8" fill="#15A34A" />
-            <rect x="16.5" y="24.5" width="11.5" height="4.4" fill="#15A34A" />
-            <rect x="27.5" y="18.2" width="6.2" height="18.3" rx="2.6" fill="#F97316" />
-            <path d="M30.6 10.2L37.6 18.8H23.6L30.6 10.2Z" fill="#F97316" />
-          </svg>
-          <span className="cr-logo-word">
-            Hiloomy <span className="cr-logo-sub">Creator</span>
-          </span>
+          <HiloomyLogo />
+          <span className="cr-logo-sub">Creator</span>
         </a>
         <nav className="cr-nav-links" aria-label="ניווט ראשי">
           {LINKS.map((l) => (
@@ -50,7 +46,7 @@ export function CreatorsNav() {
         </nav>
         <div className="cr-nav-actions">
           <a href="#contact" className="cr-btn cr-btn-primary cr-btn-sm">
-            בואו נראה איך זה יעבוד אצלכם
+            בואו נראה איך זה עובד אצלכם
           </a>
           <button
             type="button"
@@ -78,7 +74,7 @@ export function CreatorsNav() {
               </a>
             ))}
             <a href="#contact" className="cr-btn cr-btn-primary cr-btn-lg" onClick={() => setOpen(false)}>
-              בואו נראה איך זה יעבוד אצלכם
+              בואו נראה איך זה עובד אצלכם
             </a>
           </nav>
         </div>

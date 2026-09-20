@@ -4,9 +4,10 @@ import { useState, type FormEvent } from "react";
 
 type State = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string };
 
-const CTA = "בואו נראה איך זה יעבוד אצלכם";
+const CTA = "בואו נראה איך זה עובד אצלכם";
 
-export function LeadForm() {
+// `cta` is the submit label; `note` is a short line shown under the button.
+export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
   const [state, setState] = useState<State>({ kind: "idle" });
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -90,8 +91,9 @@ export function LeadForm() {
       ) : null}
       <div className="cr-form-foot">
         <button type="submit" className="cr-btn cr-btn-primary cr-btn-lg" disabled={state.kind === "sending"}>
-          {state.kind === "sending" ? "שולחים…" : CTA}
+          {state.kind === "sending" ? "שולחים…" : cta}
         </button>
+        {note ? <p className="cr-form-note">{note}</p> : null}
       </div>
     </form>
   );
