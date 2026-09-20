@@ -4,6 +4,8 @@ import { useState, type FormEvent } from "react";
 
 type State = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string };
 
+const CTA = "בואו נראה איך זה יעבוד אצלכם";
+
 export function LeadForm() {
   const [state, setState] = useState<State>({ kind: "idle" });
 
@@ -34,9 +36,7 @@ export function LeadForm() {
     return (
       <div className="cr-form-done" role="status">
         <p className="cr-form-done-title">קיבלנו. נחזור אליכם תוך יום עסקים.</p>
-        <p className="cr-form-done-text">
-          בשיחה נעבור על איך אתם מנהלים היום את היוצרים, ונראה יחד איך זה נראה בתוך Hiloomy.
-        </p>
+        <p className="cr-form-done-text">נעבור יחד על איך אתם מנהלים היום את המשפיענים, ונראה איך זה נראה בתוך Hiloomy.</p>
       </div>
     );
   }
@@ -45,50 +45,41 @@ export function LeadForm() {
     <form className="cr-form" onSubmit={onSubmit} noValidate>
       <div className="cr-form-grid">
         <label className="cr-field">
-          <span>שם מלא</span>
+          <span>שם</span>
           <input name="name" type="text" autoComplete="name" required maxLength={120} />
         </label>
         <label className="cr-field">
-          <span>המותג</span>
+          <span>שם המותג</span>
           <input name="brand" type="text" autoComplete="organization" required maxLength={120} />
+        </label>
+        <label className="cr-field">
+          <span>טלפון</span>
+          <input name="phone" type="tel" autoComplete="tel" maxLength={40} dir="ltr" />
         </label>
         <label className="cr-field">
           <span>אימייל</span>
           <input name="email" type="email" autoComplete="email" required maxLength={160} dir="ltr" />
         </label>
         <label className="cr-field">
-          <span>טלפון</span>
-          <input name="phone" type="tel" autoComplete="tel" maxLength={40} dir="ltr" placeholder="050-0000000" />
+          <span>כתובת האתר</span>
+          <input name="site" type="text" inputMode="url" autoComplete="url" maxLength={200} dir="ltr" />
         </label>
         <label className="cr-field">
-          <span>כתובת החנות</span>
-          <input name="site" type="text" inputMode="url" autoComplete="url" maxLength={200} dir="ltr" placeholder="brand.co.il" />
-        </label>
-        <label className="cr-field">
-          <span>עם כמה יוצרים אתם עובדים היום?</span>
+          <span>כמה משפיענים עובדים איתכם היום?</span>
           <select name="creators" required defaultValue="">
             <option value="" disabled>
               בחרו
             </option>
-            <option value="1-10">עד 10</option>
-            <option value="10-30">10 עד 30</option>
-            <option value="30-100">30 עד 100</option>
-            <option value="100+">יותר מ־100</option>
-            <option value="none">עדיין לא עובדים עם יוצרים</option>
+            <option value="1-4">1–4</option>
+            <option value="5-9">5–9</option>
+            <option value="10-24">10–24</option>
+            <option value="25-49">25–49</option>
+            <option value="50+">50+</option>
           </select>
         </label>
-        <label className="cr-field cr-field-wide">
-          <span>איך הפעילות מתנהלת היום? (לא חובה)</span>
-          <textarea
-            name="notes"
-            rows={3}
-            maxLength={1500}
-            placeholder="למשל: גיליון של היוצרים, קודים ב־Shopify, עמלות בסוף חודש ידנית, שיחות ב־WhatsApp"
-          />
-        </label>
-        {/* Honeypot: real people never see or fill this. */}
+        {/* Hidden anti-bot field. Real people never see or fill it. */}
         <label className="cr-hp" aria-hidden="true">
-          <span>company website</span>
+          <span>website</span>
           <input name="website" type="text" tabIndex={-1} autoComplete="off" />
         </label>
       </div>
@@ -99,9 +90,8 @@ export function LeadForm() {
       ) : null}
       <div className="cr-form-foot">
         <button type="submit" className="cr-btn cr-btn-primary cr-btn-lg" disabled={state.kind === "sending"}>
-          {state.kind === "sending" ? "שולחים…" : "בואו נבדוק את מערך היוצרים שלכם"}
+          {state.kind === "sending" ? "שולחים…" : CTA}
         </button>
-        <p className="cr-form-note">לא דמו גנרי. מתחילים מתהליך העבודה הקיים שלכם.</p>
       </div>
     </form>
   );

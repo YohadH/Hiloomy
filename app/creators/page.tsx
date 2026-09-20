@@ -23,13 +23,13 @@ const bodyFont = Heebo({
 });
 
 export const metadata: Metadata = {
-  title: "Hiloomy Creator — ניהול מערך היוצרים והאפיליאייט של המותג, בלי עמלה על מכירות",
+  title: "Hiloomy Creator — כל מערך המשפיענים שלכם במקום אחד, בלי עמלה על המכירות",
   description:
-    "Hiloomy מקימה למותגי איקומרס מערכת לניהול יוצרים, קודים, לינקים, עמלות וביצועים במקום אחד. הקמה חד-פעמית, 250 ₪ לחודש, 0% עמלה על מכירות היוצרים.",
+    "Hiloomy מרכזת למותגי איקומרס את המשפיענים, קודי הקופון, המכירות והעמלות במקום אחד. אנחנו מטמיעים, אתם מנהלים. תשלום קבוע, 0% עמלה על המכירות.",
   alternates: { canonical: "https://hiloomy.com/creators" },
   openGraph: {
-    title: "Hiloomy Creator — מערך היוצרים שלכם נשאר שלכם",
-    description: "אנחנו מקימים לכם את מערך היוצרים. אתם נשארים הבעלים שלו. 0% עמלה על מכירות היוצרים.",
+    title: "Hiloomy Creator — המשפיענים שלכם נשארים שלכם",
+    description: "כל מערך המשפיענים שלכם במקום אחד. תשלום קבוע, 0% עמלה על מכירות המשפיענים.",
     url: "https://hiloomy.com/creators",
     locale: "he_IL",
     type: "website"

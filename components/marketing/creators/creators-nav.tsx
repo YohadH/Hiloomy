@@ -50,7 +50,7 @@ export function CreatorsNav() {
         </nav>
         <div className="cr-nav-actions">
           <a href="#contact" className="cr-btn cr-btn-primary cr-btn-sm">
-            בואו נבדוק את מערך היוצרים שלכם
+            בואו נראה איך זה יעבוד אצלכם
           </a>
           <button
             type="button"
@@ -78,7 +78,7 @@ export function CreatorsNav() {
               </a>
             ))}
             <a href="#contact" className="cr-btn cr-btn-primary cr-btn-lg" onClick={() => setOpen(false)}>
-              בואו נבדוק את מערך היוצרים שלכם
+              בואו נראה איך זה יעבוד אצלכם
             </a>
           </nav>
         </div>
