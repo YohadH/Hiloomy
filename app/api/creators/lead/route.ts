@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   // An email is still accepted when present and, if given, must look valid.
   if (lead.phone.replace(/\D/g, "").length < 7) return NextResponse.json({ error: "צריך מספר טלפון כדי שנוכל לחזור אליכם." }, { status: 400 });
   if (lead.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email)) return NextResponse.json({ error: "כתובת האימייל לא נראית תקינה." }, { status: 400 });
-  if (!lead.creators) return NextResponse.json({ error: "ספרו לנו עם כמה יוצרים אתם עובדים." }, { status: 400 });
+  if (!lead.creators) return NextResponse.json({ error: "ספרו לנו עם כמה משפיענים אתם עובדים." }, { status: 400 });
 
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   try {

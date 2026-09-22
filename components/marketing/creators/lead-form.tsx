@@ -4,11 +4,11 @@ import { useState, type FormEvent } from "react";
 
 type State = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string };
 
-const CTA = "בואו נראה איך זה עובד";
+const CTA = "בואו נראה איך Hiloomy תעבוד אצלנו";
 
-// Five fields only (owner brief, 20 Sep 2026): name, brand, phone, site,
-// creator count. Phone is the contact channel; the API accepts an optional
-// email but the public form no longer asks for one.
+// Six fields (owner brief, 22 Sep 2026): full name, brand, site, phone,
+// email, creator count. Phone is the required contact channel; email is
+// optional and used as reply-to on the notification.
 // `cta` is the submit label; `note` is a short line shown under the button.
 export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -40,7 +40,7 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
     return (
       <div className="cr-form-done" role="status">
         <p className="cr-form-done-title">קיבלנו. נחזור אליכם תוך יום עסקים.</p>
-        <p className="cr-form-done-text">נעבור יחד על איך אתם מנהלים היום את היוצרים, ונראה איך זה נראה בתוך Hiloomy.</p>
+        <p className="cr-form-done-text">נעבור יחד על איך אתם מנהלים היום את המשפיענים, ונראה איך זה נראה בתוך Hiloomy.</p>
       </div>
     );
   }
@@ -49,7 +49,7 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
     <form className="cr-form" onSubmit={onSubmit} noValidate>
       <div className="cr-form-grid">
         <label className="cr-field">
-          <span>שם</span>
+          <span>שם מלא</span>
           <input name="name" type="text" autoComplete="name" required maxLength={120} />
         </label>
         <label className="cr-field">
@@ -57,24 +57,28 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
           <input name="brand" type="text" autoComplete="organization" required maxLength={120} />
         </label>
         <label className="cr-field">
+          <span>כתובת האתר</span>
+          <input name="site" type="text" inputMode="url" autoComplete="url" maxLength={200} dir="ltr" />
+        </label>
+        <label className="cr-field">
           <span>טלפון</span>
           <input name="phone" type="tel" autoComplete="tel" required maxLength={40} dir="ltr" />
         </label>
         <label className="cr-field">
-          <span>כתובת אתר</span>
-          <input name="site" type="text" inputMode="url" autoComplete="url" maxLength={200} dir="ltr" />
+          <span>אימייל</span>
+          <input name="email" type="email" autoComplete="email" maxLength={160} dir="ltr" />
         </label>
         <label className="cr-field cr-field-full">
-          <span>מספר יוצרים</span>
+          <span>כמה משפיענים עובדים איתכם כיום?</span>
           <select name="creators" required defaultValue="">
             <option value="" disabled>
               בחרו
             </option>
-            <option value="1-4">1–4</option>
-            <option value="5-9">5–9</option>
+            <option value="1-9">1–9</option>
             <option value="10-24">10–24</option>
             <option value="25-49">25–49</option>
-            <option value="50+">50+</option>
+            <option value="50-99">50–99</option>
+            <option value="100+">100+</option>
           </select>
         </label>
         {/* Hidden anti-bot field. Real people never see or fill it. */}

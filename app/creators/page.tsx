@@ -23,13 +23,13 @@ const bodyFont = Heebo({
 });
 
 export const metadata: Metadata = {
-  title: "Hiloomy Creator — לא רק מי פרסם. מי באמת מכר.",
+  title: "Hiloomy Creator — מנהלים משפיענים? תדעו בדיוק כמה כל אחד מכר.",
   description:
-    "Hiloomy מרכזת במקום אחד את ניהול היוצרים, קודי הקופון, המכירות, הביצועים והעמלות, ולכל יוצרת יש אזור אישי משלה. מתחבר ל־Shopify, ללא הגבלת יוצרים, 0% עמלה על המכירות.",
+    "Hiloomy מחברת את החנות, קודי הקופון, הלינקים והמכירות ומשייכת את הפעילות לכל משפיען. ביצועים, עמלות וסטטוסי תשלום במקום אחד. הטמעה על הפעילות הקיימת, 0% עמלה ל-Hiloomy על המכירות.",
   alternates: { canonical: "https://hiloomy.com/creators" },
   openGraph: {
-    title: "Hiloomy Creator — לא רק מי פרסם. מי באמת מכר.",
-    description: "יוצר → קוד → מוצר → מכירה → עמלה. שני הצדדים, מערכת אחת, 0% עמלה על המכירות.",
+    title: "Hiloomy Creator — מנהלים משפיענים? תדעו בדיוק כמה כל אחד מכר.",
+    description: "Hiloomy מחברת את קודי הקופון והלינקים ל-Shopify ומשייכת את המכירות למשפיען הרלוונטי. מכירות, ביצועים ועמלות במקום אחד. 0% עמלה על המכירות.",
     url: "https://hiloomy.com/creators",
     locale: "he_IL",
     type: "website"

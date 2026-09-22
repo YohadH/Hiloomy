@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { HiloomyLogo } from "@/components/ui/logo";
 
 const LINKS = [
+  { href: "#flow", label: "איך זה עובד" },
   { href: "#sides", label: "שני הצדדים" },
-  { href: "#performance", label: "מי באמת מוכר" },
-  { href: "#product", label: "ניהול" },
-  { href: "#pricing", label: "מחיר" }
+  { href: "#how", label: "הטמעה" },
+  { href: "#pricing", label: "מחיר" },
+  { href: "#faq", label: "שאלות" }
 ];
 
 export function CreatorsNav() {
@@ -47,7 +48,7 @@ export function CreatorsNav() {
         <div className="cr-nav-actions">
           {/* Wide screens get the full CTA; phones a short one next to the menu. */}
           <a href="#contact" className="cr-btn cr-btn-primary cr-btn-sm cr-nav-cta-wide">
-            בואו נראה איך זה עובד
+            בואו נראה איך Hiloomy תעבוד אצלכם
           </a>
           <a href="#contact" className="cr-btn cr-btn-primary cr-btn-sm cr-nav-cta-narrow">
             דברו איתנו
@@ -78,7 +79,7 @@ export function CreatorsNav() {
               </a>
             ))}
             <a href="#contact" className="cr-btn cr-btn-primary cr-btn-lg" onClick={() => setOpen(false)}>
-              בואו נראה איך זה עובד
+              בואו נראה איך Hiloomy תעבוד אצלכם
             </a>
           </nav>
         </div>
