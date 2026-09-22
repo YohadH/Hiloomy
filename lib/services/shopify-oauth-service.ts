@@ -61,6 +61,13 @@ const DEFAULT_SCOPES = [
   // installed before 18 Sep 2026 must reconnect Shopify once to grant it;
   // until then the movement view shows transfers as derived residuals.
   "read_inventory_transfers",
+  // Shipments carry the received (accepted) quantities and dates of each
+  // transfer leg; purchase orders back future PO-receipt automation. Read
+  // only. Client-credentials tokens read scopes back from the Dev Dashboard
+  // app version, so the same list must be ticked there.
+  "read_inventory_shipments",
+  "read_inventory_shipments_received_items",
+  "read_inventory_purchase_orders",
   "write_discounts"
 ];
 

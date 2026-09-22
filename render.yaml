@@ -216,7 +216,7 @@ services:
       # location view (stock per store, warehouse → store transfers). A store
       # installed before they were added must reconnect Shopify once.
       - key: SHOPIFY_OAUTH_SCOPES
-        value: "read_products,read_orders,read_customers,read_inventory,read_locations,read_inventory_transfers,read_customer_journey,write_discounts"
+        value: "read_products,read_orders,read_customers,read_inventory,read_locations,read_inventory_transfers,read_inventory_shipments,read_inventory_shipments_received_items,read_inventory_purchase_orders,read_customer_journey,write_discounts"
 
       # ─── Google Search Console (DATA-01) ───────────────────────────────
       # OAuth app credentials from Google Cloud Console → APIs & Services →
