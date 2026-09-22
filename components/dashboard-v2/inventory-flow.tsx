@@ -14,7 +14,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, Boxes, PackageCheck, PackagePlus, ShoppingBag } from "lucide-react";
+import type React from "react";
+import { AlertTriangle, ArrowLeftRight, Boxes, Info, PackageCheck, PackagePlus, ShoppingBag } from "lucide-react";
 import type { BusinessLedger, LocationLedger, VariantLedger } from "@/lib/domain/inventory-movement";
 import type { InventoryMovementReport, ProductMovement } from "@/lib/services/inventory-movement-service";
 import type { ProductStockRow } from "@/lib/domain/types";
@@ -131,118 +132,236 @@ export function LocationChips({ pm, locale, onOpen, open }: { pm: ProductMovemen
 }
 
 // ── The ledger ─────────────────────────────────────────────────────────────
+// Exception first (owner, 22 Sep 2026): the eye should land on what moved.
+//   • column order (RTL): location · now · sold · in · transfers · adjustments · start
+//   • "now" is the anchor column — bold, right next to the name
+//   • sold is a plain positive count ("20"), never "−20"
+//   • 0 renders as a faint "—"; colour only on exceptions (inbound green,
+//     negative adjustment / unclassified amber, gap rose)
+//   • locations with no activity collapse under "show N idle locations"
+//   • a one-line summary above the table; the audit text behind "how is this
+//     computed?"
+
+const dash = <span className="text-muted-foreground/50">—</span>;
+const zeroOr = (v: number, render: () => React.ReactNode) => (v === 0 ? dash : render());
+
+type Activity = { sold: number; inbound: number; transfers: number; adjustments: number; flagged: boolean };
+
+function activityOf(m: LocationLedger): Activity {
+  const inbound = m.receivedExternal + m.receivedUnclassified;
+  const transfers = m.transferIn + m.probableTransferIn + m.transferOut + m.probableTransferOut;
+  const adjustments = Math.abs(m.adjustments) + m.unclassifiedDecrease;
+  return { sold: m.sold, inbound, transfers, adjustments, flagged: m.receivedUnclassified > 0 || m.unclassifiedDecrease > 0 || m.probableTransferIn + m.probableTransferOut > 0 };
+}
+
+const isIdle = (m: LocationLedger) => {
+  const a = activityOf(m);
+  return a.sold === 0 && a.inbound === 0 && a.transfers === 0 && a.adjustments === 0 && m.returns === 0;
+};
 
 function LedgerHead({ report, locale }: { report: InventoryMovementReport; locale: AppLocale }) {
   const he = locale === "he";
-  const opening = report.openingDate ? (he ? `פתיחה (${report.openingDate})` : `Opening (${report.openingDate})`) : he ? "פתיחה" : "Opening";
-  const closing = report.closingLive ? (he ? "עכשיו" : "Now") : he ? `סגירה (${report.closingDate ?? ""})` : `Closing (${report.closingDate ?? ""})`;
+  const now = report.closingLive ? (he ? "עכשיו" : "Now") : he ? `סגירה ${report.closingDate ?? ""}` : `Closing ${report.closingDate ?? ""}`;
+  const th = "py-1.5 pe-3 text-end font-semibold";
   return (
     <tr>
-      <th className="py-1.5 pe-3 text-start">{he ? "מיקום" : "Location"}</th>
-      <th className="py-1.5 pe-3 text-end">{opening}</th>
-      <th className="py-1.5 pe-3 text-end">{he ? "קליטה חדשה" : "External receipt"}</th>
-      <th className="py-1.5 pe-3 text-end">{he ? "הועבר פנימה" : "Transferred in"}</th>
-      <th className="py-1.5 pe-3 text-end">{he ? "נמכר (נטו)" : "Net sold"}</th>
-      <th className="py-1.5 pe-3 text-end">{he ? "הועבר החוצה" : "Transferred out"}</th>
-      <th className="py-1.5 pe-3 text-end">{he ? "התאמות" : "Adjustments"}</th>
-      <th className="py-1.5 text-end">{closing}</th>
+      <th className="py-1.5 pe-3 text-start font-semibold">{he ? "מיקום" : "Location"}</th>
+      <th className={cn(th, "text-foreground")}>{now}</th>
+      <th className={th}>{he ? "נמכר" : "Sold"}</th>
+      <th className={th} title={he ? "קליטה חיצונית: קבלות PO (מדויק) + מקור לא מזוהה (?)" : "External receipts: PO receipts (exact) + unidentified source (?)"}>
+        {he ? "נכנס" : "In"}
+      </th>
+      <th className={th} title={he ? "העברות פנימיות: נכנס פחות יצא. ≈ = העברה סבירה שלא נרשמה" : "Internal transfers: in minus out. ≈ = probable, unrecorded"}>
+        {he ? "העברות" : "Transfers"}
+      </th>
+      <th className={th}>{he ? "התאמות" : "Adjustments"}</th>
+      <th className={cn(th, "pe-0")} title={report.openingDate ? (he ? `תמונת מלאי ${report.openingDate}` : `snapshot ${report.openingDate}`) : undefined}>
+        {he ? "בתחילת התקופה" : "At start"}
+      </th>
     </tr>
-  );
-}
-
-// "+30 ≈" for a probable (derived) transfer next to an exact one.
-function Pair({ exact, probable, sign, title }: { exact: number; probable: number; sign: "+" | "−"; title: string }) {
-  const total = exact + probable;
-  if (total === 0) return <span className="text-muted-foreground">0</span>;
-  return (
-    <span title={title} className={cn("tabular-nums", probable > 0 ? "text-amber-700" : "text-sky-700")}>
-      {sign}
-      {formatNumber(total)}
-      {probable > 0 ? <span className="ms-0.5 text-[10px]">≈</span> : null}
-    </span>
   );
 }
 
 function LedgerRow({ m, locale }: { m: LocationLedger; locale: AppLocale }) {
   const he = locale === "he";
-  const received = m.receivedExternal + m.receivedUnclassified;
-  const receivedTitle = m.receivedUnclassified > 0 ? (he ? `${formatNumber(m.receivedExternal)} קבלות PO · ${formatNumber(m.receivedUnclassified)} ממקור לא מזוהה (נגזר)` : `${formatNumber(m.receivedExternal)} PO receipts · ${formatNumber(m.receivedUnclassified)} from an unidentified source (derived)`) : he ? "קבלות PO מדויקות" : "exact PO receipts";
-  const soldTitle = he ? `ברוטו ${formatNumber(m.soldGross)} · החזרות ${formatNumber(m.returns)} · ${formatNumber(m.soldPos)} בקופה · ${formatNumber(m.soldFulfilled)} הזמנות אונליין שסופקו מכאן` : `gross ${formatNumber(m.soldGross)} · returns ${formatNumber(m.returns)} · ${formatNumber(m.soldPos)} at the till · ${formatNumber(m.soldFulfilled)} online orders fulfilled from here`;
+  const a = activityOf(m);
+  const netTransfer = m.transferIn + m.probableTransferIn - m.transferOut - m.probableTransferOut;
+  const probable = m.probableTransferIn + m.probableTransferOut > 0;
   const adjTotal = m.adjustments - m.unclassifiedDecrease;
+  const inboundTitle = m.receivedUnclassified > 0 ? (he ? `${formatNumber(m.receivedExternal)} קבלות PO · ${formatNumber(m.receivedUnclassified)} ממקור לא מזוהה (נגזר)` : `${formatNumber(m.receivedExternal)} PO receipts · ${formatNumber(m.receivedUnclassified)} from an unidentified source (derived)`) : he ? "קבלות PO מדויקות" : "exact PO receipts";
+  const soldTitle = he ? `ברוטו ${formatNumber(m.soldGross)} · החזרות ${formatNumber(m.returns)} · ${formatNumber(m.soldPos)} בקופה · ${formatNumber(m.soldFulfilled)} אונליין שסופקו מכאן` : `gross ${formatNumber(m.soldGross)} · returns ${formatNumber(m.returns)} · ${formatNumber(m.soldPos)} at the till · ${formatNumber(m.soldFulfilled)} online fulfilled from here`;
+  const transferTitle = he ? `נכנס ${formatNumber(m.transferIn)}${m.probableTransferIn ? ` (+${formatNumber(m.probableTransferIn)} ≈)` : ""} · יצא ${formatNumber(m.transferOut)}${m.probableTransferOut ? ` (+${formatNumber(m.probableTransferOut)} ≈)` : ""}` : `in ${formatNumber(m.transferIn)}${m.probableTransferIn ? ` (+${formatNumber(m.probableTransferIn)} ≈)` : ""} · out ${formatNumber(m.transferOut)}${m.probableTransferOut ? ` (+${formatNumber(m.probableTransferOut)} ≈)` : ""}`;
   const adjTitle = he ? `${signed(m.adjustments)} התאמות מדויקות · ${m.unclassifiedDecrease ? `−${formatNumber(m.unclassifiedDecrease)} ירידה לא מסווגת (נגזר)` : "אין ירידה לא מסווגת"}` : `${signed(m.adjustments)} exact adjustments · ${m.unclassifiedDecrease ? `−${formatNumber(m.unclassifiedDecrease)} unclassified decrease (derived)` : "no unclassified decrease"}`;
+  const td = "py-1.5 pe-3 text-end tabular-nums";
   return (
-    <tr>
-      <td className="py-1.5 pe-3 font-medium">{m.locationName}</td>
-      <td className="py-1.5 pe-3 text-end tabular-nums text-muted-foreground">{n(m.opening)}</td>
-      <td className={cn("py-1.5 pe-3 text-end tabular-nums", received > 0 && "font-semibold", m.receivedUnclassified > 0 ? "text-amber-700" : received > 0 && "text-emerald-700")} title={receivedTitle}>
-        {plus(received)}
-        {m.receivedUnclassified > 0 ? <span className="ms-0.5 text-[10px]">?</span> : null}
+    <tr className={cn(a.flagged && "bg-amber-50/40")}>
+      <td className="py-1.5 pe-3 font-medium">
+        {a.flagged ? <span className="me-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500 align-middle" title={he ? "יש כאן תנועה שלא הוסברה במלואה" : "Movement here is not fully explained"} /> : null}
+        {m.locationName}
       </td>
-      <td className="py-1.5 pe-3 text-end">
-        <Pair exact={m.transferIn} probable={m.probableTransferIn} sign="+" title={he ? `${formatNumber(m.transferIn)} מדויק · ${formatNumber(m.probableTransferIn)} העברה סבירה (נגזר)` : `${formatNumber(m.transferIn)} exact · ${formatNumber(m.probableTransferIn)} probable transfer (derived)`} />
+      <td className={cn(td, "font-semibold", m.closing < 0 && "text-rose-700")}>{formatNumber(m.closing)}</td>
+      <td className={td} title={soldTitle}>
+        {zeroOr(m.sold, () => (
+          <>
+            {formatNumber(m.sold)}
+            {m.returns > 0 ? <span className="ms-1 text-[10px] text-muted-foreground">({formatNumber(m.returns)} {he ? "הוחזרו" : "returned"})</span> : null}
+          </>
+        ))}
       </td>
-      <td className={cn("py-1.5 pe-3 text-end tabular-nums", m.sold > 0 && "font-semibold")} title={soldTitle}>
-        {minus(m.sold)}
-        {m.returns > 0 ? <span className="ms-1 text-[10px] text-muted-foreground">({he ? "החזרות" : "returns"} {formatNumber(m.returns)})</span> : null}
-        {m.soldFulfilled > 0 ? <span className="ms-1 text-[10px] text-muted-foreground">({he ? "אונליין" : "online"} {formatNumber(m.soldFulfilled)})</span> : null}
+      <td className={cn(td, m.receivedUnclassified > 0 ? "text-amber-700" : "text-emerald-700")} title={inboundTitle}>
+        {zeroOr(a.inbound, () => (
+          <>
+            +{formatNumber(a.inbound)}
+            {m.receivedUnclassified > 0 ? <span className="ms-0.5 text-[10px]">?</span> : null}
+          </>
+        ))}
       </td>
-      <td className="py-1.5 pe-3 text-end">
-        <Pair exact={m.transferOut} probable={m.probableTransferOut} sign="−" title={he ? `${formatNumber(m.transferOut)} מדויק · ${formatNumber(m.probableTransferOut)} העברה סבירה (נגזר)` : `${formatNumber(m.transferOut)} exact · ${formatNumber(m.probableTransferOut)} probable transfer (derived)`} />
+      <td className={cn(td, probable ? "text-amber-700" : "text-sky-700")} title={transferTitle}>
+        {zeroOr(a.transfers, () => (
+          <>
+            {netTransfer === 0 ? `±${formatNumber(m.transferIn + m.probableTransferIn)}` : signed(netTransfer)}
+            {probable ? <span className="ms-0.5 text-[10px]">≈</span> : null}
+          </>
+        ))}
       </td>
-      <td className={cn("py-1.5 pe-3 text-end tabular-nums", m.unclassifiedDecrease > 0 && "text-amber-700")} title={adjTitle}>
-        {m.residual === null && m.adjustments === 0 ? "—" : signed(adjTotal)}
-        {m.unclassifiedDecrease > 0 ? <span className="ms-1 text-[10px]">{he ? "לא מסווג" : "unclassified"}</span> : null}
+      <td className={cn(td, adjTotal < 0 && "text-amber-700", adjTotal > 0 && "text-emerald-700")} title={adjTitle}>
+        {zeroOr(a.adjustments, () => (
+          <>
+            {signed(adjTotal)}
+            {m.unclassifiedDecrease > 0 ? <span className="ms-1 text-[10px]">{he ? "לא מסווג" : "unclassified"}</span> : null}
+          </>
+        ))}
       </td>
-      <td className="py-1.5 text-end tabular-nums font-semibold">{formatNumber(m.closing)}</td>
+      <td className={cn(td, "pe-0 text-muted-foreground")}>{n(m.opening)}</td>
     </tr>
   );
 }
 
 function BusinessRow({ t, locale }: { t: BusinessLedger; locale: AppLocale }) {
   const he = locale === "he";
-  const received = t.receivedExternal + t.receivedUnclassified;
+  const inbound = t.receivedExternal + t.receivedUnclassified;
   const adjTotal = t.adjustments - t.unclassifiedDecrease;
+  const td = "py-2 pe-3 text-end tabular-nums";
   return (
     <tr className="border-t-2 border-border bg-muted/40 font-semibold">
-      <td className="py-2 pe-3">
-        {he ? "סה״כ עסק" : "Business total"}
-        {t.inTransit > 0 ? <span className="ms-2 text-[10px] font-normal text-muted-foreground">{he ? `+ ${formatNumber(t.inTransit)} בדרך` : `+ ${formatNumber(t.inTransit)} in transit`}</span> : null}
-      </td>
-      <td className="py-2 pe-3 text-end tabular-nums">{n(t.opening)}</td>
-      <td className={cn("py-2 pe-3 text-end tabular-nums", t.receivedUnclassified > 0 ? "text-amber-700" : "text-emerald-700")} title={he ? `${formatNumber(t.receivedExternal)} קבלות PO · ${formatNumber(t.receivedUnclassified)} ממקור לא מזוהה` : `${formatNumber(t.receivedExternal)} PO receipts · ${formatNumber(t.receivedUnclassified)} unidentified source`}>
-        {plus(received)}
-        {t.receivedUnclassified > 0 ? <span className="ms-1 text-[10px] font-normal">({he ? `${formatNumber(t.receivedUnclassified)} לא מזוהה` : `${formatNumber(t.receivedUnclassified)} unidentified`})</span> : null}
-      </td>
-      <td className="py-2 pe-3 text-end tabular-nums text-muted-foreground" title={he ? "העברות פנימיות מתאפסות ברמת העסק" : "internal transfers cancel at the business level"}>—</td>
-      <td className="py-2 pe-3 text-end tabular-nums" title={he ? `ברוטו ${formatNumber(t.soldGross)} · החזרות ${formatNumber(t.returns)}` : `gross ${formatNumber(t.soldGross)} · returns ${formatNumber(t.returns)}`}>
-        {minus(t.sold)}
-        {t.unlocatedSold > 0 ? <span className="ms-1 text-[10px] font-normal text-muted-foreground">({he ? "ללא מיקום" : "unlocated"} {formatNumber(t.unlocatedSold)})</span> : null}
-      </td>
-      <td className="py-2 pe-3 text-end tabular-nums text-muted-foreground">—</td>
-      <td className={cn("py-2 pe-3 text-end tabular-nums", t.unclassifiedDecrease > 0 && "text-amber-700")}>{t.opening === null && t.adjustments === 0 ? "—" : signed(adjTotal)}</td>
-      <td className="py-2 text-end tabular-nums" title={t.inTransit > 0 ? (he ? `פיזי ${formatNumber(t.onHand)} + בדרך ${formatNumber(t.inTransit)} = ${formatNumber(t.inventory)}` : `physical ${formatNumber(t.onHand)} + in transit ${formatNumber(t.inTransit)} = ${formatNumber(t.inventory)}`) : undefined}>
+      <td className="py-2 pe-3">{he ? "סה״כ עסק" : "Business total"}</td>
+      <td className={td} title={t.inTransit > 0 ? (he ? `פיזי ${formatNumber(t.onHand)} + בדרך ${formatNumber(t.inTransit)} = ${formatNumber(t.inventory)}` : `on hand ${formatNumber(t.onHand)} + in transit ${formatNumber(t.inTransit)} = ${formatNumber(t.inventory)}`) : undefined}>
         {formatNumber(t.onHand)}
-        {t.inTransit > 0 ? <span className="ms-1 text-[10px] font-normal text-muted-foreground">/ {formatNumber(t.inventory)}</span> : null}
+        {t.inTransit > 0 ? <span className="ms-1 text-[10px] font-normal text-muted-foreground">+{formatNumber(t.inTransit)} {he ? "בדרך" : "in transit"}</span> : null}
       </td>
+      <td className={td} title={he ? `ברוטו ${formatNumber(t.soldGross)} · החזרות ${formatNumber(t.returns)}` : `gross ${formatNumber(t.soldGross)} · returns ${formatNumber(t.returns)}`}>
+        {zeroOr(t.sold, () => (
+          <>
+            {formatNumber(t.sold)}
+            {t.unlocatedSold > 0 ? <span className="ms-1 text-[10px] font-normal text-muted-foreground">({formatNumber(t.unlocatedSold)} {he ? "ללא מיקום" : "unlocated"})</span> : null}
+          </>
+        ))}
+      </td>
+      <td className={cn(td, t.receivedUnclassified > 0 ? "text-amber-700" : "text-emerald-700")} title={he ? `${formatNumber(t.receivedExternal)} קבלות PO · ${formatNumber(t.receivedUnclassified)} ממקור לא מזוהה` : `${formatNumber(t.receivedExternal)} PO receipts · ${formatNumber(t.receivedUnclassified)} unidentified`}>
+        {zeroOr(inbound, () => (
+          <>
+            +{formatNumber(inbound)}
+            {t.receivedUnclassified > 0 ? <span className="ms-0.5 text-[10px]">?</span> : null}
+          </>
+        ))}
+      </td>
+      <td className={cn(td, "font-normal text-muted-foreground")} title={he ? `${formatNumber(t.redistributed)} יחידות חולקו בין מיקומים — מתאפס ברמת העסק` : `${formatNumber(t.redistributed)} units moved between locations — cancels at business level`}>
+        {t.redistributed + t.probableRedistributed > 0 ? `↔ ${formatNumber(t.redistributed + t.probableRedistributed)}` : dash}
+      </td>
+      <td className={cn(td, adjTotal < 0 && "text-amber-700")}>{t.opening === null && t.adjustments === 0 ? dash : zeroOr(Math.abs(adjTotal), () => signed(adjTotal))}</td>
+      <td className={cn(td, "pe-0 text-muted-foreground")}>{n(t.opening)}</td>
     </tr>
   );
 }
 
 export function LedgerTable({ locations, total, report, locale, filterLocation }: { locations: LocationLedger[]; total: BusinessLedger; report: InventoryMovementReport; locale: AppLocale; filterLocation?: string }) {
-  const rows = filterLocation ? locations.filter((l) => l.locationId === filterLocation) : locations;
+  const he = locale === "he";
+  const [showIdle, setShowIdle] = useState(false);
+  const scoped = filterLocation ? locations.filter((l) => l.locationId === filterLocation) : locations;
+  const active = scoped.filter((l) => !isIdle(l));
+  const idle = scoped.filter(isIdle);
+  // Flagged rows first, then by units moved, so the exception is on top.
+  const rows = [...active].sort((x, y) => {
+    const ax = activityOf(x);
+    const ay = activityOf(y);
+    if (ax.flagged !== ay.flagged) return ax.flagged ? -1 : 1;
+    return ay.sold + ay.inbound + ay.transfers + ay.adjustments - (ax.sold + ax.inbound + ax.transfers + ax.adjustments);
+  });
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[44rem] text-xs">
-        <thead className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <table className="w-full min-w-[38rem] text-xs">
+        <thead className="text-[10px] uppercase tracking-wide text-muted-foreground">
           <LedgerHead report={report} locale={locale} />
         </thead>
         <tbody className="divide-y divide-border/50">
           {rows.map((m) => (
             <LedgerRow key={m.locationId} m={m} locale={locale} />
           ))}
+          {showIdle
+            ? idle.map((m) => (
+                <tr key={m.locationId} className="text-muted-foreground/70">
+                  <td className="py-1.5 pe-3">{m.locationName}</td>
+                  <td className="py-1.5 pe-3 text-end tabular-nums">{formatNumber(m.closing)}</td>
+                  <td className="py-1.5 pe-3 text-end">{dash}</td>
+                  <td className="py-1.5 pe-3 text-end">{dash}</td>
+                  <td className="py-1.5 pe-3 text-end">{dash}</td>
+                  <td className="py-1.5 pe-3 text-end">{dash}</td>
+                  <td className="py-1.5 text-end tabular-nums">{n(m.opening)}</td>
+                </tr>
+              ))
+            : null}
+          {!active.length && !showIdle ? (
+            <tr>
+              <td colSpan={7} className="py-2 text-center text-muted-foreground">
+                {he ? "לא הייתה תנועה בתקופה הזאת." : "No movement in this period."}
+              </td>
+            </tr>
+          ) : null}
           {!filterLocation ? <BusinessRow t={total} locale={locale} /> : null}
         </tbody>
       </table>
+      {idle.length ? (
+        <button type="button" onClick={() => setShowIdle((v) => !v)} className="mt-1 text-[11px] text-muted-foreground underline-offset-4 hover:underline">
+          {showIdle ? (he ? "▾ הסתר מיקומים ללא פעילות" : "▾ Hide idle locations") : he ? `▸ הצג ${formatNumber(idle.length)} מיקומים ללא פעילות` : `▸ Show ${formatNumber(idle.length)} idle locations`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+// One line that tells the story before the table: what moved, what to check.
+function FlowSummaryLine({ t, locations, report, locale }: { t: BusinessLedger; locations: LocationLedger[]; report: InventoryMovementReport; locale: AppLocale }) {
+  const he = locale === "he";
+  const inbound = t.receivedExternal + t.receivedUnclassified;
+  const transfers = t.redistributed + t.probableRedistributed;
+  const adjustments = Math.abs(t.adjustments) + t.unclassifiedDecrease;
+  const flagged = locations.filter((l) => activityOf(l).flagged).length;
+  const chip = (label: string, strong = false) => (
+    <span key={label} className={cn("rounded-md bg-muted/60 px-2 py-0.5 tabular-nums", strong && "font-semibold text-foreground")}>
+      {label}
+    </span>
+  );
+  const chips = [
+    chip(he ? `${formatNumber(t.sold)} יח׳ נמכרו` : `${formatNumber(t.sold)} units sold`, t.sold > 0),
+    chip(he ? `${formatNumber(inbound)} נכנסו` : `${formatNumber(inbound)} received`, inbound > 0),
+    chip(he ? `${formatNumber(transfers)} הועברו` : `${formatNumber(transfers)} transferred`, transfers > 0),
+    chip(he ? `${formatNumber(adjustments)} התאמות` : `${formatNumber(adjustments)} adjustments`, adjustments > 0),
+    chip(he ? `מלאי עכשיו: ${formatNumber(t.onHand)}${t.inTransit ? ` (+${formatNumber(t.inTransit)} בדרך)` : ""}` : `Stock now: ${formatNumber(t.onHand)}${t.inTransit ? ` (+${formatNumber(t.inTransit)} in transit)` : ""}`, true)
+  ];
+  const warn: string[] = [];
+  if (flagged) warn.push(he ? `${formatNumber(flagged)} מיקומים עם תנועה שלא הוסברה במלואה` : `${formatNumber(flagged)} locations with movement not fully explained`);
+  if (t.reconciliationGap !== null && t.reconciliationGap !== 0) warn.push(he ? `פער התאמה ${signed(t.reconciliationGap)}` : `reconciliation gap ${signed(t.reconciliationGap)}`);
+  if (!report.openingDate) warn.push(he ? `אין נקודת פתיחה לפני התקופה${report.historyStart ? ` (היסטוריה מ-${report.historyStart})` : ""}` : `no opening point before the period${report.historyStart ? ` (history since ${report.historyStart})` : ""}`);
+  if (report.evidence.transferCoverageGap) warn.push(he ? `העברות מדויקות רק מ-${report.evidence.transferCoverageSince ?? "—"}` : `exact transfers only since ${report.evidence.transferCoverageSince ?? "—"}`);
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">{chips}</div>
+      {warn.length ? (
+        <p className="flex items-start gap-1.5 text-[11px] text-amber-700">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+          <span>{warn.join(" · ")}</span>
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -250,15 +369,13 @@ export function LedgerTable({ locations, total, report, locale, filterLocation }
 function ProductFootnotes({ t, locale }: { t: BusinessLedger; locale: AppLocale }) {
   const he = locale === "he";
   const lines: string[] = [];
-  if (t.redistributed > 0) lines.push(he ? `${formatNumber(t.redistributed)} יחידות חולקו בין מיקומים במהלך התקופה.` : `${formatNumber(t.redistributed)} units redistributed between locations during the period.`);
-  if (t.inTransit > 0) lines.push(he ? `${formatNumber(t.inTransit)} יחידות בדרך — במלאי העסק, לא על מדף.` : `${formatNumber(t.inTransit)} units in transit — business inventory, on no shelf.`);
-  for (const p of t.probableTransfers.slice(0, 4)) lines.push(he ? `נראית העברת מלאי של כ-${formatNumber(p.quantity)} יחידות ${p.fromLocationName} → ${p.toLocationName} (${p.confidence === "medium" ? "ביטחון בינוני" : "ביטחון נמוך"}, לא נרשמה ב-Shopify).` : `A probable internal transfer of ~${formatNumber(p.quantity)} units ${p.fromLocationName} → ${p.toLocationName} (${p.confidence} confidence, not recorded in Shopify).`);
-  if (t.receivedUnclassified > 0) lines.push(he ? `${formatNumber(t.receivedUnclassified)} יחידות נוספו למלאי ממקור לא מזוהה — לרשום PO אם זו קבלת סחורה.` : `${formatNumber(t.receivedUnclassified)} units were added to stock from an unidentified source — record the PO if this was a delivery.`);
-  if (t.unclassifiedDecrease > 0) lines.push(he ? `${formatNumber(t.unclassifiedDecrease)} יחידות ירדו מהמלאי בלי אירוע מסביר.` : `${formatNumber(t.unclassifiedDecrease)} units left stock with no explaining event.`);
-  if (t.unlocatedSold > 0) lines.push(he ? `${formatNumber(t.unlocatedSold)} יחידות נמכרו בהזמנות ללא מיקום — נספרות בסה״כ העסק בלבד.` : `${formatNumber(t.unlocatedSold)} units sold on orders without a location — counted in the business total only.`);
+  for (const p of t.probableTransfers.slice(0, 4)) lines.push(he ? `נראית העברה של כ-${formatNumber(p.quantity)} יח׳ ${p.fromLocationName} → ${p.toLocationName} (${p.confidence === "medium" ? "ביטחון בינוני" : "ביטחון נמוך"}, לא נרשמה ב-Shopify).` : `A probable transfer of ~${formatNumber(p.quantity)} units ${p.fromLocationName} → ${p.toLocationName} (${p.confidence} confidence, not recorded in Shopify).`);
+  if (t.receivedUnclassified > 0) lines.push(he ? `${formatNumber(t.receivedUnclassified)} יח׳ נוספו ממקור לא מזוהה — לרשום PO אם זו קבלת סחורה.` : `${formatNumber(t.receivedUnclassified)} units added from an unidentified source — record the PO if this was a delivery.`);
+  if (t.unclassifiedDecrease > 0) lines.push(he ? `${formatNumber(t.unclassifiedDecrease)} יח׳ ירדו מהמלאי בלי אירוע מסביר.` : `${formatNumber(t.unclassifiedDecrease)} units left stock with no explaining event.`);
+  if (t.unlocatedSold > 0) lines.push(he ? `${formatNumber(t.unlocatedSold)} יח׳ נמכרו בהזמנות ללא מיקום — בסה״כ העסק בלבד.` : `${formatNumber(t.unlocatedSold)} units sold on orders without a location — business total only.`);
   if (!lines.length) return null;
   return (
-    <ul className="space-y-0.5 text-[11px] text-muted-foreground">
+    <ul className="space-y-0.5 text-[11px] text-amber-700">
       {lines.map((l, i) => (
         <li key={i}>{l}</li>
       ))}
@@ -274,15 +391,11 @@ export function ProductFlow({ row, pm, report, locale, filterLocation, rangeLabe
   const derivedUnits = pm.locations.reduce((s, l) => s + l.probableTransferIn + l.receivedUnclassified + l.unclassifiedDecrease, 0);
   return (
     <div className="space-y-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{he ? `תנועת מלאי לפי מיקום${rangeLabel ? ` · ${rangeLabel}` : ""}` : `Stock flow by location${rangeLabel ? ` · ${rangeLabel}` : ""}`}</p>
-      {!report.openingDate ? (
-        <p className="text-[11px] text-amber-700">
-          {he
-            ? `אין תמונת מלאי מלפני תחילת התקופה${report.historyStart ? ` — ההיסטוריה זמינה מ-${report.historyStart}` : ""}; "פתיחה" והסיווג של תנועה לא מוסברת יופיעו כשתהיה נקודת פתיחה. קליטה, העברות ומכירות מוצגות מאירועים מדויקים.`
-            : `No stock snapshot before the period start${report.historyStart ? ` — history is available since ${report.historyStart}` : ""}; opening and the classification of unexplained movement appear once an opening point exists. Receipts, transfers and sales come from exact events.`}
-        </p>
-      ) : null}
-      {report.evidence.transferCoverageGap ? <p className="text-[11px] text-amber-700">{he ? `היסטוריית העברות מדויקת זמינה רק מ-${report.evidence.transferCoverageSince ?? "—"}; העברות מוקדמות יותר בתקופה מופיעות כתנועה נגזרת (≈).` : `Exact transfer history is available only since ${report.evidence.transferCoverageSince ?? "—"}; earlier transfers in the period appear as derived movement (≈).`}</p> : null}
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{he ? "תנועות מלאי" : "Stock movement"}</p>
+        {rangeLabel ? <p className="text-[10px] text-muted-foreground">{rangeLabel}</p> : null}
+      </div>
+      <FlowSummaryLine t={pm.total} locations={pm.locations} report={report} locale={locale} />
       <LedgerTable locations={pm.locations} total={pm.total} report={report} locale={locale} filterLocation={filterLocation} />
       {!filterLocation ? <ProductFootnotes t={pm.total} locale={locale} /> : null}
       {variants.length > 1 ? (
@@ -303,14 +416,18 @@ export function ProductFlow({ row, pm, report, locale, filterLocation, rangeLabe
         </details>
       ) : null}
       <details className="text-[11px] text-muted-foreground">
-        <summary className="cursor-pointer select-none underline-offset-4 hover:underline">{he ? "פרטים / ביקורת: מדויק מול נגזר" : "Details / audit: exact vs derived"}</summary>
+        <summary className="inline-flex cursor-pointer select-none items-center gap-1 underline-offset-4 hover:underline">
+          <Info className="h-3 w-3" aria-hidden />
+          {he ? "איך מחושבים הנתונים?" : "How are these numbers computed?"}
+        </summary>
         <ul className="mt-1 list-disc space-y-0.5 ps-4">
           <li>{he ? `${formatNumber(exact)} אירועים מדויקים בתקופה (העברות Shopify, קבלות PO, התאמות עם מקור) · ${formatNumber(derivedUnits)} יחידות סווגו מתוך תנועה נגזרת (≈ / ? / לא מסווג).` : `${formatNumber(exact)} exact events in the period (Shopify transfers, PO receipts, sourced adjustments) · ${formatNumber(derivedUnits)} units classified from derived movement (≈ / ? / unclassified).`}</li>
-          <li>{he ? "קליטה חדשה = קבלות PO (מדויק) + עלייה שלא הוסברה ולא נמצא לה זוג במיקום אחר (? — מקור לא מזוהה). העברה פנימית לעולם לא נספרת כאן." : "External receipt = PO receipts (exact) + an unexplained increase with no pair at another location (? — unidentified source). An internal transfer is never counted here."}</li>
-          <li>{he ? "הועבר פנימה/החוצה = רגלי העברה של Shopify (מדויק) + זוגות של ירידה/עלייה באותו וריאנט בין מיקומים (≈ העברה סבירה, ביטחון בינוני כשהכמויות זהות, נמוך כשחלקיות)." : "Transferred in/out = Shopify transfer legs (exact) + paired decrease/increase of the same variant across locations (≈ probable transfer, medium confidence when quantities match, low when partial)."}</li>
-          <li>{he ? "נמכר (נטו) = שורות הזמנה לפי מיקום ההזמנה — קופה (מכירה בחנות) או המיקום שממנו סופקה הזמנה אונליין — פחות יחידות שהוחזרו. ברוטו והחזרות ב-tooltip." : "Net sold = order lines by the order's location — the till (a store sale) or the location an online order was fulfilled from — minus returned units. Gross and returns in the tooltip."}</li>
+          <li>{he ? "נכנס = קבלות PO (מדויק) + עלייה שלא הוסברה ולא נמצא לה זוג במיקום אחר (? — מקור לא מזוהה). העברה פנימית לעולם לא נספרת כאן." : "In = PO receipts (exact) + an unexplained increase with no pair at another location (? — unidentified source). An internal transfer is never counted here."}</li>
+          <li>{he ? "העברות = רגלי העברה של Shopify (מדויק) + זוגות של ירידה/עלייה באותו וריאנט בין מיקומים (≈ העברה סבירה, ביטחון בינוני כשהכמויות זהות, נמוך כשחלקיות). מוצג כנטו: נכנס פחות יצא; בשורת העסק — סך היחידות שחולקו." : "Transfers = Shopify transfer legs (exact) + paired decrease/increase of the same variant across locations (≈ probable, medium confidence when quantities match, low when partial). Shown net: in minus out; on the business row, total units redistributed."}</li>
+          <li>{he ? "נמכר = שורות הזמנה לפי מיקום ההזמנה — קופה או המיקום שממנו סופקה הזמנה אונליין — פחות יחידות שהוחזרו. ברוטו, החזרות וקופה/אונליין ב-tooltip." : "Sold = order lines by the order's location — the till or the location an online order was fulfilled from — minus returned units. Gross, returns and till/online in the tooltip."}</li>
           <li>{he ? "התאמות = התאמות מדויקות + ירידה לא מסווגת (ירידה שלא הוסברה ולא נמצא לה זוג). בדרך = נשלח בהעברה מדויקת ועוד לא התקבל." : "Adjustments = exact adjustments + unclassified decrease (an unexplained drop with no pair). In transit = shipped on an exact transfer and not yet received."}</li>
-          <li>{he ? `זהות סה״כ עסק: פתיחה + קליטה חדשה + החזרות + התאמות − נמכר נטו − ירידה לא מסווגת = פיזי + בדרך${pm.total.reconciliationGap === null ? " (לא ניתן לאמת בלי פתיחה)" : pm.total.reconciliationGap === 0 ? " · מתאזן" : ` · פער ${signed(pm.total.reconciliationGap)}`}.` : `Business identity: opening + external receipt + returns + adjustments − net sold − unclassified decrease = on hand + in transit${pm.total.reconciliationGap === null ? " (cannot be verified without an opening)" : pm.total.reconciliationGap === 0 ? " · closes" : ` · gap ${signed(pm.total.reconciliationGap)}`}.`}</li>
+          <li>{he ? `זהות סה״כ עסק: בתחילת התקופה + נכנס + התאמות − נמכר − ירידה לא מסווגת = פיזי + בדרך${pm.total.reconciliationGap === null ? " (לא ניתן לאמת בלי נקודת פתיחה)" : pm.total.reconciliationGap === 0 ? " · מתאזן" : ` · פער ${signed(pm.total.reconciliationGap)}`}.` : `Business identity: at start + in + adjustments − sold − unclassified decrease = on hand + in transit${pm.total.reconciliationGap === null ? " (cannot be verified without an opening point)" : pm.total.reconciliationGap === 0 ? " · closes" : ` · gap ${signed(pm.total.reconciliationGap)}`}.`}</li>
+          {!report.openingDate ? <li>{he ? `אין תמונת מלאי מלפני תחילת התקופה${report.historyStart ? ` — ההיסטוריה זמינה מ-${report.historyStart}` : ""}. "בתחילת התקופה" והסיווג של תנועה לא מוסברת יופיעו כשתהיה נקודת פתיחה.` : `No stock snapshot before the period start${report.historyStart ? ` — history since ${report.historyStart}` : ""}. "At start" and the classification of unexplained movement appear once an opening point exists.`}</li> : null}
         </ul>
       </details>
     </div>
