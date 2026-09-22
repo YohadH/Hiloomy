@@ -212,8 +212,11 @@ services:
         sync: false
       # write_discounts backs affiliate coupon creation. This env var fully
       # REPLACES the code's DEFAULT_SCOPES — keep the two lists in sync.
+      # read_locations + read_inventory_transfers back the inventory-by-
+      # location view (stock per store, warehouse → store transfers). A store
+      # installed before they were added must reconnect Shopify once.
       - key: SHOPIFY_OAUTH_SCOPES
-        value: "read_products,read_orders,read_customers,read_inventory,read_customer_journey,write_discounts"
+        value: "read_products,read_orders,read_customers,read_inventory,read_locations,read_inventory_transfers,read_customer_journey,write_discounts"
 
       # ─── Google Search Console (DATA-01) ───────────────────────────────
       # OAuth app credentials from Google Cloud Console → APIs & Services →

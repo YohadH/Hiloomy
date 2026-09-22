@@ -123,8 +123,11 @@ export async function syncInventoryTransfers(storeId: string, options: { full?: 
   const db = getDb() as any;
   const now = new Date();
   const previous = await getInventoryTransfersStatus(storeId);
-  const incremental = !options.full && previous.state === "ok" && !!previous.syncedAt;
-  const since = incremental ? new Date(Date.parse(previous.syncedAt!) - 7 * 86_400_000).toISOString().slice(0, 10) : null;
+  // Always a full pull: Shopify's inventoryTransfers query filters by
+  // created_at / status / ids / tags but NOT updated_at, and a transfer
+  // created months ago can be received today. Transfers are few per store,
+  // so a full walk (50 per page) is cheap and always consistent.
+  void options;
   let transfers = 0;
   let events = 0;
   let earliest: string | null = previous.coverageSince ?? null;
@@ -137,7 +140,7 @@ export async function syncInventoryTransfers(storeId: string, options: { full?: 
     let cursor: string | null = null;
     for (;;) {
       type TransfersPage = { inventoryTransfers: { edges: Array<{ node: TransferNode }>; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
-      const page: TransfersPage = await client.request<TransfersPage>(TRANSFERS_QUERY, { cursor, query: since ? `updated_at:>=${since}` : null });
+      const page: TransfersPage = await client.request<TransfersPage>(TRANSFERS_QUERY, { cursor, query: null });
       const conn: TransfersPage["inventoryTransfers"] = page.inventoryTransfers;
       for (const { node: t } of conn.edges) {
         transfers += 1;
@@ -145,6 +148,12 @@ export async function syncInventoryTransfers(storeId: string, options: { full?: 
         if (created && (!earliest || created < earliest)) earliest = created;
         const originId = stripGid(t.origin?.location?.id);
         const destId = stripGid(t.destination?.location?.id);
+        // No live origin location = goods came from outside the business
+        // (a supplier PO received through Shopify's transfer flow, or a
+        // deleted location). Those units are EXTERNAL stock: a PO receipt at
+        // the destination, never an internal transfer leg.
+        const external = !originId && !!destId;
+        if (t.status === "DRAFT" || t.status === "CANCELED") continue;
         const shipments = t.shipments.edges.map((e) => e.node);
         const shippedDates = shipments.map((sh) => sh.dateShipped ?? sh.dateCreated).filter((d): d is string => !!d).sort();
         const receivedDates = shipments.map((sh) => sh.dateReceived).filter((d): d is string => !!d).sort();
@@ -178,10 +187,12 @@ export async function syncInventoryTransfers(storeId: string, options: { full?: 
           }
           if (destId && receivedQuantity > 0) {
             const sourceId = `${stripGid(t.id)}:${itemId}:in`;
+            const inType = external ? "PO_RECEIPT" : "TRANSFER_IN";
+            const note = external ? [t.referenceName, t.origin?.name ? `מקור: ${t.origin.name}` : null].filter(Boolean).join(" · ") || null : t.referenceName;
             await db.inventoryMovementEvent.upsert({
               where: { storeId_sourceType_sourceId: { storeId, sourceType: "SHOPIFY_TRANSFER", sourceId } },
-              update: { quantity: receivedQuantity, occurredAt: new Date(receivedAt), locationId: destId, locationName: t.destination?.location?.name ?? t.destination?.name ?? null, reference: t.name },
-              create: { ...base, sourceId, type: "TRANSFER_IN", quantity: receivedQuantity, occurredAt: new Date(receivedAt), locationId: destId, locationName: t.destination?.location?.name ?? t.destination?.name ?? null }
+              update: { type: inType, quantity: receivedQuantity, occurredAt: new Date(receivedAt), locationId: destId, locationName: t.destination?.location?.name ?? t.destination?.name ?? null, reference: t.name, note },
+              create: { ...base, note, sourceId, type: inType, quantity: receivedQuantity, occurredAt: new Date(receivedAt), locationId: destId, locationName: t.destination?.location?.name ?? t.destination?.name ?? null }
             });
             events += 1;
           }
