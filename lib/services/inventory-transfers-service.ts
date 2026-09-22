@@ -39,12 +39,22 @@ const TRANSFERS_QUERY = /* GraphQL */ `
                 inventoryItem { id variant { id } }
                 totalQuantity
                 shippedQuantity
-                receivedQuantity
               }
             }
           }
           shipments(first: 10) {
-            edges { node { id status dateCreated } }
+            edges {
+              node {
+                id
+                status
+                dateCreated
+                dateShipped
+                dateReceived
+                lineItems(first: 100) {
+                  edges { node { inventoryItem { id } quantity acceptedQuantity rejectedQuantity } }
+                }
+              }
+            }
           }
         }
       }
@@ -61,8 +71,19 @@ interface TransferNode {
   referenceName: string | null;
   origin: { name: string | null; location: { id: string; name: string } | null } | null;
   destination: { name: string | null; location: { id: string; name: string } | null } | null;
-  lineItems: { edges: Array<{ node: { inventoryItem: { id: string; variant: { id: string } | null } | null; totalQuantity: number; shippedQuantity: number; receivedQuantity: number } }> };
-  shipments: { edges: Array<{ node: { id: string; status: string; dateCreated: string | null } }> };
+  lineItems: { edges: Array<{ node: { inventoryItem: { id: string; variant: { id: string } | null } | null; totalQuantity: number; shippedQuantity: number } }> };
+  shipments: {
+    edges: Array<{
+      node: {
+        id: string;
+        status: string;
+        dateCreated: string | null;
+        dateShipped: string | null;
+        dateReceived: string | null;
+        lineItems: { edges: Array<{ node: { inventoryItem: { id: string } | null; quantity: number; acceptedQuantity: number; rejectedQuantity: number } }> };
+      };
+    }>;
+  };
 }
 
 export interface TransfersSyncStatus {
@@ -124,15 +145,28 @@ export async function syncInventoryTransfers(storeId: string, options: { full?: 
         if (created && (!earliest || created < earliest)) earliest = created;
         const originId = stripGid(t.origin?.location?.id);
         const destId = stripGid(t.destination?.location?.id);
-        const shipmentDates = t.shipments.edges.map((e: { node: { dateCreated: string | null } }) => e.node.dateCreated).filter((d: string | null): d is string => !!d).sort();
-        const shippedAt = shipmentDates[0] ?? t.dateCreated ?? now.toISOString();
-        const receivedAt = shipmentDates[shipmentDates.length - 1] ?? t.dateCreated ?? now.toISOString();
+        const shipments = t.shipments.edges.map((e) => e.node);
+        const shippedDates = shipments.map((sh) => sh.dateShipped ?? sh.dateCreated).filter((d): d is string => !!d).sort();
+        const receivedDates = shipments.map((sh) => sh.dateReceived).filter((d): d is string => !!d).sort();
+        const shippedAt = shippedDates[0] ?? t.dateCreated ?? now.toISOString();
+        const receivedAt = receivedDates[receivedDates.length - 1] ?? shippedDates[shippedDates.length - 1] ?? t.dateCreated ?? now.toISOString();
+        // Received units per inventory item: accepted across every shipment
+        // of this transfer. Rejected and still-unreceived units stay in transit.
+        const receivedByItem = new Map<string, number>();
+        for (const sh of shipments) {
+          for (const { node: sl } of sh.lineItems.edges) {
+            const key = stripGid(sl.inventoryItem?.id);
+            if (!key) continue;
+            receivedByItem.set(key, (receivedByItem.get(key) ?? 0) + (sl.acceptedQuantity ?? 0));
+          }
+        }
         for (const { node: li } of t.lineItems.edges) {
           const shopifyVariantId = stripGid(li.inventoryItem?.variant?.id);
           if (!shopifyVariantId) continue;
           const v = byShopifyId.get(shopifyVariantId);
           const base = { storeId, shopifyVariantId, productId: v?.productId ?? null, variantId: v?.id ?? null, sourceType: "SHOPIFY_TRANSFER", precision: "exact", reference: t.name, note: t.referenceName };
           const itemId = stripGid(li.inventoryItem?.id) ?? shopifyVariantId;
+          const receivedQuantity = receivedByItem.get(itemId) ?? 0;
           if (originId && li.shippedQuantity > 0) {
             const sourceId = `${stripGid(t.id)}:${itemId}:out`;
             await db.inventoryMovementEvent.upsert({
@@ -142,12 +176,12 @@ export async function syncInventoryTransfers(storeId: string, options: { full?: 
             });
             events += 1;
           }
-          if (destId && li.receivedQuantity > 0) {
+          if (destId && receivedQuantity > 0) {
             const sourceId = `${stripGid(t.id)}:${itemId}:in`;
             await db.inventoryMovementEvent.upsert({
               where: { storeId_sourceType_sourceId: { storeId, sourceType: "SHOPIFY_TRANSFER", sourceId } },
-              update: { quantity: li.receivedQuantity, occurredAt: new Date(receivedAt), locationId: destId, locationName: t.destination?.location?.name ?? t.destination?.name ?? null, reference: t.name },
-              create: { ...base, sourceId, type: "TRANSFER_IN", quantity: li.receivedQuantity, occurredAt: new Date(receivedAt), locationId: destId, locationName: t.destination?.location?.name ?? t.destination?.name ?? null }
+              update: { quantity: receivedQuantity, occurredAt: new Date(receivedAt), locationId: destId, locationName: t.destination?.location?.name ?? t.destination?.name ?? null, reference: t.name },
+              create: { ...base, sourceId, type: "TRANSFER_IN", quantity: receivedQuantity, occurredAt: new Date(receivedAt), locationId: destId, locationName: t.destination?.location?.name ?? t.destination?.name ?? null }
             });
             events += 1;
           }
