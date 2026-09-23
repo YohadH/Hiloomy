@@ -230,9 +230,13 @@ export interface ShopifySalesSummary {
   orders: number;
   grossSales: number;
   discounts: number;
-  // Full refund amount (line items + shipping + tax) — used in the
-  // Shopify Total Sales formula: gross − discounts − returns + tax + ship.
+  // Full money refunded (line items + shipping + tax). Informational since
+  // 2026-09-23 — Total sales now uses returnsRestocked (see below).
   returns: number;
+  // Ex-VAT value of goods returned to stock / cancelled, by refund date —
+  // Shopify Analytics' "Returns" / "Sales reversals". Drives netSales,
+  // totalSales and refundRate.
+  returnsRestocked: number;
   // Line-items-only refund amount — used by contribution margin, where
   // the gross sales base also excludes shipping + tax. Mixing the two
   // (deducting shipping/tax refunds from a base that lacks shipping/tax
@@ -310,7 +314,7 @@ async function computeSalesSummary(
       // Shopify's Sales report excludes cancelled and test orders.
       where: { storeId, createdAt: { gte: start, lte: end }, cancelledAt: null, test: false, ...channelWhere },
       _count: { _all: true },
-      _sum: { totalShipping: true, totalTax: true }
+      _sum: { totalShipping: true, totalShippingDiscount: true, totalTax: true }
     }),
     db.orderLineItem.aggregate({
       where: { storeId, order: { createdAt: { gte: start, lte: end }, cancelledAt: null, test: false, ...channelWhere } },
@@ -334,7 +338,7 @@ async function computeSalesSummary(
         createdAt: { gte: start, lte: end },
         order: { cancelledAt: null, test: false, ...channelWhere }
       },
-      _sum: { refundedAmount: true, refundedLineItemsAmount: true }
+      _sum: { refundedAmount: true, refundedLineItemsAmount: true, refundedTaxAmount: true, restockedLineItemsAmount: true }
     }),
     // Set-based: one grouped scan for each customer's first-ever order, then a
     // hash join. (A per-row correlated EXISTS here took 60-190s on 31k orders.)
@@ -365,9 +369,18 @@ async function computeSalesSummary(
   const unitsSold = num(lineAgg._sum?.quantity);
   const returns = num(refundAgg._sum?.refundedAmount);
   const returnsLineItems = num(refundAgg._sum?.refundedLineItemsAmount);
-  const shipping = num(orderAgg._sum?.totalShipping);
-  const taxes = num(orderAgg._sum?.totalTax);
-  const netSales = grossSales - discounts - returns;
+  // Shopify Analytics parity (Take a Nap reconciliation, 2026-09-23):
+  // the sales report's "Returns" is the ex-VAT value of goods returned to
+  // stock or cancelled (restockType RETURN/CANCEL) at REFUND date — not the
+  // money refunded. This store exchanges at the till: 124 refunds returned
+  // ₪52K of goods but paid back only ₪8K, so the money-based figure made
+  // our Total sales sit ₪27K above Shopify's. Shipping is net of shipping
+  // discounts and Taxes net of refunded tax, exactly as Shopify shows them.
+  const returnsRestocked = num(refundAgg._sum?.restockedLineItemsAmount);
+  const refundedTax = num(refundAgg._sum?.refundedTaxAmount);
+  const shipping = num(orderAgg._sum?.totalShipping) - num(orderAgg._sum?.totalShippingDiscount);
+  const taxes = num(orderAgg._sum?.totalTax) - refundedTax;
+  const netSales = grossSales - discounts - returnsRestocked;
   // Shopify parity (SA reconciliation 2026-08-22, per Sidekick's formula):
   //   Total sales = Gross − Discounts − Returns + Shipping + Taxes
   //                 (+ Duties + Additional fees, which we don't track — ~0)
@@ -405,6 +418,7 @@ async function computeSalesSummary(
     discounts,
     returns,
     returnsLineItems,
+    returnsRestocked,
     netSales,
     shipping,
     taxes,
@@ -416,7 +430,8 @@ async function computeSalesSummary(
     returningOrders,
     returningCustomerRate: orders ? (returningOrders / orders) * 100 : 0,
     discountRate: grossSales ? (discounts / grossSales) * 100 : 0,
-    refundRate: grossSales ? (returns / grossSales) * 100 : 0,
+    // Shopify's returns basis (goods returned), not money refunded.
+    refundRate: grossSales ? (returnsRestocked / grossSales) * 100 : 0,
     // Shopify's dashboard AOV = net line-item sales / orders (no
     // shipping, no tax). Previously we used totalSales/orders which
     // inflated AOV by ~20% on stores where customers pay for shipping.

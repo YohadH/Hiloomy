@@ -116,8 +116,8 @@ function explainKpi(label: string, isHe: boolean): { hint: string; tooltip: stri
     case "refund":
       return {
         hint: lang(
-          "כמה הכנסה נאלצתם להחזיר — שווה בדיקה כשזה מטפס.",
-          "How much revenue you had to give back — investigate when it climbs."
+          "שווי הסחורה שחזרה מהמכירות (כמו בדוח המכירות של Shopify) — שווה בדיקה כשזה מטפס.",
+          "Value of goods returned out of sales (as in Shopify's sales report) — investigate when it climbs."
         ),
         tooltip: lang(
           "סכום ההחזרים ÷ מכירות, בממוצע על פני הימים.",

@@ -56,6 +56,7 @@ export function bulkOrdersQuery(updatedAfter?: Date | null): string {
         totalDiscountsSet { shopMoney { amount } }
         totalTaxSet { shopMoney { amount } }
         totalShippingPriceSet { shopMoney { amount } }
+        shippingLine { originalPriceSet { shopMoney { amount } } discountedPriceSet { shopMoney { amount } } }
         totalPriceSet { shopMoney { amount } }
         displayFinancialStatus
         displayFulfillmentStatus

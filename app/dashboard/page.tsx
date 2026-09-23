@@ -29,6 +29,8 @@ import { TrafficSearchSection } from "@/components/dashboard/traffic-search-sect
 import { MetaCampaignsSection } from "@/components/dashboard/meta-campaigns-section";
 import { MetaCampaignsInsight } from "@/components/dashboard/meta-campaigns-insight";
 import { getMetaCampaignsOverview } from "@/lib/services/meta-campaigns-overview-service";
+import { getMetaTopCreatives } from "@/lib/services/meta-top-creatives-service";
+import { MetaTopCreatives } from "@/components/dashboard/meta-top-creatives";
 import { getGoogleAdsOverview } from "@/lib/services/google-ads-service";
 import { GoogleAdsSection } from "@/components/dashboard/google-ads-section";
 import { buildTrafficSearchSummary } from "@/lib/services/traffic-search-summary-service";
@@ -221,6 +223,8 @@ export default async function CommandCenterPage({
     trafficSearch,
     // Meta campaigns — hidden when no insights are synced.
     metaCampaigns,
+    // The ads behind them, ranked by attributed sales (left column).
+    metaCreatives,
     // Google Ads — null until an account is connected and synced.
     googleAds,
     // Contribution margin — the money snapshot, same window, channel-aware.
@@ -240,6 +244,7 @@ export default async function CommandCenterPage({
         readMarketSummary(storeId),
         buildTrafficSearchSummary(storeId, windowRange).catch(() => null),
         getMetaCampaignsOverview(storeId, windowRange).catch(() => null),
+        getMetaTopCreatives(storeId, windowRange, 8).catch(() => []),
         getGoogleAdsOverview(storeId, windowRange).catch(() => null),
         buildContributionMargin({ storeId, start: windowRange.start, end: windowRange.end, channel }).catch(() => null),
         getDb()
@@ -249,7 +254,7 @@ export default async function CommandCenterPage({
         getDailyTrendContext(storeId, windowRange.start, windowRange.end).catch(() => ({})),
         listOpenAlerts({ storeId, limit: 50 }).then((rows) => rows as unknown as OpenAlertRow[])
       ])
-    : [[] as ResolvedAlertWithOutcome[], null, null, null, null, null, null, null, null, false, {}, [] as OpenAlertRow[]];
+    : [[] as ResolvedAlertWithOutcome[], null, null, null, null, null, null, [], null, null, false, {}, [] as OpenAlertRow[]];
   const showChannelFilter = hasPosOrders || channel !== "all";
   const channelSuffix = channel === "all" ? "" : ` · ${SALES_CHANNEL_FILTER_LABEL[channel][isHe ? "he" : "en"]}`;
 
@@ -422,6 +427,11 @@ export default async function CommandCenterPage({
                 "Spend, purchases, and ROAS per campaign for the selected window, with filters — and an agent insight below."
               )}
             />
+            {/* Two columns (owner, 23 Sep 2026): the campaign list on the
+                right (RTL reading start) and, on the left, the creatives
+                behind it ranked by the sales they brought — each card names
+                its campaign so the two sides can be matched by eye. */}
+            <div className="grid gap-3 xl:grid-cols-2 xl:items-start">
             <MetaCampaignsSection
               overview={metaCampaigns}
               isHe={isHe}
@@ -438,6 +448,17 @@ export default async function CommandCenterPage({
                   : null
               }
             />
+            <MetaTopCreatives
+              creatives={metaCreatives}
+              isHe={isHe}
+              rangeLabel={`${metaCampaigns.rangeStart} – ${metaCampaigns.rangeEnd}`}
+              profitLine={
+                contributionMargin && contributionMargin.quality.costCoverage >= 0.6 && contributionMargin.totals.contributionMarginRate > 0
+                  ? 1 / contributionMargin.totals.contributionMarginRate
+                  : 1
+              }
+            />
+            </div>
             {/* key=storeId: this is a client component that fetches the insight
                 once on mount. A brand switch does router.refresh() (re-renders
                 server components) but would NOT remount a client component, so

@@ -170,6 +170,12 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
     totalDiscounts: amount(order.totalDiscountsSet?.shopMoney),
     totalTax: amount(order.totalTaxSet?.shopMoney),
     totalShipping: amount(order.totalShippingPriceSet?.shopMoney),
+    // Free-shipping / shipping-discount codes: Shopify Analytics' "Shipping
+    // charges" is the discounted shipping line. Kept separately so the gross
+    // shipping figure (and its VAT strip below) stays untouched.
+    totalShippingDiscount: roundCurrency(
+      Math.max(0, amount(order.shippingLine?.originalPriceSet?.shopMoney) - amount(order.shippingLine?.discountedPriceSet?.shopMoney))
+    ),
     totalRefunds: refundAmount,
     totalPrice: amount(order.totalPriceSet?.shopMoney),
     taxesIncluded,
@@ -461,6 +467,20 @@ export function mapOrderNode(order: any, storeId: string, defaultCostRatio: numb
           ),
         0
       ) ?? 0
+    ),
+    // Tax portion of the refunded lines — Shopify nets it out of "Taxes".
+    refundedTaxAmount: roundCurrency(
+      refund.refundLineItems?.edges?.reduce((total: number, edge: any) => total + amount(edge.node?.totalTaxSet?.shopMoney), 0) ?? 0
+    ),
+    // Ex-VAT value of goods that actually came back (or never left):
+    // restockType RETURN / CANCEL. NO_RESTOCK lines (kept by the customer)
+    // are money out but not a sales reversal in Shopify's report.
+    restockedLineItemsAmount: roundCurrency(
+      refund.refundLineItems?.edges?.reduce((total: number, edge: any) => {
+        const t = String(edge.node?.restockType ?? "");
+        if (t !== "RETURN" && t !== "CANCEL") return total;
+        return total + refundLineNet(amount(edge.node?.subtotalSet?.shopMoney), amount(edge.node?.totalTaxSet?.shopMoney));
+      }, 0) ?? 0
     ),
     createdAt: new Date(refund.createdAt)
   }));

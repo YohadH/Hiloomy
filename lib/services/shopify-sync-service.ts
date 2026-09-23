@@ -467,6 +467,7 @@ async function upsertOrderFromMapped(
       totalDiscounts: mapped.order.totalDiscounts,
       totalTax: mapped.order.totalTax,
       totalShipping: mapped.order.totalShipping,
+      totalShippingDiscount: mapped.order.totalShippingDiscount,
       totalRefunds: mapped.order.totalRefunds,
       totalPrice: mapped.order.totalPrice,
       taxesIncluded: mapped.order.taxesIncluded,
@@ -495,6 +496,7 @@ async function upsertOrderFromMapped(
       totalDiscounts: mapped.order.totalDiscounts,
       totalTax: mapped.order.totalTax,
       totalShipping: mapped.order.totalShipping,
+      totalShippingDiscount: mapped.order.totalShippingDiscount,
       totalRefunds: mapped.order.totalRefunds,
       totalPrice: mapped.order.totalPrice,
       taxesIncluded: mapped.order.taxesIncluded,
@@ -616,6 +618,8 @@ async function upsertOrderFromMapped(
         shopifyRefundId: refund.shopifyRefundId,
         refundedAmount: refund.refundedAmount,
         refundedLineItemsAmount: refund.refundedLineItemsAmount,
+        refundedTaxAmount: refund.refundedTaxAmount,
+        restockedLineItemsAmount: refund.restockedLineItemsAmount,
         createdAt: refund.createdAt
       }
     });

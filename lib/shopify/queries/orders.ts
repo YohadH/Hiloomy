@@ -33,6 +33,10 @@ export const ORDERS_QUERY = /* GraphQL */ `
               amount
             }
           }
+          shippingLine {
+            originalPriceSet { shopMoney { amount } }
+            discountedPriceSet { shopMoney { amount } }
+          }
           totalPriceSet {
             shopMoney {
               amount
@@ -153,6 +157,7 @@ export const ORDERS_QUERY = /* GraphQL */ `
               edges {
                 node {
                   quantity
+                  restockType
                   lineItem {
                     id
                   }

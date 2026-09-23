@@ -662,6 +662,9 @@ model Order {
   totalDiscounts        Decimal                @default(0) @db.Decimal(12, 2)
   totalTax              Decimal                @default(0) @db.Decimal(12, 2)
   totalShipping         Decimal                @default(0) @db.Decimal(12, 2)
+  // Shipping discounts (free-shipping codes). Shopify "Shipping charges" =
+  // totalShipping − this.
+  totalShippingDiscount Decimal                @default(0) @db.Decimal(12, 2)
   totalRefunds          Decimal                @default(0) @db.Decimal(12, 2)
   totalPrice            Decimal                @default(0) @db.Decimal(12, 2)
   taxesIncluded         Boolean                @default(false)
@@ -790,6 +793,11 @@ model Refund {
   shopifyRefundId         String?
   refundedAmount          Decimal  @default(0) @db.Decimal(12, 2)
   refundedLineItemsAmount Decimal  @default(0) @db.Decimal(12, 2)
+  // Shopify Analytics parity (2026-09-23): the sales report books a return
+  // as the ex-VAT value of goods that came back (restockType RETURN/CANCEL),
+  // not the money refunded, and nets the refunded tax out of "Taxes".
+  refundedTaxAmount        Decimal  @default(0) @db.Decimal(12, 2)
+  restockedLineItemsAmount Decimal  @default(0) @db.Decimal(12, 2)
   createdAt               DateTime
   store                   Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   order                   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)

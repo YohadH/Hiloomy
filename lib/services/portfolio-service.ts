@@ -448,6 +448,7 @@ function emptySummary(): ShopifySalesSummary {
     discounts: 0,
     returns: 0,
     returnsLineItems: 0,
+    returnsRestocked: 0,
     netSales: 0,
     shipping: 0,
     taxes: 0,
