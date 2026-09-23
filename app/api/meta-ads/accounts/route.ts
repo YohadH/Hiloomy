@@ -3,81 +3,27 @@ import { getAuthContext } from "@/lib/auth/session";
 import { getDb } from "@/lib/server/db";
 import { decryptSecret } from "@/lib/security/encryption";
 import { toErrorMessage } from "@/lib/server/errors";
-import { assertMetaAdAccountAllowed, setMetaAdAccountPin } from "@/lib/services/meta-ads-account-pin";
+import { assertMetaAdAccountAllowed, getMetaAdAccountPin, setMetaAdAccountPin } from "@/lib/services/meta-ads-account-pin";
+import { listMetaAdAccounts } from "@/lib/services/meta-ads-accounts";
+import { clearMetaPendingConnection, getMetaPendingConnection } from "@/lib/services/meta-ads-pending-connection";
+import { saveMetaAdsConnection } from "@/lib/services/meta-ads-service";
 
-// Ad-account picker for an existing Meta Ads connection.
+// Ad-account picker — the ONLY place an ad account gets attached to a store.
 //
-//   GET  /api/meta-ads/accounts?storeId=…   → every ad account the SAVED
-//        token can see, with the owning business name — so the founder can
-//        pick the right one instead of trusting the OAuth auto-pick.
-//   POST /api/meta-ads/accounts {storeId, adAccountId} → switch the
-//        connection to that account (validated against the token's own
-//        account list server-side; the client's choice is never trusted).
+//   GET  /api/meta-ads/accounts?storeId=…
+//        Every ad account the token can see, with its business portfolio.
+//        The token is the parked Facebook login (mode "pending") when the
+//        store has not chosen an account yet, else the saved connection's.
+//   POST /api/meta-ads/accounts {storeId, adAccountId}
+//        mode "pending"   → create the connection from the parked login with
+//                           THIS account and lock the store to it.
+//        mode "connected" → switch an UNLOCKED store to this account and lock
+//                           it (a locked store answers 409 — unlock first).
 //
-// Both reuse the stored encrypted token — no re-auth, no pasted tokens.
+// The client's choice is always validated against the token's own account
+// list server-side; an id the login cannot see is rejected.
 
 export const dynamic = "force-dynamic";
-
-const GRAPH = "https://graph.facebook.com/v19.0";
-
-interface GraphAdAccount {
-  id: string;
-  name?: string;
-  account_status?: number;
-  currency?: string;
-  timezone_name?: string;
-  business?: { name?: string };
-}
-
-async function loadConnection(storeId: string) {
-  const db = getDb() as any;
-  const connection = await db.metaAdsConnection.findUnique({ where: { storeId } });
-  if (!connection) throw new Error("Meta Ads is not connected for this store.");
-  return connection;
-}
-
-async function graphList<T>(path: string, accessToken: string, fields: string): Promise<T[]> {
-  const url = new URL(`${GRAPH}${path}`);
-  url.searchParams.set("fields", fields);
-  url.searchParams.set("limit", "100");
-  url.searchParams.set("access_token", accessToken);
-  const res = await fetch(url, { cache: "no-store" });
-  const payload = await res.json().catch(() => ({}));
-  if (!res.ok || payload?.error) {
-    throw new Error(payload?.error?.message ?? `Meta Graph request failed (${res.status}).`);
-  }
-  return (payload?.data ?? []) as T[];
-}
-
-// Every ad account the token can reach. /me/adaccounts only returns accounts
-// assigned to the USER — an account granted through a Business opt-in in the
-// OAuth dialog (the merchant ticks "Hbosem" and nothing else) never appears
-// there, so the picker showed four unrelated accounts and not the one the
-// merchant just granted (2 Sep 2026). Merge the user's accounts with each
-// granted business's owned + client accounts, deduped by id.
-async function listAccounts(accessToken: string): Promise<GraphAdAccount[]> {
-  const fields = "id,name,account_status,currency,timezone_name,business{name}";
-  const byId = new Map<string, GraphAdAccount>();
-  for (const account of await graphList<GraphAdAccount>("/me/adaccounts", accessToken, fields)) {
-    byId.set(account.id, account);
-  }
-  const businesses = await graphList<{ id: string; name?: string }>("/me/businesses", accessToken, "id,name").catch(
-    () => [] as Array<{ id: string; name?: string }>
-  );
-  for (const business of businesses) {
-    for (const edge of ["owned_ad_accounts", "client_ad_accounts"] as const) {
-      const accounts = await graphList<GraphAdAccount>(`/${business.id}/${edge}`, accessToken, fields).catch(
-        () => [] as GraphAdAccount[]
-      );
-      for (const account of accounts) {
-        if (!byId.has(account.id)) {
-          byId.set(account.id, { ...account, business: account.business ?? { name: business.name } });
-        }
-      }
-    }
-  }
-  return [...byId.values()];
-}
 
 function resolveStoreId(auth: { storeId: string | null }, requested: string | null): string | null {
   // The session's active store is the authority; a mismatched storeId in the
@@ -85,6 +31,12 @@ function resolveStoreId(auth: { storeId: string | null }, requested: string | nu
   if (!auth.storeId) return null;
   if (requested && requested !== auth.storeId) return null;
   return auth.storeId;
+}
+
+async function storeName(storeId: string): Promise<string | null> {
+  const db = getDb() as any;
+  const row = await db.store.findUnique({ where: { id: storeId }, select: { name: true } }).catch(() => null);
+  return row?.name ?? null;
 }
 
 export async function GET(request: Request) {
@@ -99,18 +51,20 @@ export async function GET(request: Request) {
   }
 
   try {
-    const connection = await loadConnection(storeId);
-    const accounts = await listAccounts(decryptSecret(connection.accessTokenEnc));
+    const db = getDb() as any;
+    const connection = await db.metaAdsConnection.findUnique({ where: { storeId } });
+    const pending = await getMetaPendingConnection(storeId);
+    if (!pending && !connection) throw new Error("Meta Ads is not connected for this store.");
+
+    const accessToken = pending ? pending.accessToken : decryptSecret(connection.accessTokenEnc);
+    const accounts = await listMetaAdAccounts(accessToken);
     return NextResponse.json({
       ok: true,
-      selectedAdAccountId: connection.adAccountId,
-      accounts: accounts.map((a) => ({
-        id: a.id,
-        name: a.name ?? a.id,
-        businessName: a.business?.name ?? null,
-        active: a.account_status === 1,
-        currency: a.currency ?? null
-      }))
+      mode: pending ? "pending" : "connected",
+      storeName: await storeName(storeId),
+      selectedAdAccountId: connection?.adAccountId ?? null,
+      pinned: await getMetaAdAccountPin(storeId),
+      accounts
     });
   } catch (error) {
     return NextResponse.json({ ok: false, error: toErrorMessage(error) }, { status: 502 });
@@ -133,8 +87,42 @@ export async function POST(request: Request) {
   }
 
   try {
-    const connection = await loadConnection(storeId);
-    const accounts = await listAccounts(decryptSecret(connection.accessTokenEnc));
+    const db = getDb() as any;
+    const pending = await getMetaPendingConnection(storeId);
+
+    if (pending) {
+      const accounts = await listMetaAdAccounts(pending.accessToken);
+      const picked = accounts.find((a) => a.id === requestedId);
+      if (!picked) {
+        return NextResponse.json(
+          { ok: false, error: "That ad account is not accessible with the Facebook login you used." },
+          { status: 400 }
+        );
+      }
+      // Creates (or replaces) the connection; the save service locks the
+      // store to the account it writes, so this choice is final until the
+      // owner unlocks it in Settings.
+      const result = await saveMetaAdsConnection({
+        storeId,
+        accessToken: pending.accessToken,
+        adAccountId: picked.id,
+        appId: pending.appId,
+        appSecret: process.env.META_ADS_CLIENT_SECRET?.trim() || null,
+        exchangeToken: false
+      });
+      await clearMetaPendingConnection(storeId);
+      return NextResponse.json({
+        ok: true,
+        created: true,
+        adAccountId: result.connection.adAccountId,
+        adAccountName: result.connection.adAccountName ?? result.connection.adAccountId,
+        pinned: true
+      });
+    }
+
+    const connection = await db.metaAdsConnection.findUnique({ where: { storeId } });
+    if (!connection) throw new Error("Meta Ads is not connected for this store.");
+    const accounts = await listMetaAdAccounts(decryptSecret(connection.accessTokenEnc));
     const picked = accounts.find((a) => a.id === requestedId);
     if (!picked) {
       return NextResponse.json(
@@ -146,15 +134,14 @@ export async function POST(request: Request) {
     // A locked store cannot be switched here — unlock first (409).
     await assertMetaAdAccountAllowed(storeId, picked.id);
 
-    const db = getDb() as any;
     await db.metaAdsConnection.update({
       where: { storeId },
       data: {
         adAccountId: picked.id,
         adAccountName: picked.name ?? null,
-        accountStatus: picked.account_status ?? null,
-        currency: picked.currency ?? null,
-        timezoneName: picked.timezone_name ?? null,
+        accountStatus: picked.accountStatus,
+        currency: picked.currency,
+        timezoneName: picked.timezoneName,
         // The account changed — prior sync bookkeeping refers to the old one.
         syncStatus: "idle",
         lastSyncError: null
@@ -168,11 +155,11 @@ export async function POST(request: Request) {
         .deleteMany({ where: { storeId, adAccountId: { not: picked.id } } })
         .catch(() => null);
     }
-    // An explicit choice in the picker is intent — lock the store to it so a
-    // later OAuth auto-pick can never move it.
-    await setMetaAdAccountPin(storeId, picked.id).catch(() => null);
+    // An explicit choice is intent — lock the store to it.
+    await setMetaAdAccountPin(storeId, picked.id);
     return NextResponse.json({
       ok: true,
+      created: false,
       adAccountId: picked.id,
       adAccountName: picked.name ?? picked.id,
       pinned: true

@@ -4,14 +4,22 @@ import { getAuthContext } from "@/lib/auth/session";
 import { saveMetaAdsConnection } from "@/lib/services/meta-ads-service";
 import { toErrorMessage } from "@/lib/server/errors";
 import { META_OAUTH_STATE_COOKIE, META_OAUTH_STORE_COOKIE } from "@/lib/meta-oauth";
-import { getDb } from "@/lib/server/db";
 import { getMetaAdAccountPin, normalizeMetaAdAccountId } from "@/lib/services/meta-ads-account-pin";
+import { listMetaAdAccounts } from "@/lib/services/meta-ads-accounts";
+import { clearMetaPendingConnection, setMetaPendingConnection } from "@/lib/services/meta-ads-pending-connection";
 
 // One-click Meta Ads connect — step 2: Facebook redirects back here with a
-// code. Exchange it for a long-lived user token, auto-pick the ad account
-// (first active one), and persist through the existing save service (which
-// encrypts the token + records token health). Lands back on /settings with
-// ?meta_connected=true or ?meta_error=<message>.
+// code. Exchange it for a long-lived user token, then:
+//
+//   • Store LOCKED to an ad account → token renewal. Keep that account (refuse
+//     if the new login cannot see it) and save. Lands with ?meta_connected=true&meta_kept=1.
+//   • Store NOT locked (first connection, or unlocked on purpose) → park the
+//     token (meta-ads-pending-connection) and land with ?meta_pick=1 so the
+//     owner picks the business + ad account explicitly. Nothing is chosen
+//     here and nothing syncs until that choice locks the store.
+//
+// The old "auto-pick the first active account" is gone: it is how Bumpers
+// and hbosem ended up on aftershower's account (Sep 2026).
 
 export const dynamic = "force-dynamic";
 
@@ -82,71 +90,43 @@ export async function GET(request: Request) {
     });
     const accessToken = String(longTok.access_token ?? shortTok.access_token);
 
-    // Auto-pick the ad account: first ACTIVE (account_status=1), else first.
-    // /me/adaccounts misses accounts granted via a BUSINESS opt-in in the
-    // OAuth dialog, so merge in each granted business's owned + client
-    // accounts (2 Sep 2026: the merchant ticked only "Hbosem" and the
-    // callback picked an unrelated personal account).
-    const accounts = await graphGet("/me/adaccounts", {
-      fields: "id,name,account_status,currency",
-      limit: "25",
-      access_token: accessToken
-    });
-    const list: Array<{ id: string; name?: string; account_status?: number }> = accounts?.data ?? [];
-    try {
-      const businesses = await graphGet("/me/businesses", { fields: "id,name", limit: "50", access_token: accessToken });
-      for (const business of (businesses?.data ?? []) as Array<{ id: string }>) {
-        for (const edge of ["owned_ad_accounts", "client_ad_accounts"]) {
-          const extra = await graphGet(`/${business.id}/${edge}`, {
-            fields: "id,name,account_status,currency",
-            limit: "50",
-            access_token: accessToken
-          }).catch(() => null);
-          for (const account of (extra?.data ?? []) as typeof list) {
-            if (!list.some((a) => a.id === account.id)) list.push(account);
-          }
-        }
-      }
-    } catch {
-      // business listing is best-effort; the user-level list still works
-    }
-    if (list.length === 0) {
+    const accounts = await listMetaAdAccounts(accessToken);
+    if (accounts.length === 0) {
       return back(`meta_error=${encodeURIComponent("This Facebook user has no ad accounts. Ask for access to the ad account and try again.")}`);
     }
-    // Re-connect / token renewal must NOT move the store to another account.
-    // Keep the pinned account, else the account already connected; auto-pick
-    // "first active" only for a first-time connection. If the new login
-    // cannot see the pinned account, refuse and leave the connection as is.
-    const existing = (await (getDb() as any).metaAdsConnection
-      .findUnique({ where: { storeId }, select: { adAccountId: true } })
-      .catch(() => null)) as { adAccountId: string } | null;
+
     const pinned = await getMetaAdAccountPin(storeId);
-    const wanted = pinned ?? (existing?.adAccountId ? normalizeMetaAdAccountId(existing.adAccountId) : null);
-    const kept = wanted ? list.find((a) => normalizeMetaAdAccountId(a.id) === wanted) ?? null : null;
-    if (wanted && !kept && pinned) {
-      return back(
-        `meta_error=${encodeURIComponent(
-          `The Facebook login you used has no access to this store's locked ad account (${pinned}). The connection was not changed.`
-        )}`
-      );
+    let response: NextResponse;
+
+    if (pinned) {
+      // Renewal: a locked store keeps its account, full stop. If this login
+      // cannot see it, nothing changes.
+      const kept = accounts.find((a) => normalizeMetaAdAccountId(a.id) === pinned) ?? null;
+      if (!kept) {
+        return back(
+          `meta_error=${encodeURIComponent(
+            `The Facebook login you used has no access to this store's locked ad account (${pinned}). The connection was not changed.`
+          )}`
+        );
+      }
+      await saveMetaAdsConnection({
+        storeId,
+        accessToken,
+        adAccountId: kept.id,
+        appId: clientId,
+        appSecret: clientSecret,
+        // Already long-lived — the save service must not try another exchange.
+        exchangeToken: false
+      });
+      await clearMetaPendingConnection(storeId).catch(() => null);
+      response = back(`meta_connected=true&meta_kept=1&meta_account=${encodeURIComponent(kept.name ?? kept.id)}`);
+    } else {
+      // Not locked: park the login and let the owner choose. No account is
+      // picked on their behalf, so no data can be pulled yet.
+      await setMetaPendingConnection(storeId, { accessToken, appId: clientId });
+      response = back(`meta_pick=1&meta_accounts=${accounts.length}`);
     }
-    const picked = kept ?? list.find((a) => a.account_status === 1) ?? list[0];
 
-    await saveMetaAdsConnection({
-      storeId,
-      accessToken,
-      adAccountId: picked.id,
-      appId: clientId,
-      appSecret: clientSecret,
-      // Already long-lived — the save service must not try another exchange.
-      exchangeToken: false
-    });
-
-    const response = back(
-      `meta_connected=true&meta_account=${encodeURIComponent(picked.name ?? picked.id)}${
-        list.length > 1 && !kept ? "&meta_multi=1" : ""
-      }${kept ? "&meta_kept=1" : ""}`
-    );
     response.cookies.delete(META_OAUTH_STATE_COOKIE);
     response.cookies.delete(META_OAUTH_STORE_COOKIE);
     return response;

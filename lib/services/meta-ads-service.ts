@@ -1,8 +1,14 @@
 import { createHmac } from "crypto";
-import { assertMetaAdAccountAllowed } from "@/lib/services/meta-ads-account-pin";
+import {
+  assertMetaAdAccountAllowed,
+  getMetaAdAccountPin,
+  normalizeMetaAdAccountId,
+  setMetaAdAccountPin
+} from "@/lib/services/meta-ads-account-pin";
 import { AppError } from "@/lib/server/errors";
 import { getDb } from "@/lib/server/db";
 import { decryptSecret, encryptSecret } from "@/lib/security/encryption";
+import { clearMetaPendingConnection } from "@/lib/services/meta-ads-pending-connection";
 import { getGrowthAgentStoreContext, saveGrowthPlatformConnection } from "@/lib/services/growth-agent-service";
 import type { MarketingPlannerMetaAds, MarketingPlannerMetaAdsCampaign, MarketingPlannerStoreScope } from "@/lib/domain/marketing-planner-types";
 
@@ -500,6 +506,17 @@ export async function saveMetaAdsConnection(input: SaveMetaAdsConnectionInput) {
     }
   });
 
+  // Every successful write locks the store to the account it just wrote —
+  // an explicit choice (picker, manual form) or the renewal of an already
+  // locked account (assertMetaAdAccountAllowed above guarantees they agree).
+  // Nothing syncs for an unlocked store, so a connection without a lock is
+  // never a valid end state.
+  await setMetaAdAccountPin(store.id, connection.adAccountId);
+  // A parked Facebook login (OAuth without a chosen account) is superseded
+  // by whatever was just saved — never leave the "choose account" step open
+  // for a store that is now connected and locked.
+  await clearMetaPendingConnection(store.id).catch(() => undefined);
+
   // Whenever the connected ad account is (re)written, drop campaign-insight
   // rows under this store from ANY OTHER account — leftovers from a previous
   // binding that otherwise leak into the chart tooltip and lists (the orphaned
@@ -630,6 +647,23 @@ export async function syncMetaAdsCampaignInsights(input: SyncMetaAdsInput = {}) 
 
   const connection = await db.metaAdsConnection.findUnique({ where: { storeId: store.id } });
   if (!connection) throw new AppError("Connect Meta Ads before syncing campaign insights.", 400);
+
+  // No lock, no data. An ad account that was never explicitly chosen for
+  // this store must not feed its dashboards — Bumpers and hbosem picked up
+  // aftershower's account through the old OAuth auto-pick (Sep 2026).
+  const pinned = await getMetaAdAccountPin(store.id);
+  if (!pinned) {
+    throw new AppError(
+      "Meta Ads sync is paused until this store is locked to an ad account. Open Settings → Meta Ads and choose the account.",
+      409
+    );
+  }
+  if (pinned !== normalizeMetaAdAccountId(connection.adAccountId)) {
+    throw new AppError(
+      `The connected ad account (${connection.adAccountId}) does not match the locked one (${pinned}). Reconnect with Facebook or unlock it in Settings.`,
+      409
+    );
+  }
 
   const datePreset = String(input.datePreset ?? DEFAULT_DATE_PRESET).trim() || DEFAULT_DATE_PRESET;
   const startedAt = new Date();

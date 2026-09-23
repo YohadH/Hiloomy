@@ -4,6 +4,7 @@ import { runIncrementalSync } from "@/lib/services/shopify-sync-service";
 import { syncMetaAdsCampaignInsights } from "@/lib/services/meta-ads-service";
 import { syncInstagramPostsForStore } from "@/lib/services/instagram-service";
 import { refreshMetaTokensNearExpiry } from "@/lib/services/meta-token-refresh-service";
+import { getMetaAdAccountPin } from "@/lib/services/meta-ads-account-pin";
 import { reconcileAffiliateAttributionOrphans } from "@/lib/services/affiliate-attribution-reconciler";
 import { syncGscData, getGscSelectedSiteUrl, GSC_PLATFORM } from "@/lib/services/gsc-service";
 import { syncGa4Data, getGa4SelectedProperty, GA4_PLATFORM } from "@/lib/services/ga4-service";
@@ -268,8 +269,14 @@ async function handler(request: Request) {
       const metaConn = await db.metaAdsConnection
         .findUnique({ where: { storeId: store.id }, select: { id: true } })
         .catch(() => null);
+      // A store that is not locked to an ad account never syncs (the sync
+      // service refuses too); skip it quietly instead of logging a failure
+      // every run.
+      const metaPin = metaConn ? await getMetaAdAccountPin(store.id).catch(() => null) : null;
       if (!metaConn) {
         result.metaAds = { ok: true, skipped: true };
+      } else if (!metaPin) {
+        result.metaAds = { ok: true, skipped: true, error: "not locked to an ad account" };
       } else {
         try {
           await syncMetaAdsCampaignInsights({ storeId: store.id });
