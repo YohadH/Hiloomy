@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 type MetaAdsConnectionSummary = {
@@ -39,10 +39,22 @@ export interface MetaOauthResult {
   connected?: boolean;
   account?: string | null;
   multi?: boolean;
-  // Re-connect kept the store's existing / locked account instead of auto-picking.
+  // Re-connect kept the store's locked account instead of asking again.
   kept?: boolean;
+  // The Facebook login is parked; the owner must pick the ad account now.
+  pick?: boolean;
   error?: string | null;
 }
+
+// One ad account as the picker API returns it (lib/services/meta-ads-accounts.ts).
+type AccountOption = {
+  id: string;
+  name: string;
+  businessId: string | null;
+  businessName: string | null;
+  active: boolean;
+  currency: string | null;
+};
 
 // NOTE: callers that render this value directly in JSX must add
 // suppressHydrationWarning on the containing element — toLocaleString()
@@ -63,31 +75,43 @@ const DECRYPT_ERROR_RE = /unable to authenticate data|unsupported state|decrypt/
 const STRINGS = {
   he: {
     oneClickTitle: "חיבור בלחיצה אחת",
-    oneClickBody: "מתחברים עם חשבון הפייסבוק שמנהל את המודעות — אנחנו כבר נמשוך את חשבון המודעות והטוקן לבד.",
+    oneClickBody: "מתחברים עם חשבון הפייסבוק שמנהל את המודעות, ואז בוחרים במפורש את העסק וחשבון המודעות של החנות. שום חשבון לא נבחר אוטומטית.",
     oneClickCta: "התחברות עם פייסבוק",
-    oauthOkPrefix: "מחובר! חשבון המודעות שנבחר:",
-    oauthMulti: "נמצאו כמה חשבונות מודעות — בחרנו את הפעיל הראשון. אפשר להחליף בבחירת החשבון למטה.",
-    oauthKept: "החיבור חודש ונשאר על חשבון המודעות הקיים של החנות.",
+    oauthOkPrefix: "מחובר! חשבון המודעות:",
+    oauthKept: "החיבור חודש ונשאר על חשבון המודעות הנעול של החנות.",
+    oauthPick: "ההתחברות לפייסבוק הצליחה. עכשיו בוחרים את חשבון המודעות למטה — עד אז לא נמשכים נתונים.",
+    pickTitle: "בחירת חשבון המודעות",
+    pickBody: (store: string) =>
+      `בחרו את העסק וחשבון המודעות ששייכים ל־${store}. הבחירה נועלת את החנות לחשבון הזה, ורק אז מתחילים למשוך נתונים.`,
+    pickStore: (store: string) => `מחברים את החנות: ${store}`,
+    pickChoose: "בחרו חשבון מודעות…",
+    pickConfirm: "חיבור ונעילה לחשבון הזה",
+    pickConfirming: "מחבר ונועל…",
+    pickDone: (store: string, name: string) => `${store} חוברה ל־${name} וננעלה. אפשר להריץ סנכרון.`,
+    pickNone: "ההתחברות הזו לא רואה אף חשבון מודעות. בקשו גישה לחשבון בבזנס מנג'ר והתחברו שוב.",
+    pickExpired: "ההתחברות לפייסבוק פגה לפני שנבחר חשבון. התחברו שוב עם הכפתור למעלה.",
+    pendingStatus: "מחובר לפייסבוק · טרם נבחר חשבון מודעות",
     pinTitle: "נעילת חשבון המודעות",
     pinLockedLine: (id: string) => `נעול ל־${id}. חיבור מחדש, חידוש טוקן ובחירת חשבון לא ישנו אותו עד שתבטלו את הנעילה.`,
-    pinUnlockedLine: "לא נעול. חיבור מחדש שומר על החשבון הקיים, אבל אפשר עדיין להחליף אותו מהבורר. מומלץ לנעול.",
+    pinUnlockedLine: "לא נעול — הסנכרון מושהה עד לנעילה. נעלו לחשבון הזה כדי להתחיל למשוך נתונים, או החליפו חשבון בבורר למטה (ההחלפה נועלת).",
     pinLock: "נעילה לחשבון הזה",
     pinUnlock: "ביטול נעילה",
     pinWorking: "מעדכן…",
     pinLocked: (id: string) => `חשבון המודעות נעול ל־${id}.`,
-    pinReleased: "הנעילה בוטלה. אפשר להחליף חשבון מהבורר; הבחירה הבאה תינעל אוטומטית.",
+    pinReleased: "הנעילה בוטלה והסנכרון מושהה. הבחירה הבאה בבורר תנעל את החנות מחדש.",
     pickerLockedHint: "החשבון נעול — בטלו את הנעילה למעלה כדי להחליף.",
     pickerToggle: "החלפת חשבון מודעות",
     pickerLoading: "טוען חשבונות…",
-    pickerLabel: "בחרו את חשבון המודעות הנכון (מוצג לפי עסק):",
-    pickerApply: "החלפה לחשבון הזה",
+    pickerLabel: "בחרו את חשבון המודעות הנכון (מקובץ לפי עסק):",
+    pickerApply: "החלפה ונעילה לחשבון הזה",
     pickerApplying: "מחליף…",
-    pickerSwitched: (name: string) => `חשבון המודעות הוחלף ל־${name}. מומלץ להריץ סנכרון עכשיו.`,
+    pickerSwitched: (name: string) => `חשבון המודעות הוחלף ל־${name} וננעל. מומלץ להריץ סנכרון עכשיו.`,
     pickerInactive: "לא פעיל",
-    pickerNoBusiness: "ללא עסק",
+    pickerNoBusiness: "ללא עסק (חשבון אישי)",
+    syncLockedHint: "הסנכרון זמין רק אחרי נעילת חשבון המודעות.",
     manualToggle: "חיבור ידני (מתקדם)",
     description:
-      "שומרים טוקן גישה של Meta וחשבון מודעות בצד השרת, כדי לסנכרן מדי יום ביצועי קמפיינים, קריאייטיבים, רכישות, ROAS ועוד.",
+      "שומרים טוקן גישה של Meta וחשבון מודעות בצד השרת, כדי לסנכרן מדי יום ביצועי קמפיינים, קריאייטיבים, רכישות, ROAS ועוד. השמירה נועלת את החנות לחשבון שהזנתם.",
     tokenLabel: "טוקן גישה של Meta",
     tokenSavedPlaceholder: (last4: string) => `נשמר טוקן שמסתיים ב־${last4}`,
     tokenHelp: "הדביקו טוקן קצר מGraph Explorer להמרה, או טוקן System User אם מכבים את ההמרה למטה.",
@@ -126,38 +150,50 @@ const STRINGS = {
       "השגיאה הזו אומרת שהטוקן השמור הוצפן עם מפתח הצפנה אחר (המפתח בשרת התחלף). הפתרון: להתחבר מחדש עם פייסבוק למעלה, או להדביק טוקן וסוד מחדש ולשמור.",
     requestFailed: "הבקשה לMeta נכשלה.",
     saveFailed: "שמירת חיבור Meta נכשלה.",
-    savedAs: (name: string) => `Meta Ads חובר אל ${name}.`,
+    savedAs: (name: string) => `Meta Ads חובר אל ${name} וננעל.`,
     regenerated: "הטוקן חודש.",
     synced: (c: number, a: number, created: number, updated: number) =>
       `סונכרנו ${c} שורות קמפיין יומיות ו־${a} שורות קריאייטיב: ${created} חדשות, ${updated} עודכנו.`
   },
   en: {
     oneClickTitle: "One-click connect",
-    oneClickBody: "Sign in with the Facebook account that manages the ads — we'll pull the ad account and token automatically.",
+    oneClickBody: "Sign in with the Facebook account that manages the ads, then explicitly pick the store's business and ad account. Nothing is chosen automatically.",
     oneClickCta: "Continue with Facebook",
-    oauthOkPrefix: "Connected! Selected ad account:",
-    oauthMulti: "Several ad accounts were found — we picked the first active one. You can switch it in the account picker below.",
-    oauthKept: "Reconnected and kept the store's existing ad account.",
+    oauthOkPrefix: "Connected! Ad account:",
+    oauthKept: "Reconnected and kept the store's locked ad account.",
+    oauthPick: "Facebook login succeeded. Now pick the ad account below — no data is pulled until you do.",
+    pickTitle: "Choose the ad account",
+    pickBody: (store: string) =>
+      `Pick the business and ad account that belong to ${store}. The choice locks the store to that account; only then does data start flowing.`,
+    pickStore: (store: string) => `Connecting store: ${store}`,
+    pickChoose: "Choose an ad account…",
+    pickConfirm: "Connect and lock to this account",
+    pickConfirming: "Connecting and locking…",
+    pickDone: (store: string, name: string) => `${store} is connected to ${name} and locked. You can run a sync.`,
+    pickNone: "This login sees no ad accounts. Ask for access in Business Manager and sign in again.",
+    pickExpired: "The Facebook login expired before an account was chosen. Sign in again with the button above.",
+    pendingStatus: "Signed in to Facebook · ad account not chosen yet",
     pinTitle: "Ad account lock",
     pinLockedLine: (id: string) => `Locked to ${id}. Reconnecting, token renewal and the account picker will not change it until you unlock.`,
-    pinUnlockedLine: "Not locked. Reconnecting keeps the current account, but it can still be switched from the picker. Locking is recommended.",
+    pinUnlockedLine: "Not locked — syncing is paused until you lock. Lock to this account to start pulling data, or switch accounts in the picker below (switching locks).",
     pinLock: "Lock to this account",
     pinUnlock: "Unlock",
     pinWorking: "Updating…",
     pinLocked: (id: string) => `Ad account locked to ${id}.`,
-    pinReleased: "Unlocked. You can switch accounts from the picker; the next choice locks automatically.",
+    pinReleased: "Unlocked and syncing paused. The next choice in the picker locks the store again.",
     pickerLockedHint: "The account is locked — unlock it above to switch.",
     pickerToggle: "Switch ad account",
     pickerLoading: "Loading accounts…",
-    pickerLabel: "Pick the correct ad account (shown with its business):",
-    pickerApply: "Switch to this account",
+    pickerLabel: "Pick the correct ad account (grouped by business):",
+    pickerApply: "Switch and lock to this account",
     pickerApplying: "Switching…",
-    pickerSwitched: (name: string) => `Ad account switched to ${name}. Run a sync now.`,
+    pickerSwitched: (name: string) => `Ad account switched to ${name} and locked. Run a sync now.`,
     pickerInactive: "inactive",
-    pickerNoBusiness: "no business",
+    pickerNoBusiness: "No business (personal account)",
+    syncLockedHint: "Syncing is available only after the ad account is locked.",
     manualToggle: "Manual connection (advanced)",
     description:
-      "Save a server-side Meta access token and ad account so the planner can sync daily campaign performance, creatives, purchases, ROAS and more.",
+      "Save a server-side Meta access token and ad account so the planner can sync daily campaign performance, creatives, purchases, ROAS and more. Saving locks the store to the account you enter.",
     tokenLabel: "Meta access token",
     tokenSavedPlaceholder: (last4: string) => `Saved token ending ${last4}`,
     tokenHelp: "Paste a short-lived Graph Explorer token to exchange, or a System User token if you turn off exchange below.",
@@ -196,19 +232,34 @@ const STRINGS = {
       "This error means the saved token was encrypted with a different encryption key (the server key changed). Fix: reconnect with Facebook above, or paste the token + secret again and save.",
     requestFailed: "Meta Ads request failed.",
     saveFailed: "Could not save the Meta Ads connection.",
-    savedAs: (name: string) => `Meta Ads connected to ${name}.`,
+    savedAs: (name: string) => `Meta Ads connected to ${name} and locked.`,
     regenerated: "Token regenerated.",
     synced: (c: number, a: number, created: number, updated: number) =>
       `Synced ${c} daily campaign row(s) and ${a} creative row(s): ${created} new, ${updated} updated.`
   }
 };
 
+// Option groups for the account <select>: one per business portfolio,
+// accounts without a business last.
+function groupAccounts(accounts: AccountOption[], noBusinessLabel: string) {
+  const groups = new Map<string, { key: string; label: string; items: AccountOption[] }>();
+  for (const account of accounts) {
+    const key = account.businessId ?? "__none";
+    const group = groups.get(key) ?? { key, label: account.businessName ?? noBusinessLabel, items: [] };
+    group.items.push(account);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
 export function MetaAdsConnectionManager({
   storeId,
   initialConnection,
   isHe = false,
   oauthResult,
-  pinnedAdAccountId = null
+  pinnedAdAccountId = null,
+  pendingLogin = false,
+  storeName = null
 }: {
   storeId: string;
   initialConnection: MetaAdsConnectionSummary | null;
@@ -216,6 +267,9 @@ export function MetaAdsConnectionManager({
   oauthResult?: MetaOauthResult | null;
   // Ad account the store is locked to (lib/services/meta-ads-account-pin.ts).
   pinnedAdAccountId?: string | null;
+  // A Facebook login is parked and no ad account has been chosen yet.
+  pendingLogin?: boolean;
+  storeName?: string | null;
 }) {
   const t = STRINGS[isHe ? "he" : "en"];
   const [accessToken, setAccessToken] = useState("");
@@ -226,35 +280,46 @@ export function MetaAdsConnectionManager({
   const [datePreset, setDatePreset] = useState("last_30d");
   const [connection, setConnection] = useState(initialConnection);
   const [pinned, setPinned] = useState<string | null>(pinnedAdAccountId);
+  const [pending, setPending] = useState<boolean>(pendingLogin || Boolean(oauthResult?.pick));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
-  const [manualOpen, setManualOpen] = useState(!initialConnection && !oauthResult?.connected);
-  // Ad-account picker — lists every account the saved token can see.
+  const [manualOpen, setManualOpen] = useState(!initialConnection && !pendingLogin && !oauthResult?.connected && !oauthResult?.pick);
+  // Account list — from the parked login while pending, else from the saved
+  // token. Shared by the "choose" panel and the "switch" picker.
+  const [accounts, setAccounts] = useState<AccountOption[] | null>(null);
+  const [accountsStore, setAccountsStore] = useState<string | null>(storeName);
+  const [selection, setSelection] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerAccounts, setPickerAccounts] = useState<
-    Array<{ id: string; name: string; businessName: string | null; active: boolean; currency: string | null }> | null
-  >(null);
-  const [pickerSelection, setPickerSelection] = useState("");
 
-  async function openPicker() {
-    setPickerOpen((v) => !v);
-    if (pickerAccounts !== null) return;
-    setLoading("picker-load");
+  async function loadAccounts() {
+    setLoading("accounts");
     setError(null);
     try {
       const response = await fetch(`/api/meta-ads/accounts?storeId=${encodeURIComponent(storeId)}`);
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
-      setPickerAccounts(payload.accounts ?? []);
-      setPickerSelection(payload.selectedAdAccountId ?? "");
+      const list: AccountOption[] = payload.accounts ?? [];
+      setAccounts(list);
+      if (payload.storeName) setAccountsStore(payload.storeName);
+      // Never preselect for a parked login — the whole point is an explicit
+      // choice. For a switch, start from the current account.
+      setSelection(payload.mode === "pending" ? "" : payload.selectedAdAccountId ?? "");
+      if (payload.mode !== "pending" && pending) setPending(false);
+      return list;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t.requestFailed);
-      setPickerOpen(false);
+      return null;
     } finally {
       setLoading(null);
     }
   }
+
+  // Pending login → load the accounts right away so the choice is one step.
+  useEffect(() => {
+    if (pending && accounts === null) void loadAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending]);
 
   async function refreshStatus() {
     const response = await fetch(`/api/meta-ads/connection/status?storeId=${encodeURIComponent(storeId)}`);
@@ -263,6 +328,8 @@ export function MetaAdsConnectionManager({
       setConnection(payload.connection ?? null);
       if (payload.connection?.adAccountId) setAdAccountId(payload.connection.adAccountId);
       if (payload.connection?.appId) setAppId(payload.connection.appId);
+      if ("pinned" in payload) setPinned(payload.pinned ?? null);
+      if ("pending" in payload) setPending(Boolean(payload.pending));
     }
   }
 
@@ -281,8 +348,52 @@ export function MetaAdsConnectionManager({
     }
   }
 
+  // Attach the selected account: creates + locks for a parked login, or
+  // switches + locks an unlocked connection. Same endpoint either way.
+  async function chooseAccount(successText: (name: string) => string) {
+    const response = await fetch("/api/meta-ads/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ storeId, adAccountId: selection })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
+    setPinned(payload.adAccountId ?? selection);
+    setPending(false);
+    setPickerOpen(false);
+    setAccounts(null);
+    return successText(payload.adAccountName ?? payload.adAccountId);
+  }
+
   const inputCls = "w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none ring-0";
   const isDecryptError = !!connection?.lastSyncError && DECRYPT_ERROR_RE.test(connection.lastSyncError);
+  const groups = accounts ? groupAccounts(accounts, t.pickerNoBusiness) : [];
+  const selected = accounts?.find((a) => a.id === selection) ?? null;
+  const storeLabel = accountsStore ?? storeName ?? "";
+
+  const accountSelect = (placeholder: string | null) => (
+    <select
+      value={selection}
+      onChange={(event) => setSelection(event.target.value)}
+      className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
+      dir="ltr"
+    >
+      {placeholder ? (
+        <option value="" disabled>
+          {placeholder}
+        </option>
+      ) : null}
+      {groups.map((group) => (
+        <optgroup key={group.key} label={group.label}>
+          {group.items.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.name} ({account.id}){account.active ? "" : ` · ${t.pickerInactive}`}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
 
   return (
     <div className="space-y-4">
@@ -303,17 +414,56 @@ export function MetaAdsConnectionManager({
           <p className="mt-3 text-sm font-semibold text-green-700">
             {t.oauthOkPrefix} {oauthResult.account}
             {oauthResult.kept ? <span className="mt-1 block font-normal text-muted-foreground">{t.oauthKept}</span> : null}
-            {oauthResult.multi ? <span className="mt-1 block font-normal text-muted-foreground">{t.oauthMulti}</span> : null}
           </p>
         ) : null}
+        {oauthResult?.pick && pending ? <p className="mt-3 text-sm font-semibold text-green-700">{t.oauthPick}</p> : null}
         {oauthResult?.error ? <p className="mt-3 text-sm text-danger">{oauthResult.error}</p> : null}
       </div>
+
+      {/* Parked login → the explicit choice. This is the only way a store
+          gets an ad account after "Continue with Facebook". */}
+      {pending ? (
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/70 p-5 text-sm dark:border-amber-500/40 dark:bg-amber-500/5">
+          <p className="font-bold">{t.pickTitle}</p>
+          {storeLabel ? <p className="mt-1 font-semibold">{t.pickStore(storeLabel)}</p> : null}
+          <p className="mt-1 text-muted-foreground">{t.pickBody(storeLabel || "—")}</p>
+          <div className="mt-4 space-y-3">
+            {loading === "accounts" || accounts === null ? (
+              <p className="text-muted-foreground">{t.pickerLoading}</p>
+            ) : accounts.length === 0 ? (
+              <p className="text-danger">{t.pickNone}</p>
+            ) : (
+              <>
+                {accountSelect(t.pickChoose)}
+                {selected ? (
+                  <p className="text-muted-foreground" dir="ltr">
+                    {selected.businessName ?? t.pickerNoBusiness} · {selected.name} · {selected.id}
+                    {selected.currency ? ` · ${selected.currency}` : ""}
+                  </p>
+                ) : null}
+                <Button
+                  disabled={loading !== null || !selection}
+                  onClick={() =>
+                    runAction("pick-apply", () => chooseAccount((name) => t.pickDone(storeLabel || "—", name)))
+                  }
+                >
+                  {loading === "pick-apply" ? t.pickConfirming : t.pickConfirm}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {/* Connection status */}
       <div className="rounded-2xl border border-border/70 bg-background/70 p-4 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="font-semibold" dir="ltr">
-            {connection ? `${connection.adAccountName ?? t.accountFallback} (${connection.adAccountId})` : t.notConnected}
+          <p className="font-semibold" dir={connection ? "ltr" : undefined}>
+            {connection
+              ? `${connection.adAccountName ?? t.accountFallback} (${connection.adAccountId})`
+              : pending
+                ? t.pendingStatus
+                : t.notConnected}
           </p>
           <p className="text-muted-foreground">{connection?.syncStatus ?? ""}</p>
         </div>
@@ -348,15 +498,15 @@ export function MetaAdsConnectionManager({
               <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900">{t.decryptHint}</p>
             ) : null}
           </div>
-        ) : (
+        ) : pending ? null : (
           <p className="mt-2 text-muted-foreground">{t.notConnectedHint}</p>
         )}
       </div>
 
       {/* Ad-account lock — a pinned store refuses every write that would
-          move it to another account (OAuth auto-pick, picker, manual form). */}
+          move it to another account, and only a pinned store syncs. */}
       {connection ? (
-        <div className={`rounded-2xl border p-4 text-sm ${pinned ? "border-emerald-300 bg-emerald-50/50 dark:border-emerald-500/30 dark:bg-emerald-500/5" : "border-border/70"}`}>
+        <div className={`rounded-2xl border p-4 text-sm ${pinned ? "border-emerald-300 bg-emerald-50/50 dark:border-emerald-500/30 dark:bg-emerald-500/5" : "border-amber-300 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-500/5"}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="font-semibold">{t.pinTitle}</p>
@@ -388,11 +538,14 @@ export function MetaAdsConnectionManager({
 
       {/* Ad-account picker — the sanctioned way to change the selected
           account after OAuth (the token stays; only the selection moves). */}
-      {connection ? (
+      {connection && !pending ? (
         <div className="rounded-2xl border border-border/70">
           <button
             type="button"
-            onClick={() => void openPicker()}
+            onClick={() => {
+              setPickerOpen((v) => !v);
+              if (!pickerOpen && accounts === null) void loadAccounts();
+            }}
             className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold"
           >
             {t.pickerToggle}
@@ -400,41 +553,16 @@ export function MetaAdsConnectionManager({
           </button>
           {pickerOpen ? (
             <div className="space-y-3 border-t border-border/70 p-4">
-              {loading === "picker-load" || pickerAccounts === null ? (
+              {loading === "accounts" || accounts === null ? (
                 <p className="text-sm text-muted-foreground">{t.pickerLoading}</p>
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">{t.pickerLabel}</p>
-                  <select
-                    value={pickerSelection}
-                    onChange={(event) => setPickerSelection(event.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm"
-                    dir="ltr"
-                  >
-                    {pickerAccounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.businessName ?? t.pickerNoBusiness} — {account.name} ({account.id})
-                        {account.active ? "" : ` · ${t.pickerInactive}`}
-                      </option>
-                    ))}
-                  </select>
+                  {accountSelect(null)}
                   {pinned ? <p className="text-xs text-muted-foreground">{t.pickerLockedHint}</p> : null}
                   <Button
-                    disabled={loading !== null || !pickerSelection || pickerSelection === connection.adAccountId || Boolean(pinned)}
-                    onClick={() =>
-                      runAction("picker-apply", async () => {
-                        const response = await fetch("/api/meta-ads/accounts", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ storeId, adAccountId: pickerSelection })
-                        });
-                        const payload = await response.json();
-                        if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
-                        // The explicit choice is locked server-side; mirror it.
-                        if (payload.pinned) setPinned(payload.adAccountId ?? pickerSelection);
-                        return t.pickerSwitched(payload.adAccountName ?? payload.adAccountId);
-                      })
-                    }
+                    disabled={loading !== null || !selection || selection === connection.adAccountId || Boolean(pinned)}
+                    onClick={() => runAction("picker-apply", () => chooseAccount((name) => t.pickerSwitched(name)))}
                   >
                     {loading === "picker-apply" ? t.pickerApplying : t.pickerApply}
                   </Button>
@@ -445,60 +573,63 @@ export function MetaAdsConnectionManager({
         </div>
       ) : null}
 
-      {/* Sync controls */}
+      {/* Sync controls — syncing needs a locked account. */}
       {connection ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <select
-            value={datePreset}
-            onChange={(event) => setDatePreset(event.target.value)}
-            className="rounded-xl border border-border bg-background px-4 py-3 text-sm"
-          >
-            {Object.entries(t.presets).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="secondary"
-            disabled={loading !== null}
-            onClick={() =>
-              runAction("sync", async () => {
-                const response = await fetch("/api/meta-ads/sync", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ storeId, datePreset })
-                });
-                const payload = await response.json();
-                if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
-                return t.synced(payload.campaignsFetched, payload.adsFetched ?? 0, payload.recordsCreated, payload.recordsUpdated);
-              })
-            }
-          >
-            {loading === "sync" ? t.syncing : t.sync}
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={loading !== null}
-            onClick={() =>
-              runAction("refresh", async () => {
-                const response = await fetch("/api/meta-ads/connection/refresh", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ storeId, accessToken, appId, appSecret })
-                });
-                const payload = await response.json();
-                if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
-                return `${t.regenerated} ${payload.connection.tokenHealth?.label ?? ""}`;
-              })
-            }
-          >
-            {loading === "refresh" ? t.regenerating : t.regenerate}
-          </Button>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={datePreset}
+              onChange={(event) => setDatePreset(event.target.value)}
+              className="rounded-xl border border-border bg-background px-4 py-3 text-sm"
+            >
+              {Object.entries(t.presets).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="secondary"
+              disabled={loading !== null || !pinned}
+              onClick={() =>
+                runAction("sync", async () => {
+                  const response = await fetch("/api/meta-ads/sync", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ storeId, datePreset })
+                  });
+                  const payload = await response.json();
+                  if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
+                  return t.synced(payload.campaignsFetched, payload.adsFetched ?? 0, payload.recordsCreated, payload.recordsUpdated);
+                })
+              }
+            >
+              {loading === "sync" ? t.syncing : t.sync}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={loading !== null}
+              onClick={() =>
+                runAction("refresh", async () => {
+                  const response = await fetch("/api/meta-ads/connection/refresh", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ storeId, accessToken, appId, appSecret })
+                  });
+                  const payload = await response.json();
+                  if (!response.ok || !payload.ok) throw new Error(payload.error ?? t.requestFailed);
+                  return `${t.regenerated} ${payload.connection.tokenHealth?.label ?? ""}`;
+                })
+              }
+            >
+              {loading === "refresh" ? t.regenerating : t.regenerate}
+            </Button>
+          </div>
+          {!pinned ? <p className="text-xs text-muted-foreground">{t.syncLockedHint}</p> : null}
         </div>
       ) : null}
 
-      {/* Manual path — collapsed unless there's no connection at all. */}
+      {/* Manual path — collapsed unless there's nothing connected at all. */}
       <div className="rounded-2xl border border-border/70">
         <button
           type="button"

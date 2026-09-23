@@ -49,9 +49,10 @@ export default async function PortfolioPage() {
     buildPortfolioOverview({ range: { start: selection.start, end: selection.end } })
   ]);
   const isHe = locale === "he";
-  // Per-platform spend vs income (F-077) — same stores, same window.
+  // Per-platform spend vs income (F-077), one sub-row per brand — same
+  // stores, same window.
   const platformSpend = await buildPlatformSpendReport({
-    storeIds: portfolio.brands.map((b) => b.storeId),
+    stores: portfolio.brands.map((b) => ({ storeId: b.storeId, name: b.storeName })),
     start: selection.start,
     end: selection.end
   }).catch(() => null);

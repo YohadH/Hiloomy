@@ -28,6 +28,7 @@ import { getShopifyConnectionSummary } from "@/lib/services/shopify-connection-s
 import { getSyncStatus } from "@/lib/services/shopify-sync-service";
 import { getMetaAdsConnectionSummary } from "@/lib/services/meta-ads-service";
 import { getMetaAdAccountPin } from "@/lib/services/meta-ads-account-pin";
+import { hasMetaPendingConnection } from "@/lib/services/meta-ads-pending-connection";
 import { buildSetupHealth } from "@/lib/services/setup-health-service";
 import { getAppLocale, getDictionary } from "@/lib/i18n";
 import { getDb } from "@/lib/server/db";
@@ -51,6 +52,7 @@ export default async function SettingsPage({
     meta_account?: string;
     meta_multi?: string;
     meta_kept?: string;
+    meta_pick?: string;
   }>;
 }) {
   const locale = await getAppLocale();
@@ -66,16 +68,21 @@ export default async function SettingsPage({
   const googleAdsConnected = params.googleads_connected === "true";
   const googleAdsError = params.googleads_error ?? null;
   const metaOauthResult =
-    params.meta_connected === "true" || params.meta_error
+    params.meta_connected === "true" || params.meta_error || params.meta_pick === "1"
       ? {
           connected: params.meta_connected === "true",
           account: params.meta_account ?? null,
           multi: params.meta_multi === "1",
           kept: params.meta_kept === "1",
+          // Facebook login parked — the owner must pick the ad account now.
+          pick: params.meta_pick === "1",
           error: params.meta_error ?? null
         }
       : null;
-  const metaPinnedAdAccountId = await getMetaAdAccountPin(chrome.store.id).catch(() => null);
+  const [metaPinnedAdAccountId, metaPendingLogin] = await Promise.all([
+    getMetaAdAccountPin(chrome.store.id).catch(() => null),
+    hasMetaPendingConnection(chrome.store.id).catch(() => false)
+  ]);
 
   const [connectionSummary, syncStatus, metaAdsConnection, setupHealth, storeRow, gscConnection, igConnection] =
     await Promise.all([
@@ -315,6 +322,8 @@ export default async function SettingsPage({
             : metaOauthResult
         }
         pinnedAdAccountId={metaPinnedAdAccountId}
+        pendingLogin={metaPendingLogin}
+        storeName={chrome.store.name}
       />
     ),
     instagram: <CreatorConnectionsManager labels={dictionary.creator} />,
