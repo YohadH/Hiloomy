@@ -41,8 +41,12 @@ export const ORDERS_QUERY = /* GraphQL */ `
           displayFinancialStatus
           displayFulfillmentStatus
           sourceName
-          physicalLocation { id name }
-          fulfillments(first: 3) { location { id name } }
+          # Location NAMES are resolved from the cached locations list at
+          # upsert time — asking Shopify for them here needs read_locations,
+          # and a store without that scope failed the whole orders sync
+          # ("Access denied for name field" × every order, 23 Sep 2026).
+          physicalLocation { id }
+          fulfillments(first: 3) { location { id } }
           customerJourneySummary {
             firstVisit {
               landingPage

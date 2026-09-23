@@ -18,7 +18,28 @@ import {
   type ChildAttachPlan
 } from "@/lib/shopify/bulk-client";
 import { mapCustomerNode, mapOrderNode, mapProductNode, mapShopMetadata } from "@/lib/shopify/mappers/shopify-mappers";
-import { syncInventoryLevels } from "@/lib/services/inventory-locations-service";
+import { getCachedShopifyLocations, syncInventoryLevels } from "@/lib/services/inventory-locations-service";
+
+// Order location NAMES come from the cached locations list (the one the
+// inventory-locations setting maintains), not from the orders query:
+// `location.name` needs the read_locations scope, and requesting it on a
+// store without that scope failed the WHOLE orders sync — "Access denied for
+// name field" once per order until Shopify truncated the response (After
+// Shower, 23 Sep 2026). The id never needs the scope. Cached per store for a
+// few minutes so a 100-order block costs one config read; a store whose
+// cache is empty simply keeps the id and a null name.
+const LOCATION_NAME_TTL_MS = 5 * 60_000;
+const locationNamesByStore = new Map<string, { at: number; byId: Map<string, string> }>();
+
+async function locationNameFor(storeId: string, shopifyLocationId: string): Promise<string | null> {
+  let entry = locationNamesByStore.get(storeId);
+  if (!entry || Date.now() - entry.at > LOCATION_NAME_TTL_MS) {
+    const list = await getCachedShopifyLocations(storeId).catch(() => []);
+    entry = { at: Date.now(), byId: new Map(list.map((location) => [location.id, location.name])) };
+    locationNamesByStore.set(storeId, entry);
+  }
+  return entry.byId.get(shopifyLocationId) ?? null;
+}
 import { getStoredShopifyCredentials } from "@/lib/services/shopify-connection-service";
 import type { SyncMode, SyncRunSummary } from "@/lib/domain/types";
 
@@ -438,6 +459,9 @@ async function upsertOrderFromMapped(
   }
 ): Promise<void> {
   const mapped = mapOrderNode(orderNode, storeId, Number(store.defaultCostRatio ?? 0.35));
+  if (!mapped.order.locationName && mapped.order.shopifyLocationId) {
+    mapped.order.locationName = await locationNameFor(storeId, mapped.order.shopifyLocationId);
+  }
 
   const customer = mapped.order.shopifyCustomerId
     ? await db.customer.findUnique({

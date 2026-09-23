@@ -509,4 +509,11 @@ async function persistSyncResults(
       }
     });
   }
+
+  // Stamp the connection itself. Settings and the portfolio read
+  // PlatformConnection.lastSyncAt, which GA4 maintains but Search Console
+  // never did — a healthy connection read as "never synced" (23 Sep 2026).
+  await db.platformConnection
+    .updateMany({ where: { storeId, platform: GSC_PLATFORM }, data: { lastSyncAt: now, healthMessage: null } })
+    .catch(() => undefined);
 }

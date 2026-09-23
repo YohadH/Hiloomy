@@ -60,8 +60,8 @@ export function bulkOrdersQuery(updatedAfter?: Date | null): string {
         displayFinancialStatus
         displayFulfillmentStatus
         sourceName
-        physicalLocation { id name }
-        fulfillments(first: 3) { location { id name } }
+        physicalLocation { id }
+        fulfillments(first: 3) { location { id } }
         discountCodes
         customerJourneySummary { firstVisit { landingPage referrerUrl } }
         customer { id }
