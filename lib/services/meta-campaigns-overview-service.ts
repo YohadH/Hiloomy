@@ -18,6 +18,8 @@ import OpenAI from "openai";
 import { getDb } from "@/lib/server/db";
 import { formatDateInTimeZone, getStoreTimeZone } from "@/lib/server/reporting-date-range";
 import { buildContributionMargin } from "@/lib/services/contribution-margin-service";
+import { signalsFrame, type CreativeSignalsResult, type InsightCandidate } from "@/lib/domain/meta-creative-signals";
+import { buildMetaCreativeSignals } from "@/lib/services/meta-creative-signals-service";
 
 const RECENT_ACTIVITY_DAYS = 3;
 
@@ -257,6 +259,10 @@ export interface MetaCampaignsInsight {
   profitability: "verified_profitable" | "verified_losing" | "not_verified";
   breakevenRoas: number | null;
   generatedAt: string;
+  // Deterministic layer (2026-09-24): ranked candidates the model was told to
+  // phrase — rendered by the card as WATCH / TEST / REVIEW rows, and usable on
+  // their own when the model call fails.
+  signals: { headline: { he: string; en: string }; mediaHealth: CreativeSignalsResult["mediaHealth"]; candidates: InsightCandidate[]; okay: { he: string; en: string }[] } | null;
 }
 
 const INSIGHT_TTL_MS = 6 * 60 * 60 * 1000;
@@ -266,7 +272,7 @@ const INSIGHT_FAILURE_TTL_MS = 30 * 60 * 1000;
 // every viewer of that store+window for the whole TTL. Bumping retires the
 // stale English entries immediately instead of waiting out the 6h TTL.
 const insightCacheKey = (storeId: string, locale: "he" | "en", overview: MetaCampaignsOverview) =>
-  `meta_campaigns_insight:v6:${storeId}:${locale}:${overview.rangeStart}:${overview.rangeEnd}`;
+  `meta_campaigns_insight:v7:${storeId}:${locale}:${overview.rangeStart}:${overview.rangeEnd}`;
 
 interface DigestContext {
   storeName: string | null;
@@ -492,11 +498,29 @@ async function callInsightModel(prompt: string, storeId: string): Promise<string
   return null;
 }
 
+// Breakeven ROAS for the store when its costs are trusted (same rule the
+// insight prompt uses). Exported so the route can compute the deterministic
+// signals before — and independently of — the model call.
+export async function resolveBreakevenRoas(storeId: string, overview: MetaCampaignsOverview): Promise<{ breakevenRoas: number | null; marginRate: number | null; costCoverage: number }> {
+  const margin = await buildContributionMargin({ storeId, start: new Date(overview.rangeStartAt), end: new Date(overview.rangeEndAt) }).catch(() => null);
+  const marginRate = margin?.totals?.contributionMarginRate ?? null;
+  const costCoverage = margin?.quality?.costCoverage ?? 0;
+  const trust = marginRate != null && marginRate > 0 && costCoverage >= 0.2;
+  return { breakevenRoas: trust ? Math.round((1 / marginRate) * 100) / 100 : null, marginRate, costCoverage };
+}
+
+export function packSignals(result: CreativeSignalsResult | null): MetaCampaignsInsight["signals"] {
+  if (!result) return null;
+  return { headline: result.headline, mediaHealth: result.mediaHealth, candidates: result.candidates, okay: result.attention.okay };
+}
+
 export async function buildMetaCampaignsInsight(input: {
   storeId: string;
   overview: MetaCampaignsOverview;
   locale: "he" | "en";
   force?: boolean;
+  // Precomputed by the route so a failed model call still returns them.
+  signals?: CreativeSignalsResult | null;
 }): Promise<MetaCampaignsInsight | null> {
   const db = getDb();
   const key = insightCacheKey(input.storeId, input.locale, input.overview);
@@ -534,6 +558,9 @@ export async function buildMetaCampaignsInsight(input: {
   const marginRate = margin?.totals?.contributionMarginRate ?? null; // 0..1
   const costCoverage = margin?.quality?.costCoverage ?? 0;
   const trustMargin = marginRate != null && marginRate > 0 && costCoverage >= 0.2;
+  const signals = input.signals === undefined
+    ? await buildMetaCreativeSignals({ storeId: input.storeId, overview: input.overview, breakevenRoas: trustMargin ? Math.round((1 / marginRate!) * 100) / 100 : null }).catch(() => null)
+    : input.signals;
   const ctx: DigestContext = {
     storeName: storeMeta?.name ?? null,
     currency: storeMeta?.currency ?? "ILS",
@@ -553,6 +580,9 @@ export async function buildMetaCampaignsInsight(input: {
 ${buildDigest(input.overview, ctx)}
 
 ${buildDecisionFrame(input.overview, ctx, isHe)}
+
+${signals ? signalsFrame(signals, "he") : ""}
+אם יש אותות מחושבים למעלה: הכותרת (decision) חייבת להיות בנוסח הכותרת שלהם, ו־known חייב לפתוח בשלושת המועמדים הראשונים בסדר שלהם (REVIEW, TEST, WATCH). אל תגלי מחדש מספרים שכבר מופיעים שם ואל תסתרי אותם. CTR הוא הסבר, לא דירוג.
 
 הפיקי עבור הבעלים:
 1) פסק דין ROAS — אמרי בפשטות אם לחשבון כולו, ולכל קמפיין משמעותי, יש ROAS טוב או רע, בהשוואה לROAS נקודת האיזון של החנות שלמעלה (לא 3x/4x גנרי). נקבי במספרים. אם נקודת האיזון לא ידועה — אמרי שפסק דין מדויק דורש עלויות מוצר.
@@ -576,6 +606,9 @@ STORE + CAMPAIGN DATA:
 ${buildDigest(input.overview, ctx)}
 
 ${buildDecisionFrame(input.overview, ctx, isHe)}
+
+${signals ? signalsFrame(signals, "en") : ""}
+If computed signals are listed above: the decision headline must follow their headline, and "known" must open with their first three candidates in their order (REVIEW, TEST, WATCH). Never re-derive numbers already stated there and never contradict them. CTR explains, it does not rank.
 
 Produce, writing in English for the owner:
 1) ROAS VERDICT — say plainly whether the account overall, and each meaningful campaign, has GOOD or BAD ROAS, judged against the store's BREAKEVEN ROAS above (not a generic 3x/4x). Name the numbers. If breakeven is unknown, say a precise verdict needs product costs.
@@ -642,6 +675,7 @@ Rules: judge good/bad ROAS against the store's breakeven; name real campaigns ve
   const insight: MetaCampaignsInsight = {
     ...modelInsight,
     ...assessConfidence(input.overview, ctx, costCoverage),
+    signals: packSignals(signals),
     generatedAt: new Date().toISOString()
   };
 

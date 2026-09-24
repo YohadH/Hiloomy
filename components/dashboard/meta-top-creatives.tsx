@@ -41,7 +41,10 @@ export function MetaTopCreatives({ result, isHe, rangeLabel, profitLine = 1 }: {
             {creatives.map((c, i) => {
               const campaign = cleanLabel(c.campaignName) ?? lang("קמפיין ללא שם", "Unnamed campaign");
               const adLabel = cleanLabel(c.adName) ?? cleanLabel(c.creativeTitle) ?? lang("מודעה", "Ad");
-              const link = c.previewUrl ?? c.permalinkUrl ?? null;
+              // Owner (24 Sep 2026): open the LIVE post on Facebook, not the Meta
+              // preview. Same wording as the weekly report: "הפוסט הציבורי".
+              const publicPost = c.permalinkUrl ?? null;
+              const preview = c.previewUrl ?? null;
               return (
                 <li key={c.adId} className="rounded-xl border border-border/60 bg-background p-3">
                   <div className="flex gap-3">
@@ -85,10 +88,19 @@ export function MetaTopCreatives({ result, isHe, rangeLabel, profitLine = 1 }: {
                         {c.ctr != null ? <span>CTR {c.ctr.toFixed(2)}%</span> : null}
                       </p>
                       {c.creativeBody ? <p className="mt-1.5 line-clamp-2 text-[12px] leading-5 text-foreground/80">{c.creativeBody}</p> : null}
-                      {link ? (
-                        <a href={link} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-[11px] font-semibold text-foreground underline-offset-4 hover:underline">
-                          {lang("פתיחת המודעה", "Open the ad")}
-                        </a>
+                      {publicPost || preview ? (
+                        <p className="mt-1.5 flex flex-wrap gap-3 text-[11px] font-semibold">
+                          {publicPost ? (
+                            <a href={publicPost} target="_blank" rel="noreferrer" className="text-foreground underline-offset-4 hover:underline">
+                              {lang("הפוסט הציבורי", "Public post")}
+                            </a>
+                          ) : null}
+                          {preview && !publicPost ? (
+                            <a href={preview} target="_blank" rel="noreferrer" className="text-muted-foreground underline-offset-4 hover:underline">
+                              {lang("תצוגה מקדימה ב־Meta", "Meta preview")}
+                            </a>
+                          ) : null}
+                        </p>
                       ) : null}
                     </div>
                   </div>

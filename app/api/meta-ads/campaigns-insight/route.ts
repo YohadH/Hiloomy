@@ -11,8 +11,11 @@ import { resolveActiveStoreId } from "@/lib/services/offline-sales-service";
 import { getReportingDateRangeSelection } from "@/lib/server/reporting-date-range";
 import {
   buildMetaCampaignsInsight,
-  getMetaCampaignsOverview
+  getMetaCampaignsOverview,
+  packSignals,
+  resolveBreakevenRoas
 } from "@/lib/services/meta-campaigns-overview-service";
+import { buildMetaCreativeSignals } from "@/lib/services/meta-creative-signals-service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -35,16 +38,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "no_campaign_data" }, { status: 404 });
     }
 
-    const insight = await buildMetaCampaignsInsight({
-      storeId,
-      overview,
-      locale,
-      force: body.force === true
-    });
-    if (!insight) {
-      return NextResponse.json({ ok: false, error: "insight_unavailable" }, { status: 503 });
+    // Deterministic layer first: it never fails on the model and is returned
+    // with every response, so the card can show WATCH / TEST / REVIEW even
+    // when phrasing is unavailable.
+    const { breakevenRoas } = await resolveBreakevenRoas(storeId, overview);
+    const signals = await buildMetaCreativeSignals({ storeId, overview, breakevenRoas }).catch(() => null);
+    try {
+      const insight = await buildMetaCampaignsInsight({ storeId, overview, locale, force: body.force === true, signals });
+      if (!insight) {
+        return NextResponse.json({ ok: false, error: "insight_unavailable", signals: packSignals(signals) }, { status: 503 });
+      }
+      return NextResponse.json({ ok: true, insight });
+    } catch (error) {
+      const status = error instanceof AppError ? error.statusCode : 500;
+      return NextResponse.json({ ok: false, error: toErrorMessage(error), signals: packSignals(signals) }, { status });
     }
-    return NextResponse.json({ ok: true, insight });
   } catch (error) {
     const status = error instanceof AppError ? error.statusCode : 500;
     return NextResponse.json({ ok: false, error: toErrorMessage(error) }, { status });

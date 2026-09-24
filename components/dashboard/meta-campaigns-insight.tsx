@@ -12,7 +12,27 @@ import { Card, CardContent } from "@/components/ui/card";
 
 type Confidence = "high" | "medium" | "low";
 
+type CandidateStatus = "context" | "winner" | "watch" | "test" | "review";
+interface Candidate {
+  type: string;
+  status: CandidateStatus;
+  campaignName: string | null;
+  creativeNames: string[];
+  title: { he: string; en: string };
+  body: { he: string; en: string };
+  recommendation: { he: string; en: string };
+  confidence: Confidence;
+  sampleSize: number;
+}
+interface Signals {
+  headline: { he: string; en: string };
+  mediaHealth: "strong" | "ok" | "weak" | "unverified";
+  candidates: Candidate[];
+  okay: { he: string; en: string }[];
+}
+
 interface Insight {
+  signals?: Signals | null;
   decision: string;
   conclusion: string;
   known: string[];
@@ -47,6 +67,66 @@ function AxisBadge({ label, value, tone }: { label: string; value: string; tone:
   );
 }
 
+const STATUS_STYLE: Record<CandidateStatus, string> = {
+  review: "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200",
+  test: "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200",
+  watch: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200",
+  winner: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200",
+  context: "border-border bg-muted text-muted-foreground"
+};
+const STATUS_LABEL: Record<CandidateStatus, { he: string; en: string }> = {
+  review: { he: "לבדוק", en: "REVIEW" },
+  test: { he: "לבחון", en: "TEST" },
+  watch: { he: "לעקוב", en: "WATCH" },
+  winner: { he: "מנצח", en: "WINNER" },
+  context: { he: "הקשר", en: "CONTEXT" }
+};
+
+// The deterministic layer: what is already okay, then the ranked candidates
+// that deserve attention. Renders with or without the model's phrasing.
+function SignalsBlock({ signals, isHe }: { signals: Signals; isHe: boolean }) {
+  const lang = (he: string, en: string) => (isHe ? he : en);
+  const t = (v: { he: string; en: string }) => (isHe ? v.he : v.en);
+  const needs = signals.candidates.filter((c) => c.status === "review" || c.status === "test" || c.status === "watch");
+  const winners = signals.candidates.filter((c) => c.status === "winner");
+  return (
+    <div className="space-y-3">
+      <p className="text-lg font-semibold leading-snug tracking-tight text-foreground">{t(signals.headline)}</p>
+      {signals.okay.length ? (
+        <p className="text-xs text-muted-foreground">
+          {lang("כבר בסדר: ", "Already okay: ")}
+          {signals.okay.map(t).join(" · ")}
+        </p>
+      ) : null}
+      {needs.length ? (
+        <ul className="space-y-2">
+          {needs.map((c, i) => (
+            <li key={`${c.type}-${i}`} className="flex items-start gap-3 rounded-lg border border-border/60 p-3">
+              <span className={`mt-0.5 inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STATUS_STYLE[c.status]}`}>{t(STATUS_LABEL[c.status])}</span>
+              <div className="min-w-0 space-y-0.5 text-sm">
+                <p className="font-semibold text-foreground">{t(c.title)}</p>
+                <p className="text-muted-foreground">{t(c.body)}</p>
+                <p className="text-xs text-foreground/80">{t(c.recommendation)}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {lang("ביטחון", "confidence")} {confidenceLabel(c.confidence, isHe)} · n={c.sampleSize}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">{lang("אין חריגים בין הקריאייטיבים בחלון הזה.", "No creative stands out in this window.")}</p>
+      )}
+      {winners.length ? (
+        <p className="text-xs text-muted-foreground">
+          {lang("מנצחים: ", "Winners: ")}
+          {winners.map((w) => `${w.creativeNames[0]} (${w.campaignName})`).join(" · ")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function confidenceLabel(level: Confidence, isHe: boolean): string {
   if (level === "high") return isHe ? "גבוה" : "high";
   if (level === "medium") return isHe ? "בינוני" : "medium";
@@ -58,6 +138,8 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
   const [insight, setInsight] = useState<Insight | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "hidden" | "failed">("loading");
   const [failure, setFailure] = useState<string | null>(null);
+  // Deterministic signals arrive with every response, including failures.
+  const [signals, setSignals] = useState<Signals | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
 
@@ -69,8 +151,10 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
         body: JSON.stringify({ force })
       });
       const body = await res.json().catch(() => ({}));
+      if (body?.signals) setSignals(body.signals as Signals);
       if (res.ok && body?.ok && body.insight) {
         setInsight(body.insight as Insight);
+        if (body.insight.signals) setSignals(body.insight.signals as Signals);
         setState("ready");
         setFailure(null);
       } else if (res.status === 404) {
@@ -125,7 +209,9 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
             {lang("הסוכן מנתח את הקמפיינים…", "The agent is analyzing the campaigns…")}
           </p>
         ) : state === "failed" ? (
-          <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+          <div className="mt-3 space-y-3">
+            {signals ? <SignalsBlock signals={signals} isHe={isHe} /> : null}
+          <div className="space-y-2 text-xs text-muted-foreground">
             <p>
               {failure === "recent_failure"
                 ? lang("הניסיון האחרון לנתח נכשל; הילומה תנסה שוב אוטומטית בעוד כמה דקות.", "The last analysis attempt failed; Hiloma retries automatically in a few minutes.")
@@ -148,6 +234,7 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
               <RefreshCw className="h-3 w-3" aria-hidden />
               {lang("לנסות שוב", "Try again")}
             </button>
+          </div>
           </div>
         ) : insight ? (
           <div className="mt-3 space-y-4">
@@ -182,10 +269,17 @@ export function MetaCampaignsInsight({ isHe }: { isHe: boolean }) {
                 {confidenceLabel(insight.profitConfidence, isHe)}
               </span>
             </div>
-            <div className="space-y-1.5">
-              <p className="text-lg font-semibold leading-snug tracking-tight text-foreground">{insight.decision}</p>
-              <p className="text-sm leading-6 text-muted-foreground">{insight.conclusion}</p>
-            </div>
+            {insight.signals ? (
+              <>
+                <SignalsBlock signals={insight.signals} isHe={isHe} />
+                <p className="text-sm leading-6 text-muted-foreground">{insight.conclusion}</p>
+              </>
+            ) : (
+              <div className="space-y-1.5">
+                <p className="text-lg font-semibold leading-snug tracking-tight text-foreground">{insight.decision}</p>
+                <p className="text-sm leading-6 text-muted-foreground">{insight.conclusion}</p>
+              </div>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <p className="text-xs font-medium text-muted-foreground">{lang("מה אנחנו כן יודעים", "What we know")}</p>
