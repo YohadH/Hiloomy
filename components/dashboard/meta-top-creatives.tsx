@@ -5,7 +5,7 @@
 
 import { ImageOff } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import type { MetaTopCreative } from "@/lib/services/meta-top-creatives-service";
+import type { MetaTopCreativesResult } from "@/lib/services/meta-top-creatives-service";
 import { cn } from "@/lib/utils";
 
 function cleanLabel(value?: string | null) {
@@ -16,7 +16,8 @@ function cleanLabel(value?: string | null) {
   return cleaned;
 }
 
-export function MetaTopCreatives({ creatives, isHe, rangeLabel, profitLine = 1 }: { creatives: MetaTopCreative[]; isHe: boolean; rangeLabel: string; profitLine?: number }) {
+export function MetaTopCreatives({ result, isHe, rangeLabel, profitLine = 1 }: { result: MetaTopCreativesResult; isHe: boolean; rangeLabel: string; profitLine?: number }) {
+  const { creatives, totalAds } = result;
   const lang = (he: string, en: string) => (isHe ? he : en);
   const nf = new Intl.NumberFormat(isHe ? "he-IL" : "en-US");
   const money = (n: number) => `₪${nf.format(Math.round(n))}`;
@@ -28,7 +29,10 @@ export function MetaTopCreatives({ creatives, isHe, rangeLabel, profitLine = 1 }
         <div>
           <p className="text-sm font-bold text-foreground">{lang("הקריאייטיבים שמכרו הכי הרבה", "The creatives that sold the most")}</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            {lang(`${rangeLabel} · מדורג לפי מכירות משויכות לפי Meta · כל כרטיס מציין לאיזה קמפיין הוא שייך`, `${rangeLabel} · ranked by Meta-attributed sales · each card names its campaign`)}
+            {lang(
+              `${rangeLabel} · כל כרטיס = מודעה אחת. קמפיין הוא סכום המודעות שלו, לכן מודעה תמיד קטנה או שווה לקמפיין${totalAds ? ` · מציג ${Math.min(creatives.length, totalAds)} מתוך ${totalAds} מודעות` : ""}`,
+              `${rangeLabel} · each card is one ad. A campaign is the sum of its ads, so an ad is always at most the campaign${totalAds ? ` · showing ${Math.min(creatives.length, totalAds)} of ${totalAds} ads` : ""}`
+            )}
           </p>
         </div>
 
@@ -53,9 +57,19 @@ export function MetaTopCreatives({ creatives, isHe, rangeLabel, profitLine = 1 }
                     </div>
                     <div className="min-w-0 flex-1">
                       {/* Campaign first — this is how the card maps to the list beside it. */}
-                      <p className="truncate text-[11px] font-semibold text-muted-foreground" title={campaign}>
-                        <span className="me-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 align-middle" aria-hidden />
-                        {campaign}
+                      <p className="flex flex-wrap items-baseline gap-x-2 text-[11px] font-semibold text-muted-foreground" title={campaign}>
+                        <span className="truncate">
+                          <span className="me-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 align-middle" aria-hidden />
+                          {campaign}
+                        </span>
+                        {c.shareOfCampaign != null ? (
+                          <span className="rounded-full bg-muted px-1.5 py-px font-medium tabular-nums">
+                            {lang(
+                              `${Math.round(c.shareOfCampaign * 100)}% ממכירות הקמפיין (${money(c.campaignRevenue)}) · ${c.campaignAds === 1 ? "המודעה היחידה" : `1 מתוך ${c.campaignAds} מודעות`}`,
+                              `${Math.round(c.shareOfCampaign * 100)}% of campaign sales (${money(c.campaignRevenue)}) · ${c.campaignAds === 1 ? "the only ad" : `1 of ${c.campaignAds} ads`}`
+                            )}
+                          </span>
+                        ) : null}
                       </p>
                       <div className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                         <p className="truncate text-sm font-semibold" title={adLabel}>{adLabel}</p>

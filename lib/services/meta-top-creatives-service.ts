@@ -30,6 +30,18 @@ export interface MetaTopCreative {
   cpa: number | null;
   dateStart: string;
   dateStop: string;
+  // The campaign this ad belongs to, over the same window — so the card can
+  // say "27% of the campaign's sales, 1 of 23 ads" and the reader sees why
+  // one creative is never the whole campaign.
+  campaignRevenue: number;
+  campaignPurchases: number;
+  campaignAds: number;
+  shareOfCampaign: number | null; // revenue / campaignRevenue, 0–1
+}
+
+export interface MetaTopCreativesResult {
+  creatives: MetaTopCreative[];
+  totalAds: number; // ads with spend in the window (the list shows the top N of these)
 }
 
 const toNum = (v: unknown) => {
@@ -38,11 +50,13 @@ const toNum = (v: unknown) => {
 };
 const day = (d: Date) => d.toISOString().slice(0, 10);
 
-export async function getMetaTopCreatives(storeId: string, range: { start: Date; end: Date }, limit = 8): Promise<MetaTopCreative[]> {
+const EMPTY: MetaTopCreativesResult = { creatives: [], totalAds: 0 };
+
+export async function getMetaTopCreatives(storeId: string, range: { start: Date; end: Date }, limit = 8): Promise<MetaTopCreativesResult> {
   const db = getDb() as any;
-  if (!db?.metaAdsCampaignInsight) return [];
+  if (!db?.metaAdsCampaignInsight) return EMPTY;
   const connection = (await db.metaAdsConnection?.findUnique({ where: { storeId }, select: { adAccountId: true } }).catch(() => null)) as { adAccountId: string | null } | null;
-  if (!connection?.adAccountId) return [];
+  if (!connection?.adAccountId) return EMPTY;
 
   const rows = (await db.metaAdsCampaignInsight
     .findMany({
@@ -55,7 +69,22 @@ export async function getMetaTopCreatives(storeId: string, range: { start: Date;
       }
     })
     .catch(() => [])) as Array<Record<string, any>>;
-  if (!rows.length) return [];
+  if (!rows.length) return EMPTY;
+  // Campaign-level rows for the same window: the campaign's own total, which
+  // the ad rows add up to (Meta rounds per-row ROAS, so within ~1–2%).
+  const campaignRows = (await db.metaAdsCampaignInsight
+    .findMany({
+      where: { storeId, adAccountId: connection.adAccountId, level: "campaign", dateStart: { gte: range.start }, dateStop: { lte: range.end } },
+      select: { campaignId: true, spend: true, purchases: true, purchaseRoas: true }
+    })
+    .catch(() => [])) as Array<Record<string, any>>;
+  const campaignTotals = new Map<string, { revenue: number; purchases: number }>();
+  for (const r of campaignRows) {
+    const t = campaignTotals.get(String(r.campaignId)) ?? { revenue: 0, purchases: 0 };
+    t.revenue += toNum(r.spend) * (r.purchaseRoas == null ? 0 : toNum(r.purchaseRoas));
+    t.purchases += toNum(r.purchases);
+    campaignTotals.set(String(r.campaignId), t);
+  }
 
   const byAd = new Map<string, MetaTopCreative & { _roasWeighted: number; _roasSpend: number }>();
   for (const r of rows) {
@@ -67,7 +96,8 @@ export async function getMetaTopCreatives(storeId: string, range: { start: Date;
       adId: id, adName: null, campaignId: String(r.campaignId ?? ""), campaignName: String(r.campaignName ?? ""), adsetName: null,
       creativeTitle: null, creativeBody: null, thumbnailUrl: null, previewUrl: null, permalinkUrl: null,
       spend: 0, impressions: 0, clicks: 0, purchases: 0, revenue: 0, roas: null, ctr: null, cpa: null,
-      dateStart: day(r.dateStart), dateStop: day(r.dateStop), _roasWeighted: 0, _roasSpend: 0
+      dateStart: day(r.dateStart), dateStop: day(r.dateStop), _roasWeighted: 0, _roasSpend: 0,
+      campaignRevenue: 0, campaignPurchases: 0, campaignAds: 0, shareOfCampaign: null
     };
     agg.spend += spend;
     agg.impressions += toNum(r.impressions);
@@ -88,16 +118,29 @@ export async function getMetaTopCreatives(storeId: string, range: { start: Date;
     byAd.set(id, agg);
   }
 
-  return [...byAd.values()]
-    .filter((a) => a.spend > 0)
-    .map(({ _roasWeighted, _roasSpend, ...a }) => ({
-      ...a,
-      revenue: Math.round(a.revenue),
-      roas: _roasSpend > 0 ? _roasWeighted / _roasSpend : null,
-      ctr: a.impressions > 0 ? (a.clicks / a.impressions) * 100 : null,
-      cpa: a.purchases > 0 ? a.spend / a.purchases : null
-    }))
+  const active = [...byAd.values()].filter((a) => a.spend > 0);
+  const adsPerCampaign = new Map<string, number>();
+  for (const a of active) adsPerCampaign.set(a.campaignId, (adsPerCampaign.get(a.campaignId) ?? 0) + 1);
+  const creatives = active
+    .map(({ _roasWeighted, _roasSpend, ...a }) => {
+      const total = campaignTotals.get(a.campaignId);
+      // Fall back to the sum of this campaign's ads when campaign rows are missing.
+      const campaignRevenue = Math.round(total?.revenue ?? active.filter((x) => x.campaignId === a.campaignId).reduce((s, x) => s + x.revenue, 0));
+      const revenue = Math.round(a.revenue);
+      return {
+        ...a,
+        revenue,
+        roas: _roasSpend > 0 ? _roasWeighted / _roasSpend : null,
+        ctr: a.impressions > 0 ? (a.clicks / a.impressions) * 100 : null,
+        cpa: a.purchases > 0 ? a.spend / a.purchases : null,
+        campaignRevenue,
+        campaignPurchases: total?.purchases ?? active.filter((x) => x.campaignId === a.campaignId).reduce((s, x) => s + x.purchases, 0),
+        campaignAds: adsPerCampaign.get(a.campaignId) ?? 1,
+        shareOfCampaign: campaignRevenue > 0 ? Math.min(1, revenue / campaignRevenue) : null
+      };
+    })
     // Ranked by the sales the ad brought; ties by purchases, then ROAS.
     .sort((x, y) => y.revenue - x.revenue || y.purchases - x.purchases || (y.roas ?? -1) - (x.roas ?? -1))
     .slice(0, limit);
+  return { creatives, totalAds: active.length };
 }

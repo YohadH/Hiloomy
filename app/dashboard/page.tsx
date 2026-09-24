@@ -244,7 +244,7 @@ export default async function CommandCenterPage({
         readMarketSummary(storeId),
         buildTrafficSearchSummary(storeId, windowRange).catch(() => null),
         getMetaCampaignsOverview(storeId, windowRange).catch(() => null),
-        getMetaTopCreatives(storeId, windowRange, 8).catch(() => []),
+        getMetaTopCreatives(storeId, windowRange, 8).catch(() => ({ creatives: [], totalAds: 0 })),
         getGoogleAdsOverview(storeId, windowRange).catch(() => null),
         buildContributionMargin({ storeId, start: windowRange.start, end: windowRange.end, channel }).catch(() => null),
         getDb()
@@ -254,7 +254,7 @@ export default async function CommandCenterPage({
         getDailyTrendContext(storeId, windowRange.start, windowRange.end).catch(() => ({})),
         listOpenAlerts({ storeId, limit: 50 }).then((rows) => rows as unknown as OpenAlertRow[])
       ])
-    : [[] as ResolvedAlertWithOutcome[], null, null, null, null, null, null, [], null, null, false, {}, [] as OpenAlertRow[]];
+    : [[] as ResolvedAlertWithOutcome[], null, null, null, null, null, null, { creatives: [], totalAds: 0 }, null, null, false, {}, [] as OpenAlertRow[]];
   const showChannelFilter = hasPosOrders || channel !== "all";
   const channelSuffix = channel === "all" ? "" : ` · ${SALES_CHANNEL_FILTER_LABEL[channel][isHe ? "he" : "en"]}`;
 
@@ -449,7 +449,7 @@ export default async function CommandCenterPage({
               }
             />
             <MetaTopCreatives
-              creatives={metaCreatives}
+              result={metaCreatives}
               isHe={isHe}
               rangeLabel={`${metaCampaigns.rangeStart} – ${metaCampaigns.rangeEnd}`}
               profitLine={
