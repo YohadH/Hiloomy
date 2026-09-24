@@ -10,8 +10,16 @@
 //
 // Requires an App Proxy configured on the store's app:
 //   Subpath prefix: apps · Subpath: go · Proxy URL: {APP_URL}/api/shopify/app-proxy
+//
+// Router (Creator Storefronts, 2026-09-24 — the subpath stays "go"):
+//   /apps/go/{token}            short link (below, unchanged)
+//   /apps/go/@{creatorSlug}     creator storefront (Liquid, rendered in the theme)
+//   /apps/go/@test              proxy smoke test (Liquid) · /apps/go/test plain echo
+// Short-link tokens are base62, so a first segment starting with "@" can never
+// be a token. Shopify forwards the path decoded ("%40" arrives as "@").
 
 import { NextResponse } from "next/server";
+import { DIAG_HEADERS, buildProxyEcho, renderDiagnosticsHtml, renderDiagnosticsLiquid } from "@/lib/services/creator-storefront-proxy-diagnostics";
 import { resolveAffiliateShortLink } from "@/lib/services/affiliate-short-link-service";
 import { verifyAppProxySignature } from "@/lib/services/shopify-oauth-service";
 import {
@@ -55,13 +63,42 @@ export async function GET(
 ) {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
+  const { rest } = await params;
+  const segments = (rest ?? []).map((s) => decodeURIComponent(s).trim()).filter(Boolean);
+  const first = segments[0] ?? "";
 
   // 1. Authenticate the proxy request (fail closed on a bad/missing signature).
-  if (!(await verifyAppProxySignature(url.searchParams))) {
+  const signatureValid = await verifyAppProxySignature(url.searchParams);
+  // The plain echo is the ONE response allowed through with a bad signature: it
+  // says so in its body and exists precisely to debug proxy setup. It leaks no data.
+  if (first === "test" && segments.length === 1) {
+    return new NextResponse(renderDiagnosticsHtml(buildProxyEcho(request, segments, signatureValid)), {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8", ...DIAG_HEADERS }
+    });
+  }
+  if (!signatureValid) {
     return new NextResponse("Invalid app proxy signature.", { status: 401 });
   }
 
-  const { rest } = await params;
+  // 2. Creator storefront namespace: "@{slug}".
+  if (first.startsWith("@")) {
+    const slug = first.slice(1).toLowerCase();
+    if (slug === "test") {
+      return new NextResponse(renderDiagnosticsLiquid(buildProxyEcho(request, segments, signatureValid)), {
+        status: 200,
+        headers: { "Content-Type": "application/liquid; charset=utf-8", ...DIAG_HEADERS }
+      });
+    }
+    // Storefront rendering lands in Phase 5. Until then every creator page is
+    // "not available" — a theme-styled Liquid body, never a raw error.
+    return new NextResponse(
+      `<div class="page-width" style="max-width:40rem;margin:4rem auto;padding:0 1rem;text-align:center"><h1>{{ shop.name }}</h1><p>העמוד הזה עדיין לא זמין.</p><p><a href="/">{{ 'general.continue_shopping' | t | default: 'Continue shopping' }}</a></p></div>`,
+      { status: 200, headers: { "Content-Type": "application/liquid; charset=utf-8", ...DIAG_HEADERS } }
+    );
+  }
+
+  // 3. Short link (existing behaviour): the token is the last segment.
   const token = (rest?.[rest.length - 1] ?? "").trim();
   const link = await resolveAffiliateShortLink(token).catch(() => null);
 
