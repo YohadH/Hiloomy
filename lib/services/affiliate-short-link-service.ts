@@ -29,8 +29,35 @@ function cleanUtm(value: unknown): string | null {
   return trimmed || null;
 }
 
-export function shortLinkUrl(token: string): string {
-  return `${appBaseUrl()}/l/${token}`;
+// Campaign suffix (ported from the Creators project): the same permanent
+// token can be shared as {token}-{campaign} so clicks and orders carry the
+// campaign. Codes are lowercase a-z0-9 and Hebrew letters, "-" separated.
+export function normalizeCampaignCode(value: unknown): string | null {
+  const code = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0590-\u05ff]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24);
+  return code || null;
+}
+
+export function parseShortLinkToken(raw: string): { token: string; campaignCode: string | null } {
+  let clean = String(raw ?? "").trim();
+  try {
+    clean = decodeURIComponent(clean);
+  } catch {
+    /* keep raw */
+  }
+  clean = clean.toLowerCase();
+  const dash = clean.indexOf("-");
+  if (dash === -1) return { token: clean, campaignCode: null };
+  return { token: clean.slice(0, dash), campaignCode: normalizeCampaignCode(clean.slice(dash + 1)) };
+}
+
+export function shortLinkUrl(token: string, campaignCode?: string | null): string {
+  const code = normalizeCampaignCode(campaignCode);
+  return `${appBaseUrl()}/l/${token}${code ? `-${code}` : ""}`;
 }
 
 /**
@@ -39,8 +66,9 @@ export function shortLinkUrl(token: string): string {
  * URL. Only resolves once the App Proxy is configured on that store's app;
  * until then use shortLinkUrl (hiloomy.com/l/{token}).
  */
-export function appProxyShortLinkUrl(storeDomain: string, token: string): string {
-  return `https://${storeDomain}/apps/go/${token}`;
+export function appProxyShortLinkUrl(storeDomain: string, token: string, campaignCode?: string | null): string {
+  const code = normalizeCampaignCode(campaignCode);
+  return `https://${storeDomain}/apps/go/${token}${code ? `-${code}` : ""}`;
 }
 
 export async function createAffiliateShortLink(input: {
@@ -51,7 +79,7 @@ export async function createAffiliateShortLink(input: {
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;
-}): Promise<{ token: string; url: string; storeUrl: string }> {
+}): Promise<{ token: string; url: string; storeUrl: string; campaignUrl: string | null; storeCampaignUrl: string | null }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = getDb() as any;
   if (!db?.affiliateShortLink) {
@@ -87,10 +115,15 @@ export async function createAffiliateShortLink(input: {
           utmCampaign: cleanUtm(input.utmCampaign)
         }
       });
+      // With a UTM campaign the same token is also offered as {token}-{campaign},
+      // so the click and the order carry the campaign (Creators-project port).
+      const campaign = normalizeCampaignCode(input.utmCampaign);
       return {
         token,
         url: shortLinkUrl(token),
-        storeUrl: storeDomain ? appProxyShortLinkUrl(storeDomain, token) : shortLinkUrl(token)
+        storeUrl: storeDomain ? appProxyShortLinkUrl(storeDomain, token) : shortLinkUrl(token),
+        campaignUrl: campaign ? shortLinkUrl(token, campaign) : null,
+        storeCampaignUrl: campaign ? (storeDomain ? appProxyShortLinkUrl(storeDomain, token, campaign) : shortLinkUrl(token, campaign)) : null
       };
     } catch (error) {
       // P2002 = token collision — redraw. Anything else is real.
@@ -109,21 +142,39 @@ export interface ResolvedShortLink {
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
+  // From the {token}-{campaign} suffix; null for a plain token.
+  campaignCode: string | null;
+  // Resolved AffiliateCampaign / AffiliateBrief when the suffix matched a
+  // campaign of the link's store (ported from the Creators project).
+  campaignId: string | null;
+  briefId: string | null;
 }
 
-export async function resolveAffiliateShortLink(token: string): Promise<ResolvedShortLink | null> {
+export async function resolveAffiliateShortLink(rawToken: string): Promise<ResolvedShortLink | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = getDb() as any;
+  const { token, campaignCode } = parseShortLinkToken(rawToken);
   if (!db?.affiliateShortLink || !/^[a-z0-9]{4,16}$/.test(token)) return null;
 
   const row = await db.affiliateShortLink.findUnique({
     where: { token },
     include: {
       store: { select: { id: true, domain: true } },
-      affiliateMember: { select: { affiliateCode: true } }
+      affiliateMember: { select: { id: true, affiliateCode: true } }
     }
   });
   if (!row?.store || !row.affiliateMember) return null;
+
+  // A campaign code that names a real campaign of this store wins over the
+  // link's own destination and coupon, and ties the click to the member's
+  // brief in that campaign. Lazy import: the campaign service imports link
+  // helpers from this module.
+  let campaign: Awaited<ReturnType<typeof import("@/lib/services/affiliate-campaign-service").resolveCampaignForLink>> = null;
+  if (campaignCode) {
+    campaign = await import("@/lib/services/affiliate-campaign-service")
+      .then((m) => m.resolveCampaignForLink(row.store.id, row.affiliateMember.id, campaignCode))
+      .catch(() => null);
+  }
 
   // Best-effort counter; AttributionSession is the canonical click record.
   db.affiliateShortLink
@@ -134,10 +185,14 @@ export async function resolveAffiliateShortLink(token: string): Promise<Resolved
     storeId: row.store.id,
     storeDomain: row.store.domain,
     affiliateCode: row.affiliateMember.affiliateCode,
-    couponCode: row.couponCode ?? null,
-    destinationPath: sanitizeDestinationPath(row.destinationPath),
+    couponCode: campaign?.couponCode ?? row.couponCode ?? null,
+    destinationPath: campaign?.destinationPath ?? sanitizeDestinationPath(row.destinationPath),
     utmSource: row.utmSource ?? null,
     utmMedium: row.utmMedium ?? null,
-    utmCampaign: row.utmCampaign ?? null
+    // A campaign suffix also names the UTM campaign unless the link set one.
+    utmCampaign: row.utmCampaign ?? campaignCode ?? null,
+    campaignCode,
+    campaignId: campaign?.campaignId ?? null,
+    briefId: campaign?.briefId ?? null
   };
 }

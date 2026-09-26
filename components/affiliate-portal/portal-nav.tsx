@@ -15,6 +15,7 @@ const items = [
   { href: "/affiliate-portal/programs", he: "תוכניות", en: "Programs" },
   { href: "/affiliate-portal/affiliates", he: "שותפות", en: "Affiliates" },
   { href: "/affiliate-portal/coupons", he: "קופונים", en: "Coupons" },
+  { href: "/affiliate-portal/campaigns", he: "קמפיינים", en: "Campaigns" },
   { href: "/affiliate-portal/conversions", he: "המרות", en: "Conversions" },
   { href: "/affiliate-portal/payouts", he: "תשלומים", en: "Payouts" },
   { href: "/affiliate-portal/content", he: "תוכן", en: "Content" },
@@ -29,7 +30,7 @@ export function AffiliatePortalNav({ locale = "he" }: { locale?: "he" | "en" }) 
     <div className="overflow-x-auto pb-2">
       <nav className="flex min-w-max gap-2">
         {items.map((item) => {
-          const active = pathname === item.href;
+          const active = pathname === item.href || (item.href !== "/affiliate-portal" && pathname.startsWith(item.href + "/"));
           return (
             <Link
               key={item.href}

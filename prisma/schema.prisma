@@ -254,6 +254,7 @@ model Store {
   affiliateCouponAssignments AffiliateCouponAssignment[]
   affiliateShortLinks        AffiliateShortLink[]
   affiliateAttributions      AffiliateAttribution[]
+  affiliateCampaigns         AffiliateCampaign[]
   agentSettings              AgentSettings?
   agentFindings              AgentFinding[]
   agentActions               AgentAction[]
@@ -1180,6 +1181,7 @@ model AffiliateMember {
   attributions           AffiliateAttribution[]
   attributionSessions    AttributionSession[]
   trackedShortLinks      AffiliateShortLink[]
+  briefs                 AffiliateBrief[]
 
   @@unique([storeId, email])
   @@unique([storeId, affiliateCode])
@@ -1276,6 +1278,10 @@ model AffiliateAttribution {
   // Mirrors what the merchant sees on the BixGrow side, and unlocks
   // a "Coupon" column on the conversions table.
   couponCode          String?
+  // Campaign the converting click belonged to (from AttributionSession).
+  campaignCode        String?
+  campaignId          String?
+  campaign            AffiliateCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   // ─── Payout state (BixGrow-like commission tracking) ─────────────
   // Values: "unpaid" | "approved" | "paid" | "cancelled" | "refunded"
   // "unpaid"    — default. Commission owed but not yet approved for
@@ -1326,6 +1332,7 @@ model AffiliateAttribution {
   // "Approved" pile is the payout queue.
   @@index([storeId, payoutStatus])
   @@index([storeId, customerType])
+  @@index([storeId, campaignId])
 }
 
 model AgentSettings {
@@ -1421,6 +1428,59 @@ model MetricSnapshot {
   @@index([storeId, source])
 }
 
+// ─── Campaigns + briefs (ported from the Creators project, 2026-09-26) ────
+// A campaign is a named push with a code; the code is the suffix of a short
+// link ({token}-{code}) so clicks and orders carry the campaign. A brief is
+// one thing one affiliate has to publish on one date.
+model AffiliateCampaign {
+  id              String    @id @default(cuid())
+  storeId         String
+  name            String
+  // Link suffix: lowercase a-z0-9 / Hebrew, "-" separated, ≤24, unique per store.
+  code            String
+  description     String?
+  promoText       String?
+  couponCode      String?
+  destinationPath String    @default("/")
+  startsAt        DateTime?
+  endsAt          DateTime?
+  // draft | active | ended
+  status          String    @default("active")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  store           Store                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  briefs          AffiliateBrief[]
+  sessions        AttributionSession[]
+  attributions    AffiliateAttribution[]
+
+  @@unique([storeId, code])
+  @@index([storeId, status])
+}
+
+model AffiliateBrief {
+  id                String    @id @default(cuid())
+  storeId           String
+  campaignId        String
+  affiliateMemberId String
+  dueDate           DateTime
+  // post | story | reel | video | other
+  format            String    @default("post")
+  title             String
+  instructions      String?
+  // planned | posted | missed | cancelled
+  status            String    @default("planned")
+  postedAt          DateTime?
+  postUrl           String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  campaign          AffiliateCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  affiliateMember   AffiliateMember      @relation(fields: [affiliateMemberId], references: [id], onDelete: Cascade)
+  sessions          AttributionSession[]
+
+  @@index([storeId, affiliateMemberId, dueDate])
+  @@index([campaignId])
+}
+
 model AttributionSession {
   id                String           @id @default(cuid())
   storeId           String
@@ -1437,6 +1497,12 @@ model AttributionSession {
   utmSource         String?
   utmMedium         String?
   utmCampaign       String?
+  // Campaign code from a short link suffix ({token}-{campaign}); free-form
+  // until the campaigns table lands, then also resolved to campaignId.
+  campaignCode      String?
+  // Resolved campaign / brief when the code matched an AffiliateCampaign.
+  campaignId        String?
+  briefId           String?
   ipHash            String?
   userAgent         String?
   convertedAt       DateTime?
@@ -1444,10 +1510,14 @@ model AttributionSession {
   updatedAt         DateTime         @updatedAt
   store             Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
   affiliateMember   AffiliateMember? @relation(fields: [affiliateMemberId], references: [id], onDelete: SetNull)
+  campaign          AffiliateCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  brief             AffiliateBrief?    @relation(fields: [briefId], references: [id], onDelete: SetNull)
 
   @@index([storeId, createdAt(sort: Desc)])
   @@index([storeId, affiliateCode])
   @@index([storeId, couponCode])
+  @@index([storeId, campaignCode])
+  @@index([storeId, campaignId])
 }
 
 model WebhookEvent {

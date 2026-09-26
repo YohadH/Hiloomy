@@ -125,8 +125,11 @@ export async function processShopifyOrderWebhook(shopDomain: string, payload: an
   try {
     const landingSite = safeTrackingString(payload?.landing_site);
     const referringSite = safeTrackingString(payload?.referring_site);
+    // Click id keys, in order: ours, the Creators project's, generic.
     const clickId = extractTrackingNoteAttribute(payload, "agent_click_id")
+      ?? extractTrackingNoteAttribute(payload, "creators_click_id")
       ?? extractTrackingQueryValue(landingSite, "agent_click_id")
+      ?? extractTrackingQueryValue(landingSite, "creators_click_id")
       ?? extractTrackingQueryValue(landingSite, "click_id");
     const bgRefCode = extractTrackingNoteAttribute(payload, "bg_ref")
       ?? extractTrackingQueryValue(landingSite, "bg_ref")
@@ -205,6 +208,11 @@ export async function processShopifyOrderWebhook(shopDomain: string, payload: an
         commissionAmount,
         ordersCount: 1,
         couponCode: couponCode ? String(couponCode) : null,
+        // Campaign code carried by the click session (short link suffix
+        // {token}-{campaign}); ported from the Creators project where the
+        // click "carries the campaign" onto the order.
+        campaignCode: session?.campaignCode ?? null,
+        campaignId: session?.campaignId ?? null,
         externalOrderNumber,
         occurredAt
       };

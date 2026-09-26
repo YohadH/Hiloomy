@@ -120,6 +120,9 @@ export async function GET(
       utmSource,
       utmMedium,
       utmCampaign: link.utmCampaign,
+      campaignCode: link.campaignCode,
+      campaignId: link.campaignId,
+      briefId: link.briefId,
       visitorToken: request.headers.get("x-forwarded-for"),
       ipAddress: request.headers.get("x-forwarded-for"),
       userAgent: request.headers.get("user-agent")

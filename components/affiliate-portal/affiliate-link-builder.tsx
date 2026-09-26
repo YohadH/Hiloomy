@@ -46,6 +46,7 @@ export function TrackedLinkComposer({
   const [message, setMessage] = useState<string | null>(null);
   const [shortUrl, setShortUrl] = useState<string | null>(null);
   const [storeShortUrl, setStoreShortUrl] = useState<string | null>(null);
+  const [campaignShortUrl, setCampaignShortUrl] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
 
   const affiliate = affiliates.find((item) => item.id === affiliateId) ?? affiliates[0];
@@ -69,6 +70,7 @@ export function TrackedLinkComposer({
   useEffect(() => {
     setShortUrl(null);
     setStoreShortUrl(null);
+    setCampaignShortUrl(null);
   }, [generatedLink]);
 
   async function handleCopy(link: string) {
@@ -103,6 +105,7 @@ export function TrackedLinkComposer({
       }
       setShortUrl(body.url);
       setStoreShortUrl(body.storeUrl ?? null);
+      setCampaignShortUrl(body.storeCampaignUrl ?? body.campaignUrl ?? null);
       try {
         await navigator.clipboard.writeText(body.url);
         setMessage(lang("הקישור הקצר נוצר והועתק ללוח.", "Short link created and copied to the clipboard."));
@@ -253,6 +256,17 @@ export function TrackedLinkComposer({
                   "עובד רק אחרי הגדרת App Proxy באפליקציית Shopify (subpath: apps/go). עד אז השתמשו בקישור של hiloomy.com למעלה.",
                   "Works only after the Shopify app's App Proxy is set up (subpath: apps/go). Until then use the hiloomy.com link above."
                 )}
+              </p>
+            </div>
+          ) : null}
+          {campaignShortUrl ? (
+            <div className="space-y-2">
+              <span className="text-muted-foreground">{lang("קישור לקמפיין (אותו טוקן, עם קוד הקמפיין)", "Campaign link (same token, with the campaign code)")}</span>
+              <div dir="ltr" className="rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium leading-6 break-all">
+                {campaignShortUrl}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {lang("הקליקים וההזמנות מהקישור הזה יסומנו עם הקמפיין.", "Clicks and orders from this link are tagged with the campaign.")}
               </p>
             </div>
           ) : null}

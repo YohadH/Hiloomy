@@ -18,6 +18,8 @@ import {
   verifyAffiliateToken
 } from "@/lib/server/affiliate-session";
 import { CopyFieldButton } from "@/components/affiliate-join/copy-field";
+import { BriefList } from "@/components/affiliate-join/brief-list";
+import { listBriefsForMember } from "@/lib/services/affiliate-campaign-service";
 import { AffiliateLogoutButton } from "@/components/affiliate-join/logout-button";
 
 export const dynamic = "force-dynamic";
@@ -61,11 +63,15 @@ export default async function AffiliateDashboardPage({
   }
 
   const rangeKey = (["month", "30d", "all"].includes(range ?? "") ? range : "30d") as AffiliateRangeKey;
-  const data = await buildAffiliateSelfDashboard({
-    memberId: session.memberId,
-    storeId: context.store.id,
-    rangeKey
-  });
+  const [data, briefs] = await Promise.all([
+    buildAffiliateSelfDashboard({
+      memberId: session.memberId,
+      storeId: context.store.id,
+      rangeKey
+    }),
+    // Campaign briefs: what to post and when (ported from the Creators project).
+    listBriefsForMember(session.memberId, context.store.id).catch(() => [])
+  ]);
   if (!data) redirect(`/my/${encodeURIComponent(slug)}` as never);
 
   const accent = context.program.brandAccentColor || "#047857";
@@ -113,6 +119,9 @@ export default async function AffiliateDashboardPage({
             ) : null}
           </div>
         </div>
+
+        {/* Campaign briefs — above the numbers: this is the creator's to-do */}
+        <BriefList slug={slug} briefs={briefs} accent={accent} />
 
         {/* Range switch */}
         <div className="flex items-center gap-1.5">

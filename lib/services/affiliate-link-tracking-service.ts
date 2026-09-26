@@ -44,6 +44,9 @@ export async function createAffiliateRedirectSession(input: {
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;
+  campaignCode?: string | null;
+  campaignId?: string | null;
+  briefId?: string | null;
   visitorToken?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
@@ -82,6 +85,9 @@ export async function createAffiliateRedirectSession(input: {
         utmSource: input.utmSource ?? null,
         utmMedium: input.utmMedium ?? null,
         utmCampaign: input.utmCampaign ?? null,
+        campaignCode: input.campaignCode ?? null,
+        campaignId: input.campaignId ?? null,
+        briefId: input.briefId ?? null,
         ipHash: input.ipAddress ? hashInput(input.ipAddress) : null,
         userAgent: input.userAgent ?? null
       }

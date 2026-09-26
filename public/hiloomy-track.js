@@ -25,7 +25,9 @@
   function readUrlSignals() {
     try {
       var qs = new URLSearchParams(window.location.search);
-      var clickId = qs.get("agent_click_id") || qs.get("click_id") || "";
+      // agent_click_id is ours; creators_click_id is the Creators project's
+      // pixel key — accepted so links minted by either system attribute.
+      var clickId = qs.get("agent_click_id") || qs.get("creators_click_id") || qs.get("click_id") || "";
       var ref = qs.get("ref") || qs.get("bg_ref") || "";
       var coupon = qs.get("coupon") || "";
       if (!clickId && !ref) return null;
