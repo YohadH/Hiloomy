@@ -1,379 +1,413 @@
-import Link from "next/link";
+import type { CSSProperties, ReactNode } from "react";
 import "./creators-landing.css";
-import { HiloomyLogo } from "@/components/ui/logo";
+import {
+  BadgeCheck,
+  Calculator,
+  ChevronDown,
+  FolderInput,
+  Megaphone,
+  Plug,
+  Rocket,
+  ShoppingBag,
+  SlidersHorizontal,
+  TicketPercent
+} from "lucide-react";
+import { HiloomyLogo, HiloomyMark } from "@/components/ui/logo";
 import { CreatorsNav } from "./creators-nav";
+import { HeroDashboard } from "./hero-dashboard";
 import { LeadForm } from "./lead-form";
 import { RevealOnScroll } from "./reveal";
+import { SourceFlow } from "./source-flow";
 import { StickyCta } from "./sticky-cta";
 
 // Hiloomy Creator — public landing (Hebrew, RTL). Server component; the
 // interactive bits (nav sheet, form, reveal, sticky CTA) are client islands.
 //
-// Seventh pass (owner brief, 22 Sep 2026): reduce, clarify, show the
-// product. One idea per section, no repeated capabilities, fewer icons and
-// borders. Sections: hero · the problem · code → fee · two sides · one
-// creator's performance · onboarding · 0% · price · FAQ · final CTA.
-// Copy is the owner's, verbatim. Only Shopify is integrated today, so
-// WooCommerce and Wix carry a visible "בקרוב" tag. Hiloomy does not move
-// money, so the page says "מעקב תשלום", never "תשלום למשפיען".
+// Eighth pass (23 Sep 2026): visual redesign on Emil Kowalski's design-
+// engineering rules — neutral paper canvas, ink headings with a brand-green
+// second line, size-specific tracking, hairline + layered shadows, translucent
+// nav, press feedback on every pressable, custom ease-out curves, short
+// staggers, hover gated to fine pointers, reduced-motion fallbacks. Copy
+// follows the owner-approved review of 23 Sep 2026, de-duplicated on 24 Sep
+// 2026 so each claim has one home: "start from what you have" in the hero
+// bullet, the #how heading and step 2; 0% in the #pricing heading, and once
+// more as the closing line of the bill under it. Headings trimmed the same day so
+// every two-line h2 stays two lines from 360 to 1440px; the h1 balances to
+// four phrase-aligned lines below ~520px. The #problem heading opens on the
+// codes, not "influencers are routine", so it no longer restates the h1's
+// "באופן קבוע". Shopify, WooCommerce and Wix are shown as equals (owner's
+// call, 23 Sep 2026).
+// Hiloomy does not move money, so the page says "מעקב תשלום", never
+// "תשלום למשפיען".
 // Sample figures are consistent: Maya 73 orders (61 via code MAYA15 =
 // 15,870 ₪), 18,430 ₪ sales, fee 1,843 ₪ = 10%, 67% new customers.
 
-const CTA = "בואו נראה איך Hiloomy תעבוד אצלכם";
-const CTA_FORM = "בואו נראה איך Hiloomy תעבוד אצלנו";
+const CTA = "בואו נדבר על המשפיענים שלכם";
+const CTA_FORM = "בקשו שיחת היכרות";
 const CONTACT_EMAIL = "yoadhakimv@gmail.com";
 
-function N({ children }: { children: string }) {
+function N({ children }: { children: ReactNode }) {
   return <span className="cr-num">{children}</span>;
 }
 
+// Stagger index for [data-reveal] / .cr-enter children (CSS multiplies it).
+const at = (i: number) => ({ "--i": i }) as CSSProperties;
+
+function Check() {
+  return (
+    <svg className="cr-check" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.5 8.5l3 3 6-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const HERO_ROWS = [
-  { initial: "מ", tone: "", name: "מאיה כהן", code: "MAYA15", sales: "18,430 ₪", orders: "73", fee: "1,843 ₪", status: "מאושר", pill: "ok" },
-  { initial: "נ", tone: "b", name: "נועה לוי", code: "NOA10", sales: "14,120 ₪", orders: "52", fee: "1,412 ₪", status: "ממתין", pill: "wait" },
-  { initial: "ד", tone: "c", name: "דניאל ברק", code: "DANI", sales: "9,870 ₪", orders: "36", fee: "987 ₪", status: "שולם", pill: "paid" }
+  {
+    initial: "מ",
+    tone: "",
+    name: "מאיה כהן",
+    code: "MAYA15",
+    sales: "18,430 ₪",
+    orders: "73",
+    fee: "1,843 ₪",
+    status: "מאושר לתשלום",
+    pill: "ok"
+  },
+  {
+    initial: "נ",
+    tone: "b",
+    name: "נועה לוי",
+    code: "NOA10",
+    sales: "14,120 ₪",
+    orders: "52",
+    fee: "1,412 ₪",
+    status: "ממתין לאישור",
+    pill: "wait"
+  },
+  {
+    initial: "ד",
+    tone: "c",
+    name: "דניאל ברק",
+    code: "DANI",
+    sales: "9,870 ₪",
+    orders: "36",
+    fee: "987 ₪",
+    status: "שולם",
+    pill: "paid"
+  }
 ];
+
+// 30 days of sample daily sales for Maya's card (shape only, no axis).
+const SPARK = [8, 11, 9, 14, 12, 13, 17, 15, 14, 19, 18, 22, 19, 24, 23, 21, 26, 25, 29, 27, 31, 29, 33, 32, 34, 33, 37, 35, 39, 38];
+const SPARK_LINE = SPARK.map((v, i) => `${i ? "L" : "M"}${((i * 120) / (SPARK.length - 1)).toFixed(1)} ${(42 - v).toFixed(1)}`).join(" ");
+const SPARK_AREA = `${SPARK_LINE} L120 44 L0 44 Z`;
 
 const PRODUCTS = [
-  { name: "סט מתנה", orders: "31" },
-  { name: "בושם 50 מ״ל", orders: "24" },
-  { name: "קרם ידיים", orders: "18" }
+  { name: "סט מתנה", orders: 31 },
+  { name: "בושם 50 מ״ל", orders: 24 },
+  { name: "קרם ידיים", orders: 18 }
 ];
 
-const CHAIN = [
-  "המשפיען מפרסם",
-  "הלקוח משתמש בקוד או בלינק",
-  "ההזמנה נכנסת לחנות",
-  "Hiloomy משייכת את המכירה",
-  "העמלה מחושבת",
-  "המותג מאשר ועוקב אחרי התשלום"
+// Each step carries an icon instead of a number: the sequence reads from the
+// connecting line, and the icon says what happens at that point.
+const ICON = { size: 19, strokeWidth: 1.8, "aria-hidden": true } as const;
+
+// Colour code used across the page: orange = the influencer and their codes
+// (the logo's arrow), green = the brand and Hiloomy (the logo's H).
+const CHAIN: { text: string; icon: ReactNode; creator?: boolean }[] = [
+  { text: "המשפיען מפרסם", icon: <Megaphone {...ICON} />, creator: true },
+  { text: "הלקוח משתמש בקוד או בלינק", icon: <TicketPercent {...ICON} />, creator: true },
+  { text: "ההזמנה נכנסת לחנות", icon: <ShoppingBag {...ICON} /> },
+  { text: "Hiloomy משייכת את המכירה", icon: <HiloomyMark className="h-6 w-6" /> },
+  { text: "העמלה מחושבת", icon: <Calculator {...ICON} /> },
+  { text: "המותג מאשר את העמלה ועוקב אחרי סטטוס התשלום", icon: <BadgeCheck {...ICON} /> }
+];
+
+const STEPS: { title: string; text: string; icon: ReactNode }[] = [
+  { title: "מחברים", text: "את חנות האונליין.", icon: <Plug {...ICON} /> },
+  { title: "מייבאים", text: "את המשפיענים, הקודים והנתונים הקיימים.", icon: <FolderInput {...ICON} /> },
+  { title: "מגדירים", text: "את מודל העמלות ותהליך העבודה.", icon: <SlidersHorizontal {...ICON} /> },
+  { title: "עולים לאוויר", text: "ועוקבים אחרי מכירות, עמלות וסטטוסי תשלום.", icon: <Rocket {...ICON} /> }
+];
+
+const FAQ = [
+  {
+    q: "האם Hiloomy מוצאת עבורנו משפיענים?",
+    a: "לא. Hiloomy מיועדת למותגים שכבר עובדים עם משפיענים."
+  },
+  {
+    q: "האם המשפיענים שלנו יצטרכו קודים חדשים?",
+    a: "לא. אנחנו מחברים למערכת את הקודים שכבר יש להם."
+  },
+  {
+    q: "איך Hiloomy יודעת איזו מכירה שייכת לאיזה משפיען?",
+    a: "אנחנו מגדירים במערכת את הקודים והלינקים של כל משפיען. Hiloomy משייכת אליו את המכירות שהגיעו דרכם."
+  },
+  {
+    q: "מה קורה אם הזמנה בוטלה או הוחזרה?",
+    a: "אם הזמנה בוטלה או הוחזרה, גם נתוני המכירה והעמלה מתעדכנים."
+  },
+  {
+    q: "האם Hiloomy משלמת את העמלה למשפיען?",
+    a: "לא. Hiloomy מחשבת את העמלות ומציגה את סטטוס התשלום. את הכסף למשפיענים אתם מעבירים בעצמכם."
+  }
 ];
 
 export function CreatorsLanding() {
   return (
     <div className="cr-root" dir="rtl" lang="he">
       <RevealOnScroll />
-      <CreatorsNav />
+      <CreatorsNav cta={CTA} />
 
       {/* ---------------------------------------------------------- 1 · Hero */}
-      <section className="cr-hero" id="top">
-        <div className="cr-wrap cr-hero-grid">
-          <div className="cr-hero-text" data-reveal>
-            <span className="cr-eyebrow">מערכת ניהול ומעקב משפיענים למותגי E-commerce</span>
-            <h1 className="cr-h1">
-              <span>מנהלים משפיענים באופן קבוע?</span>
-              <span className="accent">תדעו בדיוק כמה כל אחד מכר.</span>
-            </h1>
-            <p className="cr-lead cr-mt">
-              Hiloomy מחברת את החנות, קודי הקופון, הלינקים והמכירות — ומשייכת את הפעילות לכל משפיען, כדי שתוכלו לראות במקום אחד ביצועים,
-              עמלות וסטטוסי תשלום.
-            </p>
-            <p className="cr-hero-claim">אנחנו מטמיעים את Hiloomy על הפעילות שכבר קיימת אצלכם.</p>
-            <div className="cr-hero-actions">
-              <a href="#contact" className="cr-btn cr-btn-primary cr-btn-lg">
-                {CTA}
-              </a>
+      <section className="cr-hero" id="top" data-nav-dark>
+        <div className="cr-hero-glow" aria-hidden="true" />
+        <div className="cr-dots cr-hero-dots" aria-hidden="true" />
+        <div className="cr-wrap">
+          {/* One viewport: the message, then the live dashboard right under the
+              button, cropped by the hero's bottom edge (continues below the fold). */}
+          <div className="cr-hero-first">
+            <div className="cr-hero-text">
+              <h1 className="cr-h1 cr-enter" style={at(0)}>
+                <span>
+                  נהלו את מערך המשפיענים <span className="cr-nw">בלי אקסלים</span>
+                </span>
+                <span className="accent">
+                  ובלי לשלם לפלטפורמה <span className="cr-nw">אחוז מכל מכירה</span>
+                </span>
+              </h1>
+              <p className="cr-lead cr-enter" style={at(1)}>
+                Hiloomy משייכת מכירות לכל משפיען לפי הקודים והלינקים שלו, מחשבת עמלות ומרכזת סטטוסי תשלום.
+              </p>
+              <div className="cr-hero-actions cr-enter" style={at(2)}>
+                <a href="#contact" className="cr-btn cr-btn-primary cr-btn-lg">
+                  {CTA}
+                </a>
+              </div>
             </div>
-            <p className="cr-platforms" aria-label="פלטפורמות">
-              <span>Shopify</span>
-              <span>
-                WooCommerce / WordPress <em>בקרוב</em>
-              </span>
-              <span>
-                Wix <em>בקרוב</em>
-              </span>
-            </p>
-            <ul className="cr-values">
-              <li>הטמעה על הפעילות הקיימת</li>
-              <li>
-                <N>0%</N> עמלה ל־Hiloomy על מכירות המשפיענים
-              </li>
-              <li>אזור אישי לכל משפיען</li>
-            </ul>
           </div>
-
-          <div className="cr-hero-visual" data-reveal>
-            <div className="cr-ui" aria-label="מערך המשפיענים ב־Hiloomy">
-              <div className="cr-ui-head">
-                <div>
-                  <div className="cr-ui-title">מערך המשפיענים</div>
-                  <div className="cr-ui-sub">30 הימים האחרונים</div>
-                </div>
-                <span className="cr-pill ok">מחובר ל־Shopify</span>
-              </div>
-              <div className="cr-kpis">
-                <div className="cr-kpi">
-                  <div className="cr-kpi-value">
-                    <N>38</N>
-                  </div>
-                  <div className="cr-kpi-label">משפיענים פעילים</div>
-                </div>
-                <div className="cr-kpi">
-                  <div className="cr-kpi-value">
-                    <span className="cr-wide">
-                      <N>312,400 ₪</N>
-                    </span>
-                    <span className="cr-narrow">
-                      <N>312K ₪</N>
-                    </span>
-                  </div>
-                  <div className="cr-kpi-label">מכירות</div>
-                </div>
-                <div className="cr-kpi">
-                  <div className="cr-kpi-value pos">
-                    <span className="cr-wide">
-                      <N>27,915 ₪</N>
-                    </span>
-                    <span className="cr-narrow">
-                      <N>27K ₪</N>
-                    </span>
-                  </div>
-                  <div className="cr-kpi-label">עמלות</div>
-                </div>
-              </div>
-              <table className="cr-table cr-wide-table">
-                <thead>
-                  <tr>
-                    <th>משפיענית</th>
-                    <th>קוד</th>
-                    <th>מכירות</th>
-                    <th>עמלה</th>
-                    <th>סטטוס</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {HERO_ROWS.map((r) => (
-                    <tr key={r.code}>
-                      <td>
-                        <span className="cr-who">
-                          <span className={`cr-avatar ${r.tone}`}>{r.initial}</span>
-                          {r.name}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="cr-code">{r.code}</span>
-                      </td>
-                      <td>
-                        <N>{r.sales}</N>
-                      </td>
-                      <td>
-                        <N>{r.fee}</N>
-                      </td>
-                      <td>
-                        <span className={`cr-pill ${r.pill}`}>{r.status}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <ul className="cr-cards">
-                {HERO_ROWS.map((r) => (
-                  <li key={r.code} className="cr-card">
-                    <div className="cr-card-top">
-                      <span className="cr-who">
-                        <span className={`cr-avatar ${r.tone}`}>{r.initial}</span>
-                        {r.name}
-                      </span>
-                      <span className="cr-code">{r.code}</span>
-                    </div>
-                    <div className="cr-card-stats">
-                      <span>
-                        <b>
-                          <N>{r.sales}</N>
-                        </b>{" "}
-                        מכירות
-                      </span>
-                      <span>
-                        <b>
-                          <N>{r.fee}</N>
-                        </b>{" "}
-                        עמלה
-                      </span>
-                    </div>
-                    <span className={`cr-pill ${r.pill}`}>{r.status}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <p className="cr-sample">הנתונים לדוגמה בלבד.</p>
+          <div className="cr-hero-stage cr-enter" style={at(3)}>
+            <HeroDashboard />
           </div>
         </div>
+        {/* Sits on the hero's bottom fade, over the cropped dashboard: says "there's more". */}
+        <a href="#problem" className="cr-scroll-cue cr-enter" style={at(5)}>
+          גללו להמשך
+          <ChevronDown size={16} strokeWidth={2.2} aria-hidden="true" />
+        </a>
       </section>
 
       {/* ------------------------------------------------- 2 · The problem */}
-      <section className="cr-section cr-white" id="problem">
-        <div className="cr-wrap cr-problem">
+      <section className="cr-section" id="problem">
+        <div className="cr-wrap cr-split">
           <div data-reveal>
-            <h2 className="cr-h2 cr-h2-lines">
-              <span>הפעילות כבר עובדת.</span>
-              <span>הבעיה היא לשמור על שליטה.</span>
+            <h2 className="cr-h2">
+              <span>המשפיענים כבר פעילים</span>
+              <span className="dim">המעקב עדיין מפוזר</span>
             </h2>
-            <p className="cr-lead cr-mt cr-strong">המשפיענים ב־WhatsApp, הקודים בחנות, המעקב באקסל וההזמנות במערכת ה־E-commerce.</p>
-            <p className="cr-lead cr-mt-s">בסוף החודש צריך להבין מי מכר, כמה הוא מכר, כמה עמלה מגיעה לו ומה כבר שולם.</p>
+            <p className="cr-lead">השיחות עם המשפיענים ב־WhatsApp, הקודים וההזמנות בחנות, והעמלות באקסל.</p>
+            <p className="cr-lead">בסוף החודש אתם צריכים לברר מי מכר כמה, איזו עמלה מגיעה לכל אחד ומה כבר שולם.</p>
           </div>
-          <div className="cr-hub" data-reveal aria-label="ממקורות מפוזרים ל־Hiloomy">
-            <div className="cr-hub-sources">
-              <span>WhatsApp</span>
-              <span>Excel / Google Sheets</span>
-              <span>Shopify / WooCommerce / Wix</span>
-              <span>קודי קופון</span>
-            </div>
-            <svg className="cr-hub-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 4v16M5 13l7 7 7-7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <div className="cr-hub-target">
-              <span className="cr-logo">
-                <HiloomyLogo />
-              </span>
-              <p>משפיענים · מכירות · עמלות · סטטוסי תשלום</p>
-            </div>
+          <div data-reveal style={at(1)}>
+            <SourceFlow />
           </div>
         </div>
       </section>
 
       {/* -------------------------------------------- 3 · Code → fee chain */}
-      <section className="cr-section" id="flow">
-        <div className="cr-wrap cr-perf">
+      <section className="cr-section cr-band" id="flow">
+        <div className="cr-wrap cr-split">
           <div data-reveal>
-            <h2 className="cr-h2 cr-h2-lines">
-              <span>מהקוד ועד העמלה.</span>
-              <span>הכול נשאר מחובר.</span>
+            <h2 className="cr-h2">
+              <span>מהקוד ועד העמלה</span>
+              <span className="dim">המכירות משויכות אוטומטית</span>
             </h2>
-            <p className="cr-lead cr-mt">Hiloomy עוקבת אחרי הפעילות בחנות ומשייכת את המכירות למשפיען הרלוונטי.</p>
-            <p className="cr-closing cr-mt">בלי לחבר ידנית בין קודים, הזמנות וגיליונות.</p>
+            <p className="cr-lead">בלי להצליב ידנית קודים, הזמנות וגיליונות.</p>
           </div>
-          <ol className="cr-chain" data-reveal aria-label="מהפרסום ועד מעקב התשלום">
-            {CHAIN.map((step, i) => (
-              <li key={step} className={i === CHAIN.length - 1 ? "last" : undefined}>
-                <span className="cr-chain-n">
-                  <N>{String(i + 1).padStart(2, "0")}</N>
-                </span>
-                <h3>{step}</h3>
-              </li>
-            ))}
-          </ol>
+          <div className="cr-feed-wrap" data-reveal style={at(1)}>
+            <div className="cr-feed">
+              <span className="cr-feed-track" aria-hidden="true" />
+              <ol aria-label="מהפרסום ועד מעקב התשלום">
+                {CHAIN.map((step, i) => (
+                  <li
+                    key={step.text}
+                    className={`cr-feed-item${step.creator ? " creator" : ""}${i === CHAIN.length - 1 ? " last" : ""}`}
+                    style={at(i)}
+                  >
+                    <span className="cr-feed-icon">{step.icon}</span>
+                    <h3>{step.text}</h3>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
         </div>
       </section>
 
       {/* ------------------------------------------------- 4 · Two sides */}
-      <section className="cr-section cr-white" id="sides">
+      <section className="cr-section" id="sides">
         <div className="cr-wrap">
-          <div className="cr-center cr-narrow" data-reveal>
-            <h2 className="cr-h2 cr-h2-lines">
-              <span>שליטה למותג.</span>
-              <span>שקיפות למשפיען.</span>
+          <div className="cr-head-center" data-reveal>
+            <h2 className="cr-h2">
+              <span>שליטה למותג</span>
+              <span className="dim">שקיפות למשפיען</span>
             </h2>
           </div>
-          <div className="cr-sides" data-reveal>
-            <div className="cr-side">
-              <span className="cr-side-tag">מצד המותג</span>
-              <ul className="cr-checks cr-checks-two">
-                <li>משפיענים</li>
-                <li>קודים ולינקים</li>
-                <li>מכירות</li>
-                <li>עמלות</li>
-                <li>סטטוסי תשלום</li>
-                <li>ביצועים</li>
-              </ul>
-            </div>
-            <div className="cr-side creator">
-              <div>
-                <span className="cr-side-tag alt">מצד המשפיען</span>
-                <ul className="cr-checks">
-                  <li>כמה מכרתי</li>
-                  <li>כמה הזמנות יצרתי</li>
-                  <li>כמה עמלה צברתי</li>
-                  <li>מה סטטוס התשלום שלי</li>
+          <div className="cr-sides">
+            <div className="cr-bento" data-reveal>
+              <div className="cr-bento-visual dark cr-dark-ui" aria-hidden="true">
+                <div className="cr-dots" />
+                <ul className="cr-mini">
+                  {HERO_ROWS.map((r) => (
+                    <li key={r.code}>
+                      <span className={`cr-avatar ${r.tone}`}>{r.initial}</span>
+                      <span className="cr-mini-name">{r.name}</span>
+                      <span className="cr-code">{r.code}</span>
+                      <span className="cr-mini-fee">
+                        <N>{r.fee}</N>
+                      </span>
+                      <span className={`cr-pill ${r.pill}`}>{r.status}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
-              <div className="cr-mini-phone" aria-label="האזור האישי של המשפיענית">
-                <div className="cr-mini-head">היי מאיה</div>
-                <div className="cr-mini-stat">
-                  <b>
-                    <N>18,430 ₪</N>
-                  </b>
-                  <span>מכירות</span>
+              <div className="cr-bento-body">
+                <span className="cr-tag">מה המותג רואה</span>
+                <ul className="cr-checks cr-checks-two">
+                  {["מי מוביל במכירות", "כמה הזמנות הביא כל קוד", "כמה עמלה מגיעה לכל משפיען", "מה כבר שולם ומה עדיין פתוח"].map((t) => (
+                    <li key={t}>
+                      <Check />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className="cr-bento" data-reveal style={at(1)}>
+              <div className="cr-bento-visual warm">
+                <div className="cr-dots" aria-hidden="true" />
+                <div className="cr-phone" aria-label="האזור האישי של המשפיענית">
+                  <div className="cr-phone-notch" aria-hidden="true" />
+                  <div className="cr-phone-head">היי מאיה</div>
+                  <div className="cr-phone-stat">
+                    <span>מכירות</span>
+                    <b>
+                      <N>18,430 ₪</N>
+                    </b>
+                  </div>
+                  <div className="cr-phone-stat">
+                    <span>הזמנות</span>
+                    <b>
+                      <N>73</N>
+                    </b>
+                  </div>
+                  <div className="cr-phone-stat pos">
+                    <span>עמלה</span>
+                    <b>
+                      <N>1,843 ₪</N>
+                    </b>
+                  </div>
+                  <span className="cr-pill ok">מאושר לתשלום</span>
                 </div>
-                <div className="cr-mini-stat">
-                  <b>
-                    <N>73</N>
-                  </b>
-                  <span>הזמנות</span>
-                </div>
-                <div className="cr-mini-stat pos">
-                  <b>
-                    <N>1,843 ₪</N>
-                  </b>
-                  <span>עמלה</span>
-                </div>
-                <span className="cr-pill ok">מאושר לתשלום</span>
+              </div>
+              <div className="cr-bento-body">
+                <span className="cr-tag alt">מה המשפיען רואה</span>
+                <ul className="cr-checks cr-checks-two">
+                  {["כמה מכרתי", "כמה הזמנות הגיעו דרכי", "כמה עמלה צברתי", "מה מצב התשלום שלי"].map((t) => (
+                    <li key={t}>
+                      <Check />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </div>
-          <p className="cr-closing cr-center" data-reveal>
-            פחות הודעות של ״כמה מכרתי?״ ו״מתי משלמים לי?״ — יותר שקיפות לשני הצדדים.
+          <p className="cr-quote" data-reveal>
+            פחות הודעות של <span className="cr-nw">״כמה יצא לי?״</span> ו<span className="cr-nw">״כבר שילמתם?״</span> ב־WhatsApp. יותר תשובות באזור
+            האישי.
           </p>
         </div>
       </section>
 
       {/* ------------------------------------ 5 · One creator's performance */}
-      <section className="cr-section" id="performance">
-        <div className="cr-wrap cr-perf">
+      <section className="cr-section cr-band" id="performance">
+        <div className="cr-wrap cr-split">
           <div data-reveal>
-            <h2 className="cr-h2 cr-h2-lines">
-              <span>לא רק כמה נמכר.</span>
-              <span>תראו מי מכר, מה נמכר ואיזה לקוחות הגיעו.</span>
+            <h2 className="cr-h2">
+              <span>לא רק כמה נמכר</span>
+              <span className="dim">גם מה נמכר ובאיזו דרך</span>
             </h2>
             <dl className="cr-micro">
               <div>
                 <dt>לקוחות חדשים מול חוזרים</dt>
-                <dd>ראו איזה סוג לקוחות כל משפיען מביא.</dd>
-              </div>
-              <div>
-                <dt>ביטולים והחזרות</dt>
-                <dd>מכירה שבוטלה או הוחזרה מתעדכנת גם בחישוב.</dd>
+                <dd>תראו מי מביא לקוחות חדשים ומי מוכר בעיקר ללקוחות חוזרים.</dd>
               </div>
               <div>
                 <dt>קוד מול לינק</dt>
-                <dd>ראו מאיפה הגיעה ההמרה.</dd>
+                <dd>תראו כמה מכירות הגיעו מקוד וכמה מלינק.</dd>
               </div>
             </dl>
           </div>
-          <div data-reveal>
-            <div className="cr-ui cr-creator" aria-label="ביצועי משפיענית אחת">
+          <div data-reveal style={at(1)}>
+            <div className="cr-panel cr-creator" aria-label="ביצועי משפיענית אחת">
               <div className="cr-ui-head">
                 <span className="cr-who">
-                  <span className="cr-avatar">מ</span>
+                  <span className="cr-avatar lg">מ</span>
                   <span className="stack">
-                    <span>מאיה כהן</span>
+                    <span className="cr-who-name">מאיה כהן</span>
                     <span className="cr-handle">@maya.cohen</span>
                   </span>
                 </span>
                 <span className="cr-ui-sub">30 הימים האחרונים</span>
               </div>
               <div className="cr-tiles">
-                <div className="cr-tile">
-                  <b>
-                    <N>18,430 ₪</N>
-                  </b>
-                  <span>מכירות</span>
+                <div className="cr-tile wide">
+                  <div>
+                    <span>מכירות</span>
+                    <b>
+                      <N>
+                        18,430<span className="cur">₪</span>
+                      </N>
+                    </b>
+                  </div>
+                  <svg className="cr-spark" viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true">
+                    <defs>
+                      <linearGradient id="cr-spark-stroke" x1="0" y1="0" x2="1" y2="0">
+                        <stop className="s-brand" offset="0.62" />
+                        <stop className="s-spark" offset="1" />
+                      </linearGradient>
+                      <linearGradient id="cr-spark-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop className="s-brand" offset="0" stopOpacity="0.28" />
+                        <stop className="s-brand" offset="1" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <path className="area" d={SPARK_AREA} fill="url(#cr-spark-fill)" />
+                    <path className="line" d={SPARK_LINE} pathLength={1} />
+                  </svg>
                 </div>
                 <div className="cr-tile">
+                  <span>הזמנות</span>
                   <b>
                     <N>73</N>
                   </b>
-                  <span>הזמנות</span>
                 </div>
                 <div className="cr-tile">
-                  <b>
-                    <N>1,843 ₪</N>
-                  </b>
                   <span>עמלה</span>
+                  <b className="pos">
+                    <N>
+                      1,843<span className="cur">₪</span>
+                    </N>
+                  </b>
                 </div>
                 <div className="cr-tile">
+                  <span>לקוחות חדשים</span>
                   <b>
                     <N>67%</N>
                   </b>
-                  <span>לקוחות חדשים</span>
+                  <i className="cr-meter" aria-hidden="true">
+                    <i style={{ width: "67%" }} />
+                  </i>
                 </div>
               </div>
               <div className="cr-codebar">
@@ -382,12 +416,19 @@ export function CreatorsLanding() {
                   <N>61</N> הזמנות · <N>15,870 ₪</N> מכירות
                 </span>
               </div>
-              <div className="cr-ui-sect">המוצרים שהיא מוכרת הכי טוב</div>
+              <div className="cr-ui-sect">המוצרים שמאיה מוכרת</div>
               <ol className="cr-top">
                 {PRODUCTS.map((p, i) => (
                   <li key={p.name}>
                     <span className="n">{i + 1}</span>
                     <span className="name">{p.name}</span>
+                    <span className="bar" aria-hidden="true">
+                      <i
+                        style={{
+                          width: `${Math.round((p.orders / PRODUCTS[0].orders) * 100)}%`
+                        }}
+                      />
+                    </span>
                     <span className="val">
                       <N>{p.orders}</N>
                     </span>
@@ -401,155 +442,128 @@ export function CreatorsLanding() {
       </section>
 
       {/* ---------------------------------------------- 6 · Onboarding */}
-      <section className="cr-section cr-white" id="how">
+      <section className="cr-section" id="how">
         <div className="cr-wrap">
-          <div className="cr-center cr-narrow" data-reveal>
-            <h2 className="cr-h2 cr-h2-lines">
+          <div className="cr-head-center" data-reveal>
+            <h2 className="cr-h2">
               <span>כבר יש לכם משפיענים?</span>
-              <span>לא צריך להתחיל מחדש.</span>
+              <span className="dim">לא צריך להתחיל מחדש</span>
             </h2>
-            <p className="cr-lead cr-mt">אנחנו לוקחים את הפעילות שכבר קיימת אצלכם ומטמיעים אותה בתוך Hiloomy.</p>
+            <p className="cr-lead">אנחנו מחברים ל־Hiloomy את החנות, המשפיענים והקודים שכבר יש לכם.</p>
           </div>
-          <ol className="cr-steps cr-steps-desc cr-steps-four" data-reveal>
-            <li>
-              <span className="cr-step-n">01</span>
-              <div>
-                <h3>מחברים</h3>
-                <p>את חנות האונליין.</p>
-              </div>
-            </li>
-            <li>
-              <span className="cr-step-n">02</span>
-              <div>
-                <h3>מייבאים</h3>
-                <p>את המשפיענים, הקודים והמידע הקיים.</p>
-              </div>
-            </li>
-            <li>
-              <span className="cr-step-n">03</span>
-              <div>
-                <h3>מגדירים</h3>
-                <p>את מודל העמלות ותהליך העבודה.</p>
-              </div>
-            </li>
-            <li>
-              <span className="cr-step-n">04</span>
-              <div>
-                <h3>עולים לאוויר</h3>
-                <p>ומתחילים לנהל ולעקוב ממקום אחד.</p>
-              </div>
-            </li>
-          </ol>
-          <p className="cr-final-line cr-center" data-reveal>
-            אותם משפיענים. אותם קודים. הרבה יותר שליטה.
-          </p>
+          <div className="cr-steps-panel" data-reveal>
+            <span className="cr-steps-track" aria-hidden="true" />
+            <ol className="cr-steps">
+              {STEPS.map((s, i) => (
+                <li key={s.title} style={at(i)}>
+                  <span className="cr-step-icon">{s.icon}</span>
+                  <h3>{s.title}</h3>
+                  <p>{s.text}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
       </section>
 
-      {/* ------------------------------------------------------ 7 · Zero */}
-      <section className="cr-section cr-zero" id="zero">
-        <div className="cr-wrap cr-center cr-narrow" data-reveal>
-          <h2 className="cr-h2 cr-h2-lines">
-            <span>המכירות גדלות.</span>
-            <span>
-              העמלה של Hiloomy נשארת <N>0%</N>.
-            </span>
-          </h2>
-          <p className="cr-lead cr-mt">Hiloomy לא לוקחת אחוז מהמכירות שהמשפיענים שלכם מייצרים.</p>
-          <p className="cr-zero-big">
-            <N>0%</N>
-          </p>
-          <p className="cr-zero-label">עמלה ל־Hiloomy על מכירות המשפיענים</p>
-          <p className="cr-zero-sub">המשפיענים שלכם. הדאטה שלכם. המכירות שלכם.</p>
-        </div>
-      </section>
-
-      {/* ----------------------------------------------------- 8 · Price */}
-      <section className="cr-section" id="pricing">
+      {/* --------------------------------------------- 7 · Price and 0% */}
+      {/* One dark section, one offer. The heading states the promise (0%);
+          the card is the bill that proves it: the monthly fee is the one hero
+          figure, the one-time setup sits under it at half the size with what
+          it pays for, and the 0% closes the bill as a single line (its old
+          "מהמכירות של המשפיענים שלכם" detail only restated the heading and
+          the line's own name), right above the CTA and the fine print.
+          data-inline-cta hides the phone sticky bar while this button is on
+          screen (sticky-cta.tsx). */}
+      <section className="cr-section cr-zero" id="pricing" data-nav-dark>
+        <div className="cr-dots" aria-hidden="true" />
         <div className="cr-wrap">
-          <div className="cr-center" data-reveal>
-            <h2 className="cr-h2">מחיר פשוט וברור.</h2>
+          <div className="cr-head-center" data-reveal>
+            <h2 className="cr-h2">
+              <span>מחיר ברור מראש</span>
+              <span className="dim">
+                <N>0%</N> עמלה ל־Hiloomy
+              </span>
+            </h2>
+            <p className="cr-lead">המשפיענים שלכם. הנתונים שלכם. המכירות שלכם.</p>
           </div>
-          <div className="cr-price-card cr-price-three" data-reveal>
-            <div className="cr-offer">
+          <div className="cr-offer" data-reveal style={at(1)}>
+            <div className="cr-offer-row is-hero" style={at(0)}>
+              <h3>שימוש במערכת</h3>
+              <p className="cr-offer-amt">
+                <N>
+                  250<span className="cur">₪</span>
+                </N>
+                <small>לחודש</small>
+              </p>
+              <p className="cr-offer-desc">סנכרון הנתונים ותחזוקה טכנית.</p>
+              <p className="cr-offer-perk">
+                <Check />
+                ללא הגבלת משפיענים
+              </p>
+            </div>
+            <div className="cr-offer-row" style={at(1)}>
               <h3>הקמה והטמעה</h3>
-              <div className="cr-price-amount">
-                <N>2,500–3,500 ₪</N>
-              </div>
-              <div className="cr-price-kind">חד־פעמי</div>
-              <p className="desc">חיבור החנות, ייבוא הפעילות הקיימת, חיבור המשפיענים והקודים והגדרת המערכת.</p>
+              <p className="cr-offer-amt">
+                <N>
+                  2,500–3,500<span className="cur">₪</span>
+                </N>
+                <small>חד־פעמי</small>
+              </p>
+              <p className="cr-offer-desc">חיבור החנות, ייבוא המשפיענים והקודים, והגדרת מודל העמלות.</p>
             </div>
-            <div className="cr-offer">
-              <h3>מערכת ותחזוקה</h3>
-              <div className="cr-price-amount">
-                <N>250 ₪</N> <small>לחודש</small>
-              </div>
-              <div className="cr-price-kind">ללא הגבלת משפיענים</div>
-              <p className="desc">שימוש ב־Hiloomy, סנכרון הנתונים ותחזוקה טכנית.</p>
-            </div>
-            <div className="cr-offer zero">
+            <div className="cr-offer-row" style={at(2)}>
               <h3>עמלת Hiloomy על המכירות</h3>
-              <div className="cr-price-amount">
+              <p className="cr-offer-amt">
                 <N>0%</N>
-              </div>
-              <div className="cr-price-kind">תמיד</div>
+                <small>תמיד</small>
+              </p>
             </div>
+            <a href="#contact" className="cr-btn cr-btn-primary cr-btn-lg cr-offer-cta" data-inline-cta>
+              {CTA}
+            </a>
+            <p className="cr-offer-note">ניהול שוטף, גיוס משפיענים וניהול קמפיינים לא כלולים במחיר, אלא אם סוכם אחרת.</p>
           </div>
-          <p className="cr-price-note cr-center" data-reveal>
-            ניהול שוטף, גיוס משפיענים וניהול קמפיינים אינם כלולים אלא אם סוכם אחרת.
-          </p>
         </div>
       </section>
 
       {/* ------------------------------------------------------- 9 · FAQ */}
-      <section className="cr-section cr-white" id="faq">
-        <div className="cr-wrap">
-          <div className="cr-center" data-reveal>
+      <section className="cr-section cr-band" id="faq">
+        <div className="cr-wrap cr-split cr-faq-wrap">
+          <div data-reveal>
             <h2 className="cr-h2">שאלות נפוצות</h2>
           </div>
-          <div className="cr-faq" data-reveal>
-            <details>
-              <summary>האם Hiloomy מוצאת עבורנו משפיענים?</summary>
-              <p>Hiloomy מיועדת בעיקר למותגים שכבר עובדים עם משפיענים ורוצים לעקוב ולנהל את הפעילות המסחרית שלהם בצורה מסודרת.</p>
-            </details>
-            <details>
-              <summary>כבר יש לנו משפיענים וקודי קופון. צריך להתחיל מחדש?</summary>
-              <p>לא. אנחנו מתחילים מהפעילות שכבר קיימת אצלכם ומחברים אותה ל־Hiloomy.</p>
-            </details>
-            <details>
-              <summary>איך Hiloomy יודעת איזו מכירה שייכת לאיזה משפיען?</summary>
-              <p>באמצעות קודי קופון ולינקים שמחוברים לחנות. Hiloomy משייכת את המכירות למשפיען הרלוונטי ומעדכנת את הנתונים שלו.</p>
-            </details>
-            <details>
-              <summary>אפשר לראות איזה מוצרים כל משפיען מכר?</summary>
-              <p>כן. אפשר לראות את ההזמנות והמוצרים המשויכים לכל משפיען.</p>
-            </details>
-            <details>
-              <summary>מה קורה אם הזמנה בוטלה או הוחזרה?</summary>
-              <p>הנתונים מתעדכנים בהתאם, כך שהמכירה והעמלה לא יישארו כאילו ההזמנה הושלמה.</p>
-            </details>
-            <details>
-              <summary>האם Hiloomy משלמת את העמלה למשפיען?</summary>
-              <p>כיום Hiloomy מחשבת ומרכזת את העמלות ומאפשרת לעקוב אחר סטטוס התשלום. העברת הכסף עצמה מתבצעת על ידי המותג.</p>
-            </details>
+          <div className="cr-faq" data-reveal style={at(1)}>
+            {FAQ.map((f) => (
+              <details key={f.q}>
+                <summary>
+                  {f.q}
+                  <span className="cr-plus" aria-hidden="true" />
+                </summary>
+                <div className="cr-faq-a">
+                  <p>{f.a}</p>
+                </div>
+              </details>
+            ))}
           </div>
         </div>
       </section>
 
       {/* ------------------------------------------------ 10 · Final CTA */}
-      <section className="cr-section cr-contact" id="contact">
-        <div className="cr-wrap cr-contact-grid">
+      <section className="cr-section cr-contact" id="contact" data-nav-dark>
+        <div className="cr-dots cr-contact-dots" aria-hidden="true" />
+        <div className="cr-wrap cr-split cr-contact-grid">
           <div data-reveal>
-            <h2 className="cr-h2 cr-h2-lines">
-              <span>כבר עובדים עם משפיענים?</span>
-              <span>הגיע הזמן לראות בדיוק מה הפעילות הזאת מייצרת.</span>
+            <h2 className="cr-h2">
+              <span>עובדים עם משפיענים?</span>
+              <span className="dim">בואו נעשה סדר במכירות</span>
             </h2>
-            <p className="cr-lead cr-mt">נראה איך אתם עובדים היום ואיך Hiloomy יכולה לחבר את המשפיענים, המכירות והעמלות שלכם למקום אחד.</p>
+            <p className="cr-lead">השאירו פרטים לשיחת היכרות. נבין איך אתם עובדים היום ונראה איך Hiloomy יכולה להשתלב אצלכם.</p>
             <p className="cr-contact-alt">
               מעדיפים מייל? <a href={`mailto:${CONTACT_EMAIL}?subject=Hiloomy%20Creator`}>{CONTACT_EMAIL}</a>
             </p>
           </div>
-          <div data-reveal>
+          <div className="cr-form-card" data-reveal style={at(1)}>
             <LeadForm cta={CTA_FORM} />
           </div>
         </div>
@@ -557,16 +571,16 @@ export function CreatorsLanding() {
 
       <footer className="cr-footer">
         <div className="cr-wrap cr-footer-bar">
-          <span className="cr-logo" style={{ fontSize: 17 }}>
-            <HiloomyLogo />
+          <span className="cr-logo">
+            <HiloomyLogo textClassName="cr-wordmark" />
             <span className="cr-logo-sub">Creator</span>
           </span>
           <nav className="cr-footer-links" aria-label="קישורים">
-            <Link href="/welcome">Hiloomy למותגים</Link>
-            <Link href="/privacy">פרטיות</Link>
-            <Link href="/terms">תנאי שימוש</Link>
+            <a href="/welcome">Hiloomy למותגים</a>
+            <a href="/privacy">פרטיות</a>
+            <a href="/terms">תנאי שימוש</a>
           </nav>
-          <span>
+          <span className="cr-copy">
             © <N>2026</N> Hiloomy
           </span>
         </div>

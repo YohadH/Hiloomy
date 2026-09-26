@@ -4,13 +4,13 @@ import { useState, type FormEvent } from "react";
 
 type State = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string };
 
-const CTA = "בואו נראה איך Hiloomy תעבוד אצלנו";
+const CTA = "בקשו שיחת היכרות";
 
 // Six fields (owner brief, 22 Sep 2026): full name, brand, site, phone,
 // email, creator count. Phone is the required contact channel; email is
 // optional and used as reply-to on the notification.
-// `cta` is the submit label; `note` is a short line shown under the button.
-export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
+// `cta` is the submit label.
+export function LeadForm({ cta = CTA }: { cta?: string }) {
   const [state, setState] = useState<State>({ kind: "idle" });
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -32,7 +32,7 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
       setState({ kind: "sent" });
       form.reset();
     } catch {
-      setState({ kind: "error", message: "אין חיבור לשרת כרגע. נסו שוב בעוד רגע." });
+      setState({ kind: "error", message: "אין חיבור כרגע. נסו שוב בעוד רגע." });
     }
   }
 
@@ -40,7 +40,7 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
     return (
       <div className="cr-form-done" role="status">
         <p className="cr-form-done-title">קיבלנו. נחזור אליכם תוך יום עסקים.</p>
-        <p className="cr-form-done-text">נעבור יחד על איך אתם מנהלים היום את המשפיענים, ונראה איך זה נראה בתוך Hiloomy.</p>
+        <p className="cr-form-done-text">בשיחה נכיר את הפעילות שלכם ונראה איך Hiloomy יכולה להשתלב בה.</p>
       </div>
     );
   }
@@ -57,29 +57,36 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
           <input name="brand" type="text" autoComplete="organization" required maxLength={120} />
         </label>
         <label className="cr-field">
-          <span>כתובת האתר</span>
+          <span>
+            כתובת האתר <small>(לא חובה)</small>
+          </span>
           <input name="site" type="text" inputMode="url" autoComplete="url" maxLength={200} dir="ltr" />
         </label>
         <label className="cr-field">
           <span>טלפון</span>
           <input name="phone" type="tel" autoComplete="tel" required maxLength={40} dir="ltr" />
         </label>
-        <label className="cr-field">
-          <span>אימייל</span>
+        <label className="cr-field cr-field-full">
+          <span>
+            מייל <small>(לא חובה)</small>
+          </span>
           <input name="email" type="email" autoComplete="email" maxLength={160} dir="ltr" />
         </label>
         <label className="cr-field cr-field-full">
-          <span>כמה משפיענים עובדים איתכם כיום?</span>
-          <select name="creators" required defaultValue="">
-            <option value="" disabled>
-              בחרו
-            </option>
-            <option value="1-9">1–9</option>
-            <option value="10-24">10–24</option>
-            <option value="25-49">25–49</option>
-            <option value="50-99">50–99</option>
-            <option value="100+">100+</option>
-          </select>
+          <span>עם כמה משפיענים אתם עובדים היום?</span>
+          {/* Wrapper carries the CSS chevron (a <select> takes no pseudo-elements). */}
+          <span className="cr-select">
+            <select name="creators" required defaultValue="">
+              <option value="" disabled>
+                בחרו
+              </option>
+              <option value="1-9">1–9</option>
+              <option value="10-24">10–24</option>
+              <option value="25-49">25–49</option>
+              <option value="50-99">50–99</option>
+              <option value="100+">100+</option>
+            </select>
+          </span>
         </label>
         {/* Hidden anti-bot field. Real people never see or fill it. */}
         <label className="cr-hp" aria-hidden="true">
@@ -96,7 +103,6 @@ export function LeadForm({ cta = CTA, note }: { cta?: string; note?: string }) {
         <button type="submit" className="cr-btn cr-btn-primary cr-btn-lg" disabled={state.kind === "sending"}>
           {state.kind === "sending" ? "שולחים…" : cta}
         </button>
-        {note ? <p className="cr-form-note">{note}</p> : null}
       </div>
     </form>
   );

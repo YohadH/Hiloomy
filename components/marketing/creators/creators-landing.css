@@ -1,1187 +1,2537 @@
 /* Hiloomy Creator landing — scoped under .cr-root. Hebrew-first, RTL,
-   mobile-first. Palette: forest #0B4F2C (headings), green #15A34A (CTA,
-   positive), orange #F97316 (accent only), off-white paper.
-   Fifth pass: six short sections, one visual each, sticky CTA on phones. */
+   mobile-first.
+
+   Eighth pass: redesigned on Emil Kowalski's design-engineering rules.
+   - Neutral paper canvas, ink headings, a brand-coloured second heading line.
+   - Size-specific tracking: display text tightens, body stays at 0.
+   - Surfaces are hairline rings + layered soft shadows, not borders.
+   - Motion: strong custom ease-out, UI transitions under 300ms, marketing
+     reveals slightly longer, 60–90ms staggers, press feedback (scale .97)
+     on every pressable, hover gated to fine pointers, transform/opacity
+     only, reduced-motion falls back to plain fades.
+
+   Colour: every colour below is a token from the .cr-root block, a role
+   token (--fg…, flipped once per dark surface) or a color-mix() of tokens.
+   Alphas mix in oklab: oklch + transparent loses the hue of low-chroma
+   tokens and renders them pink.
+   Type: two families only — Rubik (--display) for what you look at, Heebo
+   (--body) for what you read, click or fill in. */
 
 .cr-root {
-  --cr-ink: #0e1512;
-  --cr-ink-2: #2a332e;
-  --cr-dim: #5b665f;
-  --cr-forest: #0b4f2c;
-  --cr-green: #15a34a;
-  --cr-green-d: #0f8a3d;
-  --cr-green-soft: #e8f6ed;
-  --cr-orange: #f97316;
-  --cr-orange-soft: #fff1e6;
-  --cr-paper: #f7f9f7;
-  --cr-paper-2: #eef2ef;
-  --cr-white: #ffffff;
-  --cr-hair: rgba(14, 21, 18, 0.1);
-  --cr-hair-2: rgba(14, 21, 18, 0.06);
-  --cr-sh-sm: 0 6px 20px -10px rgba(6, 40, 22, 0.18);
-  --cr-sh-md: 0 24px 55px -30px rgba(6, 40, 22, 0.32);
-  --cr-maxw: 1120px;
-  --cr-display: var(--font-cr-display), "Rubik", "Heebo", system-ui, sans-serif;
-  --cr-body: var(--font-cr-body), "Heebo", "Assistant", system-ui, sans-serif;
+  /* Logo anchors (components/ui/logo.tsx), exact, never retuned */
+  --brand: #16a34a; /* oklch(0.627 0.170 149.2) H stem: the one action colour */
+  --forest: #1b4332; /* oklch(0.348 0.055 163.4) wordmark: brand ink on light */
+  --spark: #f97316; /* oklch(0.705 0.187 47.6) arrow + period: accent only */
+
+  /* Light neutrals: warm and untinted, so green only appears where it means
+     something (actions, checks, positive numbers, the 0%, second heading lines). */
+  --paper: #f7f7f5; /* page canvas */
+  --surface: #ffffff; /* cards, panels */
+  --band: #f0f0ed; /* alternate sections, wells, neutral chips */
+  --band-2: #e7e7e3; /* hover on band elements */
+  --ink: #131514; /* headings, strong text */
+  --ink-2: #3c413e; /* body, lead */
+  --muted: #5e6461; /* secondary + meta text; nothing on light goes lighter */
+
+  /* Brand family, logo hue 149.2 */
+  --brand-hi: #2eb157; /* primary hover */
+  --brand-strong: #0e7734; /* green TEXT on light, light focus */
+  --brand-soft: #e7f8e9; /* green tint */
+
+  /* Night family: near-black, neutral (not forest) so green glows read as light,
+     not as green on green */
+  --night-0: #020303; /* shadow base under dark objects only */
+  --night: #0b0d0c; /* base dark; also a literal in :root:has(.cr-root) below and in app/page.tsx themeColor: change all three */
+  --night-2: #151817; /* raised dark, gradient top stop */
+  --forest-deep: #0f1211; /* the pricing section surface */
+  --on-night: #f3f4f3; /* text and alpha base on dark */
+  --glow: #61d77e; /* green on dark: strokes, icons, large figures, focus */
+  --glow-text: #a0e9ad; /* small green text on dark, .dim on dark */
+  --on-brand: var(--night); /* label or glyph on any --brand fill */
+
+  /* Spark family */
+  --spark-ink: #a74906; /* orange text and icons on light */
+  --spark-soft: #fff0e7; /* orange tint */
+
+  /* Error, equal to the app's --danger */
+  --danger: #c63a2f;
+  --danger-soft: #fef0ed;
+  --danger-on-night: #f7a599;
+
+  /* Derived. Every alpha is color-mix in OKLAB (never oklch + transparent). */
+  --line: color-mix(in oklab, var(--ink) 9%, transparent);
+  --line-soft: color-mix(in oklab, var(--ink) 5%, transparent);
+  --line-strong: color-mix(in oklab, var(--ink) 15%, transparent);
+  --field-edge: color-mix(in oklab, var(--ink) 48%, transparent);
+  --on-night-2: color-mix(in oklab, var(--on-night) 80%, transparent);
+  --on-night-3: color-mix(in oklab, var(--on-night) 66%, transparent);
+  --on-night-4: color-mix(in oklab, var(--on-night) 56%, transparent);
+  --glass-1: color-mix(in oklab, var(--on-night) 4%, transparent);
+  --glass-2: color-mix(in oklab, var(--on-night) 7%, transparent);
+  --glass-3: color-mix(in oklab, var(--on-night) 11%, transparent);
+  --edge-night-soft: color-mix(in oklab, var(--on-night) 7%, transparent);
+  --edge-night: color-mix(in oklab, var(--on-night) 10%, transparent);
+  --edge-night-2: color-mix(in oklab, var(--on-night) 16%, transparent);
+  --field-edge-night: color-mix(in oklab, var(--on-night) 46%, transparent);
+  --dot-night: color-mix(in oklab, var(--on-night) 9%, transparent);
+
+  /* Shared recipes and elevation */
+  --night-glass:
+    radial-gradient(80% 55% at 50% 100%, color-mix(in oklab, var(--brand) 14%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--night-2), var(--night));
+  --sh-panel:
+    0 0 0 1px color-mix(in oklab, var(--ink) 6%, transparent), 0 1px 2px color-mix(in oklab, var(--ink) 4%, transparent),
+    0 10px 28px -14px color-mix(in oklab, var(--ink) 14%, transparent);
+  --sh-float:
+    0 0 0 1px color-mix(in oklab, var(--ink) 6%, transparent), 0 2px 4px color-mix(in oklab, var(--ink) 4%, transparent),
+    0 30px 70px -28px color-mix(in oklab, var(--ink) 28%, transparent);
+  --sh-night: 0 30px 60px -30px color-mix(in oklab, var(--night-0) 80%, transparent);
+  --sh-night-card: 0 24px 50px -20px color-mix(in oklab, var(--night-0) 70%, transparent);
+  --sh-night-tile: 0 10px 24px -10px color-mix(in oklab, var(--night-0) 70%, transparent);
+
+  /* Role tokens: light defaults (the dark scope below flips them) */
+  --fg: var(--ink);
+  --fg-2: var(--ink-2);
+  --fg-3: var(--muted);
+  --fg-4: var(--muted);
+  --accent-text: var(--brand-strong);
+  --focus: var(--brand-strong);
+  --wordmark: var(--forest);
+  --dots: color-mix(in oklab, var(--ink) 10%, transparent);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --maxw: 1200px;
+  --nav-h: 64px;
+  --display: var(--font-cr-display, "Rubik"), system-ui, sans-serif;
+  --body: var(--font-cr-body, "Heebo"), system-ui, sans-serif;
+
+  /* Type scale: one value per role, the same in every section. Rubik for
+     headings, item titles, figures and codes; Heebo for everything else.
+     Tracking tightens as size grows (h1 < h2 < figures < titles < text 0). */
+  --fs-h2: 28px; /* every section h2; from 768: clamp(30px, 3.7vw, 46px) */
+  --fs-lead: clamp(17px, 1.6vw, 18px); /* lead, the #sides closing line */
+  --fs-title: 20px; /* item title: card/row h3, dt, FAQ question, form result */
+  --fs-body: 16px; /* body/desc, list items, inputs, lg buttons */
+  --fs-ui: 15px; /* nav + footer links, units, secondary line, sm buttons, mock rows */
+  --fs-small: 13.5px; /* captions + fine print, chip M, field labels, mock secondary */
+  --fs-micro: 12.5px; /* chip S, codes, mock labels, field hint */
+  --fs-fig-xl: clamp(28px, 2.8vw, 40px); /* the one hero price: never above the h2 (28 = 28 on phones) */
+  --fs-fig-l: clamp(22px, 1.95vw, 28px); /* secondary prices */
+  --fs-fig-m: clamp(20px, 1.7vw, 24px); /* mock KPIs and stat tiles */
+  --fs-fig-s: 16px; /* phone-mock stats */
+  --fs-mock-title: 17px; /* mock titles and names */
+  --ls-h1: -0.03em;
+  --ls-h2: -0.025em; /* h2 and the hero price */
+  --ls-fig: -0.02em; /* figures 20–28px */
+  --ls-title: -0.01em; /* Rubik 16–20px */
+  --ls-code: 0.04em;
+  --lh-h2: 1.1;
+  --lh-title: 1.3;
+  --lh-text: 1.6; /* lead, body, desc */
+  --lh-ui: 1.5; /* list items, captions, small and ui text */
+
+  /* Spacing: 4 · 8 · 12 · 16 · 20 · 24 · 32 · 40 · 48 · 80 · 128 */
+  --sec-y: 80px; /* every section's padding-block; 128 from 1024 */
+  --gutter: 20px; /* 32 from 768 */
+  --gap-lead: 20px; /* h2 → the first block under it */
+  --gap-para: 12px; /* paragraph → paragraph in one column */
+  --gap-title: 6px; /* item title → its description */
+  --gap-head: 48px; /* heading block → content; content → closing line */
+  --gap-split: 48px; /* text column ↔ visual: 48 stacked, 80 from 960 */
+  --gap-secondary: 24px; /* text → a secondary line */
+  --gap-caption: 12px; /* surface or button → its caption */
+  --card-pad: 24px; /* 32 from 768 */
+  --tray-pad: 8px; /* list panels whose rows carry the padding */
+  --tile-pad: 12px; /* 16 from 768 */
+  --node: 44px; /* sequence icon node (#flow, #how) */
+  --r-card: 24px;
+  --r-row: 16px; /* = --r-card − --tray-pad */
+  --r-tile: 12px;
+  --r-control: 10px;
+
+  /* Dark card: one recipe for every dark card (the hero window keeps its glow) */
+  --dark-card-fill: linear-gradient(180deg, var(--glass-2), var(--glass-1));
+  --sh-dark-card:
+    inset 0 0 0 1px var(--edge-night), inset 0 1px 0 var(--edge-night-soft), 0 30px 70px -30px color-mix(in oklab, var(--night-0) 70%, transparent);
 
   direction: rtl;
   text-align: start;
-  font-family: var(--cr-body);
-  color: var(--cr-ink);
-  background: var(--cr-paper);
-  font-size: 17px;
-  line-height: 1.6;
+  font-family: var(--body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-text);
+  color: var(--fg);
+  background: var(--paper);
+  accent-color: var(--brand);
+  /* Cancels the app body's "tnum": Rubik figures keep proportional digits
+     (its tabular "1" leaves gaps); Heebo digits are tabular by design. */
+  font-feature-settings: normal;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: clip;
 }
-.cr-root * {
+@media (min-width: 768px) {
+  .cr-root {
+    --fs-h2: clamp(30px, 3.7vw, 46px);
+    --gutter: 32px;
+    --card-pad: 32px;
+    --tile-pad: 16px;
+  }
+}
+@media (min-width: 960px) {
+  .cr-root {
+    --gap-split: 80px;
+  }
+}
+@media (min-width: 1024px) {
+  .cr-root {
+    --sec-y: 128px;
+  }
+}
+/* Dark scope: every dark surface flips the role tokens once. A plain list on
+   purpose, because :is() would lift every member to the nav's specificity. */
+.cr-hero,
+.cr-fv,
+.cr-bento-visual.dark,
+.cr-zero,
+.cr-contact,
+.cr-footer,
+.cr-nav.on-dark:not(.is-open),
+.cr-sticky {
+  --fg: var(--on-night);
+  --fg-2: var(--on-night-2);
+  --fg-3: var(--on-night-3);
+  --fg-4: var(--on-night-4);
+  --accent-text: var(--glow-text);
+  --focus: var(--glow);
+  --wordmark: var(--on-night);
+  --dots: var(--dot-night);
+  color: var(--fg);
+}
+/* Rubber-band overscroll above the dark hero and below the dark footer shows the
+   root canvas; paint it night. A literal because the tokens live on .cr-root (= --night). */
+:root:has(.cr-root) {
+  background-color: #0b0d0c;
+}
+.cr-root *,
+.cr-root *::before,
+.cr-root *::after {
   box-sizing: border-box;
 }
-/* Grid children must be allowed to shrink below their intrinsic width,
-   otherwise a column grows past the viewport on phones. */
-.cr-hero-grid > *,
-.cr-sides > *,
-.cr-perf > *,
-.cr-features > *,
-.cr-price-card > *,
-.cr-contact-grid > * {
-  min-width: 0;
-}
-.cr-root a {
+:where(.cr-root a) {
   color: inherit;
   text-decoration: none;
 }
-.cr-root h1,
-.cr-root h2,
-.cr-root h3 {
-  font-family: var(--cr-display);
-  color: var(--cr-forest);
-  letter-spacing: -0.01em;
+.cr-root :where(p, h1, h2, h3, ul, ol, dl, dd) {
   margin: 0;
+}
+.cr-root :where(ul, ol) {
+  padding: 0;
+  list-style: none;
+}
+/* letter-spacing: 0 cancels the app's global -0.01em; every role sets its own.
+   :where() keeps this at (0,1,0) so .cr-h1 / .cr-h2 (later, same weight) win. */
+.cr-root :where(h1, h2, h3) {
+  font-family: var(--display);
+  color: var(--fg);
+  letter-spacing: 0;
   text-wrap: balance;
 }
-/* :where() keeps the reset at class specificity so per-block paragraph
-   margins declared later still win. */
-.cr-root :where(p) {
-  margin: 0;
+/* Body copy never leaves one word alone on its last line at phone widths. */
+.cr-root p,
+.cr-root dd,
+.cr-root summary {
+  text-wrap: pretty;
+}
+/* Every anchor lands the same way at every width: the section's h2 sits
+   --gap-lead (20px) under the nav (the top padding slides under the bar). */
+.cr-root .cr-section[id] {
+  scroll-margin-top: calc(var(--nav-h) + var(--gap-lead) - var(--sec-y));
+}
+.cr-root :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* Zero specificity: bare links get a rounded ring, components keep their own radius. */
+:where(.cr-root :focus-visible) {
+  border-radius: 6px;
+}
+.cr-root ::selection {
+  background-color: color-mix(in oklab, var(--brand) 24%, transparent);
+}
+.cr-hero ::selection,
+.cr-fv ::selection,
+.cr-bento-visual.dark ::selection,
+.cr-zero ::selection,
+.cr-contact ::selection,
+.cr-footer ::selection,
+.cr-sticky ::selection {
+  background-color: color-mix(in oklab, var(--glow) 30%, transparent);
 }
 .cr-num {
   direction: ltr;
   unicode-bidi: isolate;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .cr-wrap {
   width: 100%;
-  max-width: var(--cr-maxw);
+  max-width: var(--maxw);
   margin: 0 auto;
-  padding-inline: 20px;
+  padding-inline: var(--gutter);
 }
-@media (min-width: 768px) {
-  .cr-wrap {
-    padding-inline: 32px;
-  }
-}
-.cr-narrow {
-  max-width: 720px;
-}
-/* Sections are deliberately shorter than a screen. */
-.cr-section {
-  padding-block: 52px;
-}
-@media (min-width: 1024px) {
-  .cr-section {
-    padding-block: 84px;
-  }
-}
-.cr-white {
-  background: var(--cr-white);
-}
-/* Wide / narrow helpers (600px is where phones end) */
-.cr-wide {
-  display: inline;
-}
-.cr-narrow {
-  display: inline;
-}
-@media (max-width: 599px) {
-  .cr-wide {
-    display: none;
-  }
-}
-@media (min-width: 600px) {
-  .cr-narrow {
-    display: none;
-  }
-}
-/* .cr-narrow is also the "narrow column" helper for text blocks, so keep the
-   two meanings apart: the text helper is applied to block elements. */
-div.cr-narrow,
-p.cr-narrow {
-  display: block;
-  max-width: 720px;
+/* Grid children may shrink below their intrinsic width. */
+.cr-split > *,
+.cr-sides > * {
+  min-width: 0;
 }
 
-.cr-eyebrow {
-  display: inline-block;
-  font-size: 13px;
+/* ------------------------------------------------------------ Type */
+
+.cr-h1 {
+  font-size: clamp(38px, 6.4vw, 72px);
   font-weight: 700;
-  color: var(--cr-green-d);
-  margin-bottom: 14px;
+  line-height: 1.04;
+  letter-spacing: var(--ls-h1);
 }
-.cr-h2 {
-  font-size: clamp(28px, 3.2vw, 42px);
-  line-height: 1.15;
-  font-weight: 700;
-}
-.cr-h2-lines > span {
+.cr-h1 > span,
+.cr-h2 > span {
   display: block;
 }
-.cr-h3 {
-  font-size: clamp(20px, 1.9vw, 24px);
-  line-height: 1.25;
-  font-weight: 700;
+.cr-hero .cr-h1 .accent {
+  background: linear-gradient(180deg, var(--glow-text) 0%, var(--glow) 58%, var(--brand) 115%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
+/* One h2 size per viewport, in every section. Two-line headings stay two
+   lines from 360px up: the longest line ("המכירות משויכות אוטומטית") is
+   11.25 × the font size wide, so 28px fits a phone column (width − 40),
+   3.7vw a split column from 960px, and 46px the 528px column at 1200px+.
+   The hero h1 stays a clear step above it: 34 / 28 on phones, 58 / 46 on
+   desktop (both about 1.2×). */
+.cr-h2 {
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  line-height: var(--lh-h2);
+  letter-spacing: var(--ls-h2);
+}
+/* Second heading line: the resolution, always brand-coloured (never gray).
+   --accent-text is brand-strong on light and glow-text on dark. */
+.cr-h2 .dim {
+  color: var(--accent-text);
+}
+/* Lead: the one paragraph style directly under an h2 (and the #sides
+   closing line). */
 .cr-lead {
-  font-size: clamp(16.5px, 1.3vw, 19px);
-  line-height: 1.65;
-  color: var(--cr-ink-2);
+  margin-top: var(--gap-lead);
+  font-size: var(--fs-lead);
+  font-weight: 400;
+  line-height: var(--lh-text);
+  color: var(--fg-2);
   max-width: 60ch;
 }
-.cr-lead-strong {
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: clamp(18px, 1.7vw, 23px);
-  line-height: 1.4;
-  color: var(--cr-forest);
+.cr-lead + .cr-lead {
+  margin-top: var(--gap-para);
 }
-.cr-lead-strong span {
-  display: block;
+/* Caption: sample-data notes, fine print, copyright. One size, one colour,
+   start-aligned. */
+.cr-sample {
+  margin-top: var(--gap-caption);
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+  color: var(--fg-4);
 }
-.cr-mt {
-  margin-top: 16px;
-}
-.cr-mt-s {
-  margin-top: 10px;
-}
-.cr-center {
+/* Heading block above full-width content (#sides, #how, #pricing): centred
+   at every width, over its centred or full-width surface. */
+.cr-head-center {
+  max-width: 780px;
+  margin: 0 auto var(--gap-head);
   text-align: center;
 }
-.cr-center .cr-lead,
-.cr-center.cr-narrow {
+.cr-head-center .cr-lead {
   margin-inline: auto;
 }
-.cr-strong {
-  font-weight: 700;
-  color: var(--cr-forest);
-}
-/* The one-line takeaway that closes a section */
-.cr-closing {
-  margin-top: 36px;
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: clamp(20px, 2.4vw, 30px);
-  line-height: 1.3;
-  color: var(--cr-forest);
-}
-.cr-sample {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--cr-dim);
-  text-align: center;
-}
-/* Inline arrow icon; points along the RTL reading direction */
-.cr-arrow {
-  width: 18px;
-  height: 18px;
-  flex: none;
+/* Phones and tablets: once the split sections stack, their text block is
+   centred too, so every section reads like the hero. Lists, cards, form
+   fields and FAQ answers keep reading from the start edge. */
+@media (max-width: 959px) {
+  .cr-split > :first-child {
+    text-align: center;
+  }
+  .cr-split > :first-child .cr-lead {
+    margin-inline: auto;
+  }
 }
 
-/* Buttons */
+/* --------------------------------------------------------- Buttons */
+
 .cr-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-family: var(--cr-body);
-  font-weight: 700;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 12px;
+  font: 600 var(--fs-ui) / 1 var(--body);
   white-space: nowrap;
-  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 150ms ease,
+    box-shadow 150ms ease;
 }
 .cr-btn:active {
-  transform: translateY(1px);
-}
-.cr-btn-primary {
-  background: var(--cr-green);
-  color: #fff;
-  box-shadow: 0 8px 22px -12px rgba(21, 163, 74, 0.7);
-}
-.cr-btn-primary:hover {
-  background: var(--cr-green-d);
-}
-.cr-btn-primary:disabled {
-  opacity: 0.7;
-  cursor: default;
+  transform: scale(0.97);
 }
 .cr-btn-sm {
-  font-size: 14px;
-  padding: 10px 14px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: var(--fs-ui);
+  border-radius: var(--r-control);
 }
+/* One lg CTA: sized to its label on the section ground (hero); a CTA that
+   closes a card spans the card (offer, form submit, menu sheet). */
 .cr-btn-lg {
-  font-size: 17px;
-  padding: 16px 26px;
-  border-radius: 12px;
+  height: 52px;
+  padding: 0 26px;
+  font-size: var(--fs-body);
+  border-radius: 14px;
 }
-@media (max-width: 767px) {
-  .cr-btn-lg {
-    width: 100%;
+/* Card-closing CTA, one recipe for the offer CTA, the form submit and the
+   menu sheet's CTA: it spans the card, and when a narrow card (≤340px)
+   wraps its label, the two centred lines get real leading and the button
+   grows past 52px instead of squeezing its 26px side padding. Later than
+   .cr-btn-lg, so .cr-offer-cta (same weight) wins. */
+.cr-offer-cta,
+.cr-form-foot .cr-btn,
+.cr-sheet-links .cr-btn {
+  width: 100%;
+  height: auto;
+  min-height: 52px;
+  padding-block: 10px;
+  line-height: 1.25;
+  white-space: normal;
+  text-align: center;
+}
+/* Dark label on the logo green: a light label there is 3.30:1, night is 5.90:1. */
+.cr-btn-primary {
+  color: var(--on-brand);
+  background: var(--brand);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--on-night) 28%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--brand) 82%, var(--night)),
+    0 8px 20px -8px color-mix(in oklab, var(--brand) 60%, transparent);
+}
+.cr-btn[disabled] {
+  opacity: 0.7;
+  cursor: progress;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cr-btn-primary:hover {
+    background: var(--brand-hi);
   }
 }
 
-/* Nav: phones show logo + a short CTA + menu; wide screens show links */
+/* ------------------------------------------------------------- Nav */
+
 .cr-nav {
   position: sticky;
   top: 0;
-  z-index: 40;
-  background: rgba(247, 249, 247, 0.85);
-  backdrop-filter: saturate(140%) blur(10px);
-  border-bottom: 1px solid transparent;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  z-index: 50;
+  height: var(--nav-h);
+  background: transparent;
+  box-shadow: 0 1px 0 transparent;
+  transition:
+    background-color 200ms ease,
+    box-shadow 200ms ease;
 }
-.cr-nav.is-stuck {
-  border-color: var(--cr-hair-2);
-  background: rgba(255, 255, 255, 0.92);
+.cr-nav.is-stuck,
+.cr-nav.is-open {
+  background: color-mix(in oklab, var(--paper) 78%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: 0 1px 0 var(--line);
+}
+.cr-nav.on-dark:not(.is-open) .cr-nav-links a {
+  color: var(--fg-2);
+}
+.cr-nav.on-dark:not(.is-open) .cr-nav-login,
+.cr-nav.on-dark:not(.is-open) .cr-menu-btn {
+  color: var(--fg);
+}
+.cr-nav.on-dark:not(.is-open) .cr-logo-sub {
+  color: var(--fg-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cr-nav.on-dark:not(.is-open) .cr-nav-links a:hover {
+    color: var(--fg);
+    background: var(--glass-2);
+  }
+}
+.cr-nav.on-dark.is-stuck:not(.is-open) {
+  background: color-mix(in oklab, var(--night) 64%, transparent);
+  box-shadow: 0 1px 0 var(--edge-night-soft);
 }
 .cr-nav-bar {
+  height: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  height: 64px;
+  gap: 24px;
 }
+/* Stacked lockup: "Creator" sits under the wordmark as a product of the
+   Hiloomy family, flush with the H (the lockup reads left-to-right like the
+   logo itself, even on this RTL page). */
 .cr-logo {
   display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--cr-display);
-  font-weight: 800;
-  font-size: 20px;
-  color: var(--cr-forest);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   direction: ltr;
+  font-size: 17px;
 }
+/* The shared logo's wordmark takes its colour from the surface: forest on
+   light, on-night on dark. (0,2,0) beats the component's own text colour. */
+.cr-root .cr-wordmark {
+  color: var(--wordmark);
+}
+/* "Creator" takes the wordmark's forest on light. */
 .cr-logo-sub {
-  font-weight: 500;
-  color: var(--cr-dim);
+  padding-inline-start: 1px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--forest);
 }
 .cr-nav-links {
   display: none;
-  gap: 28px;
-  font-weight: 600;
-  font-size: 15px;
-  color: var(--cr-ink-2);
+  gap: 4px;
 }
-.cr-nav-links a:hover {
-  color: var(--cr-forest);
+/* ink-2, not muted: when a dark panel scrolls under the 78% glass the bar
+   turns grey, and muted links would drop to 3.5:1 there (ink-2 holds 6:1). */
+.cr-nav-links a {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: var(--fs-ui);
+  font-weight: 500;
+  color: var(--ink-2);
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 .cr-nav-actions {
+  margin-inline-start: auto;
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.cr-nav-cta-wide {
-  display: none;
+.cr-nav-login {
+  padding: 6px 10px;
+  font-size: var(--fs-ui);
+  font-weight: 500;
+  color: var(--ink-2);
+  border-radius: 8px;
+  transition: color 150ms ease;
 }
-.cr-nav-cta-narrow {
-  display: inline-flex;
-  padding-inline: 12px;
+/* Phones: the login link lives in the menu sheet, so the bar keeps room
+   for the logo, the short CTA and the menu button. */
+@media (max-width: 479px) {
+  .cr-nav-bar {
+    gap: 12px;
+  }
+  .cr-nav-login {
+    display: none;
+  }
 }
 .cr-menu-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-grid;
+  place-items: center;
   width: 40px;
   height: 40px;
+  border: 0;
   border-radius: 10px;
-  border: 1px solid var(--cr-hair);
-  background: var(--cr-white);
-  color: var(--cr-forest);
+  background: transparent;
+  color: var(--ink);
   cursor: pointer;
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 150ms ease;
 }
-@media (min-width: 1024px) {
-  .cr-nav-bar {
-    height: 68px;
-    gap: 24px;
+.cr-menu-btn:active {
+  transform: scale(0.97);
+}
+.cr-menu-btn svg path {
+  transition:
+    transform 200ms var(--ease-out),
+    opacity 150ms ease;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cr-nav-links a:hover {
+    color: var(--ink);
+    background: var(--line-soft);
   }
+  .cr-nav-login:hover {
+    color: var(--ink);
+  }
+  .cr-menu-btn:hover {
+    background: var(--line-soft);
+  }
+}
+@media (min-width: 960px) {
   .cr-nav-links {
     display: flex;
   }
-  .cr-nav-cta-wide {
-    display: inline-flex;
-  }
-  .cr-nav-cta-narrow,
   .cr-menu-btn {
     display: none;
   }
 }
+/* Mobile menu: a panel that grows out of the menu button (top-left in RTL)
+   and leaves the same way. Always mounted so exit can animate.
+   The open bar's backdrop-filter makes the header the containing block of
+   fixed children, so the scrim hangs off the header's bottom edge instead
+   (the menu locks page scroll, so the header stays at the viewport top). */
+.cr-scrim {
+  position: absolute;
+  inset: 100% 0 auto;
+  height: calc(100vh - var(--nav-h));
+  height: calc(100dvh - var(--nav-h));
+  background: color-mix(in oklab, var(--night) 24%, transparent);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 150ms ease,
+    visibility 0s linear 150ms;
+}
 .cr-sheet {
-  position: fixed;
-  inset: 64px 0 0 0;
-  background: var(--cr-paper);
-  z-index: 39;
-  overflow-y: auto;
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline: 12px;
+  padding: 10px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--sh-float);
+  transform-origin: top left;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+  visibility: hidden;
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out,
+    visibility 0s linear 150ms;
+}
+.cr-nav.is-open .cr-scrim,
+.cr-nav.is-open .cr-sheet {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 220ms var(--ease-out),
+    transform 220ms var(--ease-out),
+    visibility 0s;
+}
+.cr-nav.is-open .cr-sheet {
+  transform: none;
 }
 .cr-sheet-links {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-block: 20px;
+  display: grid;
+  gap: 2px;
 }
 .cr-sheet-links > a:not(.cr-btn) {
-  font-family: var(--cr-display);
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--cr-forest);
-  padding: 14px 4px;
-  border-bottom: 1px solid var(--cr-hair-2);
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--ink);
+  transition: background-color 150ms ease;
 }
+.cr-sheet-links > a:not(.cr-btn):active {
+  background: var(--band);
+}
+/* The sheet's CTA is a card-closing CTA (see .cr-btn-lg). */
 .cr-sheet-links .cr-btn {
-  margin-top: 20px;
+  margin-top: 8px;
+}
+/* (0,2,1) and later, so it beats the section-link rule above. */
+.cr-sheet-links > a.cr-sheet-login {
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--fs-ui);
+}
+@media (min-width: 960px) {
+  .cr-scrim,
+  .cr-sheet {
+    display: none;
+  }
 }
 
-/* Sticky CTA (phones only) */
-.cr-sticky {
-  position: fixed;
-  inset-inline: 14px;
-  bottom: 14px;
-  z-index: 38;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 13px 18px;
-  border-radius: 12px;
-  background: var(--cr-forest);
-  color: #fff;
-  font-weight: 700;
-  font-size: 15px;
-  box-shadow: 0 14px 30px -14px rgba(6, 40, 22, 0.5);
-  opacity: 0;
-  transform: translateY(120%);
-  transition: opacity 0.25s ease, transform 0.25s ease;
+/* ------------------------------------------------------------ Hero */
+
+.cr-hero {
+  position: relative;
+  isolation: isolate;
+  background: var(--night);
+  margin-top: calc(var(--nav-h) * -1);
+  padding-top: var(--nav-h);
+  overflow: hidden;
+}
+/* Exactly one viewport (svh, so mobile toolbars don't cut it): the message,
+   then the live dashboard right under the button, cropped by the hero's
+   bottom edge so the product visibly continues below the fold. */
+.cr-hero {
+  height: 100vh;
+  height: 100svh;
+  min-height: 560px;
+}
+/* Soft crop instead of a hard cut where the window meets the hero edge; also
+   the dark ground the scroll cue sits on: a wider pool of night centred on
+   the cue (bottom 22 + half its 34px height) hides the half-faded table cells
+   either side of it, so no stray digits peek out next to the pill. */
+.cr-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 120px;
+  background:
+    radial-gradient(clamp(170px, 56vw, 230px) 38px at 50% calc(100% - 39px), var(--night) 50%, transparent),
+    linear-gradient(to bottom, transparent, var(--night) 85%);
   pointer-events: none;
 }
-.cr-sticky.is-on {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-}
-.cr-sticky svg {
-  color: #7be0a1;
-  flex: none;
-}
-@media (min-width: 1024px) {
-  .cr-sticky {
-    display: none;
-  }
-}
-
-/* 1 · Hero: claim + one dashboard */
-.cr-hero {
-  padding-block: 40px 56px;
-  background:
-    radial-gradient(60% 50% at 85% 0%, rgba(21, 163, 74, 0.09), transparent 70%),
-    var(--cr-paper);
-}
-@media (min-width: 1024px) {
-  .cr-hero {
-    padding-block: 84px 96px;
-  }
-}
-.cr-hero-grid {
-  display: grid;
-  gap: 32px;
-  align-items: center;
-}
-@media (min-width: 1024px) {
-  .cr-hero-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 56px;
-  }
-}
-.cr-h1 {
-  font-size: clamp(40px, 5vw, 66px);
-  line-height: 1.05;
-  font-weight: 800;
-}
-.cr-h1 span {
-  display: block;
-}
-.cr-h1 .accent {
-  color: var(--cr-green);
-}
-.cr-hero-claim {
-  margin-top: 20px;
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: clamp(17px, 1.5vw, 21px);
-  line-height: 1.45;
-  color: var(--cr-forest);
-  max-width: 34ch;
-}
-.cr-hero-sides {
-  margin-top: 12px;
-  font-size: clamp(15.5px, 1.2vw, 17.5px);
-  color: var(--cr-ink-2);
-}
-.cr-hero-sides span {
-  display: block;
-}
-/* On phones the hero is one sentence, a button and the dashboard. */
-@media (max-width: 599px) {
-  .cr-hero-sides {
-    display: none;
-  }
-}
-.cr-hero-actions {
-  margin-top: 24px;
-}
-.cr-trust {
-  margin-top: 14px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--cr-dim);
-}
-.cr-trust span {
+.cr-scroll-cue {
+  position: absolute;
+  z-index: 2;
+  inset-inline: 0;
+  bottom: 22px;
+  width: fit-content;
+  margin-inline: auto;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
+  padding: 8px 12px 8px 16px;
+  border-radius: 999px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--fg-2);
+  background: color-mix(in oklab, var(--night-2) 72%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+  box-shadow:
+    inset 0 0 0 1px var(--edge-night),
+    inset 0 1px 0 var(--edge-night-soft),
+    var(--sh-night-tile);
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 150ms ease,
+    color 150ms ease;
 }
-.cr-trust span + span::before {
-  content: "·";
-  margin-inline: 9px;
-  color: var(--cr-orange);
-  font-weight: 800;
+/* A nudge, then a rest: noticeable, not nagging. */
+.cr-scroll-cue svg {
+  color: var(--glow);
+  animation: cr-nudge 2.4s var(--ease-in-out) 2s infinite;
+}
+@keyframes cr-nudge {
+  0%,
+  55%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateY(4px);
+  }
+}
+.cr-scroll-cue:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cr-scroll-cue:hover {
+    color: var(--fg);
+    background: color-mix(in oklab, var(--night-2) 90%, transparent);
+  }
+}
+/* Space scales with the screen height, a little more above than below, so the
+   message sits centred between the nav and the dashboard on any screen. */
+.cr-hero-first {
+  padding-block: clamp(48px, 13svh, 150px) clamp(32px, 6svh, 68px);
+}
+/* Landscape phones: too short for a one-screen hero; let it grow. */
+@media (max-height: 520px) {
+  .cr-hero {
+    height: auto;
+    min-height: 0;
+    padding-bottom: 48px;
+  }
+  .cr-hero::after,
+  .cr-scroll-cue {
+    display: none;
+  }
+}
+/* Green light from above and behind the window, plus a faint warm bloom by
+   the logo (top right in RTL) that echoes its orange arrow. */
+.cr-hero-glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(55% 40% at 50% 0%, color-mix(in oklab, var(--glow) 9%, transparent), transparent 70%),
+    radial-gradient(50% 35% at 50% 100%, color-mix(in oklab, var(--brand) 12%, transparent), transparent 70%),
+    radial-gradient(25% 20% at 82% 12%, color-mix(in oklab, var(--spark) 10%, transparent), transparent 70%);
+}
+.cr-hero-dots {
+  -webkit-mask-image: radial-gradient(60% 45% at 50% 20%, #000 20%, transparent 100%);
+  mask-image: radial-gradient(60% 45% at 50% 20%, #000 20%, transparent 100%);
+}
+.cr-hero .cr-wrap {
+  position: relative;
+}
+.cr-hero-text {
+  max-width: 1080px;
+  margin: 0 auto;
+  text-align: center;
+}
+/* Sized so each headline line (~33 characters) sits on one line from ~1100px.
+   Phones: 34 (32 at 360), a clear step over the 28px h2, still 2 + 2 lines. */
+.cr-hero .cr-h1 {
+  font-size: clamp(32px, 8.8vw, 34px);
+}
+@media (min-width: 768px) {
+  .cr-hero .cr-h1 {
+    font-size: clamp(32px, 4.6vw, 58px);
+  }
+}
+/* Centred, so balanced: no short last line under the balanced h1.
+   (0,2,0) beats the .cr-root p "pretty" rule. */
+.cr-hero .cr-lead {
+  margin: 20px auto 0;
+  max-width: 640px;
+  text-wrap: balance;
+}
+.cr-hero-actions {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+@media (max-width: 479px) {
+  .cr-hero-actions .cr-btn {
+    width: 100%;
+  }
+}
+.cr-check {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--brand);
 }
 
-/* Shared product-UI bits */
-.cr-ui {
-  background: var(--cr-white);
-  border: 1px solid var(--cr-hair);
-  border-radius: 16px;
-  box-shadow: var(--cr-sh-md);
-  overflow: hidden;
-  font-size: 14px;
-  color: var(--cr-ink);
-}
 .cr-ui-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 13px 16px;
-  border-bottom: 1px solid var(--cr-hair-2);
-}
-.cr-ui-title {
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--cr-forest);
 }
 .cr-ui-sub {
-  font-size: 12.5px;
-  color: var(--cr-dim);
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+  color: var(--fg-3);
 }
-.cr-ui-sect {
-  padding: 12px 16px 4px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--cr-dim);
+/* Chips, one recipe in two sizes, Heebo 600 on 18px leading, fully round:
+   Chip S (status pills, the "+₪" float): 12.5px, 3px 10px.
+   Chip M (.cr-tag, .cr-fv-outs li, .cr-scroll-cue): 13.5px, 6px 14px
+   (the pressable scroll cue adds 2px of block padding). */
+.cr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
 }
+.cr-pill.ok {
+  background: var(--brand-soft);
+  color: var(--forest);
+}
+/* Light wait / paid are the kit's defaults; on the page today every wait and
+   paid pill sits inside .cr-dark-ui and is re-toned there. */
+.cr-pill.wait {
+  background: var(--spark-soft);
+  color: var(--spark-ink);
+}
+.cr-pill.paid {
+  background: var(--band);
+  color: var(--ink-2);
+}
+
 .cr-who {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   font-weight: 600;
+  white-space: nowrap;
 }
 .cr-who .stack {
   display: grid;
   line-height: 1.3;
-  gap: 2px;
 }
-.cr-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: inline-grid;
-  place-items: center;
-  font-size: 12px;
+.cr-who-name {
+  font-family: var(--display);
+  font-size: var(--fs-mock-title);
   font-weight: 700;
-  color: var(--cr-forest);
-  background: var(--cr-green-soft);
-  flex: none;
-}
-.cr-avatar.b {
-  background: var(--cr-orange-soft);
-  color: #b45309;
-}
-.cr-avatar.c {
-  background: #e8eefc;
-  color: #1e3a8a;
+  line-height: var(--lh-title);
+  letter-spacing: var(--ls-title);
 }
 .cr-handle {
-  color: var(--cr-dim);
+  font-size: var(--fs-small);
   font-weight: 400;
-  font-size: 12px;
+  color: var(--fg-3);
+  direction: ltr;
+  text-align: end;
+}
+.cr-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  background: var(--brand-soft);
+  color: var(--forest);
+}
+/* Tone b: the one warm avatar echoes the logo orange. It sits on the pending
+   row, so in the mockups orange reads as "waiting". Light b / c are the kit's
+   defaults; today they only render re-toned inside .cr-dark-ui. */
+.cr-avatar.b {
+  background: var(--spark-soft);
+  color: var(--spark-ink);
+}
+.cr-avatar.c {
+  background: var(--band);
+  color: var(--ink-2);
+}
+.cr-avatar.lg {
+  width: 42px;
+  height: 42px;
+  font-size: var(--fs-mock-title);
+}
+/* Coupon codes: Rubik, not a monospace — tokens you type, like figures.
+   Tabular digits keep 15 / 10 on a steady rhythm; +0.04em opens the small
+   Latin capitals. */
+.cr-code {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-family: var(--display);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: var(--ls-code);
+  font-variant-numeric: tabular-nums;
   direction: ltr;
   unicode-bidi: isolate;
-  text-align: start;
+  background: var(--band);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
 }
-.cr-pill {
-  display: inline-flex;
+/* The highlighted code on Maya's card: same size and shape, own colours. */
+.cr-code.big {
+  color: var(--spark-ink);
+  background: var(--surface);
+}
+
+/* Hero entrance: runs once on load, no JS. Short stagger, strong ease-out,
+   a touch of blur so text resolves instead of popping. */
+.cr-enter {
+  animation: cr-enter 800ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 80ms + 60ms);
+}
+@keyframes cr-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+/* ---------------------------------------------- Hero live dashboard */
+
+.cr-hero-stage {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.cr-window {
+  position: relative;
+  border-radius: var(--r-card);
+  background: linear-gradient(180deg, var(--night-2), var(--night));
+  box-shadow:
+    0 0 0 1px var(--edge-night),
+    0 60px 140px -50px color-mix(in oklab, var(--brand) 28%, transparent),
+    var(--sh-night);
+  overflow: hidden;
+}
+/* Light catching the top edge of the glass. */
+.cr-window::before {
+  content: "";
+  position: absolute;
+  inset: 0 10% auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--glow-text) 70%, transparent), transparent);
+}
+.cr-window-bar {
+  direction: ltr;
+  display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
+  height: 34px;
+  padding: 0 14px;
+  background: var(--glass-1);
+  border-bottom: 1px solid var(--edge-night-soft);
 }
-.cr-pill::before {
-  content: "";
+/* The window's title bar carries the "sample data" note: the bottom of the
+   window sits below the fold, so a caption under it would never be seen. */
+.cr-window-bar .cr-window-note {
+  direction: rtl;
+  unicode-bidi: isolate;
+  width: auto;
+  height: auto;
+  margin-left: auto;
+  border-radius: 0;
+  background: none;
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+  color: var(--fg-4);
+}
+.cr-window-bar span:not(.cr-window-note) {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--edge-night-2);
+}
+.cr-ui {
+  padding: 18px;
+}
+@media (min-width: 768px) {
+  .cr-ui {
+    padding: 26px 28px 20px;
+  }
+}
+.cr-ui-title {
+  font-family: var(--display);
+  font-size: var(--fs-mock-title);
+  font-weight: 700;
+  line-height: var(--lh-title);
+  letter-spacing: var(--ls-title);
+  color: var(--fg);
+}
+/* "Connected" dot: a slow ping says the data is live. */
+.cr-live {
+  position: relative;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--glow);
 }
-.cr-pill.ok {
-  background: var(--cr-green-soft);
-  color: var(--cr-green-d);
+.cr-live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--glow);
+  animation: cr-ping 2.4s var(--ease-out) infinite;
 }
-.cr-pill.wait {
-  background: #fff7e6;
-  color: #b45309;
+@keyframes cr-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  70%,
+  100% {
+    transform: scale(3);
+    opacity: 0;
+  }
 }
-.cr-pill.paid {
-  background: var(--cr-paper-2);
-  color: var(--cr-ink-2);
-}
-.cr-code {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 12.5px;
-  direction: ltr;
-  unicode-bidi: isolate;
-  background: var(--cr-paper-2);
-  padding: 2px 7px;
-  border-radius: 6px;
-  width: fit-content;
-}
-.cr-code.big {
-  font-size: 15px;
-  padding: 5px 10px;
-  font-weight: 700;
-}
-/* KPI strip: three columns at every width */
 .cr-kpis {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-bottom: 1px solid var(--cr-hair-2);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 18px 0 14px;
 }
 .cr-kpi {
-  padding: 14px 12px 12px;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--tile-pad);
+  border-radius: var(--r-tile);
+  background: var(--glass-1);
+  box-shadow: inset 0 0 0 1px var(--edge-night-soft);
 }
-.cr-kpi + .cr-kpi {
-  border-inline-start: 1px solid var(--cr-hair-2);
-}
-.cr-kpi-value {
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: clamp(17px, 1.6vw, 24px);
-  line-height: 1.1;
-  color: var(--cr-ink);
-}
-.cr-kpi-value.pos {
-  color: var(--cr-green-d);
+@media (min-width: 768px) {
+  .cr-kpis {
+    gap: 12px;
+    margin: 22px 0 18px;
+  }
 }
 .cr-kpi-label {
-  margin-top: 5px;
-  font-size: 12px;
-  color: var(--cr-dim);
-  font-weight: 600;
+  font-size: var(--fs-micro);
+  color: var(--fg-3);
 }
-@media (min-width: 600px) {
-  .cr-kpi {
-    padding: 18px 18px 16px;
-    text-align: start;
+.cr-kpi-value {
+  margin-top: 2px;
+  font-family: var(--display);
+  font-size: var(--fs-fig-m);
+  font-weight: 700;
+  letter-spacing: var(--ls-fig);
+  line-height: 1.2;
+  color: var(--fg);
+}
+.cr-kpi-value.pos {
+  color: var(--glow);
+}
+/* Full figures from 640px, short ones (312K) on phones. */
+.cr-wide {
+  display: none;
+}
+.cr-short {
+  display: inline;
+}
+@media (min-width: 640px) {
+  .cr-wide {
+    display: inline;
   }
-  .cr-kpi-label {
-    font-size: 12.5px;
+  .cr-short {
+    display: none;
   }
 }
-/* Table on wide screens only */
-.cr-table {
+.cr-root .cr-table {
+  display: none;
   width: 100%;
   border-collapse: collapse;
+  font-size: var(--fs-ui);
 }
-.cr-table th,
-.cr-table td {
+.cr-root .cr-table th {
+  padding: 10px 12px;
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--fg-4);
   text-align: start;
-  padding: 11px 12px;
-  border-bottom: 1px solid var(--cr-hair-2);
   white-space: nowrap;
+  border-bottom: 1px solid var(--edge-night);
 }
-.cr-table th {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--cr-dim);
+.cr-root .cr-table td {
+  padding: 12px;
+  border-top: 1px solid var(--edge-night-soft);
+  vertical-align: middle;
+  color: var(--fg-2);
 }
-.cr-table td {
-  font-size: 14px;
+.cr-root .cr-table tbody tr:first-child td {
+  border-top: 0;
 }
-.cr-table tr:last-child td {
-  border-bottom: 0;
+.cr-root .cr-table tbody tr td {
+  transition: background-color 150ms ease;
 }
-.cr-wide-table {
-  display: none;
+@media (hover: hover) and (pointer: fine) {
+  .cr-root .cr-table tbody tr:hover td {
+    background: var(--glass-1);
+  }
 }
-/* Creator cards on phones (two of the three) */
 .cr-cards {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  display: block;
 }
-.cr-card {
-  display: grid;
-  gap: 8px;
-  padding: 13px 16px;
-  border-bottom: 1px solid var(--cr-hair-2);
-}
-.cr-card:last-child {
-  border-bottom: 0;
-}
-.cr-card:nth-child(3) {
-  display: none;
-}
-.cr-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.cr-card-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  font-size: 13px;
-  color: var(--cr-dim);
-}
-.cr-card-stats b {
-  font-family: var(--cr-display);
-  font-weight: 700;
-  color: var(--cr-ink);
-}
-@media (min-width: 600px) {
-  .cr-wide-table {
+@media (min-width: 640px) {
+  .cr-root .cr-table {
     display: table;
   }
   .cr-cards {
     display: none;
   }
 }
-
-/* 2 · Two sides: two cards, the creator's with a small phone */
-.cr-sides {
-  margin-top: 32px;
-  display: grid;
-  gap: 16px;
-}
-@media (min-width: 900px) {
-  .cr-sides {
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    margin-top: 40px;
-  }
-}
-.cr-side {
-  background: var(--cr-paper);
-  border: 1px solid var(--cr-hair-2);
-  border-radius: 20px;
-  padding: 26px 24px;
-}
-@media (min-width: 600px) {
-  .cr-side {
-    padding: 30px 28px;
-  }
-}
-.cr-side.creator {
-  display: grid;
-  gap: 22px;
-  justify-items: center;
-}
-@media (min-width: 600px) {
-  .cr-side.creator {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    justify-items: stretch;
-  }
-}
-.cr-side-tag {
-  display: inline-block;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: var(--cr-green-soft);
-  color: var(--cr-green-d);
-  margin-bottom: 14px;
-}
-.cr-side-tag.alt {
-  background: var(--cr-orange-soft);
-  color: #b45309;
-}
-.cr-checks {
-  list-style: none;
-  margin: 16px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 9px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--cr-ink-2);
-}
-.cr-checks li {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-.cr-checks li::before {
-  content: "";
-  flex: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--cr-green-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230f8a3d' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5L20 7'/%3E%3C/svg%3E") center/11px no-repeat;
-}
-.cr-side.creator .cr-checks li::before {
-  background-color: var(--cr-orange-soft);
-}
-.cr-mini-phone {
-  width: 168px;
-  padding: 16px 14px 14px;
-  border-radius: 22px;
-  background: var(--cr-white);
-  border: 2px solid var(--cr-ink);
-  box-shadow: var(--cr-sh-sm);
-  display: grid;
-  gap: 10px;
-  justify-items: start;
-  font-size: 13px;
-}
-.cr-mini-head {
-  font-weight: 700;
-  color: var(--cr-forest);
-  font-size: 13px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--cr-hair-2);
-  width: 100%;
-}
-.cr-mini-stat {
-  display: grid;
-  gap: 1px;
-}
-.cr-mini-stat b {
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: 17px;
-  line-height: 1.1;
-  color: var(--cr-ink);
-}
-.cr-mini-stat.pos b {
-  color: var(--cr-green-d);
-}
-.cr-mini-stat span {
-  font-size: 11.5px;
-  color: var(--cr-dim);
-  font-weight: 600;
-}
-
-/* 3 · Who really sells: text + one creator's dashboard */
-.cr-perf {
-  display: grid;
-  gap: 28px;
-  align-items: center;
-}
-@media (min-width: 1024px) {
-  .cr-perf {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
-    gap: 64px;
-  }
-}
-.cr-three {
-  list-style: none;
-  margin: 24px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 14px;
-}
-.cr-three li {
-  padding-inline-start: 14px;
-  border-inline-start: 3px solid var(--cr-green);
-}
-.cr-three h3 {
-  font-size: 18px;
-}
-.cr-three p {
-  margin-top: 3px;
-  font-size: 15px;
-  color: var(--cr-ink-2);
-}
-.cr-tiles {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  padding: 14px 16px 4px;
-}
-.cr-tile {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--cr-paper);
-}
-.cr-tile b {
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: clamp(19px, 1.7vw, 24px);
-  line-height: 1.1;
-  color: var(--cr-ink);
-}
-.cr-tile:first-child b {
-  color: var(--cr-green-d);
-}
-.cr-tile span {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--cr-dim);
-}
-.cr-tile.code {
-  background: var(--cr-green-soft);
-}
-.cr-tile.code b {
-  font-size: inherit;
-}
-.cr-top {
-  list-style: none;
-  margin: 0;
-  padding: 4px 16px 14px;
-  display: grid;
-}
-.cr-top li {
+.cr-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-block: 9px;
-  border-bottom: 1px solid var(--cr-hair-2);
+  padding: 12px 8px;
+  border-top: 1px solid var(--edge-night-soft);
+  border-radius: 10px;
 }
-.cr-top li:last-child {
-  border-bottom: 0;
+.cr-card:first-child {
+  border-top: 0;
 }
-.cr-top .n {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: 12px;
-  background: var(--cr-paper-2);
-  color: var(--cr-forest);
-}
-.cr-top li:first-child .n {
-  background: var(--cr-green);
-  color: #fff;
-}
-.cr-top .name {
+.cr-card-main {
   flex: 1;
-  font-weight: 600;
+  min-width: 0;
 }
-.cr-top .val {
-  font-size: 13px;
-  color: var(--cr-dim);
-}
-.cr-perf-foot {
-  margin-top: 44px;
-}
-.cr-h2-flow {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 4px 10px;
-  font-size: clamp(22px, 2.8vw, 36px);
-}
-.cr-h2-flow .cr-arrow {
-  width: 22px;
-  height: 22px;
-  color: var(--cr-green);
-}
-.cr-chips {
-  margin-top: 18px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-}
-.cr-chips span {
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: var(--cr-white);
-  border: 1px solid var(--cr-hair);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--cr-ink-2);
-}
-.cr-chips span:last-child {
-  background: var(--cr-green-soft);
-  border-color: transparent;
-  color: var(--cr-green-d);
-}
-.cr-chips .cr-arrow {
-  color: var(--cr-green);
-}
-
-/* 4 · Management: four features with icons */
-.cr-features {
-  margin-top: 32px;
-  display: grid;
-  gap: 22px;
-}
-@media (min-width: 480px) {
-  .cr-features {
-    grid-template-columns: 1fr 1fr;
-    gap: 26px 24px;
-  }
-}
-@media (min-width: 1024px) {
-  .cr-features {
-    grid-template-columns: repeat(4, 1fr);
-    gap: 32px;
-    margin-top: 44px;
-  }
-}
-.cr-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: var(--cr-green-soft);
-  color: var(--cr-green-d);
-  margin-bottom: 12px;
-}
-.cr-icon svg {
-  width: 22px;
-  height: 22px;
-}
-.cr-feature h3 {
-  font-size: 19px;
-}
-.cr-feature p {
-  margin-top: 6px;
-  font-size: 15px;
-  color: var(--cr-ink-2);
-}
-.cr-status-flow {
-  margin-top: 10px;
+.cr-card-name {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  color: var(--cr-dim);
+  font-weight: 600;
+  font-size: var(--fs-ui);
+  color: var(--fg);
 }
-.cr-status-flow .cr-arrow {
-  width: 14px;
-  height: 14px;
+.cr-card-stats {
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+  color: var(--fg-3);
 }
-.cr-status-flow .cr-pill {
-  font-size: 11.5px;
-  padding: 3px 8px;
-  gap: 5px;
+/* A new order lands: the row glows green and settles back (two identical
+   keyframes so a second hit on the same row replays). */
+.cr-table tr.is-hit-a td,
+.cr-card.is-hit-a {
+  animation: cr-hit-a 1400ms var(--ease-out);
+}
+.cr-table tr.is-hit-b td,
+.cr-card.is-hit-b {
+  animation: cr-hit-b 1400ms var(--ease-out);
+}
+@keyframes cr-hit-a {
+  from {
+    background-color: color-mix(in oklab, var(--glow) 16%, transparent);
+  }
+}
+@keyframes cr-hit-b {
+  from {
+    background-color: color-mix(in oklab, var(--glow) 16%, transparent);
+  }
+}
+/* "+249 ₪" rises off the sales figure and fades. */
+.cr-cell-sales {
+  position: relative;
+}
+/* In body-size text the ₪ stays body-size (the reduced ₪ is for big figures).
+   (0,3,0), so it beats the page-wide .cr-root .cur (0,2,0) further down. */
+.cr-root .cr-table .cur,
+.cr-root .cr-card-stats .cur {
+  font-size: 1em;
+  font-weight: inherit;
+}
+.cr-plus-chip {
+  position: absolute;
+  inset-inline-start: 12px;
+  top: 50%;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  direction: ltr;
+  color: var(--glow-text);
+  background: color-mix(in oklab, var(--glow) 16%, transparent);
+  pointer-events: none;
+  animation: cr-chip 1400ms var(--ease-out) forwards;
+}
+.cr-card .cr-plus-chip {
+  inset-inline-start: auto;
+  inset-inline-end: 96px;
+}
+@keyframes cr-chip {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.9);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-110%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-190%);
+  }
 }
 
-/* 5 · Rollout (three steps) + one price card */
+/* Dark UI kit: product mockups that sit on dark glass (hero window, brand
+   bento). Same components, re-toned; secondary text comes from the role
+   tokens of the surrounding dark scope. Pending stays orange on dark too. */
+.cr-root .cr-dark-ui {
+  color: var(--fg-2);
+}
+.cr-dark-ui .cr-who {
+  color: var(--fg);
+}
+.cr-dark-ui .cr-code {
+  color: color-mix(in oklab, var(--spark) 80%, var(--on-night));
+  background: var(--glass-2);
+  box-shadow: inset 0 0 0 1px var(--edge-night);
+}
+.cr-dark-ui .cr-pill.ok {
+  background: color-mix(in oklab, var(--glow) 14%, transparent);
+  color: var(--glow-text);
+}
+.cr-dark-ui .cr-pill.wait {
+  background: color-mix(in oklab, var(--spark) 16%, transparent);
+  color: var(--spark);
+}
+.cr-dark-ui .cr-pill.paid {
+  background: var(--glass-3);
+  color: var(--fg-2);
+}
+.cr-dark-ui .cr-avatar {
+  background: color-mix(in oklab, var(--glow) 14%, transparent);
+  color: var(--glow-text);
+}
+.cr-dark-ui .cr-avatar.b {
+  background: color-mix(in oklab, var(--spark) 16%, transparent);
+  color: var(--spark);
+}
+.cr-dark-ui .cr-avatar.c {
+  background: var(--glass-3);
+  color: var(--fg-2);
+}
+
+/* Shared dot grid. Colour comes from --dots (per surface), fade from the mask. */
+.cr-dots {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  color: var(--dots);
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: 18px 18px;
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 40%, #000 30%, transparent 100%);
+  mask-image: radial-gradient(70% 60% at 50% 40%, #000 30%, transparent 100%);
+}
+
+/* --------------------------------------------------------- Sections */
+
+/* Every content section, #pricing included: 80 on phones, 128 from 1024. */
+.cr-section {
+  padding-block: var(--sec-y);
+}
+.cr-band {
+  background: var(--band);
+  box-shadow:
+    inset 0 1px 0 var(--line-soft),
+    inset 0 -1px 0 var(--line-soft);
+}
+/* Every text + visual section (#problem, #flow, #performance, #faq,
+   #contact): one grid, 528 | 80 | 528 at 1200+, stacked with 48 below 960.
+   Both columns start at the section padding; the text column (always the
+   first child) stays in view while the taller visual scrolls. */
+.cr-split {
+  display: grid;
+  gap: var(--gap-split);
+}
+@media (min-width: 960px) {
+  .cr-split {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  .cr-split > :first-child {
+    position: sticky;
+    top: calc(var(--nav-h) + 48px);
+  }
+}
+/* Light card: one recipe (radius, elevation, inset) for every light card. */
+.cr-panel {
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--sh-float);
+  padding: var(--card-pad);
+}
+
+/* Problem → sources flow (dark panel, measured beams, travelling pulses) */
+@property --cr-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.cr-fv {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /* Phones keep a 16px inline inset so the four source tiles fit. */
+  padding: var(--card-pad) 16px;
+  border-radius: var(--r-card);
+  background: var(--night-glass);
+  /* Solid base under the gradient: light text stays readable if background images are off. */
+  background-color: var(--night);
+  box-shadow: var(--sh-dark-card);
+}
+@media (min-width: 768px) {
+  .cr-fv {
+    padding: var(--card-pad);
+  }
+}
+.cr-fv-beams {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.cr-fv-beams path {
+  fill: none;
+}
+.cr-fv-beams .base {
+  stroke: var(--glass-3);
+  stroke-width: 1.5;
+}
+.cr-fv-beams .pulse {
+  stroke: url(#cr-beam-grad);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 16 184;
+  stroke-dashoffset: 16;
+  filter: drop-shadow(0 0 4px color-mix(in oklab, var(--glow) 90%, transparent));
+  animation: cr-beam 3.2s var(--ease-in-out) infinite;
+  animation-delay: calc(var(--i, 0) * 0.5s);
+}
+@keyframes cr-beam {
+  0% {
+    stroke-dashoffset: 16;
+  }
+  60%,
+  100% {
+    stroke-dashoffset: -100;
+  }
+}
+/* Centred, so if the four columns ever outgrow the card (≤340px) they spill
+   evenly into both insets instead of off one edge. */
+.cr-fv-sources {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  justify-content: center;
+  gap: 6px;
+}
+/* In the split column the row reaches halfway into the card's 32px inset,
+   so "Shopify / WooCommerce / Wix" keeps to two lines from 1200px (three
+   only in the narrower 960–1199 column). The beams are measured from the
+   tiles, so they follow. */
+@media (min-width: 960px) {
+  .cr-fv-sources {
+    margin-inline: calc(var(--card-pad) / -2);
+  }
+}
+.cr-fv-src {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 10px;
+  text-align: center;
+}
+.cr-fv-tile {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-tile);
+  background: linear-gradient(180deg, var(--glass-3), var(--glass-1));
+  box-shadow:
+    inset 0 0 0 1px var(--edge-night),
+    inset 0 1px 0 var(--edge-night-2),
+    var(--sh-night-tile);
+}
+.cr-fv-tile svg {
+  width: 28px;
+  height: 28px;
+}
+.cr-fv-label {
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--fg-3);
+}
+.cr-fv-target {
+  --edge-base: transparent;
+  position: relative;
+  margin-top: 80px;
+  padding: 20px 16px;
+  border-radius: var(--r-row);
+  text-align: center;
+  background: linear-gradient(180deg, var(--glass-2), var(--glass-1));
+  box-shadow:
+    inset 0 0 0 1px var(--edge-night),
+    0 24px 60px -24px color-mix(in oklab, var(--brand) 28%, transparent);
+}
+/* A light that travels around the card's edge, shared with the pricing
+   card (the same Hiloomy offer). --edge-base is a plain colour per card; the
+   conic gradient itself must stay out of custom properties, or --cr-angle
+   resolves once and the light freezes. */
+.cr-fv-target::before,
+.cr-offer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--cr-angle),
+    var(--edge-base) 0 60%,
+    color-mix(in oklab, var(--glow) 95%, transparent) 78%,
+    var(--edge-base) 92%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: cr-spin 5s linear infinite;
+  pointer-events: none;
+}
+@keyframes cr-spin {
+  to {
+    --cr-angle: 360deg;
+  }
+}
+.cr-fv-logo {
+  font-size: 24px;
+}
+/* The shared logo sizes its wordmark in px (text-lg), so at 24px only the
+   mark grew. Scale the wordmark too, back to the nav's 1.6 mark ratio. */
+.cr-fv-logo > span[aria-hidden="true"] {
+  font-size: 1.06em;
+}
+/* The coupon is the influencer's tool: it takes the logo orange. */
+.cr-fv-coupon {
+  fill: var(--spark);
+}
+/* 4px between chips keeps the four on one row in the 528px column
+   (415px of chips in 432px); they wrap, 6px apart, in narrower columns. */
+.cr-fv-outs {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 4px;
+}
+.cr-fv-outs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--fg);
+  background: color-mix(in oklab, var(--glow) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--glow) 22%, transparent);
+}
+.cr-fv-outs svg {
+  width: 14px;
+  height: 14px;
+  color: var(--glow);
+}
+
+/* Code → fee: an event feed. Icons carry the meaning, the line carries the
+   order, and a soft light runs down the line. */
+.cr-feed-wrap {
+  padding: var(--tray-pad);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--sh-float);
+}
+.cr-feed {
+  position: relative;
+}
+/* Keeps a phrase (or a quote with its closing gershayim) on one line. */
+.cr-nw {
+  white-space: nowrap;
+}
+/* Through the node centres: row padding + node / 2 − 1. */
+.cr-feed-track {
+  position: absolute;
+  inset-inline-start: 37px;
+  top: 36px;
+  bottom: 36px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.cr-feed-track::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 30%;
+  background: linear-gradient(to bottom, transparent, var(--spark), var(--brand), transparent);
+  animation: cr-track 3.6s var(--ease-in-out) infinite;
+}
+@keyframes cr-track {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(340%);
+  }
+}
+.cr-feed-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: var(--r-row);
+}
+/* Sequence node: one recipe for the #flow feed and the #how steps. The 6px
+   halo in the ground colour cuts the track line short of each node. */
+.cr-feed-icon,
+.cr-step-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--node);
+  height: var(--node);
+  flex: none;
+  border-radius: var(--r-tile);
+  color: var(--ink-2);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--line-strong),
+    0 0 0 6px var(--node-halo, var(--surface));
+}
+/* The influencer's own steps carry the orange; Hiloomy's steps stay neutral/green. */
+.cr-feed-item.creator .cr-feed-icon {
+  color: var(--spark-ink);
+  background: var(--spark-soft);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--spark) 24%, transparent),
+    0 0 0 6px var(--node-halo, var(--surface));
+}
+/* The end state, shared by the feed's last row and the last step. */
+.cr-feed-item.last .cr-feed-icon,
+.cr-steps li:last-child .cr-step-icon {
+  color: var(--on-brand);
+  background: var(--brand);
+  box-shadow:
+    0 0 0 6px var(--node-halo, var(--surface)),
+    0 8px 18px -6px color-mix(in oklab, var(--brand) 70%, transparent);
+}
+/* Item title: every card/row title on the page (feed rows, .cr-micro dt,
+   steps, bill lines, FAQ questions, the form result). */
+.cr-feed-item h3,
+.cr-micro dt,
+.cr-steps h3,
+.cr-offer-row h3,
+.cr-faq summary,
+.cr-form-done-title {
+  font-family: var(--display);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  line-height: var(--lh-title);
+  letter-spacing: var(--ls-title);
+  color: var(--fg);
+}
+/* Item body: the description under an item title. */
+.cr-steps p,
+.cr-micro dd,
+.cr-offer .cr-offer-desc,
+.cr-faq-a p {
+  font-size: var(--fs-body);
+  line-height: var(--lh-text);
+  color: var(--fg-3);
+}
+.cr-feed-item.last {
+  --node-halo: var(--brand-soft);
+  background: var(--brand-soft);
+}
+.cr-feed-item.last h3 {
+  color: var(--forest);
+}
+/* Rows light up one after another once the panel is revealed. */
+.cr-js .cr-root .cr-feed-wrap .cr-feed-item {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.cr-js .cr-root .cr-feed-wrap.is-in .cr-feed-item {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 500ms var(--ease-out),
+    transform 500ms var(--ease-out);
+  transition-delay: calc(200ms + var(--i, 0) * 90ms);
+}
+
+/* Two sides */
+.cr-sides {
+  display: grid;
+  gap: 16px;
+}
+@media (min-width: 880px) {
+  .cr-sides {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.cr-bento {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--sh-float);
+  overflow: hidden;
+}
+.cr-bento-visual {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  height: 280px;
+  overflow: hidden;
+}
+/* Same night-glass recipe as the SourceFlow panel. */
+.cr-bento-visual.dark {
+  background: var(--night-glass);
+  /* Solid base under the gradient, as in .cr-fv. */
+  background-color: var(--night);
+}
+/* The influencer side is warm: orange marks the influencer's half. */
+.cr-bento-visual.warm {
+  place-items: end center;
+  --dots: color-mix(in oklab, var(--spark-ink) 14%, transparent);
+  background:
+    radial-gradient(60% 70% at 50% 100%, color-mix(in oklab, var(--spark) 20%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--paper), var(--spark-soft));
+}
+.cr-bento-body {
+  padding: var(--card-pad);
+}
+.cr-mini {
+  width: min(92%, 440px);
+  padding: 6px;
+  border-radius: var(--r-row);
+  background: var(--glass-1);
+  box-shadow:
+    inset 0 0 0 1px var(--edge-night),
+    var(--sh-night-card);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.cr-mini li {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+}
+.cr-mini li + li {
+  border-top: 1px solid var(--edge-night-soft);
+}
+.cr-mini .cr-code {
+  display: none;
+}
+@media (min-width: 440px) {
+  .cr-mini li {
+    grid-template-columns: auto 1fr auto auto auto;
+  }
+  .cr-mini .cr-code {
+    display: inline-block;
+  }
+}
+.cr-mini-name {
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.cr-mini-fee {
+  color: var(--fg-2);
+}
+/* Cropped by the visual's bottom edge, but only by the bezel: the status
+   pill at the bottom of the screen stays in view. */
+.cr-bento-visual .cr-phone {
+  margin-bottom: -12px;
+  box-shadow:
+    0 30px 60px -20px color-mix(in oklab, var(--spark-ink) 38%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--ink) 20%, transparent);
+}
+.cr-tag {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  background: var(--brand-soft);
+  color: var(--forest);
+}
+.cr-tag.alt {
+  background: var(--spark-soft);
+  color: var(--spark-ink);
+}
+.cr-checks {
+  margin-top: 16px;
+  display: grid;
+  gap: 4px;
+}
+/* List item: a check line (bento checks, the offer perk). */
+.cr-checks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-ui);
+  color: var(--fg-2);
+}
+/* Influencer-side checks follow the orange tag above them. */
+.cr-tag.alt ~ .cr-checks .cr-check {
+  color: var(--spark-ink);
+}
+.cr-checks-two {
+  grid-template-columns: 1fr 1fr;
+  column-gap: 16px;
+}
+/* Phones: two ~150px columns broke every item onto two ragged lines. */
+@media (max-width: 479px) {
+  .cr-checks-two {
+    grid-template-columns: 1fr;
+  }
+}
+.cr-phone {
+  position: relative;
+  width: 210px;
+  justify-self: center;
+  padding: 30px 16px 18px;
+  border: 7px solid var(--ink);
+  border-radius: 32px;
+  background: var(--surface);
+  box-shadow: var(--sh-float);
+}
+.cr-phone-notch {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 54px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--ink);
+  transform: translateX(-50%);
+}
+.cr-phone-head {
+  font-family: var(--display);
+  font-size: var(--fs-mock-title);
+  font-weight: 700;
+  line-height: var(--lh-title);
+  letter-spacing: var(--ls-title);
+  margin-bottom: 8px;
+}
+.cr-phone-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.cr-phone-stat > span {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.cr-phone-stat b {
+  font-family: var(--display);
+  font-size: var(--fs-fig-s);
+  font-weight: 700;
+  letter-spacing: var(--ls-title);
+}
+/* Money stays green; status is not identity. */
+.cr-phone-stat.pos b {
+  color: var(--brand-strong);
+}
+.cr-phone .cr-pill {
+  margin-top: 14px;
+}
+/* The #sides closing line: the lead style, 48 under the cards, aligned like
+   the section's heading block (start, centred from 1024). */
+.cr-quote {
+  max-width: 60ch;
+  margin-top: var(--gap-head);
+  margin-inline: auto;
+  font-size: var(--fs-lead);
+  line-height: var(--lh-text);
+  color: var(--fg-2);
+  text-align: center;
+}
+/* Balanced, so phones break between the two quoted questions, not inside
+   one. (0,2,0) beats the .cr-root p "pretty" rule. */
+.cr-root .cr-quote {
+  text-wrap: balance;
+}
+
+/* One creator's performance */
+/* The #performance list sits in the lead slot: 20 under the h2. */
+.cr-micro {
+  margin-top: var(--gap-lead);
+}
+.cr-micro > div {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.cr-micro dd {
+  margin-top: var(--gap-title);
+}
+.cr-creator .cr-ui-head {
+  align-items: center;
+}
+.cr-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 20px;
+}
+.cr-tile {
+  display: grid;
+  padding: var(--tile-pad);
+  border-radius: var(--r-tile);
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+}
+.cr-tile > span,
+.cr-tile.wide > div > span {
+  font-size: var(--fs-micro);
+  color: var(--fg-3);
+}
+.cr-tile b {
+  font-family: var(--display);
+  font-size: var(--fs-fig-m);
+  font-weight: 700;
+  letter-spacing: var(--ls-fig);
+  line-height: 1.2;
+}
+.cr-tile.wide {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cr-tile.wide > div {
+  display: grid;
+}
+/* The meter tile takes the last row alone, so it spans it instead of leaving a hole. */
+.cr-tile:last-child {
+  grid-column: 1 / -1;
+}
+.cr-spark {
+  width: 58%;
+  height: 52px;
+  overflow: visible;
+}
+.cr-spark .line {
+  fill: none;
+  stroke: url(#cr-spark-stroke);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.cr-root .s-brand {
+  stop-color: var(--brand);
+}
+.cr-root .s-glow {
+  stop-color: var(--glow);
+}
+.cr-root .s-spark {
+  stop-color: var(--spark);
+}
+/* Draws in left-to-right once the card is revealed. */
+.cr-js .cr-root .cr-spark {
+  clip-path: inset(0 100% 0 0);
+}
+.cr-js .cr-root .is-in .cr-spark {
+  clip-path: inset(0 0 0 0);
+  transition: clip-path 1400ms var(--ease-out) 350ms;
+}
+.cr-tile b.pos {
+  color: var(--brand-strong);
+}
+.cr-meter {
+  display: block;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+.cr-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+.cr-codebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  /* The stat tiles' inline inset, so its text lines up with theirs. */
+  padding: 12px var(--tile-pad);
+  border-radius: var(--r-tile);
+  background: var(--spark-soft);
+  color: var(--spark-ink);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  line-height: var(--lh-ui);
+}
+.cr-ui-sect {
+  margin: 20px 0 6px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: var(--lh-ui);
+  color: var(--fg-3);
+}
+.cr-top li {
+  display: grid;
+  grid-template-columns: 22px 1fr 72px 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--fs-ui);
+}
+/* Rank badges are glyphs, like the avatars: Rubik. */
+.cr-top .n {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--band);
+  font-family: var(--display);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+}
+.cr-top .bar {
+  height: 6px;
+  border-radius: 6px;
+  background: var(--line);
+  overflow: hidden;
+}
+.cr-top .bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+.cr-top .val {
+  font-weight: 600;
+  text-align: end;
+}
+
+/* Onboarding: one panel, icons joined by a line with light running along
+   it (vertical on phones, horizontal from 1024px). */
+.cr-steps-panel {
+  position: relative;
+  padding: var(--tray-pad);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--sh-float);
+}
+/* Vertical track: from the first node's centre (tray 8 + row 20 + node / 2)
+   into the last node. The last step's text runs to one line or two, which
+   puts that node's centre 64 or 89px above the panel's bottom, so the track
+   stops at 78: inside the node, under it, either way. */
+.cr-steps-track {
+  position: absolute;
+  inset-inline-start: 49px;
+  top: 50px;
+  bottom: 78px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.cr-steps-track::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 30%;
+  background: linear-gradient(to bottom, transparent, var(--brand), transparent);
+  animation: cr-track 3.6s var(--ease-in-out) infinite;
+}
 .cr-steps {
-  list-style: none;
-  margin: 32px auto 0;
-  padding: 0;
-  max-width: 900px;
+  position: relative;
+  display: grid;
+}
+.cr-steps li {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  column-gap: 16px;
+  align-items: start;
+  padding: 20px;
+}
+/* Node recipe and end state: see .cr-feed-icon. */
+.cr-step-icon {
+  grid-row: span 2;
+}
+.cr-steps h3 {
+  padding-top: 2px;
+}
+.cr-steps p {
+  margin-top: var(--gap-title);
+}
+@media (min-width: 1024px) {
+  .cr-steps {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  /* The one centred item row: nodes on a horizontal track. */
+  .cr-steps li {
+    display: block;
+    padding: 32px 24px;
+    text-align: center;
+  }
+  .cr-step-icon {
+    margin: 0 auto;
+  }
+  .cr-steps h3 {
+    margin-top: 16px;
+  }
+  .cr-steps-track {
+    inset-inline: 12.5%;
+    top: 61px;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+  }
+  .cr-steps-track::after {
+    inset-inline-start: 0;
+    inset-block: 0;
+    height: auto;
+    width: 30%;
+    background: linear-gradient(to left, transparent, var(--brand), transparent);
+    animation-name: cr-track-x;
+  }
+}
+@keyframes cr-track-x {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-340%);
+  }
+}
+.cr-js .cr-root .cr-steps-panel .cr-steps li {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.cr-js .cr-root .cr-steps-panel.is-in .cr-steps li {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 500ms var(--ease-out),
+    transform 500ms var(--ease-out);
+  transition-delay: calc(200ms + var(--i, 0) * 100ms);
+}
+/* ---------------------------------------------------------------- Pricing
+   #pricing: one dark section, one offer. The heading states the promise
+   (0%); the card is the bill that proves it: three lines read like a
+   receipt (name beside amount), the monthly fee is the one hero figure, and
+   the 0% closes the bill as a plain line in the same ink as the others. The
+   card carries the travelling edge light, like the Hiloomy card in the
+   sources diagram. Green here: the heading's .dim line, one check, the edge
+   light and the CTA. No pills, no lit boxes.
+   The section is a .cr-section (80 / 128 like every other); the hero figure
+   stays under the h2 size (only the hero h1 is larger than an h2). */
+.cr-zero {
+  position: relative;
+  isolation: isolate;
+  /* One faint light, centred under the card. */
+  background: radial-gradient(44% 38% at 50% 78%, color-mix(in oklab, var(--glow) 5%, transparent), transparent 70%), var(--forest-deep);
+  overflow: hidden;
+}
+
+/* The bill. Phones: every line stacks (name, amount, detail) on one start
+   edge. From 700px each line is a subgrid row, name | amount: names and
+   details share the card's start (right) edge, and each amount stacks its
+   unit under its figure, so figures and units share the card's end (left)
+   edge. Two clean edges, the amount centred on its line. The CTA closes the
+   card at full width, like the form card's submit. An opaque base keeps the
+   section's dot grid out of the bill. */
+.cr-offer {
+  --edge-base: transparent;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--card-pad);
+  border-radius: var(--r-card);
+  background: var(--dark-card-fill), var(--forest-deep);
+  box-shadow: var(--sh-dark-card);
+}
+@media (min-width: 700px) {
+  .cr-offer {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 40px;
+  }
+}
+/* A larger card than the diagram's, so a slower lap. */
+.cr-offer::before {
+  animation-duration: 8s;
+}
+.cr-offer-row {
+  display: grid;
+  grid-template-areas: "title" "amt" "body";
+  row-gap: 8px;
+  padding-block: 24px;
+}
+.cr-offer-row:first-child {
+  padding-top: 0;
+}
+.cr-offer-row.is-hero {
+  grid-template-areas: "title" "amt" "body" "perk";
+}
+.cr-offer-row + .cr-offer-row {
+  border-top: 1px dashed var(--edge-night-2);
+}
+/* A line with no detail (the closing 0%) has no empty track, so no stray
+   row gap under it. */
+.cr-offer-row:not(:has(.cr-offer-desc)) {
+  grid-template-areas: "title" "amt";
+}
+@media (min-width: 700px) {
+  .cr-offer-row {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    grid-template-areas:
+      "title amt"
+      "body amt";
+    align-items: start;
+    row-gap: var(--gap-title);
+  }
+  .cr-offer-row.is-hero {
+    grid-template-areas:
+      "title amt"
+      "body amt"
+      "perk amt";
+  }
+  .cr-offer-row:not(:has(.cr-offer-desc)) {
+    grid-template-areas: "title amt";
+    align-items: center;
+  }
+  .cr-offer-row h3 {
+    white-space: nowrap;
+  }
+}
+/* Title: the item-title role (see .cr-feed-item h3). */
+.cr-offer-row h3 {
+  grid-area: title;
+}
+/* Body: the item-body role (see .cr-steps p). (0,2,0) beats .cr-root p's
+   text-wrap: pretty, so two-line details balance. */
+.cr-offer .cr-offer-desc {
+  grid-area: body;
+  max-width: 44ch;
+  text-wrap: balance;
+}
+/* What the monthly fee includes: one check line, the list-item role. */
+.cr-offer .cr-offer-perk {
+  grid-area: perk;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: var(--fs-body);
+  line-height: var(--lh-ui);
+  color: var(--fg-2);
+}
+.cr-offer-perk .cr-check {
+  color: var(--glow);
+}
+
+/* Amount: figure + unit. Phones: one baseline (250 ₪ לחודש), on the start
+   edge under the name. From 700px the unit stacks under the figure and both
+   end on the card's end edge, centred on the line. */
+.cr-offer-amt {
+  grid-area: amt;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-self: start;
+  font-family: var(--display);
+  font-size: var(--fs-fig-l);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: var(--ls-fig);
+  white-space: nowrap;
+  color: var(--fg);
+}
+@media (min-width: 700px) {
+  .cr-offer-amt {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    justify-self: end;
+    align-self: center;
+  }
+}
+/* A reduced ₪ right after the digits of every Rubik figure of 20px or more
+   (prices, KPIs, tiles). Page-wide: it has always lived in this block, keep it.
+   It takes the figure's colour unless set below. */
+.cr-root .cur {
+  margin-inline-start: 0.22em;
+  font-size: 0.62em;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.cr-offer-amt .cur {
+  color: var(--fg-2);
+}
+/* Unit: the ui role, one size on every line. */
+.cr-offer-amt small {
+  font-family: var(--body);
+  font-size: var(--fs-ui);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+  color: var(--fg-3);
+}
+/* The one hero figure: the next step up, still under the h2 size. */
+.is-hero .cr-offer-amt {
+  font-size: var(--fs-fig-xl);
+  letter-spacing: var(--ls-h2);
+}
+
+/* The action right after the last line: a card-closing CTA (see .cr-btn-lg). */
+.cr-offer-cta {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+/* Fine print belongs to the offer: the caption role, directly under its button. */
+.cr-offer .cr-offer-note {
+  grid-column: 1 / -1;
+  margin-top: var(--gap-caption);
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+  color: var(--fg-4);
+  text-wrap: balance;
+}
+
+/* Entrance: the card reveals with [data-reveal]; its three rows follow in
+   reading order, 60ms apart. */
+.cr-js .cr-root .cr-offer .cr-offer-row {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.cr-js .cr-root .cr-offer.is-in .cr-offer-row {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 500ms var(--ease-out),
+    transform 500ms var(--ease-out);
+  transition-delay: calc(160ms + var(--i, 0) * 60ms);
+}
+
+/* FAQ: a .cr-split like the other text + visual sections. Items are light
+   rows: --r-row, --sh-panel. */
+.cr-faq {
   display: grid;
   gap: 12px;
 }
-.cr-steps li {
+.cr-faq details {
+  border-radius: var(--r-row);
+  background: var(--surface);
+  box-shadow: var(--sh-panel);
+  transition: box-shadow 200ms ease;
+}
+.cr-faq details[open] {
+  box-shadow:
+    0 0 0 1.5px color-mix(in oklab, var(--brand) 35%, transparent),
+    0 16px 40px -20px color-mix(in oklab, var(--ink) 24%, transparent);
+}
+.cr-faq summary {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: var(--cr-white);
-  border: 1px solid var(--cr-hair-2);
-}
-.cr-steps h3 {
-  font-size: 17px;
-}
-.cr-step-n {
-  flex: none;
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: 13px;
-  color: var(--cr-green-d);
-  letter-spacing: 0.06em;
-}
-@media (min-width: 700px) {
-  .cr-steps {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-  }
-  .cr-steps li {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 18px 20px;
-  }
-}
-.cr-price-card {
-  margin: 32px auto 0;
-  max-width: 900px;
-  background: var(--cr-white);
-  border: 1px solid var(--cr-hair);
-  border-radius: 20px;
-  box-shadow: var(--cr-sh-sm);
-  display: grid;
-}
-.cr-offer {
-  padding: 26px 24px;
-}
-.cr-offer + .cr-offer {
-  border-top: 1px solid var(--cr-hair-2);
-}
-@media (min-width: 700px) {
-  .cr-price-card {
-    grid-template-columns: 1fr 1fr;
-    margin-top: 40px;
-  }
-  .cr-offer {
-    padding: 32px 30px;
-  }
-  .cr-offer + .cr-offer {
-    border-top: 0;
-    border-inline-start: 1px solid var(--cr-hair-2);
-  }
-}
-.cr-offer h3 {
-  font-size: 17px;
-  color: var(--cr-ink-2);
-}
-.cr-price-amount {
-  margin-top: 10px;
-  font-family: var(--cr-display);
-  font-weight: 800;
-  font-size: clamp(32px, 3.4vw, 42px);
-  line-height: 1.1;
-  color: var(--cr-forest);
-}
-.cr-price-amount small {
-  font-family: var(--cr-body);
-  font-weight: 600;
-  font-size: 16px;
-  color: var(--cr-dim);
-}
-.cr-price-kind {
-  margin-top: 4px;
-  font-size: 14px;
-  color: var(--cr-dim);
-  font-weight: 600;
-}
-.cr-offer p.desc {
-  margin-top: 12px;
-  color: var(--cr-ink-2);
-  font-size: 15px;
-}
-.cr-price-lines {
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  border-radius: var(--r-row);
+  cursor: pointer;
   list-style: none;
-  margin: 12px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 4px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--cr-ink-2);
+  transition:
+    color 150ms ease,
+    padding-bottom 280ms var(--ease-out);
 }
-.cr-price-lines li.strong {
-  margin-top: 4px;
-  font-weight: 800;
-  font-size: 16.5px;
-  color: var(--cr-forest);
+/* Open, the question and its answer are an item title and its body: 6px
+   apart (--gap-title), as in the steps, the #performance list and the bill. The
+   question keeps its place (the top padding is unchanged); only the answer
+   rises, in step with the 280ms reveal below. */
+.cr-faq details[open] summary {
+  padding-bottom: var(--gap-title);
 }
-.cr-price-lines li.strong .cr-num {
-  color: var(--cr-orange);
+.cr-faq summary::-webkit-details-marker {
+  display: none;
 }
-.cr-price-note {
-  margin-top: 18px;
-  font-size: 14.5px;
-  font-weight: 600;
-  color: var(--cr-dim);
+.cr-plus {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  color: var(--ink-2);
+  background: var(--band);
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    transform 200ms var(--ease-out);
+}
+.cr-plus::before,
+.cr-plus::after {
+  content: "";
+  position: absolute;
+  top: 14px;
+  left: 9px;
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transition: transform 200ms var(--ease-out);
+}
+.cr-plus::after {
+  transform: rotate(90deg);
+}
+.cr-faq details[open] .cr-plus {
+  color: var(--on-brand);
+  background: var(--brand);
+}
+.cr-faq details[open] .cr-plus::after {
+  transform: rotate(0deg);
+}
+.cr-faq summary:active .cr-plus {
+  transform: scale(0.97);
+}
+.cr-faq-a p {
+  max-width: 62ch;
+  padding: 0 24px 24px;
+}
+/* Smooth open/close where ::details-content is supported; instant elsewhere. */
+.cr-faq {
+  interpolate-size: allow-keywords;
+}
+.cr-faq details::details-content {
+  block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    block-size 280ms var(--ease-out),
+    opacity 200ms ease,
+    content-visibility 280ms allow-discrete;
+}
+.cr-faq details[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cr-faq summary:hover {
+    color: var(--forest);
+  }
+  .cr-faq summary:hover .cr-plus {
+    background: var(--band-2);
+  }
+  .cr-faq details[open] summary:hover .cr-plus {
+    background: var(--brand-hi);
+  }
 }
 
-/* 6 · Final CTA + form */
+/* Contact: the closing dark panel */
 .cr-contact {
-  background: var(--cr-paper-2);
+  position: relative;
+  isolation: isolate;
+  /* clip, not hidden: hidden would make the section the scroll container of
+     the sticky text column and push the heading 112px down. */
+  overflow: clip;
+  color-scheme: dark;
+  background:
+    radial-gradient(60% 55% at 85% 0%, color-mix(in oklab, var(--glow) 8%, transparent), transparent 70%),
+    radial-gradient(50% 50% at 10% 100%, color-mix(in oklab, var(--brand) 7%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--night-2), var(--night));
+  /* Solid base under the gradient, as in .cr-fv. */
+  background-color: var(--night);
 }
-.cr-contact-grid {
-  display: grid;
-  gap: 28px;
+.cr-contact-dots {
+  -webkit-mask-image: radial-gradient(60% 70% at 70% 30%, #000 20%, transparent 100%);
+  mask-image: radial-gradient(60% 70% at 70% 30%, #000 20%, transparent 100%);
 }
-@media (min-width: 1024px) {
-  .cr-contact-grid {
-    grid-template-columns: 0.95fr 1.05fr;
-    gap: 64px;
-    align-items: start;
+/* Dark card: the same recipe as .cr-offer (radius, inset, fill, ring, drop). */
+.cr-form-card {
+  padding: var(--card-pad);
+  border-radius: var(--r-card);
+  background: var(--dark-card-fill);
+  box-shadow: var(--sh-dark-card);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+/* Dark inputs: a 46% edge reads as a field (3.51:1 against its fill). */
+.cr-root .cr-contact .cr-field input,
+.cr-root .cr-contact .cr-field select {
+  color: var(--fg);
+  background: var(--glass-2);
+  box-shadow: inset 0 0 0 1px var(--field-edge-night);
+  caret-color: var(--glow);
+}
+.cr-root .cr-contact .cr-field input:focus,
+.cr-root .cr-contact .cr-field select:focus {
+  background: var(--glass-3);
+  box-shadow:
+    inset 0 0 0 1.5px var(--glow),
+    0 0 0 4px color-mix(in oklab, var(--glow) 18%, transparent);
+}
+.cr-root .cr-contact .cr-field option {
+  color: var(--on-night);
+  background-color: var(--night-2);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cr-root .cr-contact .cr-field input:hover:not(:focus),
+  .cr-root .cr-contact .cr-field select:hover:not(:focus) {
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--on-night) 60%, transparent);
   }
 }
-.cr-final-line {
-  margin-top: 16px;
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: clamp(19px, 2vw, 25px);
-  line-height: 1.4;
-  color: var(--cr-forest);
+.cr-contact .cr-form-error {
+  background: color-mix(in oklab, var(--danger-on-night) 14%, transparent);
+  color: var(--danger-on-night);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger-on-night) 28%, transparent);
 }
-.cr-form {
-  background: var(--cr-white);
-  border: 1px solid var(--cr-hair);
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: var(--cr-sh-sm);
+
+/* Contact: a .cr-split like the other text + visual sections. */
+.cr-contact-alt {
+  margin-top: var(--gap-secondary);
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+  color: var(--fg-3);
 }
-@media (min-width: 600px) {
-  .cr-form {
-    padding: 28px;
+.cr-contact-alt a {
+  color: var(--fg);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 30%, transparent);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 150ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cr-contact-alt a:hover {
+    text-decoration-color: currentColor;
   }
 }
 .cr-form-grid {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
-@media (min-width: 640px) {
+@media (min-width: 560px) {
   .cr-form-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -1192,587 +2542,346 @@ p.cr-narrow {
 .cr-field {
   display: grid;
   gap: 6px;
-  font-size: 14px;
+}
+.cr-root .cr-field > span {
+  font-size: var(--fs-small);
   font-weight: 600;
-  color: var(--cr-ink-2);
+  line-height: 20px;
+  color: var(--fg-2);
 }
-.cr-field input,
-.cr-field select {
-  font: inherit;
-  font-weight: 500;
-  font-family: var(--cr-body);
-  color: var(--cr-ink);
-  background: var(--cr-paper);
-  border: 1px solid var(--cr-hair);
-  border-radius: 10px;
-  padding: 12px 14px;
+/* The optional marker is dimmed by colour (--fg-4), not opacity. */
+.cr-root .cr-field > span small {
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  color: var(--fg-4);
+}
+/* 16px keeps iOS from zooming on focus. */
+.cr-root .cr-field input,
+.cr-root .cr-field select {
   width: 100%;
-  min-height: 48px;
+  height: 46px;
+  min-height: 0;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--field-edge);
+  font: 400 var(--fs-body) / 1.25 var(--body);
+  color: var(--ink);
+  transition: box-shadow 150ms ease;
+}
+.cr-root .cr-field input:focus,
+.cr-root .cr-field select:focus {
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow:
+    inset 0 0 0 1.5px var(--brand-strong),
+    0 0 0 4px color-mix(in oklab, var(--brand) 16%, transparent);
 }
-.cr-field input:focus,
-.cr-field select:focus {
-  border-color: var(--cr-green);
-  box-shadow: 0 0 0 3px rgba(21, 163, 74, 0.15);
-  background: var(--cr-white);
+@media (hover: hover) and (pointer: fine) {
+  .cr-root .cr-field input:hover:not(:focus),
+  .cr-root .cr-field select:hover:not(:focus) {
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 62%, transparent);
+  }
 }
-.cr-field input[dir="ltr"] {
-  text-align: left;
+/* Own chevron: the native one ignores padding and sits ~6px from the edge,
+   jammed against the ring. Drawn with borders so it takes a role colour. */
+.cr-root .cr-field select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-inline-end: 40px;
+}
+.cr-select {
+  position: relative;
+  display: grid;
+}
+.cr-select::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  inset-inline-end: 16px;
+  width: 7px;
+  height: 7px;
+  margin-top: -6px;
+  border-right: 1.5px solid var(--fg-3);
+  border-bottom: 1.5px solid var(--fg-3);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+/* The required empty "בחרו" reads as a placeholder until a real option is
+   picked. Must follow the contact input rule: both are (0,3,1). */
+.cr-root .cr-field select:invalid {
+  color: var(--fg-3);
 }
 .cr-hp {
   position: absolute;
-  inset-inline-start: -9999px;
   width: 1px;
   height: 1px;
   overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .cr-form-error {
-  margin-top: 14px;
-  color: #b42318;
-  font-size: 14px;
-  font-weight: 600;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--fs-ui);
 }
+/* Its submit is a card-closing CTA (see .cr-btn-lg). */
 .cr-form-foot {
   margin-top: 20px;
 }
-.cr-form-note {
-  margin-top: 12px;
-  font-size: 14px;
-  color: var(--cr-dim);
-}
+/* The form's result replaces the fields in place, start-aligned like the
+   rest of the card: an item title and its body. */
 .cr-form-done {
-  background: var(--cr-white);
-  border: 1px solid var(--cr-hair);
-  border-radius: 16px;
-  padding: 34px 28px;
+  padding-block: 8px;
+  animation: cr-enter 500ms var(--ease-out) both;
 }
-.cr-form-done-title {
-  font-family: var(--cr-display);
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--cr-forest);
-}
+/* .cr-form-done-title: the item-title role (see .cr-feed-item h3). */
 .cr-form-done-text {
-  margin-top: 10px;
-  color: var(--cr-ink-2);
-}
-.cr-contact-alt {
-  margin-top: 20px;
-  font-size: 15px;
-  color: var(--cr-ink-2);
-}
-.cr-contact-alt a {
-  color: var(--cr-forest);
-  font-weight: 700;
-  text-decoration: underline;
-  text-decoration-color: rgba(11, 79, 44, 0.3);
-  direction: ltr;
-  unicode-bidi: isolate;
+  margin-top: var(--gap-title);
+  font-size: var(--fs-body);
+  color: var(--fg-2);
 }
 
-/* Footer (extra bottom room on phones for the sticky CTA) */
+/* Footer */
 .cr-footer {
-  border-top: 1px solid var(--cr-hair-2);
-  padding-block: 28px 84px;
-  font-size: 14px;
-  color: var(--cr-dim);
+  padding-block: 32px calc(32px + env(safe-area-inset-bottom));
+  background: var(--night);
+  border-top: 1px solid var(--edge-night-soft);
 }
-@media (min-width: 1024px) {
-  .cr-footer {
-    padding-block: 32px;
-  }
+.cr-footer .cr-logo-sub {
+  color: var(--fg-3);
 }
 .cr-footer-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 16px 24px;
 }
 .cr-footer-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
+  gap: 4px 20px;
 }
-.cr-footer-links a:hover {
-  color: var(--cr-forest);
+.cr-footer-links a {
+  font-size: var(--fs-ui);
+  color: var(--fg-3);
+  transition: color 150ms ease;
 }
-
-/* Reveal (only when JS is on) */
-.cr-js [data-reveal] {
-  opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
+@media (hover: hover) and (pointer: fine) {
+  .cr-footer-links a:hover {
+    color: var(--glow-text);
+  }
 }
-.cr-js [data-reveal].is-in {
-  opacity: 1;
-  transform: none;
+.cr-copy {
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
+  color: var(--fg-4);
 }
-@media (prefers-reduced-motion: reduce) {
-  .cr-js [data-reveal] {
-    opacity: 1;
-    transform: none;
-    transition: none;
+@media (max-width: 959px) {
+  .cr-footer {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
   }
 }
 
-/* ---- Sixth pass (owner copy, 22 Sep 2026) ---- */
-
-/* 2 · Tracking scatters: four lines, then the answer */
-.cr-problem {
-  display: grid;
-  gap: 28px;
-  align-items: center;
-}
-@media (min-width: 1024px) {
-  .cr-problem {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
-    gap: 64px;
-  }
-}
-.cr-scatter {
-  list-style: none;
-  margin: 26px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-}
-.cr-scatter li {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 13px 16px;
-  border-radius: 14px;
-  background: var(--cr-paper);
-  border: 1px dashed var(--cr-hair);
-  font-size: 16.5px;
-  font-weight: 600;
-  color: var(--cr-ink-2);
-}
-.cr-scatter li.end {
-  background: var(--cr-white);
-  border-style: solid;
-  color: var(--cr-forest);
-}
-.cr-scatter-where {
-  flex: none;
-  min-width: 92px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--cr-dim);
-  unicode-bidi: plaintext;
-  text-align: start;
-}
-.cr-problem-answer {
-  padding: 28px 28px 30px;
-  border-radius: 20px;
-  background: var(--cr-green-soft);
-}
-.cr-problem-answer .cr-final-line {
-  margin-top: 12px;
-}
-
-/* 3 · Chain: six steps, vertical, joined by a line */
-.cr-chain {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  position: relative;
-}
-.cr-chain li {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 0 0 22px 0;
-}
-.cr-chain li::before {
-  content: "";
-  position: absolute;
-  inset-inline-start: 19px;
-  top: 40px;
-  bottom: 0;
-  width: 2px;
-  background: var(--cr-hair);
-}
-.cr-chain li.last::before {
-  display: none;
-}
-.cr-chain li.last {
-  padding-bottom: 0;
-}
-.cr-chain-n {
-  flex: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: var(--cr-white);
-  border: 2px solid var(--cr-green);
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: 13px;
-  color: var(--cr-green-d);
-  position: relative;
-  z-index: 1;
-}
-.cr-chain li.last .cr-chain-n {
-  background: var(--cr-green);
-  color: #fff;
-}
-.cr-chain h3 {
-  font-size: clamp(18px, 1.6vw, 22px);
-}
-.cr-closing {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--cr-dim);
-}
-
-/* 5 · Detail grid: six items, two columns beside the dashboard */
-.cr-details {
-  margin-top: 26px;
-  display: grid;
-  gap: 20px 22px;
-}
-@media (min-width: 480px) {
-  .cr-details {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-.cr-details .cr-icon {
-  width: 34px;
-  height: 34px;
-  margin-bottom: 8px;
-}
-.cr-details .cr-icon svg {
-  width: 19px;
-  height: 19px;
-}
-.cr-details h3 {
-  font-size: 17px;
-}
-.cr-details p {
-  font-size: 14.5px;
-}
-.cr-ui-fee {
+/* Sticky CTA (phones): slides up from the bottom edge and leaves the same
+   way. Exit is faster than enter. */
+.cr-sticky {
+  position: fixed;
+  z-index: 40;
+  inset-inline: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--cr-hair-2);
-  background: var(--cr-green-soft);
-  font-size: 13px;
+  height: 54px;
+  padding: 0 20px;
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--night) 90%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  backdrop-filter: blur(14px) saturate(180%);
+  /* Hairline ring, as on the other dark glass: over dark sections the pill would merge. */
+  box-shadow:
+    inset 0 0 0 1px var(--edge-night-2),
+    0 16px 40px -16px color-mix(in oklab, var(--night-0) 50%, transparent);
+  /* The lg button label (it may wrap on 320px phones, so 1.25 leading). */
+  font-size: var(--fs-body);
   font-weight: 600;
-  color: var(--cr-green-d);
+  line-height: 1.25;
+  opacity: 0;
+  transform: translateY(calc(100% + 24px));
+  pointer-events: none;
+  transition:
+    transform 200ms var(--ease-out),
+    opacity 150ms ease;
 }
-.cr-ui-fee b {
-  font-family: var(--cr-display);
-  font-size: 18px;
-  color: var(--cr-green-d);
+.cr-sticky.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition:
+    transform 420ms var(--ease-drawer),
+    opacity 200ms ease;
 }
-
-/* 6 · Steps with a one-line description */
-.cr-steps-desc li {
-  align-items: flex-start;
+.cr-sticky.is-on:active {
+  transform: scale(0.98);
+  transition: transform 120ms var(--ease-out);
 }
-.cr-steps-desc p {
-  margin-top: 4px;
-  font-size: 14.5px;
-  color: var(--cr-ink-2);
+/* Ring inside the dark pill: outside it, it would sit on the light page at 1.7:1. */
+.cr-root .cr-sticky:focus-visible {
+  outline-offset: -5px;
 }
-@media (min-width: 700px) {
-  .cr-steps-desc li {
-    flex-direction: row;
-    gap: 14px;
-  }
-}
-.cr-final-line.cr-center {
-  margin-top: 32px;
-}
-
-/* 7 · Zero band */
-.cr-zero {
-  background: var(--cr-forest);
-  color: var(--cr-on-dark);
-}
-.cr-zero .cr-h2 {
-  color: #fff;
-}
-.cr-zero .cr-lead {
-  color: var(--cr-on-dark);
-}
-.cr-zero-big {
-  margin-top: 30px;
-  font-family: var(--cr-display);
-  font-weight: 800;
-  font-size: clamp(34px, 5vw, 62px);
-  line-height: 1.1;
-  color: #fff;
-}
-.cr-zero-big .cr-num {
-  color: var(--cr-orange);
-}
-.cr-zero-sub {
-  margin-top: 12px;
-  font-size: clamp(16px, 1.3vw, 19px);
-  font-weight: 600;
-  color: var(--cr-on-dark-dim);
-}
-
-/* 8 · Three offers in the price card */
-@media (min-width: 900px) {
-  .cr-price-three {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
-}
-@media (min-width: 700px) and (max-width: 899px) {
-  .cr-price-three .cr-offer.zero {
-    grid-column: 1 / -1;
-    border-inline-start: 0;
-    border-top: 1px solid var(--cr-hair-2);
-  }
-}
-.cr-offer.zero .cr-price-amount {
-  color: var(--cr-orange);
-}
-
-/* 9 · FAQ */
-.cr-faq {
-  margin: 36px auto 0;
-  max-width: 760px;
-}
-.cr-faq details {
-  border-bottom: 1px solid var(--cr-hair);
-}
-.cr-faq summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 18px 0;
-  font-weight: 700;
-  font-size: 17px;
-  color: var(--cr-forest);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-}
-.cr-faq summary::-webkit-details-marker {
-  display: none;
-}
-.cr-faq summary::after {
-  content: "+";
-  font-family: var(--cr-display);
-  font-size: 24px;
-  color: var(--cr-green);
+/* The arrow is the logo's "go": orange. */
+.cr-sticky svg {
   flex: none;
-  transition: transform 0.2s ease;
+  color: var(--spark);
 }
-.cr-faq details[open] summary::after {
-  transform: rotate(45deg);
-}
-.cr-faq details p {
-  padding-bottom: 20px;
-  color: var(--cr-ink-2);
-  font-size: 15.5px;
-  max-width: 62ch;
-}
-/* Three offers side by side need a smaller amount so the range fits its column */
-@media (min-width: 900px) {
-  .cr-price-three .cr-price-amount {
-    font-size: clamp(24px, 2.1vw, 31px);
-  }
-  .cr-price-three .cr-offer {
-    padding: 28px 24px;
-  }
-}
-
-/* ---- Seventh pass (owner brief, 22 Sep 2026): reduce, clarify ---- */
-
-/* Hero: platforms line + three value points */
-.cr-platforms {
-  margin-top: 16px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 0;
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--cr-ink-2);
-}
-.cr-platforms span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  unicode-bidi: plaintext;
-}
-.cr-platforms span + span::before {
-  content: "·";
-  margin-inline: 9px;
-  color: var(--cr-dim);
-}
-.cr-platforms em {
-  font-style: normal;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--cr-paper-2);
-  color: var(--cr-dim);
-}
-.cr-values {
-  list-style: none;
-  margin: 14px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 6px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--cr-ink-2);
-}
-.cr-values li {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-.cr-values li::before {
-  content: "";
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--cr-green);
-}
-@media (max-width: 599px) {
-  .cr-values {
+@media (min-width: 960px) {
+  .cr-sticky {
     display: none;
   }
 }
 
-/* Problem: scattered sources → one hub */
-.cr-hub {
-  display: grid;
-  justify-items: center;
-  gap: 14px;
+/* ----------------------------------------------------- Scroll reveal */
+
+/* Enhancement only: .cr-js is set by <RevealOnScroll/>. Without JS
+   everything is visible. */
+.cr-js .cr-root [data-reveal] {
+  opacity: 0;
+  transform: translateY(16px);
 }
-.cr-hub-sources {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-}
-.cr-hub-sources span {
-  padding: 9px 14px;
-  border-radius: 999px;
-  border: 1px dashed var(--cr-hair);
-  background: var(--cr-paper);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--cr-ink-2);
-  unicode-bidi: plaintext;
-}
-.cr-hub-arrow {
-  width: 28px;
-  height: 28px;
-  color: var(--cr-green);
-}
-.cr-hub-target {
-  width: 100%;
-  max-width: 460px;
-  padding: 24px 26px;
-  border-radius: 18px;
-  background: var(--cr-forest);
-  color: #fff;
-  text-align: center;
-  display: grid;
-  gap: 10px;
-  justify-items: center;
-}
-.cr-hub-target .cr-logo {
-  color: #fff;
-  font-size: 24px;
-}
-.cr-hub-target p {
-  font-size: 15.5px;
-  font-weight: 700;
-  color: var(--cr-on-dark);
+.cr-js .cr-root [data-reveal].is-in {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 700ms var(--ease-out),
+    transform 800ms var(--ease-out);
+  transition-delay: calc(var(--i, 0) * 80ms);
 }
 
-/* Two sides: six brand items in two columns */
-@media (min-width: 480px) {
-  .cr-checks-two {
-    grid-template-columns: 1fr 1fr;
-    gap: 9px 18px;
+/* ---------------------------------------------- Accessibility prefs */
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-enter,
+  .cr-form-done {
+    animation-name: cr-fade;
+    animation-duration: 300ms;
+  }
+  @keyframes cr-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  /* globals.css smooth-scrolls every anchor; (0,2,0) beats its html rule. */
+  :root:has(.cr-root) {
+    scroll-behavior: auto;
+  }
+  .cr-live::after,
+  .cr-plus-chip,
+  .cr-scroll-cue svg,
+  .cr-fv-target::before,
+  .cr-offer::before {
+    animation: none;
+  }
+  .cr-fv-beams .pulse,
+  .cr-feed-track::after,
+  .cr-steps-track::after {
+    display: none;
+  }
+  .cr-js .cr-root .cr-feed-wrap .cr-feed-item,
+  .cr-js .cr-root .cr-steps-panel .cr-steps li,
+  .cr-js .cr-root .cr-offer .cr-offer-row {
+    transform: none;
+  }
+  .cr-faq details::details-content {
+    transition: none;
+  }
+  .cr-faq summary {
+    transition: color 150ms ease;
+  }
+  .cr-js .cr-root .cr-spark {
+    clip-path: none;
+  }
+  .cr-js .cr-root [data-reveal] {
+    transform: none;
+  }
+  .cr-js .cr-root [data-reveal].is-in {
+    transition: opacity 300ms ease;
+  }
+  .cr-sheet,
+  .cr-nav.is-open .cr-sheet,
+  .cr-sticky,
+  .cr-sticky.is-on {
+    transform: none;
+  }
+  .cr-btn:active,
+  .cr-menu-btn:active,
+  .cr-sticky.is-on:active,
+  .cr-faq summary:active .cr-plus {
+    transform: none;
+  }
+  /* Icon morphs (menu ↔ close, plus ↔ minus) snap to their end state. */
+  .cr-menu-btn svg path {
+    transition: opacity 150ms ease;
+  }
+  .cr-plus::before,
+  .cr-plus::after {
+    transition: none;
   }
 }
-.cr-side .cr-checks {
-  margin-top: 4px;
-}
-
-/* Performance: three micro features as plain definition list */
-.cr-micro {
-  margin: 28px 0 0;
-  display: grid;
-  gap: 16px;
-}
-.cr-micro > div {
-  padding-inline-start: 14px;
-  border-inline-start: 3px solid var(--cr-green);
-}
-.cr-micro dt {
-  font-family: var(--cr-display);
-  font-weight: 700;
-  font-size: 17px;
-  color: var(--cr-forest);
-}
-.cr-micro dd {
-  margin: 3px 0 0;
-  font-size: 15px;
-  color: var(--cr-ink-2);
-}
-.cr-codebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  margin: 10px 16px 4px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: var(--cr-green-soft);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--cr-green-d);
-}
-.cr-codebar .cr-code.big {
-  background: var(--cr-white);
-}
-
-/* Onboarding: four steps */
-@media (min-width: 700px) {
-  .cr-steps-four {
-    grid-template-columns: repeat(2, 1fr);
+/* The on-dark stuck rule is (0,4,0), so it needs its own solid fallback,
+   or the bar would stay translucent with its blur removed. */
+@media (prefers-reduced-transparency: reduce) {
+  .cr-nav.is-stuck,
+  .cr-nav.is-open {
+    background: var(--paper);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .cr-nav.on-dark.is-stuck:not(.is-open) {
+    background: var(--night);
+  }
+  .cr-sticky {
+    background: var(--night);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .cr-mini,
+  .cr-form-card {
+    background: var(--night-2);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
-@media (min-width: 1024px) {
-  .cr-steps-four {
-    grid-template-columns: repeat(4, 1fr);
-    max-width: none;
+@media (prefers-contrast: more) {
+  .cr-root {
+    --muted: var(--ink-2);
+    --line: color-mix(in oklab, var(--ink) 20%, transparent);
+    --on-night-3: color-mix(in oklab, var(--on-night) 80%, transparent);
+    --on-night-4: color-mix(in oklab, var(--on-night) 80%, transparent);
+    --edge-night: color-mix(in oklab, var(--on-night) 24%, transparent);
+    --edge-night-2: color-mix(in oklab, var(--on-night) 32%, transparent);
+    --field-edge: color-mix(in oklab, var(--ink) 64%, transparent);
+    --field-edge-night: color-mix(in oklab, var(--on-night) 64%, transparent);
   }
 }
-
-/* Zero band: number, label, line */
-.cr-zero-label {
-  margin-top: 6px;
-  font-size: clamp(17px, 1.6vw, 22px);
-  font-weight: 700;
-  color: #fff;
-}
-/* Logo wordmark on the dark hub: the shared component hardcodes forest ink */
-.cr-hub-target .cr-logo span[aria-hidden="true"] {
-  color: #fff !important;
+/* Gradient-clipped text would vanish under forced colours. */
+@media (forced-colors: active) {
+  .cr-hero .cr-h1 .accent {
+    background: none;
+    color: CanvasText;
+  }
+  /* The pricing card's edge is an inset shadow, which forced colours drop. */
+  .cr-offer {
+    border: 1px solid CanvasText;
+  }
+  /* Buttons lose their fill too; an outline keeps them reading as buttons
+     (border-box, so the fixed heights do not change). */
+  .cr-btn {
+    border: 1px solid ButtonText;
+  }
 }

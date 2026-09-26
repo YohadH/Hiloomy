@@ -471,6 +471,25 @@ model SupportMessage {
   @@index([status, createdAt])
 }
 
+// Marketing leads from the public /creators landing (ported from the Creators
+// project, 2026-09-26). Before this they lived as JSON in SystemConfig
+// (creator_lead:<id>); those rows stay readable but new leads land here.
+model Lead {
+  id        String   @id @default(cuid())
+  name      String
+  brand     String
+  email     String?
+  phone     String
+  site      String?
+  creators  String
+  notes     String?
+  source    String   @default("/creators")
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model SystemConfig {
   key       String   @id
   value     String
